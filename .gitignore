@@ -4,5 +4,21 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+
+# Sensitive environment and credentials
+.env
+.env.*
 !.env.example
+*.local
+secrets.json
+.secrets/
+creds.json
+credentials.json
+serviceAccountKey.json
+service-account*.json
+firebase-applet-config.json
+
+# Local configurations and cache
+.firebase/
+.parcel-cache/
+.eslintcache

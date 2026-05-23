@@ -1,17 +1,54 @@
-import { CheckCircle2, Circle, AlertCircle, Disc, LayoutList, Columns, X, Trash, Square, CheckSquare, AlignLeft, Calendar, User, Hash, Calendar as CalendarIcon, Tag, Bug as BugIcon, Zap, Link as LinkIcon, Mic, StopCircle } from 'lucide-react';
+import { CheckCircle2, Circle, AlertCircle, Disc, LayoutList, Columns, X, Trash, Square, CheckSquare, AlignLeft, Calendar, User, Hash, Calendar as CalendarIcon, Tag, Bug as BugIcon, Zap, Link as LinkIcon, Mic, StopCircle, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { Plus } from 'lucide-react';
 import Markdown from 'react-markdown';
 
+const getPriorityBadge = (priority: string) => {
+  switch (priority) {
+    case 'Critical':
+      return (
+        <span className="shrink-0 text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 font-mono uppercase tracking-wider select-none animate-pulse">
+          <AlertCircle size={10} className="text-rose-400" />
+          <span>Critical</span>
+        </span>
+      );
+    case 'High':
+      return (
+        <span className="shrink-0 text-[9px] font-semibold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 font-mono uppercase tracking-wider select-none">
+          <ArrowUp size={10} className="text-amber-500" />
+          <span>High</span>
+        </span>
+      );
+    case 'Medium':
+      return (
+        <span className="shrink-0 text-[9px] font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 font-mono uppercase tracking-wider select-none">
+          <Minus size={10} className="text-blue-400" />
+          <span>Medium</span>
+        </span>
+      );
+    case 'Low':
+      return (
+        <span className="shrink-0 text-[9px] font-semibold text-zinc-400 bg-zinc-500/10 border border-zinc-800 px-1.5 py-0.5 rounded flex items-center gap-1 font-mono uppercase tracking-wider select-none">
+          <ArrowDown size={10} className="text-zinc-500" />
+          <span>Low</span>
+        </span>
+      );
+    default:
+      return null;
+  }
+};
+
 export function Issues() {
   const { projects, issues, phases, addIssue, updateIssue, deleteIssue, activeProjectId, setActiveProjectId } = useData();
+  const [searchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showModal, setShowModal] = useState(false);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set());
-  const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
+  const [activeIssueId, setActiveIssueId] = useState<string | null>(searchParams.get('issueId') || null);
 
   const [isRecordingTitle, setIsRecordingTitle] = useState(false);
   const [isRecordingDesc, setIsRecordingDesc] = useState(false);
@@ -97,11 +134,28 @@ export function Issues() {
     crashLogs: '' 
   });
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const urlSearch = searchParams.get('search') || '';
+  const urlPriority = searchParams.get('priority') || 'All';
+  const urlPhaseId = searchParams.get('phaseId') || 'All';
+
+  const [searchQuery, setSearchQuery] = useState(urlSearch);
   const [filterType, setFilterType] = useState<string>('All');
-  const [filterPriority, setFilterPriority] = useState<string>('All');
+  const [filterPriority, setFilterPriority] = useState<string>(urlPriority);
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [filterSprint, setFilterSprint] = useState<string>('All');
+  const [filterPhase, setFilterPhase] = useState<string>(urlPhaseId);
+
+  useEffect(() => {
+    const search = searchParams.get('search');
+    const priority = searchParams.get('priority');
+    const phaseId = searchParams.get('phaseId');
+    const issueId = searchParams.get('issueId');
+
+    if (search !== null) setSearchQuery(search);
+    if (priority !== null) setFilterPriority(priority);
+    if (phaseId !== null) setFilterPhase(phaseId);
+    if (issueId !== null) setActiveIssueId(issueId);
+  }, [searchParams]);
 
   const activeSprints = useMemo(() => {
      return projects.find(p => p.id === activeProjectId)?.sprints || [];
@@ -133,9 +187,13 @@ export function Issues() {
           result = result.filter(i => i.sprintId === filterSprint);
        }
     }
+
+    if (filterPhase !== 'All') {
+      result = result.filter(i => i.phaseId === filterPhase);
+    }
     
     return result;
-  }, [issues, activeProjectId, searchQuery, filterType, filterPriority, filterStatus, filterSprint]);
+  }, [issues, activeProjectId, searchQuery, filterType, filterPriority, filterStatus, filterSprint, filterPhase]);
 
   const activePhases = useMemo(() => {
     return phases.filter(p => p.projectId === activeProjectId);
@@ -316,6 +374,20 @@ export function Issues() {
              ))}
            </select>
          </div>
+         <span className="text-zinc-600 text-xs px-1 select-none">|</span>
+         <div className="flex items-center gap-2">
+           <span className="text-[10px] uppercase font-semibold tracking-wider text-zinc-500">Phase</span>
+           <select
+             value={filterPhase}
+             onChange={e => setFilterPhase(e.target.value)}
+             className="bg-[#09090b] border border-zinc-800 text-zinc-300 text-xs rounded outline-none py-1.5 px-2 focus:border-blue-500/50 w-32"
+           >
+             <option value="All">All Phases</option>
+             {activePhases.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+             ))}
+           </select>
+         </div>
       </div>
 
       <div className={`flex flex-col flex-1 ${viewMode === 'list' ? 'border border-zinc-800 bg-[#121214] rounded-xl overflow-hidden min-h-0' : 'min-h-0'}`}>
@@ -437,12 +509,7 @@ export function Issues() {
                     </div>
                     
                     <div className="flex items-center gap-4 w-32 shrink-0 justify-end">
-                      <div className="flex items-center gap-1">
-                        {issue.priority === 'Critical' && <div title="Critical" className="flex"><AlertCircle size={12} className="text-rose-500" /></div>}
-                        {issue.priority === 'High' && <div className="text-amber-500 text-xs mb-1 font-mono" title="High">↑</div>}
-                        {issue.priority === 'Medium' && <div className="text-zinc-500 text-xs mb-1 font-mono" title="Medium">→</div>}
-                        {issue.priority === 'Low' && <div className="text-zinc-500 text-xs mb-1 font-mono" title="Low">↓</div>}
-                      </div>
+                      {getPriorityBadge(issue.priority)}
                       <button onClick={(e) => { e.stopPropagation(); deleteIssue(issue.id); }} className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Trash size={14} />
                       </button>
@@ -493,12 +560,9 @@ export function Issues() {
                         >
                            <div className="flex items-start justify-between mb-2">
                              <div className="text-[10px] font-mono text-zinc-500 group-hover:text-blue-400/70 transition-colors">#{issue.id.slice(0,5)}</div>
-                             <div className="flex items-center gap-2 text-zinc-600">
-                                {issue.priority === 'Critical' && <AlertCircle size={12} className="text-rose-500" />}
-                                {issue.priority === 'High' && <div className="text-amber-500 text-xs mb-1 font-mono">↑</div>}
-                                {issue.priority === 'Medium' && <div className="text-zinc-500 text-xs mb-1 font-mono">→</div>}
-                                {issue.priority === 'Low' && <div className="text-zinc-500 text-xs mb-1 font-mono">↓</div>}
-                                <button onClick={(e) => { e.stopPropagation(); deleteIssue(issue.id) }} className="hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                             <div className="flex items-center gap-2">
+                                {getPriorityBadge(issue.priority)}
+                                <button onClick={(e) => { e.stopPropagation(); deleteIssue(issue.id) }} className="text-zinc-655 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1 shrink-0">
                                   <Trash size={12} />
                                 </button>
                              </div>

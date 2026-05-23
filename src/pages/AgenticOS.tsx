@@ -1079,7 +1079,7 @@ export function AgenticOS() {
                              <motion.div 
                                layoutId={`agent-desk-${a.id}`}
                                draggable
-                               onDragStart={e => handleDragStart(e, a.id)}
+                               onDragStart={(e: any) => handleDragStart(e, a.id)}
                                key={a.id} 
                                onClick={() => setSelectedAgentId(a.id)}
                                className={`rounded-lg p-3 bg-zinc-950/90 border border-zinc-850 hover:border-red-500/40 transition-all flex flex-col justify-between text-left cursor-grab active:cursor-grabbing group ${selectedAgentId === a.id ? 'ring-1 ring-red-500/40 bg-red-950/[0.05]' : ''}`}
@@ -1138,7 +1138,7 @@ export function AgenticOS() {
                              <motion.div 
                                layoutId={`agent-desk-${a.id}`}
                                draggable
-                               onDragStart={e => handleDragStart(e, a.id)}
+                               onDragStart={(e: any) => handleDragStart(e, a.id)}
                                key={a.id} 
                                onClick={() => setSelectedAgentId(a.id)}
                                className={`rounded-lg p-3 bg-zinc-950/90 border border-zinc-850 hover:border-cyan-500/40 transition-all flex flex-col justify-between text-left cursor-grab active:cursor-grabbing group ${selectedAgentId === a.id ? 'ring-1 ring-cyan-500/40 bg-cyan-950/[0.05]' : ''}`}
@@ -1197,7 +1197,7 @@ export function AgenticOS() {
                              <motion.div 
                                layoutId={`agent-desk-${a.id}`}
                                draggable
-                               onDragStart={e => handleDragStart(e, a.id)}
+                               onDragStart={(e: any) => handleDragStart(e, a.id)}
                                key={a.id} 
                                onClick={() => setSelectedAgentId(a.id)}
                                className={`rounded-lg p-3 bg-zinc-950/90 border border-zinc-850 hover:border-purple-500/40 transition-all flex flex-col justify-between text-left cursor-grab active:cursor-grabbing group ${selectedAgentId === a.id ? 'ring-1 ring-purple-500/40 bg-purple-950/[0.05]' : ''}`}
@@ -1256,7 +1256,7 @@ export function AgenticOS() {
                              <motion.div 
                                layoutId={`agent-desk-${a.id}`}
                                draggable
-                               onDragStart={e => handleDragStart(e, a.id)}
+                               onDragStart={(e: any) => handleDragStart(e, a.id)}
                                key={a.id} 
                                onClick={() => setSelectedAgentId(a.id)}
                                className={`rounded-lg p-3 bg-zinc-950/90 border border-zinc-850 hover:border-emerald-500/40 transition-all flex flex-col justify-between text-left cursor-grab active:cursor-grabbing group ${selectedAgentId === a.id ? 'ring-1 ring-emerald-500/40 bg-emerald-950/[0.05]' : ''}`}

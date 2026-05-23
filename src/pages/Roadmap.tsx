@@ -1,12 +1,24 @@
 import { Calendar, ChevronLeft, ChevronRight, Loader2, Target, Plus, X, ListTodo, Presentation, Rocket, Focus, AlertCircle, ExternalLink, Sparkles, LayoutList, Check } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
+import { PieChart, Pie, Cell } from 'recharts';
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+const getHexForPhaseColor = (colorClass: string) => {
+  if (colorClass.includes('blue')) return '#3b82f6';
+  if (colorClass.includes('purple')) return '#a855f7';
+  if (colorClass.includes('emerald')) return '#10b981';
+  if (colorClass.includes('rose')) return '#f43f5e';
+  if (colorClass.includes('amber')) return '#f59e0b';
+  return '#3b82f6';
+};
+
 export function Roadmap() {
   const { projects, issues, phases, addPhase, deletePhase, activeProjectId, setActiveProjectId } = useData();
+  const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({ 
@@ -238,7 +250,7 @@ export function Roadmap() {
 
       <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl overflow-hidden flex flex-col min-h-0 relative">
         <div className="flex border-b border-zinc-800 bg-[#121214]">
-          <div className="w-56 shrink-0 p-3 border-r border-zinc-800 flex items-center">
+          <div className="w-72 shrink-0 p-3 border-r border-zinc-800 flex items-center">
              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Phases</span>
           </div>
           <div className="flex-1 flex text-[10px] font-medium text-zinc-500 relative">
@@ -264,63 +276,184 @@ export function Roadmap() {
               </div>
           ) : (
             <>
-              {activePhases.map((phase, i) => (
-                 <motion.div 
-                   initial={{ opacity: 0, y: 10 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   transition={{ delay: i * 0.05 }}
-                   key={phase.id} 
-                   className="flex border-b border-zinc-800/80 relative group"
-                 >
-                   
-                   <div className="w-56 shrink-0 p-3 border-r border-zinc-800 bg-[#121214] z-10 group-hover:bg-[#18181b] transition-colors flex flex-col justify-center">
-                     <div className="flex items-center justify-between">
-                       <div className="font-medium text-xs text-zinc-200 truncate flex items-center gap-1.5" title={phase.name}>
-                         <Focus size={12} className="text-zinc-500" />
-                         {phase.name}
+              {activePhases.map((phase, i) => {
+                 const chartData = phase.total === 0 
+                   ? [{ name: 'No issues', value: 1, color: '#1f1f23' }]
+                   : [
+                       { name: 'Done', value: phase.closed, color: getHexForPhaseColor(phase.color) },
+                       { name: 'Open', value: phase.open, color: '#27272a' }
+                     ];
+
+                 return (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    key={phase.id} 
+                    className="flex border-b border-zinc-800/80 relative group"
+                  >
+                    
+                    <div className="w-72 shrink-0 p-3.5 border-r border-zinc-800 bg-[#121214] z-10 group-hover:bg-[#18181b] transition-colors flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0 flex flex-col">
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold text-xs text-zinc-200 truncate flex items-center gap-1.5" title={phase.name}>
+                            <Focus size={12} className="text-zinc-500" />
+                            {phase.name}
+                          </div>
+                          <button onClick={() => deletePhase(phase.id)} className="text-zinc-650 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1.5 shrink-0">
+                            <X size={12} />
+                          </button>
+                        </div>
+                        {phase.goal && (
+                           <p className="text-[10px] text-zinc-550 mt-1 tracking-tight text-left italic line-clamp-2 leading-relaxed" title={phase.goal}>
+                              Goal: {phase.goal}
+                           </p>
+                        )}
+                        <div className="mt-2 text-[10px] text-zinc-400 flex justify-between items-center w-full font-mono">
+                          <span className="flex items-center gap-1 font-medium">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                            <span>{phase.progress}% Done</span>
+                          </span>
+                          <span className="text-zinc-500">{phase.closed}/{phase.total} Tasks</span>
+                        </div>
+                        <div className="w-full bg-zinc-900/80 rounded-full h-1.5 mt-1.5 overflow-hidden relative">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${phase.progress}%` }}
+                            transition={{ duration: 1, ease: "easeOut" }}
+                            className={`h-full rounded-full bg-gradient-to-r ${getGradientsForColor(phase.color).split(' ').slice(0, 2).join(' ')} relative overflow-hidden`}
+                            style={{
+                              boxShadow: `0 0 8px ${getHexForPhaseColor(phase.color)}33`
+                            }}
+                          >
+                            <motion.div
+                              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                              initial={{ x: '-100%' }}
+                              animate={{ x: '100%' }}
+                              transition={{
+                                repeat: Infinity,
+                                repeatType: 'loop',
+                                duration: 2,
+                                ease: 'linear',
+                              }}
+                            />
+                          </motion.div>
+                        </div>
+
+                        {/* Top 3 Urgent Pending Issues list */}
+                        {(() => {
+                          const pendingIssuesForPhase = issues
+                            .filter((is) => is.phaseId === phase.id && is.status !== 'Done')
+                            .sort((a, b) => {
+                              const priorityWeight: Record<string, number> = {
+                                'Critical': 4,
+                                'High': 3,
+                                'Medium': 2,
+                                'Low': 1
+                              };
+                              const wa = priorityWeight[a.priority] || 0;
+                              const wb = priorityWeight[b.priority] || 0;
+                              if (wa !== wb) return wb - wa;
+                              return b.createdAt - a.createdAt;
+                            })
+                            .slice(0, 3);
+
+                          if (pendingIssuesForPhase.length === 0) return null;
+
+                          return (
+                            <div className="mt-3.5 pt-2.5 border-t border-zinc-800/60 flex flex-col gap-1.5 w-full text-left">
+                              <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5 flex items-center justify-between font-mono">
+                                <span className="flex items-center gap-1"><ListTodo size={9} className="text-zinc-500" /> Urgent Pending</span>
+                                <span className="text-[8px] text-zinc-600 font-normal">({phase.open} open)</span>
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                {pendingIssuesForPhase.map(issue => {
+                                  let badgeColor = 'text-zinc-400 bg-zinc-800/40 border-zinc-700/30';
+                                  if (issue.priority === 'Critical') badgeColor = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+                                  if (issue.priority === 'High') badgeColor = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
+                                  if (issue.priority === 'Medium') badgeColor = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+                                  
+                                  return (
+                                    <button
+                                      key={issue.id}
+                                      onClick={() => navigate(`/issues?phaseId=${phase.id}&issueId=${issue.id}`)}
+                                      className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-zinc-900/50 hover:bg-zinc-800/60 hover:text-blue-400 border border-zinc-800/40 hover:border-zinc-700/80 transition-all text-left w-full group/issue overflow-hidden"
+                                      title={`Click to view issue: ${issue.title}`}
+                                    >
+                                      <span className="truncate text-zinc-300 font-medium group-hover/issue:text-blue-400 text-[10px]">
+                                        {issue.title}
+                                      </span>
+                                      <span className={`shrink-0 text-[8px] font-bold px-1 py-0.2 rounded border uppercase tracking-wider font-mono ${badgeColor}`}>
+                                        {issue.priority}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="w-12 h-12 shrink-0 flex items-center justify-center relative select-none mt-0.5">
+                        <PieChart width={44} height={44}>
+                          <Pie
+                            data={chartData}
+                            cx={22}
+                            cy={22}
+                            innerRadius={11}
+                            outerRadius={20}
+                            paddingAngle={chartData.length > 1 && phase.closed > 0 && phase.open > 0 ? 2 : 0}
+                            dataKey="value"
+                            isAnimationActive={false}
+                          >
+                            {chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} stroke="#121214" strokeWidth={1} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                        <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono font-bold text-zinc-400">
+                          {phase.progress}%
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 relative bg-zinc-900/10 group-hover:bg-zinc-900/30 transition-colors min-h-[96px]">
+                       <div className="absolute inset-0 flex pointer-events-none">
+                         {months.map((_, idx) => (
+                           <div key={idx} className={`flex-1 border-zinc-800/50 ${idx !== months.length -1 ? 'border-r' : ''}`}></div>
+                         ))}
                        </div>
-                       <button onClick={() => deletePhase(phase.id)} className="text-zinc-650 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <X size={12} />
-                       </button>
-                     </div>
-                     {phase.goal && (
-                        <p className="text-[10px] text-zinc-500 mt-1 tracking-tight text-left italic line-clamp-2 leading-relaxed" title={phase.goal}>
-                           Goal: {phase.goal}
-                        </p>
-                     )}
-                     <div className="mt-2 text-[10px] text-zinc-500 flex justify-between items-center w-full">
-                       <span>{phase.progress}% ({phase.closed}/{phase.total})</span>
-                     </div>
-                     <div className="w-full bg-zinc-800 rounded-full h-1 mt-1 overflow-hidden">
-                       <div className={`h-1 rounded-full bg-gradient-to-r transition-all duration-500 ${getGradientsForColor(phase.color).split(' ')[0]}`} style={{ width: `${phase.progress}%` }}></div>
-                     </div>
-                   </div>
-                   
-                   <div className="flex-1 relative bg-zinc-900/10 group-hover:bg-zinc-900/30 transition-colors h-14">
-                      <div className="absolute inset-0 flex pointer-events-none">
-                        {months.map((_, idx) => (
-                          <div key={idx} className={`flex-1 border-zinc-800/50 ${idx !== months.length -1 ? 'border-r' : ''}`}></div>
-                        ))}
-                      </div>
-                      
-                      <div 
-                        className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-lg bg-[#09090b] bg-opacity-20 backdrop-blur-sm px-3 flex items-center shadow-lg border outline outline-1 outline-transparent hover:outline-white/20 transition-all origin-left ${phase.color}`}
-                        style={{ 
-                          left: `${(phase.startMonth / 12) * 100}%`, 
-                          width: `calc(${Math.min(100, (phase.duration / 12) * 100)}% - 12px)`,
-                          marginLeft: '6px'
-                        }}
-                        title={`${phase.name} ${phase.goal ? '— ' + phase.goal : ''}`}
-                      >
-                         <span className="text-[10px] font-semibold truncate drop-shadow-md text-white">{phase.name}</span>
-                      </div>
-                   </div>
-                 </motion.div>
-              ))}
+                       
+                       <div 
+                         className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-lg bg-[#09090b]/80 backdrop-blur-sm px-3 flex items-center shadow-lg border outline outline-1 outline-transparent hover:outline-white/20 transition-all origin-left overflow-hidden ${phase.color}`}
+                         style={{ 
+                           left: `${(phase.startMonth / 12) * 100}%`, 
+                           width: `calc(${Math.min(100, (phase.duration / 12) * 100)}% - 12px)`,
+                           marginLeft: '6px'
+                         }}
+                         title={`${phase.name} ${phase.goal ? '— ' + phase.goal : ''} (${phase.progress}% Done)`}
+                       >
+                          <span className="text-[10px] font-semibold truncate drop-shadow-md text-white">{phase.name}</span>
+                          
+                          {/* Animated tracking progress bar representing done issues */}
+                          <div className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#09090b]/60 overflow-hidden">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${phase.progress}%` }}
+                              transition={{ duration: 1.2, ease: "easeOut" }}
+                              className="h-full bg-white/70 shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+                            />
+                          </div>
+                       </div>
+                    </div>
+                  </motion.div>
+                 );
+              })}
               
               {activeIssuesWithDates.length > 0 && (
                 <div className="flex border-b border-zinc-800/80 relative group min-h-[64px]">
-                  <div className="w-56 shrink-0 p-3 border-r border-zinc-800 bg-[#121214] z-10 flex flex-col justify-center">
+                  <div className="w-72 shrink-0 p-3 border-r border-zinc-800 bg-[#121214] z-10 flex flex-col justify-center">
                     <div className="font-medium text-xs text-zinc-300 flex items-center gap-1.5"><AlertCircle size={12} className="text-zinc-500"/> Milestone Tasks</div>
                     <div className="mt-1 text-[10px] text-zinc-500">{activeIssuesWithDates.length} scheduled issues</div>
                   </div>
