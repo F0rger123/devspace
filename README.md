@@ -1,20 +1,6 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+This is the future for developers and Vibe coders
 
-# Run and deploy your AI Studio app
+Whenever things get messy or you need to track more than one project at once, We help
 
-This contains everything you need to run your app locally.
+Whether that is tracking issues, New ideas, AI agents or assistants working on your projects, etcetera
 
-View your app in AI Studio: https://ai.studio/apps/7db2123b-647c-464f-8e8a-4640b009a280
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
