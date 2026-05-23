@@ -1,0 +1,332 @@
+import { useState } from 'react';
+import { useData } from '../context/DataProvider';
+import { FileText, Plus, Search, Tag, Image as ImageIcon, Trash, Save, Edit3, X, Sparkles, Loader2, Eye, Columns } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+export function Notes() {
+  const { notes, addNote, updateNote, deleteNote, activeProjectId, projects } = useData();
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  
+  // To handle form state
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [tags, setTags] = useState('');
+  const [showSplit, setShowSplit] = useState(true);
+
+  const handleAiImprove = async () => {
+    if (!content.trim() && !title.trim()) return;
+    setAiLoading(true);
+    try {
+      const response = await fetch('/api/gemini/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'user',
+              content: `You are an AI Markdown co-writer. Improve, expand, and structure the following developer document titled "${title || 'Untitled'}" with appropriate headings, structures, bullet points, and clean typography. Keep technical constraints and do not delete any code blocks. Respond only with the updated Markdown content.\n\nDocument Content:\n${content}`
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) throw new Error('AI stream error');
+      if (!response.body) throw new Error('No body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamDoc = '';
+      setContent('');
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                streamDoc += data.text;
+                setContent(streamDoc);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to co-write with AI.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const activeProject = projects.find(p => p.id === activeProjectId);
+  const projectNotes = notes.filter(n => n.projectId === activeProjectId);
+  const selectedNote = projectNotes.find(n => n.id === selectedNoteId);
+
+  const handleCreateNew = () => {
+    setSelectedNoteId('new');
+    setIsEditing(true);
+    setTitle('');
+    setContent('');
+    setTags('');
+  };
+
+  const handleSelect = (id: string) => {
+    setSelectedNoteId(id);
+    setIsEditing(false);
+    const n = projectNotes.find(note => note.id === id);
+    if (n) {
+      setTitle(n.title);
+      setContent(n.content);
+      setTags(n.tags?.join(', ') || '');
+    }
+  };
+
+  const handleSave = () => {
+    if (!activeProjectId || !title) return;
+    
+    const tagArray = tags.split(',').map(t => t.trim()).filter(t => t);
+    
+    if (selectedNoteId === 'new') {
+      addNote({
+        projectId: activeProjectId,
+        title,
+        content,
+        tags: tagArray.length > 0 ? tagArray : undefined,
+      });
+      setIsEditing(false);
+      // Not resetting selectedNoteId so it could default to nothing or we could track the newly created ID, but crypto UUID is blind. 
+      setSelectedNoteId(null);
+    } else if (selectedNoteId) {
+      updateNote(selectedNoteId, {
+        title,
+        content,
+        tags: tagArray.length > 0 ? tagArray : undefined,
+      });
+      setIsEditing(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (selectedNoteId && selectedNoteId !== 'new') {
+      deleteNote(selectedNoteId);
+      setSelectedNoteId(null);
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col pb-8 relative min-h-full">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+            Notes & Docs <FileText size={18} className="text-blue-400" />
+          </h1>
+          <p className="text-xs text-zinc-400 mt-1">
+            Structural Markdown editor for brain-dumps, launch goals, and architecture.
+          </p>
+        </div>
+      </div>
+
+      {!activeProjectId ? (
+         <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 border border-zinc-800 border-dashed rounded-xl p-8 bg-[#0c0c0e]">
+            <FileText size={32} className="opacity-20 mb-3" />
+            <p className="text-sm">Select an active project first.</p>
+         </div>
+      ) : (
+        <div className="flex gap-4 flex-1 min-h-0">
+          
+          {/* Notes Sidebar */}
+          <div className="w-64 shrink-0 flex flex-col gap-3 min-h-0">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{activeProject?.name} Notes</h2>
+              <button 
+                onClick={handleCreateNew}
+                className="bg-blue-600 hover:bg-blue-500 text-white p-1 rounded-md transition-colors"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-2 text-zinc-500" />
+              <input 
+                type="text" 
+                placeholder="Search docs..." 
+                className="w-full bg-[#121214] border border-zinc-800 rounded-lg py-1.5 pl-8 pr-3 text-xs text-zinc-200 outline-none focus:border-blue-500 transition-colors" 
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+              {projectNotes.length === 0 && selectedNoteId !== 'new' ? (
+                <div className="text-center py-6 text-zinc-600 text-xs italic">
+                  No notes found.
+                </div>
+              ) : (
+                <>
+                  {selectedNoteId === 'new' && (
+                    <div className="px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-pointer">
+                      <div className="text-xs font-medium truncate mb-0.5">{title || 'Untitled Note'}</div>
+                      <div className="text-[10px] opacity-70">Creating new...</div>
+                    </div>
+                  )}
+                  {projectNotes.map(n => (
+                    <div 
+                      key={n.id}
+                      onClick={() => handleSelect(n.id)}
+                      className={`px-3 py-2 rounded-lg cursor-pointer transition-colors ${selectedNoteId === n.id ? 'bg-zinc-800 text-zinc-200' : 'hover:bg-zinc-800/50 text-zinc-400'}`}
+                    >
+                      <div className="flex justify-between items-start mb-0.5">
+                        <div className="text-xs font-medium truncate pr-2">{n.title}</div>
+                        <div className="text-[9px] opacity-50 shrink-0">{new Date(n.updatedAt).toLocaleDateString()}</div>
+                      </div>
+                      {n.tags && n.tags.length > 0 && (
+                        <div className="flex gap-1 overflow-hidden mt-1">
+                          {n.tags.slice(0, 2).map((t, idx) => (
+                             <span key={idx} className="text-[9px] rounded bg-zinc-900 border border-zinc-800 px-1 py-0.5 truncate max-w-[60px]"><Tag size={8} className="inline mr-0.5 opacity-50"/>{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Editor/Viewer Panel */}
+          <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl flex flex-col min-h-0 relative">
+            {!selectedNoteId ? (
+              <div className="flex-1 flex items-center justify-center text-zinc-500 flex-col opacity-50">
+                <FileText size={48} className="mb-4 stroke-1" />
+                <p>Select a note or create a new one.</p>
+              </div>
+            ) : (
+              <>
+                {/* Editor Top Bar */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-[#09090b]/50 rounded-t-xl shrink-0">
+                  <div className="flex-1 mr-4">
+                    {isEditing ? (
+                      <input 
+                        type="text" 
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        placeholder="Note Title"
+                        className="w-full bg-transparent border-none outline-none text-sm font-semibold text-zinc-100 placeholder:text-zinc-600"
+                        autoFocus
+                      />
+                    ) : (
+                      <h2 className="text-sm font-semibold text-zinc-100">{selectedNote?.title}</h2>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Media Stub Tab (Phase 1, Step 3 stub) */}
+                    <button className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors" title="Attach Media / Asset (Coming soon)">
+                      <ImageIcon size={14} />
+                    </button>
+                    {isEditing && (
+                      <button 
+                        onClick={() => setShowSplit(prev => !prev)}
+                        className={`p-1.5 transition-colors rounded ${showSplit ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-500 hover:text-zinc-350'}`} 
+                        title="Toggle Split-screen Preview"
+                      >
+                        <Columns size={14} />
+                      </button>
+                    )}
+                    <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+                    {isEditing ? (
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={handleAiImprove} 
+                          disabled={aiLoading || !content.trim()}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#402060]/50 hover:bg-[#502080]/80 disabled:opacity-40 text-purple-200 border border-purple-500/30 rounded text-xs font-medium transition-all"
+                          title="Generate, improve, and format your markdown style notes automatically"
+                        >
+                          {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} className="text-purple-400" />}
+                          AI Co-Write
+                        </button>
+                        <button onClick={handleSave} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-medium transition-colors">
+                          <Save size={14} /> Save
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-xs font-medium transition-colors border border-zinc-700">
+                          <Edit3 size={14} /> Edit
+                        </button>
+                        <button onClick={handleDelete} className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors bg-zinc-900 border border-zinc-800 rounded ml-1">
+                          <Trash size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Editor Content Area */}
+                <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+                  {isEditing ? (
+                    <div className="flex-1 flex flex-col md:flex-row min-h-0 divide-y md:divide-y-0 md:divide-x divide-zinc-800 p-4 gap-4">
+                      {/* Left: Input */}
+                      <div className="flex-1 flex flex-col gap-3 min-h-[300px]">
+                        <div className="flex items-center bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+                          <Tag size={12} className="text-zinc-500 mr-2 shrink-0" />
+                          <input 
+                            type="text" 
+                            value={tags}
+                            onChange={e => setTags(e.target.value)}
+                            placeholder="architecture, brain-dump, launch-goal (comma separated)"
+                            className="w-full bg-transparent border-none outline-none text-xs text-zinc-300 placeholder:text-zinc-600"
+                          />
+                        </div>
+                        <textarea 
+                          value={content}
+                          onChange={e => setContent(e.target.value)}
+                          placeholder="Write your markdown document here..."
+                          className="flex-1 w-full bg-transparent border-none outline-none text-sm text-zinc-300 placeholder:text-zinc-700 resize-none font-mono text-zinc-300"
+                        />
+                      </div>
+
+                      {/* Right: Markdown live preview */}
+                      {showSplit && (
+                        <div className="flex-1 pl-4 overflow-y-auto custom-scrollbar min-h-[300px] border-t md:border-t-0 border-zinc-850 mt-4 md:mt-0 pt-4 md:pt-0">
+                          <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-3">Live Presentation Match</div>
+                          <div className="prose prose-invert prose-xs max-w-none prose-headings:text-zinc-300 prose-p:text-zinc-400 prose-code:text-emerald-400 prose-pre:bg-[#0c0c0e]/50 prose-pre:border prose-pre:border-zinc-800/20">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {content || '*Start writing to preview styles.*'}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-6">
+                      {selectedNote?.tags && selectedNote.tags.length > 0 && (
+                        <div className="flex gap-2 mb-6">
+                          {selectedNote.tags.map((t, idx) => (
+                             <span key={idx} className="text-[10px] rounded-md bg-zinc-900 border border-zinc-800 text-blue-400 px-2 py-1 flex items-center gap-1 font-medium">
+                               <Tag size={10} className="opacity-70"/> {t}
+                             </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="prose prose-invert prose-sm max-w-none prose-headings:text-zinc-200 prose-p:text-zinc-400 prose-a:text-blue-400 prose-code:text-emerald-400 prose-pre:bg-[#0c0c0e] prose-pre:border prose-pre:border-zinc-800/50">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {selectedNote?.content || '*No content.*'}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

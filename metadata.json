@@ -1,0 +1,8 @@
+{
+  "name": "DevSpace",
+  "description": "AI-powered second brain, workspace, and execution engine for developers.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
