@@ -6,13 +6,25 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/documents.readonly');
+provider.addScope('https://www.googleapis.com/auth/documents');
+provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
 
 const githubProvider = new GithubAuthProvider();
 githubProvider.addScope('repo'); // for checking repositories
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+try {
+  const stored = typeof window !== 'undefined' ? window.localStorage.getItem('app_google_token') : null;
+  if (stored) {
+    if (stored.startsWith('"') && stored.endsWith('"')) {
+      cachedAccessToken = JSON.parse(stored);
+    } else {
+      cachedAccessToken = stored;
+    }
+  }
+} catch (e) {}
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,

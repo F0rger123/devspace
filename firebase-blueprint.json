@@ -1,0 +1,30 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Registered developer profile details in Agentic OS",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The firebase unique authentication identifier of the developer"
+        },
+        "email": {
+          "type": "string",
+          "description": "The verified primary email address of the developer"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "The user's customizable visual handle or display name"
+        }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "users",
+      "description": "Developer user profiles store in the database cluster"
+    }
+  }
+}

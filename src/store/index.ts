@@ -8,6 +8,9 @@ interface StoreState {
   toggleSidebar: () => void;
   isRightSidebarOpen: boolean;
   toggleRightSidebar: () => void;
+  isRightSidebarExpanded: boolean;
+  toggleRightSidebarExpanded: () => void;
+  setRightSidebarOpen: (open: boolean) => void;
 }
 
 export const useStore = create<StoreState>((set) => ({
@@ -18,4 +21,7 @@ export const useStore = create<StoreState>((set) => ({
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   isRightSidebarOpen: true,
   toggleRightSidebar: () => set((state) => ({ isRightSidebarOpen: !state.isRightSidebarOpen })),
+  isRightSidebarExpanded: false,
+  toggleRightSidebarExpanded: () => set((state) => ({ isRightSidebarExpanded: !state.isRightSidebarExpanded })),
+  setRightSidebarOpen: (open) => set({ isRightSidebarOpen: open }),
 }));

@@ -119,12 +119,58 @@ export function FlowGraph({
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
+  const onNodeDragStop = useCallback((_: any, draggedNode: any) => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('brain_node_positions') || '{}');
+      saved[draggedNode.id] = draggedNode.position;
+      localStorage.setItem('brain_node_positions', JSON.stringify(saved));
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const handleResetLayout = () => {
+     try {
+       localStorage.removeItem('brain_node_positions');
+       const rfNodes = initialNodes.map(n => ({
+         id: n.id,
+         type: 'custom',
+         data: { name: n.name, type: n.type },
+         position: { x: 0, y: 0 }
+       }));
+       const rfEdges = initialLinks.map((l, i) => ({
+         id: `e${i}`,
+         source: l.source.id || l.source,
+         target: l.target.id || l.target,
+         type: 'smoothstep',
+         animated: true,
+         style: { stroke: '#52525b', strokeWidth: 1.5 }
+       }));
+       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+         rfNodes,
+         rfEdges,
+         direction,
+         spacing
+       );
+       setNodes(layoutedNodes);
+       setEdges(layoutedEdges);
+       alert("Landscape layout reset successfully!");
+     } catch (e) {
+       console.error(e);
+     }
+  };
+
   useEffect(() => {
+    let saved: Record<string, { x: number, y: number }> = {};
+    try {
+      saved = JSON.parse(localStorage.getItem('brain_node_positions') || '{}');
+    } catch {}
+
     const rfNodes = initialNodes.map(n => ({
       id: n.id,
       type: 'custom',
       data: { name: n.name, type: n.type },
-      position: { x: 0, y: 0 }
+      position: saved[n.id] || { x: 0, y: 0 }
     }));
     
     const rfEdges = initialLinks.map((l, i) => ({
@@ -152,9 +198,20 @@ export function FlowGraph({
       spacing
     );
 
-    setNodes(layoutedNodes);
+    // Apply saved positions as override
+    const finalNodes = layoutedNodes.map(node => {
+      if (saved[node.id]) {
+         return {
+           ...node,
+           position: saved[node.id]
+         };
+      }
+      return node;
+    });
+
+    setNodes(finalNodes);
     setEdges(layoutedEdges);
-  }, [initialNodes, initialLinks, setNodes, setEdges]);
+  }, [initialNodes, initialLinks, direction, spacing, setNodes, setEdges]);
 
   return (
     <div className="w-full h-full relative" style={{ background: '#121214' }}>
@@ -163,6 +220,7 @@ export function FlowGraph({
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         onNodeClick={(_, node) => {
            if(onNodeClick) onNodeClick({ id: node.id, name: node.data.name, type: node.data.type });
@@ -173,6 +231,15 @@ export function FlowGraph({
         <Background color="#27272a" gap={20} size={1} />
         <Controls className="!bg-[#18181b] !border-zinc-800 !fill-zinc-400" />
       </ReactFlow>
+
+      {/* Floater Reset Layout */}
+      <button
+        onClick={handleResetLayout}
+        className="absolute top-4 right-4 z-10 px-2.5 py-1.5 text-[10px] font-bold bg-[#18181b]/90 hover:bg-[#27272a] text-zinc-300 rounded-md border border-zinc-800 shadow-md backdrop-blur-md hover:text-zinc-100 transition-all flex items-center gap-1"
+        title="Reset all manual node drag positioning back to auto-layout"
+      >
+        🔄 Reset Node Layout
+      </button>
     </div>
   );
 }

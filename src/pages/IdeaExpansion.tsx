@@ -8,9 +8,10 @@ import 'highlight.js/styles/github-dark.css';
 import { useData } from '../context/DataProvider';
 
 export function IdeaExpansion() {
-  const { aiContextRules, activeProjectId, setActiveProjectId, addIssue, addPhase, projects, addProject } = useData();
+  const { aiContextRules, activeProjectId, setActiveProjectId, addIssue, addPhase, projects, addProject, updateProject } = useData();
   const [rawDump, setRawDump] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSortingAndInjecting, setIsSortingAndInjecting] = useState(false);
   const [output, setOutput] = useState('');
   const outputEndRef = useRef<HTMLDivElement>(null);
   const [isCopying, setIsCopying] = useState(false);
@@ -217,6 +218,176 @@ export function IdeaExpansion() {
     setIsGenerating(false);
   };
 
+  const handleAutoSortAndInject = async () => {
+    if (!rawDump.trim()) {
+      alert("Please enter or dictate a brain-dump first.");
+      return;
+    }
+
+    setIsSortingAndInjecting(true);
+
+    try {
+      const promptText = `
+        You are an advanced AI project schema organizer. Your task is to analyze a raw, chaotic stream of project ideas, guidelines, updates, feature requests, or bugs and:
+        1. Classify discrete ideas or features.
+        2. Format them so they can be securely injected.
+        
+        Provide your response in EXACTLY this format (with no trailing comments or extra Markdown):
+        
+        PROJECT_NAME: [A concise, clean name for the project or space, default: Spontaneous Sandbox]
+        PROJECT_DESC: [A concise description, default: Unified brainstorming, tracking, and features.]
+        
+        IDEA_START
+        TITLE: [Brief, crisp title, max 6 words]
+        DETAILS: [Brief 1-2 sentence description explaining the item]
+        STATUS: [either "approved" if it sounds like a definitive directive, or "pending" if it is proposed]
+        IDEA_END
+
+        IDEA_START
+        TITLE: [Next item]
+        DETAILS: [Next description]
+        STATUS: [either "approved" or "pending"]
+        IDEA_END
+
+        Raw brain-dump content:
+        ${rawDump}
+      `;
+
+      const response = await fetch('/api/gemini/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: promptText }],
+          context: `Focus purely on extracting distinct actionable concepts. Follow guidelines: ${aiContextRules || ''}`
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server API failure: ${response.status}`);
+      }
+      if (!response.body) throw new Error('No body stream response.');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let currentContent = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const chunkLines = chunk.split('\n');
+        for (const line of chunkLines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                currentContent += data.text;
+              }
+            } catch (e) {
+              // partial chunk parse ignore
+            }
+          }
+        }
+      }
+
+      let finalProjName = 'Spontaneous Sandbox';
+      let finalProjDesc = 'Autonomous roadmap synthesized by DevSpace Idea Engine.';
+
+      const nameMatch = currentContent.match(/PROJECT_NAME:\s*(.*)/i);
+      if (nameMatch) finalProjName = nameMatch[1].trim();
+
+      const descMatch = currentContent.match(/PROJECT_DESC:\s*(.*)/i);
+      if (descMatch) finalProjDesc = descMatch[1].trim();
+
+      const regex = /IDEA_START\s*([\s\S]*?)\s*IDEA_END/g;
+      let match;
+      const parsedIdeas: any[] = [];
+
+      while ((match = regex.exec(currentContent)) !== null) {
+        const block = match[1];
+        let title = '';
+        let details = '';
+        let status: 'approved' | 'pending' = 'pending';
+
+        const titleMatch = block.match(/TITLE:\s*(.*)/i);
+        if (titleMatch) title = titleMatch[1].trim();
+
+        const detailsMatch = block.match(/DETAILS:\s*(.*)/i);
+        if (detailsMatch) details = detailsMatch[1].trim();
+
+        const statusMatch = block.match(/STATUS:\s*(.*)/i);
+        if (statusMatch) {
+          const sVal = statusMatch[1].trim().toLowerCase();
+          if (sVal.includes('approved')) {
+            status = 'approved';
+          }
+        }
+
+        if (title) {
+          parsedIdeas.push({
+            id: `idea-${Date.now()}-${Math.floor(Math.random() * 105100)}`,
+            text: title,
+            details: details || 'Extracted dynamically via Voice/Text Brain Dump.',
+            status,
+            createdAt: Date.now()
+          });
+        }
+      }
+
+      if (parsedIdeas.length === 0) {
+        alert("The AI analyzer had trouble generating structured ideas in the specified format. Try writing with more distinct directives!");
+        setIsSortingAndInjecting(false);
+        return;
+      }
+
+      if (!targetProjectId) {
+        const newProjId = addProject({
+          name: finalProjName,
+          description: finalProjDesc,
+          frameworks: ['React', 'TypeScript', 'Tailwind CSS'],
+          apiConnections: [],
+          launchTarget: 'Vercel',
+          status: 'Active',
+          featuresCount: parsedIdeas.filter(i => i.status === 'approved').length,
+          totalFeaturesCount: parsedIdeas.length,
+          progressPercent: 10,
+          daysUntilAddition: 30,
+          customStack: ['React', 'TypeScript', 'Tailwind CSS'],
+          seenRecommendedIdeas: [],
+          brainstormIdeas: parsedIdeas
+        });
+
+        setActiveProjectId(newProjId);
+        setTargetProjectId(newProjId);
+        alert(`🚀 Successfully processed chaotic dump! Generated brand new Project: "${finalProjName}" containing ${parsedIdeas.length} sorted brainstorm ideas!`);
+      } else {
+        const targetProjObj = projects.find(p => p.id === targetProjectId);
+        if (targetProjObj) {
+          const existingList = [...(targetProjObj.brainstormIdeas || [])];
+          let addedCount = 0;
+          parsedIdeas.forEach(newId => {
+            if (!existingList.some(e => e.text.toLowerCase() === newId.text.toLowerCase())) {
+              existingList.push(newId);
+              addedCount++;
+            }
+          });
+
+          existingList.sort((a, b) => a.text.localeCompare(b.text));
+
+          updateProject(targetProjectId, {
+            brainstormIdeas: existingList
+          });
+
+          alert(`🔮 Successfully sorted and injected into "${targetProjObj.name}"! Synced ${parsedIdeas.length} concepts (${addedCount} newly added to the Brainstorm sandbox).`);
+        }
+      }
+    } catch (e: any) {
+      alert("Error parsing and sorting your chaotic dump: " + e.message);
+    }
+
+    setIsSortingAndInjecting(false);
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(output);
     setIsCopying(true);
@@ -286,6 +457,143 @@ export function IdeaExpansion() {
       setActiveProjectId(targetProjectId);
       alert("Tasks and phases successfully pushed to issues!");
     }, 500);
+  };
+
+  const extractProjectDetails = (markdown: string) => {
+    const lines = markdown.split('\n');
+    let name = "";
+    let description = "";
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('# ')) {
+        name = trimmed.slice(2).replace(/MVP Plan:\s*/i, '').replace(/\*\*/g, '').trim();
+        break;
+      } else if (trimmed.startsWith('## ')) {
+        name = trimmed.slice(3).replace(/MVP Plan:\s*/i, '').replace(/\*\*/g, '').trim();
+        break;
+      }
+    }
+
+    let summaryIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].toLowerCase().includes('summary') || lines[i].toLowerCase().includes('executive summary')) {
+        summaryIdx = i;
+        break;
+      }
+    }
+    if (summaryIdx !== -1) {
+      for (let j = summaryIdx + 1; j < lines.length; j++) {
+        const trimmed = lines[j].trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          description = trimmed.replace(/\*\*/g, '').trim();
+          break;
+        }
+      }
+    }
+
+    if (!name) name = "Spontaneous Idea Space";
+    if (!description) description = "Autonomous roadmap synthesized by DevSpace Idea Engine.";
+
+    return { name, description };
+  };
+
+  const handleAutoSortIntoProject = () => {
+    if (!output) {
+      alert("Please generate or enter a plan first.");
+      return;
+    }
+    setIsPushing(true);
+    
+    try {
+      const { name, description } = extractProjectDetails(output);
+      
+      const newProjectId = addProject({
+        name,
+        description,
+        frameworks: ['React', 'TypeScript', 'Tailwind CSS'],
+        apiConnections: [],
+        launchTarget: 'Vercel',
+        status: 'Active',
+        featuresCount: 0,
+        totalFeaturesCount: 20,
+        progressPercent: 0,
+        daysUntilAddition: 30,
+        customStack: ['React', 'TypeScript', 'Tailwind CSS'],
+        seenRecommendedIdeas: [],
+        brainstormIdeas: [
+          {
+            id: `idea-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            text: `Original Concept Pitch`,
+            details: rawDump || "Synthesized raw ideas and concept constraints.",
+            status: 'approved',
+            createdAt: Date.now()
+          }
+        ]
+      });
+
+      const lines = output.split('\n');
+      let phaseCount = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+         const line = lines[i].trim();
+         
+         if (line.match(/^(###|####|##)?\s*Phase\s*\d+/i)) {
+            phaseCount++;
+            const phaseName = line.replace(/^(###|####|##)?/, '').trim();
+            
+            let nextMonth = new Date().getMonth() + phaseCount;
+            let year = new Date().getFullYear();
+            if (nextMonth > 11) {
+              nextMonth -= 12;
+              year++;
+            }
+            
+            const startDate = `${year}-${String(nextMonth + 1).padStart(2, '0')}-01`;
+            const endDate = '1';
+            
+            const colors = [
+               'text-blue-500 bg-blue-500 border-blue-500', 
+               'text-amber-500 bg-amber-500 border-amber-500', 
+               'text-emerald-500 bg-emerald-500 border-emerald-500', 
+               'text-purple-500 bg-purple-500 border-purple-500'
+            ];
+            
+            addPhase({
+               projectId: newProjectId,
+               name: phaseName,
+               startDate,
+               endDate,
+               color: colors[phaseCount % colors.length]
+            });
+         } else if (line.match(/^-\s+/) || line.match(/^\*\s+/)) {
+            const title = line.replace(/^[-*]\s+/, '').replace(/\*\*/g, '').trim();
+            if (title.length > 5) {
+               addIssue({
+                 projectId: newProjectId,
+                 title: title.slice(0, 80),
+                 description: title.length > 80 ? title : undefined,
+                 type: 'Task',
+                 status: 'Todo',
+                 priority: 'Medium'
+               });
+            }
+         }
+      }
+
+      setTargetProjectId(newProjectId);
+      setActiveProjectId(newProjectId);
+
+      if ('speechSynthesis' in window) {
+         window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Project ${name} created. All features and sandbox logs sorted.`));
+      }
+
+      alert(`⚡ SUCCESS! DevSpace sorted this plan into a brand-new project: "${name}"!\nEverything is now linked and accessible under Project Spaces.`);
+    } catch (e: any) {
+      alert("Error during automated project sorting: " + e.message);
+    } finally {
+      setIsPushing(false);
+    }
   };
 
   // Submit Wizard Questionnaire and Create New Project
@@ -394,6 +702,30 @@ export function IdeaExpansion() {
           <div className="flex-1 p-3 flex flex-col relative min-h-0 overflow-y-auto">
              {ideaInputTab === 'freeform' ? (
                <div className="flex-1 flex flex-col min-h-0">
+                 {/* Target project contextual selector */}
+                 <div className="px-1.5 py-1.5 border-b border-zinc-850/60 bg-zinc-950/20 flex flex-col gap-1.5 shrink-0 mb-3.5">
+                   <div className="flex items-center justify-between">
+                      <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono">Target Workspace</label>
+                      <span className="text-[8px] text-zinc-550 font-mono">Dump will sync here</span>
+                   </div>
+                   <select 
+                     value={targetProjectId}
+                     onChange={(e) => {
+                        if (e.target.value === 'NEW_WIZARD') {
+                          setShowNewProjectWizard(true);
+                        } else {
+                          setTargetProjectId(e.target.value);
+                        }
+                     }}
+                     className="w-full bg-[#0d0d10] border border-zinc-850 text-[10.5px] text-zinc-350 rounded px-2 py-1 outline-none focus:border-pink-500/50 hover:border-zinc-800 cursor-pointer"
+                   >
+                     <option value="">[Create New Project Sandbox]</option>
+                     {projects.map(p => (
+                        <option key={p.id} value={p.id}>Add to existing: {p.name}</option>
+                     ))}
+                   </select>
+                 </div>
+
                  <textarea 
                    value={rawDump}
                    onChange={(e) => setRawDump(e.target.value)}
@@ -402,7 +734,7 @@ export function IdeaExpansion() {
                    autoFocus
                  />
                  {isRecording && (
-                    <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-[#09090b]/90 backdrop-blur-md border border-zinc-800 rounded-lg py-1 px-2 text-[10px] text-zinc-300 shadow-md">
+                    <div className="absolute bottom-12 left-3 flex items-center gap-2 bg-[#09090b]/90 backdrop-blur-md border border-zinc-800 rounded-lg py-1 px-2 text-[10px] text-zinc-300 shadow-md">
                        <div className="flex gap-0.5 items-end justify-center h-4 w-10">
                           {[1, 2, 3, 4, 1, 2].map((bar, idx) => (
                              <div 
@@ -418,18 +750,37 @@ export function IdeaExpansion() {
                        <span className="font-mono text-[9px] text-zinc-400">Vocal flow active...</span>
                     </div>
                  )}
-                 <div className="absolute bottom-3 right-3 flex items-center justify-end">
+                 <div className="mt-auto pt-3 border-t border-zinc-850/50 flex items-center justify-between gap-2 bg-transparent shrink-0">
+                   <button
+                     type="button"
+                     disabled={isSortingAndInjecting || !rawDump.trim()}
+                     onClick={handleAutoSortAndInject}
+                     className="flex-grow bg-[#4f46e5]/10 hover:bg-[#4f46e5]/20 hover:border-[#4f46e5]/40 border border-zinc-800 text-[#a5b4fc] text-[10px] font-bold px-3 py-1.5 rounded transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                   >
+                     {isSortingAndInjecting ? (
+                       <>
+                         <Loader2 size={11} className="animate-spin text-indigo-400" />
+                         Sorting & Injecting...
+                       </>
+                     ) : (
+                       <>
+                         <BrainCircuit size={11} />
+                         ⚡ Auto-Sort & Inject
+                       </>
+                     )}
+                   </button>
+
                    <button 
                      onClick={toggleRecording}
-                     className={`p-2 rounded-full transition-all shadow-md flex items-center gap-2 ${
+                     className={`p-1.5 rounded transition-all shadow-md flex items-center gap-1.5 shrink-0 ${
                         isRecording 
                           ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse' 
                           : 'bg-[#1a1a1e] hover:bg-zinc-700 text-zinc-400 border border-zinc-700'
                      }`}
                      title="Toggle Voice Dictation"
                    >
-                     {isRecording ? <StopCircle size={14} /> : <Mic size={14} />}
-                     {isRecording && <span className="text-[10px] font-medium pr-1">Listening...</span>}
+                     {isRecording ? <StopCircle size={12} /> : <Mic size={12} />}
+                     {isRecording && <span className="text-[9px] font-medium pr-0.5">Listening...</span>}
                    </button>
                  </div>
                </div>
@@ -595,11 +946,20 @@ export function IdeaExpansion() {
                    </>
                 )}
                 
-                <button onClick={handleCopy} className="text-[10px] bg-zinc-800 px-2 py-1.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition flex items-center gap-1 border border-zinc-700">
+                <button onClick={handleCopy} className="text-[10px] bg-zinc-800 px-2 py-1.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition flex items-center gap-1 border border-zinc-700 cursor-pointer">
                   <LayoutList size={12} /> {isCopying ? 'Copied!' : 'Copy Plan'}
                 </button>
 
-                <button onClick={handlePushToIssues} disabled={isPushing} className="text-[10px] bg-pink-650 px-2.5 py-1.5 rounded text-white hover:bg-pink-500 transition flex items-center gap-1 border border-pink-500/30 disabled:opacity-50 font-semibold select-none">
+                <button 
+                  onClick={handleAutoSortIntoProject} 
+                  disabled={isPushing} 
+                  className="text-[10px] bg-indigo-700 hover:bg-indigo-600 px-2.5 py-1.5 rounded text-indigo-50 hover:text-white transition flex items-center gap-1.5 border border-indigo-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer shadow-md shadow-indigo-950/45"
+                  title="Auto-extract elements, create a project space, and sort all milestones/tasks"
+                >
+                  <FolderPlus size={12} /> Auto-Create & Sort ⚡
+                </button>
+
+                <button onClick={handlePushToIssues} disabled={isPushing} className="text-[10px] bg-pink-650 px-2.5 py-1.5 rounded text-white hover:bg-pink-500 transition flex items-center gap-1 border border-pink-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer">
                   {isPushing ? <Loader2 size={12} className="animate-spin" /> : <CheckSquare size={12} />} Push to Issues
                 </button>
              </div>

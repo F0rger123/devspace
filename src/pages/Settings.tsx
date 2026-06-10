@@ -1,11 +1,21 @@
 import { useState } from 'react';
-import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot } from 'lucide-react';
+import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useData } from '../context/DataProvider';
 
 export function Settings() {
-  const { aiContextRules, setAiContextRules, aiPersona, setAiPersona } = useData();
-  const [activeTab, setActiveTab] = useState('integrations');
+  const { 
+    aiContextRules, setAiContextRules, 
+    aiPersona, setAiPersona,
+    aetherControlNotes, setAetherControlNotes,
+    aetherControlIssues, setAetherControlIssues,
+    aetherControlAgents, setAetherControlAgents,
+    aetherControlBrainstorm, setAetherControlBrainstorm,
+    aetherControlIntegrations, setAetherControlIntegrations,
+    aetherDoubleConfirm, setAetherDoubleConfirm,
+    aetherAutoRecommend, setAetherAutoRecommend
+  } = useData();
+  const [activeTab, setActiveTab] = useState('aether');
 
   const integrations = [
     { id: 'github', name: 'GitHub', icon: Github, description: 'Sync repositories, issues, and PR status.', connected: true, color: 'text-zinc-100' },
@@ -32,23 +42,278 @@ export function Settings() {
       <div className="flex gap-6 h-full">
         {/* Settings Navigation */}
         <div className="w-48 shrink-0 flex flex-col gap-1">
-          {['profile', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
+          {['profile', 'aether', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`text-left px-3 py-2 rounded-md text-xs font-medium transition-colors ${
                 activeTab === tab
-                  ? 'bg-zinc-800/80 text-zinc-100'
+                  ? 'bg-[#18181b] border border-zinc-800 text-zinc-100 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
         </div>
 
         {/* Settings Content */}
-        <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl p-6 overflow-y-auto">
+        <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl p-6 overflow-y-auto w-full">
+          {activeTab === 'aether' && (
+            <div className="space-y-6 animate-fade-in text-zinc-300">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                  <Sparkles size={16} className="text-purple-400" /> Aether AI Autonomy & Operations Core
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  Configure the permissions, operational boundaries, and security barriers of your central workspace companion.
+                </p>
+              </div>
+
+              {/* Autonomy Rating Card */}
+              <div className="bg-gradient-to-r from-purple-950/20 via-zinc-900 to-zinc-950 border border-purple-500/10 rounded-lg p-5">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-mono tracking-widest text-purple-400 font-bold uppercase">Aether System Matrix</span>
+                    <h4 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                      Current Agency Class: <span className="text-purple-300 font-mono font-semibold">
+                        {!aetherControlNotes && !aetherControlIssues && !aetherControlAgents && !aetherControlBrainstorm && !aetherControlIntegrations
+                          ? "OBSERVER ONLY"
+                          : aetherDoubleConfirm
+                            ? "GUARDED COPILOT"
+                            : "AUTONOMOUS ORACLE"}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-zinc-400 max-w-xl leading-relaxed mt-1">
+                      Aether's action limits are governed dynamically by the checklist below. In Guarded mode, confirmation boundaries protect critical files. In Full Autonomy mode, background code improvement processes carry out actions automatically.
+                    </p>
+                  </div>
+                  <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-full animate-pulse">
+                    <Bot className="text-purple-400" size={24} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-zinc-850 text-center font-mono text-[10px]">
+                  <div className="bg-zinc-950/30 p-2.5 rounded border border-zinc-900">
+                    <div className="text-zinc-500 mb-0.5 uppercase tracking-wider">ACTIVE HANDLERS</div>
+                    <div className="text-zinc-200 font-bold text-xs">
+                      {[aetherControlNotes, aetherControlIssues, aetherControlAgents, aetherControlBrainstorm, aetherControlIntegrations].filter(Boolean).length} / 5
+                    </div>
+                  </div>
+                  <div className="bg-zinc-950/30 p-2.5 rounded border border-zinc-900">
+                    <div className="text-zinc-500 mb-0.5 uppercase tracking-wider">DOUBLE CONFIRMS</div>
+                    <div className="text-zinc-200 font-bold text-xs">
+                      {aetherDoubleConfirm ? "ENABLED ✅" : "BYPASSED ⚡"}
+                    </div>
+                  </div>
+                  <div className="bg-zinc-950/30 p-2.5 rounded border border-zinc-900">
+                    <div className="text-zinc-500 mb-0.5 uppercase tracking-wider">LOOK-AHEAD ENGINE</div>
+                    <div className="text-zinc-200 font-bold text-xs">
+                      {aetherAutoRecommend ? "REAL-TIME" : "PAUSED"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Double Confirm Toggle */}
+              <div className="border border-zinc-850 bg-[#09090b] rounded-lg p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="pr-4">
+                    <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-emerald-400" /> Double-Confirm System Decisions
+                    </h4>
+                    <p className="text-[10px] text-zinc-500 max-w-md mt-0.5 leading-relaxed">
+                      Always require manual click confirmations before Aether executes tasks, auto-approves brainstorm recommendations, recruits sandbox sub-agents, or updates DB schema layouts.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={aetherDoubleConfirm}
+                      onChange={(e) => setAetherDoubleConfirm(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500 peer-checked:after:bg-white peer-checked:after:border-emerald-500"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* What Aether can control */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="text-xs font-semibold text-zinc-200">Granular Autonomous Handlers</h4>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">Toggle what domains of your workspace Aether can autonomously command and control.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Notes Control */}
+                  <div className={`p-4 border rounded-lg transition-all ${aetherControlNotes ? 'border-purple-500/30 bg-[#0c0c0e]' : 'border-zinc-800/40 bg-zinc-950/30 opacity-70'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                           📂 Notes & Workspace Docs Archivist
+                        </span>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Allow Aether to index files, compile meeting briefs, write markdown files, and sync project guidelines with documentation.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer mt-0.5 select-none text-right">
+                        <input 
+                          type="checkbox" 
+                          checked={aetherControlNotes}
+                          onChange={(e) => setAetherControlNotes(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500 peer-checked:after:bg-white"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Issues Control */}
+                  <div className={`p-4 border rounded-lg transition-all ${aetherControlIssues ? 'border-purple-500/30 bg-[#0c0c0e]' : 'border-zinc-800/40 bg-zinc-950/30 opacity-70'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                           🎯 Issues & Scrum Ticket Backlog
+                        </span>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Allow Aether to dynamically generate issues, prioritize tickets based on commits, assign team sprint parameters, and track task completions.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer mt-0.5 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={aetherControlIssues}
+                          onChange={(e) => setAetherControlIssues(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500 peer-checked:after:bg-white"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Agents Control */}
+                  <div className={`p-4 border rounded-lg transition-all ${aetherControlAgents ? 'border-purple-500/30 bg-[#0c0c0e]' : 'border-zinc-800/40 bg-zinc-950/30 opacity-70'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                           🤖 Agent Recruiting & Task Delegation
+                        </span>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Empower Aether to command and allocate workspace sub-agents (Claude Bot, Sentinel, Jules AI) to solve distinct tasks.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer mt-0.5 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={aetherControlAgents}
+                          onChange={(e) => setAetherControlAgents(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500 peer-checked:after:bg-white"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Brainstorm Control */}
+                  <div className={`p-4 border rounded-lg transition-all ${aetherControlBrainstorm ? 'border-purple-500/30 bg-[#0c0c0e]' : 'border-zinc-800/40 bg-zinc-950/30 opacity-70'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                           🔮 Dreamscape Brainstorm Sandbox
+                        </span>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Allow Aether to run background refactoring dreams, trigger deep-thinking sessions, and propose code improvements.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer mt-0.5 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={aetherControlBrainstorm}
+                          onChange={(e) => setAetherControlBrainstorm(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500 peer-checked:after:bg-white"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Integrations Control */}
+                  <div className={`p-4 border rounded-lg transition-all ${aetherControlIntegrations ? 'border-purple-500/30 bg-[#0c0c0e]' : 'border-zinc-800/40 bg-zinc-950/30 opacity-70'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                           🔌 External Integrations Sync
+                        </span>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Instruct Aether to automatically poll GitHub issues, coordinate deployment variables on Vercel, and inspect payment webhooks.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer mt-0.5 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={aetherControlIntegrations}
+                          onChange={(e) => setAetherControlIntegrations(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500 peer-checked:after:bg-white"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Proactive Look-aheads */}
+                  <div className={`p-4 border rounded-lg transition-all ${aetherAutoRecommend ? 'border-purple-500/30 bg-[#0c0c0e]' : 'border-zinc-800/40 bg-zinc-950/30 opacity-70'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                           💡 Proactive Look-Aheads
+                        </span>
+                        <p className="text-[10px] text-zinc-500 leading-relaxed">
+                          Provide automatic recommendations, ask to delegate tasks to different agents, and offer new feature ideas as you navigate the platform.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer mt-0.5 select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={aetherAutoRecommend}
+                          onChange={(e) => setAetherAutoRecommend(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-zinc-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500 peer-checked:after:bg-white"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Aether Capabilities Panel */}
+              <div className="border border-zinc-800/80 bg-zinc-950/40 p-4 rounded-lg">
+                <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5 mb-2">
+                   🧭 Matrix Intelligence Diagnostics
+                </h4>
+                <div className="space-y-2 text-[11px] text-zinc-400">
+                  <p>
+                    Aether runs on Gemini-powered semantic models. When toggles are activated, Aether's contextual intelligence changes the prompt instructions fed into AI routes dynamically, modifying authorization levels across your Obsidian Synaptic brain.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlNotes ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
+                      Notes Daemon Mode
+                    </span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlIssues ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
+                      Sprints Watcher
+                    </span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlAgents ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
+                      Subagent Commander
+                    </span>
+                    <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlBrainstorm ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
+                      Dreamweaver Core
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'integrations' && (
             <div className="space-y-6">
               <div>
@@ -210,28 +475,28 @@ export function Settings() {
           {activeTab === 'billing' && (
             <div className="space-y-6 animate-fade-in">
               <div>
-                <h3 className="text-sm font-semibold text-zinc-100 mb-1">Billing & Sandbox Quotas</h3>
-                <p className="text-xs text-zinc-400">View sandboxed compute limits and active developer subscriptions.</p>
+                <h3 className="text-sm font-semibold text-zinc-100 mb-1">Sandbox Infrastructure & Quotas</h3>
+                <p className="text-xs text-zinc-400">View sandboxed compute limits and active developer resources.</p>
               </div>
 
               {/* Plans Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="border border-blue-500/30 bg-[#1e3a8a]/10 rounded-lg p-4 flex flex-col justify-between">
+                <div className="border border-blue-500/20 bg-blue-950/[0.04] rounded-lg p-4 flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest">Active Plan</span>
-                      <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 font-mono">DEV CREDIT ACTIVE</span>
+                      <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest">Active Tier</span>
+                      <span className="text-[9px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/15 font-mono">SANDBOX ACTIVE</span>
                     </div>
-                    <h4 className="text-sm font-bold text-zinc-100">DevSpace Ultimate Premium</h4>
-                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">Boundless model streaming, workspace integrations, and full indexing permissions enabled for developer: <code className="text-zinc-200">drummerforger@gmail.com</code>.</p>
+                    <h4 className="text-sm font-bold text-zinc-100">DevSpace Local Developer Environment</h4>
+                    <p className="text-xs text-zinc-400 mt-1 leading-relaxed">Direct connection established to Port 3000. Full compiler sandboxing, terminal access, and workspace integrations run natively inside the container shell.</p>
                   </div>
-                  <div className="mt-4 pt-3 border-t border-zinc-800/50 flex justify-between items-center">
-                    <span className="text-xs text-zinc-500">Valued at $49/mo</span>
-                    <span className="text-xs text-emerald-400 font-semibold">Free Sandbox Tier</span>
+                  <div className="mt-4 pt-3 border-t border-zinc-900 flex justify-between items-center">
+                    <span className="text-xs text-zinc-500">Local Environment</span>
+                    <span className="text-xs text-emerald-400 font-semibold">Free Developer Tier</span>
                   </div>
                 </div>
 
-                <div className="border border-zinc-800 bg-[#09090b] rounded-lg p-4 flex flex-col justify-between">
+                <div className="border border-zinc-900 bg-[#09090b] rounded-lg p-4 flex flex-col justify-between">
                   <div>
                     <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-2">Workspace Compute Quotas</h4>
                     <div className="space-y-3 font-sans">
@@ -255,35 +520,35 @@ export function Settings() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-4 pt-3 border-t border-zinc-800/50 flex justify-end">
-                    <span className="text-[10px] text-zinc-500 font-mono">Quotas renew monthly</span>
+                  <div className="mt-4 pt-3 border-t border-zinc-900 flex justify-end">
+                    <span className="text-[10px] text-zinc-500 font-mono">Quotas auto-recycle</span>
                   </div>
                 </div>
               </div>
 
-              {/* Transactions/Invoices */}
-              <div className="border border-zinc-800 rounded-lg overflow-hidden bg-[#09090b]">
-                <div className="px-4 py-3 bg-[#121214] border-b border-zinc-800">
-                  <h4 className="text-xs font-semibold text-zinc-200">Sandbox Invoices (Pre-paid / Academic)</h4>
+              {/* Network and Ports Allocation */}
+              <div className="border border-zinc-900 rounded-lg overflow-hidden bg-[#09090b]">
+                <div className="px-4 py-3 bg-[#121214] border-b border-zinc-900">
+                  <h4 className="text-xs font-semibold text-zinc-200">Sandbox Network & Exposed Ports Routing</h4>
                 </div>
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-zinc-900/10 border-b border-zinc-800 text-[11px]">
-                      <th className="px-4 py-3 font-medium text-zinc-400">Invoice ID</th>
-                      <th className="px-4 py-3 font-medium text-zinc-400">Billing Date</th>
-                      <th className="px-4 py-3 font-medium text-zinc-400 text-right">Credit Utilized</th>
+                      <th className="px-4 py-3 font-medium text-zinc-400">Endpoint / Port</th>
+                      <th className="px-4 py-3 font-medium text-zinc-400">Routing Mode</th>
+                      <th className="px-4 py-3 font-medium text-zinc-400 text-right">Ingress Security</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b border-zinc-800/50">
-                      <td className="px-4 py-3 text-zinc-300 font-medium">INV-2026-004</td>
-                      <td className="px-4 py-3 text-zinc-500">May 15, 2026</td>
-                      <td className="px-4 py-3 text-right font-medium text-emerald-400 font-mono">-$49.00 (100% Credit)</td>
+                    <tr className="border-b border-zinc-900/40">
+                      <td className="px-4 py-3 text-zinc-350 font-mono">http://0.0.0.0:3000</td>
+                      <td className="px-4 py-3 text-zinc-500">Local Dev Ingress</td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-450 font-mono font-bold">Nginx Proxied Gate (OK)</td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 text-zinc-300 font-medium">INV-2026-003</td>
-                      <td className="px-4 py-3 text-zinc-500 font-medium text-zinc-500">Apr 15, 2026</td>
-                      <td className="px-4 py-3 text-right font-medium text-emerald-400 font-mono">-$49.00 (100% Credit)</td>
+                      <td className="px-4 py-3 text-zinc-355 font-mono">/api/gemini/*</td>
+                      <td className="px-4 py-3 text-zinc-500">Secure Direct Server Channels</td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-450 font-mono font-bold">Server-Side Guarded</td>
                     </tr>
                   </tbody>
                 </table>

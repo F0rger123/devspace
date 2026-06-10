@@ -16,7 +16,6 @@ creds.json
 credentials.json
 serviceAccountKey.json
 service-account*.json
-firebase-applet-config.json
 
 # Local configurations and cache
 .firebase/

@@ -1,6 +1,52 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Zap, Code2, Database, Github, Send, Terminal, Cpu, Paperclip, Mic, StopCircle, Image as ImageIcon, X } from 'lucide-react';
+import { 
+  Bot, 
+  Zap, 
+  Code2, 
+  Database, 
+  Github, 
+  Send, 
+  Terminal, 
+  Cpu, 
+  Paperclip, 
+  Mic, 
+  StopCircle, 
+  Image as ImageIcon, 
+  X, 
+  Maximize2, 
+  Minimize2, 
+  Sparkles, 
+  Volume2, 
+  VolumeX, 
+  CheckCircle2, 
+  AlertCircle, 
+  Loader2, 
+  Layers, 
+  Map, 
+  CheckSquare, 
+  PlayCircle,
+  HelpCircle,
+  Plus,
+  Trash2,
+  Settings,
+  Play,
+  Shield,
+  Sliders,
+  Check,
+  Globe,
+  Key,
+  Lock,
+  RefreshCw,
+  FileText,
+  Edit3,
+  Server,
+  Activity,
+  Eye,
+  Compass,
+  Menu
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -12,23 +58,310 @@ type Message = {
   id: string;
   role: 'user' | 'agent';
   content: string;
+  isVoice?: boolean;
+  actionFeedback?: string;
 };
 
-export function RightSidebar() {
-  const { aiContextRules, setAiContextRules } = useData();
-  const { isRightSidebarOpen, toggleRightSidebar } = useStore();
+export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
+  const navigate = useNavigate();
+  const { 
+    projects, 
+    addProject, 
+    updateProject, 
+    issues, 
+    addIssue, 
+    updateIssue, 
+    notes, 
+    addNote, 
+    phases, 
+    agents, 
+    aiContextRules, 
+    setAiContextRules, 
+    activeProjectId, 
+    setActiveProjectId,
+    cortexSynapses,
+    setCortexSynapses,
+    addVoiceAction,
+    aetherControlNotes,
+    aetherControlIssues,
+    aetherControlAgents,
+    aetherControlBrainstorm,
+    aetherControlIntegrations,
+    aetherDoubleConfirm,
+    aetherAutoRecommend
+  } = useData();
+
+  const { 
+    isRightSidebarOpen, 
+    toggleRightSidebar, 
+    isRightSidebarExpanded, 
+    toggleRightSidebarExpanded 
+  } = useStore();
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'agent',
-      content: 'System online. I am actively monitoring your local changes and CI/CD pipelines. How can I assist you today?'
+      content: 'System online. I am Aether, your central brain orchestrator. I have full synaptic mapping to your Obsidian Notes, Maps of Spring, and AgenticOS. How can I assist you today?'
     }
   ]);
+
+  // Session states for past conversations
+  const [chatSessions, setChatSessions] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_chat_sessions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [
+      {
+        id: 'session-default',
+        title: 'Central Orchestrator Session',
+        createdAt: Date.now(),
+        messages: [
+          {
+            id: '1',
+            role: 'agent',
+            content: 'System online. I am Aether, your central brain orchestrator. I have full synaptic mapping to your Obsidian Notes, Maps of Spring, and AgenticOS. How can I assist you today?'
+          }
+        ]
+      },
+      {
+        id: 'session-2',
+        title: 'Source Code Refactor Audit',
+        createdAt: Date.now() - 3600000,
+        messages: [
+          { id: 'u1', role: 'user', content: 'Design a clean state sync for local storage' },
+          { id: 'a1', role: 'agent', content: 'Created synchronized hooks with debounce timers inside VoiceHub to protect backend gateways from API rate limiting.' }
+        ]
+      }
+    ];
+  });
+  const [currentSessionId, setCurrentSessionId] = useState<string>('session-default');
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionTitle, setEditingSessionTitle] = useState<string>('');
+
+  // Right Inspector active tab
+  const [rightInspectorTab, setRightInspectorTab] = useState<'sessions' | 'automations' | 'mcp' | 'access' | 'synapses'>('sessions');
+
+  // Custom MCP configurations
+  const [mcpServers, setMcpServers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_mcp_servers');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      { id: 'mcp-1', name: 'Filesystem Access Core', url: 'http://localhost:5001/mcp/files', active: true, authType: 'Bearer Link', token: 'fs_token_aether_928' },
+      { id: 'mcp-2', name: 'GitHub Integration Module', url: 'https://api.github.com/mcp', active: false, authType: 'OAuth Node', token: '' },
+      { id: 'mcp-3', name: 'PostgreSQL Relational Explorer', url: 'http://localhost:5432/mcp', active: true, authType: 'None', token: '' }
+    ];
+  });
+
+  const [newMcpName, setNewMcpName] = useState('');
+  const [newMcpUrl, setNewMcpUrl] = useState('');
+  const [newMcpToken, setNewMcpToken] = useState('');
+  const [newMcpAuthType, setNewMcpAuthType] = useState('Bearer Token');
+
+  // Customizable fine-grained permissions
+  const [accessControls, setAccessControls] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('aether_access_controls');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      fileReadWrite: 'granted', // 'granted', 'read-only', 'restricted'
+      networkFetch: true,
+      dbSync: true,
+      sandboxIngress: true,
+      credentialsAccess: false,
+      telegramBridge: true,
+      whatsappBridge: true
+    };
+  });
+
+  // Customize Assistant Model Settings
+  const [aiSettings, setAiSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aether_ai_settings');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      modelName: 'gemini-3.5-flash',
+      temperature: 0.72,
+      systemPersona: 'Aether Brain Orchestrator',
+      streamEnabled: true,
+      customEndpoint: 'https://generativelanguage.googleapis.com'
+    };
+  });
+
+  // Automations Studio (N-Level flow customizer and simulation agent)
+  const [automations, setAutomations] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_automations');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      {
+        id: 'auto-1',
+        name: 'Weekly Sprint Backlog Sweep',
+        desc: 'Scans backlog items in Active Phase, checks deadlines, and generates automated summary reports.',
+        trigger: 'timer_cron',
+        active: true,
+        steps: [
+          { id: 's1', type: 'query_db', label: 'Query Pending Backlog', config: { query: 'status = In Progress' }, status: 'success' },
+          { id: 's2', type: 'gemini_transform', label: 'Summarize Status Priorities', config: { prompt: 'Identify major issues and build a roadmap summary.' }, status: 'success' },
+          { id: 's3', type: 'code_run', label: 'Compile Workspace Note', config: { noteName: 'Sprint_Backlog_Report' }, status: 'success' }
+        ],
+        isRunningSim: false,
+        simLogs: []
+      },
+      {
+        id: 'auto-2',
+        name: 'Remote Ingress Dispatcher',
+        desc: 'Listens for simulation messages and triggers safe gateway webhooks with security verification.',
+        trigger: 'webhook_receipt',
+        active: false,
+        steps: [
+          { id: 's4', type: 'code_run', label: 'Fetch Live Telegram Commands', config: { params: 'pending-actions' }, status: 'idle' },
+          { id: 's5', type: 'delay_wait', label: 'Apply Safe Handshake Backoff', config: { delaySecs: 3 }, status: 'idle' },
+          { id: 's6', type: 'broadcast', label: 'Distribute Synapse Alert', config: { target: 'all-channels', message: 'Database state updated online.' }, status: 'idle' }
+        ],
+        isRunningSim: false,
+        simLogs: []
+      }
+    ];
+  });
+
+  const [activeAutoId, setActiveAutoId] = useState<string | null>(null);
+  const [newAutoName, setNewAutoName] = useState('');
+  const [newAutoDesc, setNewAutoDesc] = useState('');
+  const [newAutoTrigger, setNewAutoTrigger] = useState('manual_run');
+
+  // Load message feed dynamically from current session
+  useEffect(() => {
+    const session = chatSessions.find(s => s.id === currentSessionId);
+    if (session) {
+      setMessages(session.messages);
+    }
+  }, [currentSessionId]);
+
+  // Synchronize active messages updates to the active session object
+  useEffect(() => {
+    setChatSessions(prev => 
+      prev.map(s => s.id === currentSessionId ? { ...s, messages } : s)
+    );
+  }, [messages, currentSessionId]);
+
+  // Persist session variations automatically
+  useEffect(() => {
+    localStorage.setItem('aether_chat_sessions', JSON.stringify(chatSessions));
+  }, [chatSessions]);
+
+  useEffect(() => {
+    localStorage.setItem('aether_mcp_servers', JSON.stringify(mcpServers));
+  }, [mcpServers]);
+
+  useEffect(() => {
+    localStorage.setItem('aether_ai_settings', JSON.stringify(aiSettings));
+  }, [aiSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('aether_automations', JSON.stringify(automations));
+  }, [automations]);
+
+  useEffect(() => {
+    localStorage.setItem('aether_access_controls', JSON.stringify(accessControls));
+  }, [accessControls]);
+
+  // Helper to trigger live simulation step run
+  const triggerAutomationSimulation = (autoId: string) => {
+    setAutomations(prev => prev.map(a => {
+      if (a.id === autoId) {
+        return {
+          ...a,
+          isRunningSim: true,
+          simLogs: [`[SYSTEM] Starting execution flow: "${a.name}"`, `[TRIGGER] "${a.trigger.toUpperCase()}" fired successfully.`]
+        };
+      }
+      return a;
+    }));
+
+    // Step-by-step mock simulation timeouts
+    const targetAuto = automations.find(a => a.id === autoId);
+    if (!targetAuto) return;
+
+    let logCounter = 0;
+    const executeStep = (stepIdx: number) => {
+      if (stepIdx >= targetAuto.steps.length) {
+        setAutomations(prev => prev.map(a => {
+          if (a.id === autoId) {
+            return {
+              ...a,
+              isRunningSim: false,
+              simLogs: [...(a.simLogs || []), `[SUCCESS] Automation execution complete! All ${a.steps.length} nodes resolved successfully.`]
+            };
+          }
+          return a;
+        }));
+        return;
+      }
+
+      const step = targetAuto.steps[stepIdx];
+      setAutomations(prev => prev.map(a => {
+        if (a.id === autoId) {
+          const updatedSteps = [...a.steps];
+          updatedSteps[stepIdx] = { ...step, status: 'running' };
+          return {
+            ...a,
+            steps: updatedSteps,
+            simLogs: [...(a.simLogs || []), `[RUNNING] Executing Node: ${step.label} (${step.type})...`]
+          };
+        }
+        return a;
+      }));
+
+      setTimeout(() => {
+        setAutomations(prev => prev.map(a => {
+          if (a.id === autoId) {
+            const updatedSteps = [...a.steps];
+            updatedSteps[stepIdx] = { ...step, status: 'success' };
+            const detailText = step.type === 'query_db' ? 'Returned database stream (200 OK).' :
+                               step.type === 'gemini_transform' ? 'Processed transformed directives.' :
+                               step.type === 'code_run' ? 'Fitted logic inside mock environment.' :
+                               step.type === 'delay_wait' ? 'Delay threshold completed.' : 'Webhook distributed successfully.';
+            return {
+              ...a,
+              steps: updatedSteps,
+              simLogs: [...(a.simLogs || []), `[RESOLVED] Node "${step.label}" finished. Details: ${detailText}`]
+            };
+          }
+          return a;
+        }));
+        executeStep(stepIdx + 1);
+      }, 1200);
+    };
+
+    executeStep(0);
+  };
+
   const [inputValue, setInputValue] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [voiceAudioEnabled, setVoiceAudioEnabled] = useState(true);
+
+  // Audio recording states (for high-fidelity voice execution)
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const voiceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachedFiles, setAttachedFiles] = useState<{name: string, data: string, mime: string}[]>([]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -36,22 +369,40 @@ export function RightSidebar() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, isProcessing]);
 
+  // Audio recording timer loop
   useEffect(() => {
     let interval: any;
     if (isRecording) {
-       interval = setInterval(() => {
-          setRecordingTime(prev => prev + 1);
-       }, 1000);
+      interval = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
     } else {
-       setRecordingTime(0);
+      setRecordingSeconds(0);
     }
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [attachedFiles, setAttachedFiles] = useState<{name: string, data: string, mime: string}[]>([]);
+  // Text-To-Speech Synthesis
+  const speakVoiceReply = (text: string) => {
+    if (!voiceAudioEnabled) return;
+    try {
+      window.speechSynthesis?.cancel();
+      // Remove code snippets or markdown elements for standard human narrative voice
+      const spokenText = text
+        .replace(/```[\s\S]*?```/g, '[Displaying technical code block]')
+        .replace(/[*#`_\-]/g, ' ')
+        .trim();
+
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      window.speechSynthesis?.speak(utterance);
+    } catch (e) {
+      console.error('Speech playback failed:', e);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
      const file = e.target.files?.[0];
@@ -68,9 +419,261 @@ export function RightSidebar() {
      }
   };
 
+  // Dispatch matched Voice intent logic directly in frontend (same as in VoiceMemoAssistant)
+  const dispatchCommandAction = (intent: string, parsedData: any): string => {
+    if (!intent || intent === 'unknown' || !parsedData || intent === 'chat_query') {
+      return '';
+    }
+
+    let feedback = '';
+
+    switch (intent) {
+      case 'create_project': {
+        const name = parsedData.name || 'New Voice Project';
+        const description = parsedData.description || 'Drafted via Aether AI workspace direct command.';
+        const frameworks = parsedData.frameworks || ['React'];
+        const customStack = parsedData.customStack || frameworks;
+
+        const newId = addProject({
+          name,
+          description,
+          frameworks,
+          customStack,
+          status: 'Planning',
+          brainstormIdeas: [],
+          seenRecommendedIdeas: [],
+          dreamRecommendations: []
+        });
+
+        setActiveProjectId(newId);
+        feedback = `Bootstrapped Project: "${name}" initiated into workspace successfully.`;
+        break;
+      }
+
+      case 'create_issue': {
+        let projectId = parsedData.projectId;
+        if (!projectId && parsedData.projectNameMentioned) {
+          const matched = projects.find(p => 
+            p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase())
+          );
+          if (matched) projectId = matched.id;
+        }
+        if (!projectId) {
+          projectId = activeProjectId || projects[0]?.id;
+        }
+
+        if (!projectId) {
+          return 'Failed: No project exists to append task.';
+        }
+
+        const projectRef = projects.find(p => p.id === projectId);
+        const title = parsedData.title || 'Vocal Task';
+        const desc = parsedData.description || 'Transcribed via Aether workflow';
+        const type = parsedData.type || 'Task';
+        const priority = parsedData.priority || 'Medium';
+
+        addIssue({
+          projectId,
+          title,
+          description: desc,
+          type,
+          priority,
+          status: 'Todo'
+        });
+
+        feedback = `Appended Tasks: Added "${title}" to project backlog of "${projectRef?.name}".`;
+        break;
+      }
+
+      case 'update_issue_status': {
+        const mentionTitle = parsedData.issueTitleMentioned?.toLowerCase() || '';
+        const newStatus = parsedData.newStatus || 'Done';
+
+        let targetIssue = null;
+        if (mentionTitle) {
+          targetIssue = issues.find(iss => 
+            iss.title.toLowerCase().includes(mentionTitle)
+          );
+        }
+        if (!targetIssue && activeProjectId) {
+          targetIssue = issues.find(iss => 
+            iss.projectId === activeProjectId && iss.status !== 'Done'
+          );
+        }
+
+        if (targetIssue) {
+          updateIssue(targetIssue.id, { status: newStatus });
+          feedback = `Status Shift: "${targetIssue.title}" status modified to [${newStatus}].`;
+        } else {
+          feedback = `No issue matching "${mentionTitle || 'active item'}" discovered to coordinate.`;
+        }
+        break;
+      }
+
+      case 'add_brainstorm_idea': {
+        let projectId = parsedData.projectId;
+        if (!projectId && parsedData.projectNameMentioned) {
+          const matched = projects.find(p => 
+            p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase())
+          );
+          if (matched) projectId = matched.id;
+        }
+        if (!projectId) projectId = activeProjectId || projects[0]?.id;
+
+        if (!projectId) return 'Failed: No active project context.';
+
+        const projectRef = projects.find(p => p.id === projectId);
+        if (!projectRef) return 'Project lookup reference missing.';
+
+        const text = parsedData.text || 'Brainstorm idea';
+        const details = parsedData.details || '';
+
+        const existing = projectRef.brainstormIdeas || [];
+        const newIdea = {
+          id: crypto.randomUUID(),
+          text,
+          details,
+          status: 'pending' as const,
+          createdAt: Date.now()
+        };
+
+        updateProject(projectId, {
+          brainstormIdeas: [...existing, newIdea]
+        });
+
+        feedback = `Idea Synced: Registered brainstorm "${text}" underneath active project thoughts.`;
+        break;
+      }
+
+      case 'add_note': {
+        let projectId = parsedData.projectId;
+        if (!projectId && parsedData.projectNameMentioned) {
+          const matched = projects.find(p => 
+            p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase())
+          );
+          if (matched) projectId = matched.id;
+        }
+        if (!projectId) projectId = activeProjectId || projects[0]?.id;
+
+        if (!projectId) return 'Failed to save note: No project reference';
+
+        const title = parsedData.title || `Cognitive Note - ${new Date().toLocaleTimeString()}`;
+        const content = parsedData.content || 'Transcribed dynamically via Aether AI Workspace.';
+        const tags = parsedData.tags || ['AetherVoice'];
+
+        addNote({
+          projectId,
+          title,
+          content,
+          tags
+        });
+
+        feedback = `Written Note: Doc notes "${title}" created and saved in memory archives.`;
+        break;
+      }
+
+      case 'add_cortex_synapse': {
+        const name = parsedData.name || 'AI Memory Directive';
+        const desc = parsedData.desc || 'No instruction detail supplied.';
+        
+        setCortexSynapses(prev => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            name,
+            desc,
+            type: 'custom_synapse' as const,
+            createdAt: Date.now()
+          }
+        ]);
+        
+        feedback = `Synapse Wired: Add rules rule "${name}" to cognitive cortex.`;
+        break;
+      }
+
+      case 'approve_dream_recommendation': {
+        const mentionTitle = parsedData.title || parsedData.text || '';
+        let matchedRec: any = null;
+        let matchedProj: any = null;
+
+        for (const proj of projects) {
+          const recs = proj.dreamRecommendations || [];
+          const found = recs.find((r: any) => 
+            r.title.toLowerCase().includes(mentionTitle.toLowerCase()) || 
+            mentionTitle.toLowerCase().includes(r.title.toLowerCase())
+          );
+          if (found) {
+            matchedRec = found;
+            matchedProj = proj;
+            break;
+          }
+        }
+
+        if (!matchedRec) {
+          // fallback to first active unapproved
+          for (const proj of projects) {
+            const recs = proj.dreamRecommendations || [];
+            const found = recs.find((r: any) => r.status !== 'approved');
+            if (found) {
+              matchedRec = found;
+              matchedProj = proj;
+              break;
+            }
+          }
+        }
+
+        if (matchedRec && matchedProj) {
+          const brainstorms = matchedProj.brainstormIdeas || [];
+          const alreadyExists = brainstorms.some((b: any) => b.text === matchedRec.title);
+          let uniqueIdeas = [...brainstorms];
+          if (!alreadyExists) {
+            uniqueIdeas.push({
+              id: crypto.randomUUID(),
+              text: matchedRec.title,
+              details: matchedRec.description,
+              status: 'pending',
+              createdAt: Date.now()
+            });
+          }
+
+          const updatedRecs = (matchedProj.dreamRecommendations || []).map((d: any) => {
+            if (d.id === matchedRec.id) {
+              return { ...d, status: 'approved' };
+            }
+            return d;
+          });
+
+          updateProject(matchedProj.id, {
+            brainstormIdeas: uniqueIdeas,
+            dreamRecommendations: updatedRecs
+          });
+
+          feedback = `Dream Realized: Approved recommendation page "${matchedRec.title}" and loaded into project brainstorms!`;
+        } else {
+          feedback = 'Spoken intent matched, but no specific dreaming tracks are pending approval.';
+        }
+        break;
+      }
+
+      default:
+        feedback = 'Command registered in Aether Workspace.';
+    }
+
+    return feedback;
+  };
+
+  // Send textual query: streams Q&A immediately from /api/gemini/stream with rich workspace constraints
   const handleSend = async (forcedText?: string) => {
     const textToSend = forcedText || inputValue;
     if (!textToSend.trim() && attachedFiles.length === 0) return;
+
+    if (aetherDoubleConfirm) {
+      const displayBrief = textToSend.length > 50 ? `${textToSend.slice(0, 50)}...` : textToSend;
+      const confirmed = window.confirm(`⚠️ Aether Double-Confirmation Safeguard:\n\nYou are instructing Aether to run an operation:\n"${displayBrief}"\n\nDo you authorize Aether to process this command?`);
+      if (!confirmed) {
+        return;
+      }
+    }
 
     let displayContent = textToSend;
     if (attachedFiles.length > 0) {
@@ -82,6 +685,7 @@ export function RightSidebar() {
     setInputValue('');
     const filesToSend = [...attachedFiles];
     setAttachedFiles([]);
+    setIsProcessing(true);
 
     const agentMsgId = (Date.now() + 1).toString();
     setMessages(prev => [...prev, {
@@ -97,7 +701,34 @@ export function RightSidebar() {
         body: JSON.stringify({
           messages: [...messages, newMsg],
           files: filesToSend,
-          context: `You are an AI assistant in DevSpace. Follow these persistent context rules: ${aiContextRules || 'No special rules.'}\nIf the user provides new memory or personal preferences, you MUST output a comprehensive summary of ALL current and new preferences wrapped EXACTLY in <UPDATE_PREFS>preferences summary here</UPDATE_PREFS>. This will update your memory for future conversations. Otherwise, respond concisely.`
+          projects: projects.map(p => ({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            status: p.status,
+            frameworks: p.frameworks,
+            customStack: p.customStack
+          })),
+          issues: issues.map(iss => ({
+            id: iss.id,
+            projectId: iss.projectId,
+            title: iss.title,
+            status: iss.status,
+            priority: iss.priority,
+            type: iss.type
+          })),
+          cortexSynapses: cortexSynapses || [],
+          notes: notes || [],
+          phases: phases || [],
+          agents: agents || [],
+          aiContextRules: aiContextRules || "",
+          aetherControlNotes: aetherControlNotes ?? true,
+          aetherControlIssues: aetherControlIssues ?? true,
+          aetherControlAgents: aetherControlAgents ?? true,
+          aetherControlBrainstorm: aetherControlBrainstorm ?? true,
+          aetherControlIntegrations: aetherControlIntegrations ?? false,
+          aetherDoubleConfirm: aetherDoubleConfirm ?? false,
+          aetherAutoRecommend: aetherAutoRecommend ?? true
         })
       });
 
@@ -131,7 +762,10 @@ export function RightSidebar() {
 
                 setMessages(prev => prev.map(msg => 
                   msg.id === agentMsgId 
-                    ? { ...msg, content: currentContent.replace(/<UPDATE_PREFS>[\s\S]*?<\/UPDATE_PREFS>/g, '').trim() || currentContent }
+                    ? { 
+                        ...msg, 
+                        content: currentContent.replace(/<UPDATE_PREFS>[\s\S]*?<\/UPDATE_PREFS>/g, '').trim() || currentContent 
+                      }
                     : msg
                 ));
               } else if (data.error) {
@@ -142,138 +776,1128 @@ export function RightSidebar() {
                 ));
               }
             } catch (e) {
-              // Ignore parse errors from partial chunks
+              // Ignore partial parse
             }
           }
         }
       }
+      
+      setIsProcessing(false);
+      
+      // Speak response dynamically if enabled
+      const finalMsg = currentContent.replace(/<UPDATE_PREFS>[\s\S]*?<\/UPDATE_PREFS>/g, '').trim();
+      speakVoiceReply(finalMsg);
+
     } catch (e: any) {
-       setMessages(prev => prev.map(msg => 
+      setIsProcessing(false);
+      setMessages(prev => prev.map(msg => 
         msg.id === agentMsgId 
-          ? { ...msg, content: 'Error: ' + e.message }
+          ? { ...msg, content: 'Error streaming response: ' + e.message }
           : msg
       ));
     }
   };
 
-  const toggleRecording = () => {
-     if (isRecording) {
-        setIsRecording(false);
-        if ((window as any).speechRecognitionRef) {
-           (window as any).speechRecognitionRef.stop();
+  // Microphone capture and high-integrity voice command processing via /api/voice/process
+  const startRecording = async () => {
+    try {
+      setErrorMsg('');
+      chunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/ogg';
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
         }
-     } else {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SpeechRecognition) {
-           const recognition = new SpeechRecognition();
-           recognition.continuous = false;
-           recognition.interimResults = false;
-           
-           recognition.onstart = () => {
-              setIsRecording(true);
-           };
-           
-           recognition.onresult = (event: any) => {
-              const transcript = event.results[0][0].transcript;
-              setInputValue(prev => prev ? prev + ' ' + transcript : transcript);
-           };
-           
-           recognition.onerror = (event: any) => {
-              console.error("Speech recognition error", event.error);
-              setIsRecording(false);
-              if (event.error === 'not-allowed') {
-                handleSend("⚠️ [System]: Microphone access denied. Please grant microphone permissions to use voice input.");
-              } else {
-                handleSend(`⚠️ [System]: Speech recognition error: ${event.error}`);
+      };
+
+      recorder.onstop = async () => {
+        setIsProcessing(true);
+        try {
+          const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Data = (reader.result as string).split(',')[1];
+            
+            const response = await fetch('/api/voice/process', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                audioData: base64Data,
+                mimeType,
+                projectContexts: projects,
+                cortexSynapses: cortexSynapses || [],
+                notes: notes || [],
+                issues: issues,
+                phases: phases || [],
+                agents: agents || [],
+                aiContextRules: aiContextRules || ""
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`Voice endpoint error: ${response.status}`);
+            }
+
+            const resData = await response.json();
+            
+            // Execute any matched system-level operations
+            const actionFeedback = dispatchCommandAction(resData.intent, resData.parsedData);
+
+            if (resData.intent && resData.intent !== 'chat_query' && resData.intent !== 'unknown') {
+              // Add to global action queues visualizer
+              addVoiceAction({
+                transcript: resData.transcript || 'Spoken Directive',
+                intent: resData.intent,
+                confidence: resData.confidence || 0.95,
+                parsedData: resData.parsedData || {},
+                explanation: resData.explanation
+              });
+            }
+
+            // Append conversational logs
+            setMessages(prev => [
+              ...prev,
+              {
+                id: `usr-voice-${Date.now()}`,
+                role: 'user',
+                content: resData.transcript || '[Vocal Recording]',
+                isVoice: true
+              },
+              {
+                id: `ath-voice-reply-${Date.now()}`,
+                role: 'agent',
+                content: resData.explanation,
+                actionFeedback
               }
-           };
-           
-           recognition.onend = () => {
-              setIsRecording(false);
-           };
-           
-           (window as any).speechRecognitionRef = recognition;
-           recognition.start();
-        } else {
-           handleSend("🎙️ [Voice Memo Features Not Supported In Browser] Let's type instead.");
+            ]);
+
+            // Auto Synthesis speech feedback
+            speakVoiceReply(resData.explanation);
+            setIsProcessing(false);
+          };
+        } catch (err: any) {
+          console.error(err);
+          setErrorMsg('Failed decoding vocal recording: ' + err.message);
+          setIsProcessing(false);
         }
-     }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg('Microphone block: Please grant permission under Site Settings.');
+    }
   };
 
-  const formatTime = (seconds: number) => {
-     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-     const s = (seconds % 60).toString().padStart(2, '0');
-     return `${m}:${s}`;
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    setIsRecording(false);
   };
 
-  if (!isRightSidebarOpen) return null;
+  const clearConversation = () => {
+    setMessages([
+      {
+        id: '1',
+        role: 'agent',
+        content: 'Conversation history flushed. Aether AI synaptic channels clear. How can I assist?'
+      }
+    ]);
+  };
 
+  const injectPromptChip = (text: string) => {
+    setInputValue(text);
+  };
+
+  const formatSecs = (s: number) => {
+    const mins = Math.floor(s / 60).toString().padStart(2, '0');
+    const secs = (s % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
+  if (!isRightSidebarOpen && !isFullPage) return null;
+
+  // Render Full Screen Desktop ChatGPT Style Workspace
+  if (isRightSidebarExpanded || isFullPage) {
+    return (
+      <div className={`${isFullPage ? 'w-full h-full' : 'fixed inset-0 z-50'} bg-[#09090b] flex flex-row overflow-hidden font-sans text-zinc-300`}>
+        
+        {/* Left Columns - ChatGPT Sessions Sidebar of Past Dialogs */}
+        <AnimatePresence>
+          {chatSessions && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 260, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              className="h-full bg-[#0c0c0e] border-r border-[#1e1e24] flex flex-col shrink-0 overflow-hidden"
+            >
+              {/* New session launcher */}
+              <div className="p-3 border-b border-[#1e1e24] space-y-2">
+                <button
+                  onClick={() => {
+                    const newId = `session-${Date.now()}`;
+                    const newS = {
+                      id: newId,
+                      title: `Dialogue Topic ${chatSessions.length + 1}`,
+                      createdAt: Date.now(),
+                      messages: [
+                        {
+                          id: `init-${Date.now()}`,
+                          role: 'agent',
+                          content: 'New syntactic orchestrator workspace initialized. Command me or provide spoken audio directives.'
+                        }
+                      ]
+                    };
+                    setChatSessions(prev => [newS, ...prev]);
+                    setCurrentSessionId(newId);
+                  }}
+                  className="w-full py-2.5 px-3 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm hover:border-indigo-500/30"
+                >
+                  <Plus size={14} className="text-indigo-400" />
+                  <span>New Conversation</span>
+                </button>
+              </div>
+
+              {/* List of past conversations (ChatGPT style) */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 select-none scrollbar-thin">
+                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-2 mb-2">History Dialogues</div>
+                {chatSessions.map((session) => {
+                  const isActive = session.id === currentSessionId;
+                  const isEditing = editingSessionId === session.id;
+
+                  return (
+                    <div
+                      key={session.id}
+                      onClick={() => !isEditing && setCurrentSessionId(session.id)}
+                      className={`relative group p-2.5 rounded-lg flex items-center justify-between gap-2 border transition-all cursor-pointer text-xs ${
+                        isActive
+                          ? 'bg-zinc-850 border-zinc-700/80 text-zinc-100 shadow'
+                          : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <FileText size={13} className={isActive ? 'text-indigo-400' : 'text-zinc-500'} />
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editingSessionTitle}
+                            onChange={(e) => setEditingSessionTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                setChatSessions(prev => prev.map(s => s.id === session.id ? { ...s, title: editingSessionTitle } : s));
+                                setEditingSessionId(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              setChatSessions(prev => prev.map(s => s.id === session.id ? { ...s, title: editingSessionTitle } : s));
+                              setEditingSessionId(null);
+                            }}
+                            className="bg-zinc-950 text-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none"
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="font-medium truncate block">{session.title}</span>
+                        )}
+                      </div>
+
+                      {/* Hover action items */}
+                      {!isEditing && (
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingSessionId(session.id);
+                              setEditingSessionTitle(session.title);
+                            }}
+                            className="p-1 hover:bg-zinc-855 rounded text-zinc-400 hover:text-zinc-100 transition-colors"
+                            title="Rename"
+                          >
+                            <Edit3 size={11} />
+                          </button>
+                          {chatSessions.length > 1 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const filtered = chatSessions.filter(s => s.id !== session.id);
+                                setChatSessions(filtered);
+                                if (isActive) {
+                                  setCurrentSessionId(filtered[0]?.id || 'session-default');
+                                }
+                              }}
+                              className="p-1 hover:bg-red-950/20 rounded text-zinc-400 hover:text-red-400 transition-colors"
+                              title="Delete conversation"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom footer credit */}
+              <div className="p-3 border-t border-[#1e1e24] bg-zinc-950/35 text-[10px] font-mono text-zinc-500 flex items-center justify-between">
+                <span>Sessions Persisted</span>
+                <span className="text-indigo-400 font-bold">LocalState</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Main Conversation Window */}
+        <div className="flex-1 flex flex-col min-w-0 bg-[#09090b] relative">
+          
+          {/* Top Board */}
+          <div className="h-14 border-b border-[#1f1f23] flex items-center justify-between px-6 bg-[#0c0c0e]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[#6366f1] flex items-center justify-center text-white font-bold text-sm shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+                AE
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
+                  Aether AI Workspace 
+                  <span className="text-[9px] bg-indigo-950/40 text-indigo-400 py-0.5 px-2 rounded-full border border-indigo-500/20 font-mono">
+                    {chatSessions.find(s => s.id === currentSessionId)?.title || 'Aether Active'}
+                  </span>
+                </div>
+                <div className="text-[9px] text-zinc-500 font-mono">SYNTACTIC COGNITIVE SYSTEM • SECURE ACCESS CONTROL</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setVoiceAudioEnabled(!voiceAudioEnabled)}
+                className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-all outline-none ${
+                  voiceAudioEnabled 
+                    ? 'bg-indigo-950/40 transition-colors border-indigo-500/20 text-indigo-400' 
+                    : 'bg-zinc-900 text-zinc-500 border-zinc-800'
+                }`}
+                title="Vocal feedback toggle"
+              >
+                {voiceAudioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                <span className="text-[10px] uppercase font-semibold hidden md:inline-block">TTS Speech</span>
+              </button>
+
+              <button 
+                onClick={clearConversation}
+                className="text-zinc-500 hover:text-zinc-200 text-xs px-3 py-2 hover:bg-zinc-900 border border-zinc-800/80 rounded-lg transition-colors hidden sm:block"
+              >
+                Flush Conversation
+              </button>
+
+              <button 
+                onClick={() => {
+                  if (isFullPage) {
+                    navigate('/');
+                  } else {
+                    toggleRightSidebarExpanded();
+                  }
+                }}
+                className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors"
+                title={isFullPage ? "Exit Fullscreen Assistant" : "Contract Workspace View"}
+              >
+                <Minimize2 size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Chat Feed */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#08080a] select-text">
+            <div className="max-w-3xl mx-auto space-y-6">
+              {messages.map((msg) => (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {msg.role !== 'user' && (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#3b82f6] to-[#a855f7] flex items-center justify-center text-white font-semibold text-xs shrink-0 shadow-lg">
+                      A
+                    </div>
+                  )}
+
+                  <div className="flex flex-col max-w-[80%]">
+                    <div className="text-[10px] text-zinc-600 font-mono mb-1 flex items-center gap-1.5">
+                      {msg.role === 'user' ? 'Operator (Local)' : 'Aether Orchestrator'}
+                      {msg.isVoice && <span className="text-purple-400 text-[8px] uppercase tracking-widest font-mono border border-purple-500/10 px-1.5 rounded bg-purple-950/20 font-bold">Audio input</span>}
+                    </div>
+
+                    <div className={`px-5 py-3.5 rounded-2xl shadow-xl leading-relaxed text-xs sm:text-sm ${
+                      msg.role === 'user'
+                        ? 'bg-indigo-650 text-indigo-50 border border-indigo-600 rounded-tr-none shadow-indigo-950/10'
+                        : 'bg-[#121214] border border-[#27272a] text-zinc-300 rounded-tl-none'
+                    }`}>
+                      {msg.role === 'user' ? (
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                      ) : (
+                        <div className="markdown-body prose prose-invert prose-p:leading-relaxed prose-pre:bg-[#09090b] prose-pre:border prose-pre:border-zinc-800 prose-sm text-zinc-300 max-w-none">
+                          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.content}</Markdown>
+                        </div>
+                      )}
+
+                      {msg.actionFeedback && (
+                        <div className="mt-3 pt-2.5 border-t border-emerald-500/20 text-emerald-400 font-mono text-xs flex items-center gap-2 font-medium">
+                          <CheckCircle2 size={13} className="text-emerald-400 shrink-0 animate-pulse" />
+                          <span>{msg.actionFeedback}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {msg.role === 'agent' && (
+                      <button
+                        onClick={() => speakVoiceReply(msg.content)}
+                        className="text-[10px] text-zinc-500 hover:text-indigo-450 font-mono mt-1 px-1 flex items-center gap-1.5 uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
+                      >
+                        <Volume2 size={11} /> Speak Aloud
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+
+              {isProcessing && (
+                <div className="flex gap-4 items-start justify-start">
+                  <div className="w-8 h-8 rounded-full bg-indigo-950 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                    <Loader2 size={14} className="text-indigo-400 animate-spin" />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="text-[10px] text-zinc-650 font-mono mb-1">Aether Thinking</div>
+                    <div className="bg-[#121214] border border-[#27272a] px-5 py-3.5 rounded-2xl rounded-tl-none flex items-center gap-3 text-xs sm:text-sm text-zinc-500 font-mono animate-pulse">
+                      Consulting workspace synaptics & models...
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          {/* Bottom Chat Dictation bar */}
+          <div className="p-6 bg-[#0c0c0e] border-t border-[#1f1f23] select-none">
+            <div className="max-w-3xl mx-auto">
+              
+              {/* Voice recording display overlay */}
+              <AnimatePresence>
+                {isRecording && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-[#18181b] border border-red-500/30 rounded-xl p-4 text-center flex flex-col items-center justify-center mb-4 gap-2 shadow-2xl"
+                  >
+                    <div className="text-red-400 text-xs font-mono uppercase tracking-widest font-bold flex items-center gap-2 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Dictating vocal action script...
+                    </div>
+                    <div className="text-3xl font-bold font-mono text-white">{formatSecs(recordingSeconds)}</div>
+                    <button
+                      onClick={stopRecording}
+                      className="px-6 py-2 bg-red-600 hover:bg-red-750 text-white rounded-full font-bold text-xs flex items-center gap-1.5 transition-all text-sm shadow-md"
+                    >
+                      Stop & Dispatch Memo
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {errorMsg && (
+                <div className="bg-rose-955/20 border border-rose-500/25 p-3 mb-4 rounded-xl text-xs font-mono text-rose-400 flex items-center justify-between shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={14} /> <span>{errorMsg}</span>
+                  </div>
+                  <button onClick={() => setErrorMsg('')} className="underline hover:text-rose-300">dismiss</button>
+                </div>
+              )}
+
+              {/* Input Core */}
+              <div className="relative flex flex-col gap-3 bg-[#121214] border border-[#27272a] rounded-2xl p-3 focus-within:border-indigo-500/60 shadow-xl">
+                <div className="flex items-center gap-2">
+                  <Terminal size={14} className="text-zinc-650 shrink-0 ml-1" />
+                  <input
+                    type="text"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    placeholder="Ask Aether to coordinate tasks, audit security, or review integrations..."
+                    className="w-full bg-transparent border-none py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-0 select-text"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2.5 border-t border-zinc-850 mt-1 select-none">
+                  <div className="flex items-center gap-2">
+                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors relative"
+                      title="Attach file"
+                    >
+                      <Paperclip size={14} />
+                      {attachedFiles.length > 0 && (
+                        <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-indigo-500 text-[9px] flex items-center justify-center rounded-full text-white font-bold shadow-md">{attachedFiles.length}</span>
+                      )}
+                    </button>
+
+                    <button 
+                      onClick={isRecording ? stopRecording : startRecording}
+                      className={`p-2 rounded-lg transition-all border ${
+                        isRecording 
+                          ? 'bg-red-950/30 text-red-400 border-red-500 px-3' 
+                          : 'text-indigo-400 hover:bg-zinc-800 border-transparent hover:border-[#27272a]'
+                      }`}
+                      title="Vocal voice directive"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Mic size={14} className={isRecording ? 'animate-pulse text-red-500' : ''} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{isRecording ? 'Stop' : 'Spoken Memo'}</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => handleSend()}
+                    disabled={isProcessing}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-550 disabled:opacity-45 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-transform shadow-lg shadow-indigo-600/10 cursor-pointer"
+                  >
+                    <span>Execute Synapse</span>
+                    <Send size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side: Tabbed Settings, Automations, MCP Services Inspector */}
+        <div className="w-full md:w-[380px] border-l border-[#1f1f23] bg-[#0c0c0e] flex flex-col shrink-0 overflow-hidden h-full">
+          
+          {/* Tabs Selector */}
+          <div className="flex border-b border-[#1f1f23] bg-zinc-950/40 shrink-0 p-1 select-none">
+            {[
+              { id: 'sessions', label: 'Feeds', Icon: Compass },
+              { id: 'automations', label: 'Flows', Icon: Zap },
+              { id: 'mcp', label: 'MCP & APIs', Icon: Settings },
+              { id: 'access', label: 'Perms', Icon: Shield },
+              { id: 'synapses', label: 'Cortex', Icon: Database }
+            ].map((tab) => {
+              const tabIsActive = rightInspectorTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setRightInspectorTab(tab.id as any)}
+                  className={`flex-1 py-2 px-1 text-[10px] font-semibold rounded-md flex flex-col items-center gap-1 transition-all ${
+                    tabIsActive
+                      ? 'bg-zinc-850 text-white shadow-sm border border-zinc-750'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <tab.Icon size={13} className={tabIsActive ? 'text-indigo-400' : ''} />
+                  <span className="tracking-wide uppercase text-[8px]">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Interactive Tab Containers */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-5 min-h-0">
+
+            {/* TAB 1: QUICK SUGGESTIONS & PERSISTENT FEEDS */}
+            {rightInspectorTab === 'sessions' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
+                    <Compass size={13} className="text-indigo-400" /> Prompts & Suggestions
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans leading-relaxed">
+                    Select a custom structured prompt key to inject into assistant pipeline:
+                  </p>
+                </div>
+
+                <div className="space-y-2 select-none">
+                  {[
+                    { label: '🛡️ Initiate security backlog audit', prompt: 'Audit all current project backlogs and recommend high priority security improvements.' },
+                    { label: '🗒️ Refactor local synchronization engine', prompt: 'Create an architecture notes doc for refactoring API polling cache with debounced storage.' },
+                    { label: '🤖 Summarize specialty agent roles', prompt: 'Summarize what active Specialty Agents are currently configured to build across categories.' },
+                    { label: '💡 Generate sprint feature expansion tracks', prompt: 'Suggest key feature brainstorm ideas based on current spring roadmaps.' }
+                  ].map((item, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => injectPromptChip(item.prompt)}
+                      className="w-full text-left p-2.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-855 border border-zinc-800/80 text-[11px] text-zinc-350 hover:text-white transition-colors block"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="border-t border-zinc-850 pt-4 space-y-3">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Active Roadmap Snapshot</span>
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 space-y-2.5 text-[11px]">
+                    {phases?.slice(0, 3).map((ph, idx) => (
+                      <div key={idx} className="flex items-center justify-between border-b border-zinc-850/50 pb-1.5 last:border-0 last:pb-0">
+                        <span className="text-zinc-300 font-medium truncate shrink-0 max-w-[130px]">{ph.name}</span>
+                        <div className="flex gap-1 items-center shrink-0 text-zinc-500 font-mono text-[9px]">
+                          <span>{ph.startDate || 'Q3 Milestone'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: AUTOMATION FLOWS (N-LEVEL PIPELINE BUILDER & MOCK SIMULATOR) */}
+            {rightInspectorTab === 'automations' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
+                    <Zap size={13} className="text-yellow-400 animate-pulse" /> N-Level Automation Studio
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans leading-relaxed">
+                    Set up custom pipelines, add multi-step triggers/tasks, and run safe live dry-run simulations.
+                  </p>
+                </div>
+
+                {/* Workflow Cards */}
+                <div className="space-y-3.5">
+                  {automations.map((flow) => {
+                    const isActive = activeAutoId === flow.id;
+                    return (
+                      <div key={flow.id} className={`p-3 bg-[#111113] border rounded-xl space-y-3 ${isActive ? 'border-indigo-500/40 shadow-md' : 'border-zinc-800/80 hover:border-zinc-750'}`}>
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="cursor-pointer flex-1" onClick={() => setActiveAutoId(isActive ? null : flow.id)}>
+                            <div className="text-[11px] font-bold text-zinc-100 tracking-wide flex items-center gap-1.5">
+                              {flow.name}
+                              <span className={`w-1.5 h-1.5 rounded-full ${flow.active ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
+                            </div>
+                            <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">{flow.desc}</p>
+                          </div>
+                          
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setAutomations(prev => prev.map(a => a.id === flow.id ? { ...a, active: !a.active } : a));
+                              }}
+                              className={`p-1.5 rounded text-[9px] font-bold tracking-wider uppercase border border-transparent transition-all cursor-pointer ${
+                                flow.active 
+                                  ? 'bg-emerald-950/40 text-emerald-400 hover:bg-emerald-900/30' 
+                                  : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800'
+                              }`}
+                            >
+                              {flow.active ? 'ON' : 'OFF'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAutomations(prev => prev.filter(a => a.id !== flow.id));
+                              }}
+                              className="p-1.5 rounded bg-zinc-900 text-zinc-500 hover:text-red-400 border border-zinc-850 hover:bg-red-950/20"
+                              title="Delete workflow"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Trigger Type Indicator */}
+                        <div className="text-[9px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800/40 p-1 px-2 rounded flex items-center justify-between">
+                          <span>TRIGGER EVENT:</span>
+                          <span className="text-indigo-400 uppercase tracking-widest font-bold">{flow.trigger}</span>
+                        </div>
+
+                        {/* Steps / Nodes pipeline */}
+                        <div className="space-y-1.5 pl-1.5 border-l border-indigo-500/20">
+                          {flow.steps.map((st: any, sIdx: number) => (
+                            <div key={st.id} className="text-[10px] flex items-center justify-between p-1.5 rounded bg-zinc-950/65 border border-zinc-900">
+                              <span className="text-zinc-350 flex items-center gap-1.5">
+                                <span className="w-4 h-4 rounded-full bg-zinc-900 text-[8px] flex items-center justify-center border border-zinc-800 text-zinc-500">{sIdx + 1}</span>
+                                {st.label}
+                              </span>
+                              <div className="flex items-center gap-1.5 font-mono text-[8px]">
+                                <span className="bg-zinc-900 text-zinc-500 py-0.5 px-1.5 rounded border border-zinc-850">{st.type}</span>
+                                {st.status === 'success' && <span className="text-emerald-400">●</span>}
+                                {st.status === 'running' && <Loader2 size={8} className="text-amber-400 animate-spin" />}
+                                {st.status === 'idle' && <span className="text-zinc-650">○</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Interactive Steps Addition Form under active details */}
+                        {isActive && (
+                          <div className="bg-zinc-950/60 p-2.5 rounded border border-zinc-900 space-y-2 mt-2">
+                            <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider block">Add pipeline step:</span>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                onClick={() => {
+                                  const labelStr = prompt('Enter Step Label (e.g. Scrape web, query table):');
+                                  if (!labelStr) return;
+                                  const stepsType = prompt('Choose Step Type (query_db, code_run, gemini_transform, delay_wait, broadcast):');
+                                  if (!stepsType) return;
+                                  setAutomations(prev => prev.map(a => {
+                                    if (a.id === flow.id) {
+                                      return {
+                                        ...a,
+                                        steps: [...a.steps, {
+                                          id: `s-${Date.now()}`,
+                                          type: stepsType,
+                                          label: labelStr,
+                                          status: 'idle'
+                                        }]
+                                      };
+                                    }
+                                    return a;
+                                  }));
+                                }}
+                                className="p-1 px-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800/80 rounded font-semibold text-[9px] text-zinc-300 flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <Plus size={10} /> <span>Custom Step</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Simulation log Console */}
+                        {flow.isRunningSim && flow.simLogs && (
+                          <div className="bg-black/90 p-2 rounded border border-[#1e1e24] font-mono text-[8px] text-emerald-400 space-y-1 max-h-32 overflow-y-auto">
+                            {flow.simLogs.map((log: string, lIdx: number) => (
+                              <div key={lIdx} className="leading-tight">{log}</div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Action Simulations Trigger */}
+                        <div className="flex items-center justify-end pt-2 text-[10px]">
+                          <button
+                            onClick={() => triggerAutomationSimulation(flow.id)}
+                            disabled={flow.isRunningSim}
+                            className="bg-indigo-650 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold tracking-wide uppercase px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow"
+                          >
+                            {flow.isRunningSim ? (
+                              <>
+                                <Loader2 size={11} className="animate-spin text-white" />
+                                <span>Running Sim...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play size={10} className="fill-current" />
+                                <span>Test Simulation</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Workflow creation button */}
+                <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-850 space-y-2 select-none">
+                  <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest block">Teach Custom Workflow</span>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Workflow Name..."
+                      value={newAutoName}
+                      onChange={(e) => setNewAutoName(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Brief Description..."
+                      value={newAutoDesc}
+                      onChange={(e) => setNewAutoDesc(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    <div className="flex justify-between items-center text-[10px] gap-2 pt-1">
+                      <select 
+                        value={newAutoTrigger} 
+                        onChange={(e) => setNewAutoTrigger(e.target.value)}
+                        className="bg-zinc-900 border border-zinc-800 rounded p-1 text-[10px] text-zinc-300"
+                      >
+                        <option value="manual_run">manual trigger</option>
+                        <option value="webhook_receipt">webhook inbound</option>
+                        <option value="timer_cron">scheduled timer</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          if (!newAutoName.trim()) return;
+                          const newFlow = {
+                            id: `auto-${Date.now()}`,
+                            name: newAutoName,
+                            desc: newAutoDesc || 'No custom details added.',
+                            trigger: newAutoTrigger,
+                            active: true,
+                            steps: [
+                              { id: `s-first-${Date.now()}`, type: 'gemini_transform', label: 'Transform Active Request', status: 'idle' }
+                            ],
+                            isRunningSim: false,
+                            simLogs: []
+                          };
+                          setAutomations(prev => [...prev, newFlow]);
+                          setNewAutoName('');
+                          setNewAutoDesc('');
+                        }}
+                        className="bg-indigo-650 hover:bg-vivid-indigo py-1 px-3 text-[10px] text-white font-bold rounded-lg cursor-pointer transition-colors"
+                      >
+                        Launch
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: MCP SERVERS REGISTRATION & MODEL VARIABLES CONFIG */}
+            {rightInspectorTab === 'mcp' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
+                    <Settings size={13} className="text-zinc-400" /> MCP Servers & Parameter Config
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans leading-relaxed">
+                    Configure active Model Context Protocol (MCP) server endpoints, secure authorization keys, and model parameters.
+                  </p>
+                </div>
+
+                {/* Model Params Slider */}
+                <div className="bg-zinc-900/60 p-3 rounded-xl border border-zinc-800/80 space-y-3">
+                  <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest block border-b border-zinc-800 pb-1.5">Brain parameters</span>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-zinc-400">Gemini Precision Model:</span>
+                      <span className="font-mono text-indigo-400 font-bold">{aiSettings.modelName}</span>
+                    </div>
+                    <select
+                      value={aiSettings.modelName}
+                      onChange={(e) => setAiSettings({ ...aiSettings, modelName: e.target.value })}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-[10px] text-zinc-300"
+                    >
+                      <option value="gemini-3.5-flash">gemini-3.5-flash (Orchestrator)</option>
+                      <option value="gemini-3.5-pro">gemini-3.5-pro (Executive)</option>
+                      <option value="gemini-2.5-flash">gemini-2.5-flash (Fast)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="text-zinc-400">Temperature Variable:</span>
+                      <span className="font-mono text-indigo-400 font-bold">{aiSettings.temperature}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1.0"
+                      step="0.05"
+                      value={aiSettings.temperature}
+                      onChange={(e) => setAiSettings({ ...aiSettings, temperature: parseFloat(e.target.value) })}
+                      className="w-full h-1 bg-zinc-950 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Registered MCP Handshakes */}
+                <div className="space-y-3 select-none">
+                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Registered MCP Connectors</span>
+                  <div className="space-y-2">
+                    {mcpServers.map((srv) => (
+                      <div key={srv.id} className="p-2.5 bg-zinc-900 border border-zinc-800 rounded-lg space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-zinc-200">{srv.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${srv.active ? 'bg-emerald-500 shadow-sm shadow-emerald-400' : 'bg-zinc-600'}`} />
+                            <button
+                              onClick={() => {
+                                setMcpServers(prev => prev.map(s => s.id === srv.id ? { ...s, active: !s.active } : s));
+                              }}
+                              className="text-[8px] font-mono uppercase tracking-widest text-indigo-400 hover:text-indigo-300"
+                            >
+                              toggle
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-[9px] font-mono text-zinc-500 truncate" title={srv.url}>
+                          ADDR: <span className="text-zinc-400">{srv.url}</span>
+                        </div>
+                        {srv.token && (
+                          <div className="text-[8px] font-mono text-zinc-500">
+                            AUTH-KEY: <span className="text-indigo-550">•••••••••{srv.token.slice(-3)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-end pt-1">
+                          <button
+                            onClick={() => setMcpServers(prev => prev.filter(s => s.id !== srv.id))}
+                            className="text-[8px] font-bold uppercase tracking-wider text-red-400 hover:text-red-300"
+                          >
+                            Unlink Node
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Register New Server Node */}
+                <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-850 space-y-2">
+                  <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest block">Register MCP Server</span>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Server Nickname..."
+                      value={newMcpName}
+                      onChange={(e) => setNewMcpName(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="MCP Handshake URL..."
+                      value={newMcpUrl}
+                      onChange={(e) => setNewMcpUrl(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Security Authorization Key (Optional)..."
+                      value={newMcpToken}
+                      onChange={(e) => setNewMcpToken(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    
+                    <button
+                      onClick={() => {
+                        if (!newMcpName.trim() || !newMcpUrl.trim()) return;
+                        const newSrv = {
+                          id: `mcp-${Date.now()}`,
+                          name: newMcpName,
+                          url: newMcpUrl,
+                          active: true,
+                          authType: newMcpAuthType,
+                          token: newMcpToken
+                        };
+                        setMcpServers(prev => [...prev, newSrv]);
+                        setNewMcpName('');
+                        setNewMcpUrl('');
+                        setNewMcpToken('');
+                      }}
+                      className="w-full py-1.5 bg-[#4f46e5] text-white text-[10px] font-bold rounded-lg cursor-pointer hover:bg-indigo-500"
+                    >
+                      Authenticate Connector Link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: ACCESS CONTROL PANELS (PERMISSIONS TOGGLES) */}
+            {rightInspectorTab === 'access' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
+                    <Shield size={13} className="text-indigo-400" /> Access & Permission Matrix
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans leading-relaxed">
+                    Authorize or lock down fine-grained privileges to direct sandbox components.
+                  </p>
+                </div>
+
+                {/* Permissions Toggles List */}
+                <div className="space-y-2 bg-zinc-900/60 p-3.5 rounded-xl border border-zinc-800/80 select-none">
+                  
+                  {/* File Permission Options Selector */}
+                  <div className="space-y-1.5 border-b border-zinc-850 pb-3">
+                    <span className="text-[10px] font-semibold text-zinc-400 block">Workspace Code Access level:</span>
+                    <div className="grid grid-cols-3 gap-1.5 text-[9px] text-center">
+                      {[
+                        { id: 'granted', label: 'FULL READ/WRITE' },
+                        { id: 'read-only', label: 'READ ONLY' },
+                        { id: 'restricted', label: 'LOCKED' }
+                      ].map((perm) => (
+                        <button
+                          key={perm.id}
+                          onClick={() => setAccessControls({ ...accessControls, fileReadWrite: perm.id })}
+                          className={`p-1.5 rounded-md font-bold tracking-wide transition-all border outline-none ${
+                            accessControls.fileReadWrite === perm.id
+                              ? 'bg-indigo-950/40 text-indigo-400 border-indigo-500/20'
+                              : 'bg-zinc-950 text-zinc-500 border-zinc-850'
+                          }`}
+                        >
+                          {perm.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Boolean Permission Switches */}
+                  <div className="space-y-3 pt-3">
+                    {[
+                      { key: 'networkFetch', label: 'Authorize Web Fetching', desc: 'Allows Aether to query remote URLs.' },
+                      { key: 'dbSync', label: 'Drizzle/Postgres Schema Sync', desc: 'Permits remote queries on relational components.' },
+                      { key: 'sandboxIngress', label: 'Active Sandbox Validation', desc: 'Validates credential hashes against ingress loops.' },
+                      { key: 'credentialsAccess', label: 'Read Setting Shell Secrets', desc: 'Grants access to workspace environment keys.' },
+                      { key: 'telegramBridge', label: 'Aether Telegram Gateway Connection', desc: 'Toggles live listener loop inside active workspace.' },
+                      { key: 'whatsappBridge', label: 'Aether WhatsApp Webhook Connection', desc: 'Controls remote simulated chat streams.' }
+                    ].map((row) => (
+                      <div key={row.key} className="flex items-start justify-between gap-2 text-xs">
+                        <div className="space-y-0.5">
+                          <span className="text-[11px] font-bold text-zinc-200 block">{row.label}</span>
+                          <span className="text-[9px] text-zinc-500 font-sans block leading-normal">{row.desc}</span>
+                        </div>
+                        <button
+                          onClick={() => setAccessControls({ ...accessControls, [row.key]: !accessControls[row.key] })}
+                          className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0 outline-none ${
+                            accessControls[row.key] ? 'bg-indigo-600' : 'bg-zinc-800'
+                          }`}
+                        >
+                          <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-205 transition-transform ${
+                            accessControls[row.key] ? 'translate-x-4' : 'translate-x-0'
+                          }`} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                </div>
+
+                <div className="p-3 bg-zinc-950 border border-zinc-850 rounded-xl text-[10px] font-mono text-zinc-500 leading-normal">
+                  ⚠️ Permissions configured above are enforced natively in this sandbox and synchronizes directly across workspace API proxy controllers.
+                </div>
+              </div>
+            )}
+
+            {/* TAB 5: MEMORY SYNAPSES & AGENT LIST SUMMARY */}
+            {rightInspectorTab === 'synapses' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
+                    <Database size={13} className="text-[#a855f7]" /> Synaptic Rules & Agents
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-sans leading-relaxed">
+                    Review specialty cognitive agents and direct prompt cortex synapse specifications wired into your brain workspace.
+                  </p>
+                </div>
+
+                {/* Dynamic specialty agents list */}
+                <div className="space-y-2.5">
+                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Specialty Agents Array ({agents?.length || 0})</span>
+                  <div className="space-y-2">
+                    {agents?.map((agent, i) => (
+                      <div key={i} className="p-2.5 bg-zinc-900 border border-zinc-850 rounded-lg flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-semibold text-zinc-200 truncate">{agent.name}</div>
+                          <div className="text-[9px] text-zinc-500 truncate mt-0.5 font-mono">{agent.role}</div>
+                        </div>
+                        <span className="text-[8px] tracking-wider px-2 py-0.5 rounded-sm bg-emerald-950/50 text-emerald-400 border border-emerald-500/10 font-mono uppercase font-semibold">
+                          online
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dynamic Rule synapses backlog */}
+                <div className="space-y-2.5 pt-3 border-t border-zinc-900">
+                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Cortex Memory Rules ({cortexSynapses?.length || 0})</span>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {cortexSynapses?.map((rule, i) => (
+                      <div key={i} className="p-2.5 bg-zinc-900 border border-zinc-900 rounded-lg flex items-start gap-2 text-xs">
+                        <Database size={12} className="text-indigo-400 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold text-zinc-200 truncate">{rule.name}</div>
+                          <div className="text-[9px] text-zinc-500 mt-0.5 font-sans leading-normal">{rule.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
+  // Render Normal RightSidebar Panel Layout
   return (
-    <aside className="absolute md:relative right-0 z-40 h-full w-80 shrink-0 border-l border-zinc-800 bg-[#0c0c0e] flex flex-col overflow-hidden shadow-xl md:shadow-none">
+    <aside className="absolute md:relative right-0 z-40 h-full w-80 lg:w-96 shrink-0 border-l border-zinc-800 bg-[#0c0c0e] flex flex-col overflow-hidden shadow-xl md:shadow-none font-sans">
       
       {/* Header */}
       <div className="h-12 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#0c0c0e] shrink-0">
         <h2 className="text-xs font-semibold text-zinc-100 flex items-center gap-2 uppercase tracking-wider">
-          <Bot size={14} className="text-blue-400" /> AI Assistant Context
+          <Bot size={14} className="text-blue-400" /> Aether AI Workspace
         </h2>
-        <button 
-          onClick={toggleRightSidebar}
-          className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-200 transition-colors"
-          title="Collapse Assistant"
-        >
-          <X size={14} />
-        </button>
-      </div>
+        
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setVoiceAudioEnabled(!voiceAudioEnabled)}
+            className={`p-1.5 rounded hover:bg-zinc-800 transition-colors ${voiceAudioEnabled ? 'text-[#a855f7]' : 'text-zinc-500'}`}
+            title="Read Speech Output"
+          >
+            {voiceAudioEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+          </button>
 
-      {/* Context Buffers */}
-      <div className="p-4 border-b border-zinc-800 shrink-0">
-        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-3">Context Buffers</div>
-        <div className="space-y-2">
-          
-          <div className="flex items-start gap-2 group cursor-pointer">
-            <div className="p-1 rounded bg-[#121214] border border-zinc-800 text-zinc-400 group-hover:text-blue-400 group-hover:border-blue-500/30 transition-colors">
-              <Code2 size={12} />
-            </div>
-            <div className="flex-1 min-w-0">
-               <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-zinc-300 truncate">components/layout</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
-               </div>
-               <div className="text-[9px] text-zinc-500 font-mono mt-0.5 truncate">/src/components/layout/Sidebar.tsx...</div>
-             </div>
-          </div>
-          
-          <div className="flex items-start gap-2 group cursor-pointer">
-            <div className="p-1 rounded bg-[#121214] border border-zinc-800 text-zinc-400 group-hover:text-amber-400 group-hover:border-amber-500/30 transition-colors">
-              <Database size={12} />
-            </div>
-            <div className="flex-1 min-w-0">
-               <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-zinc-300 truncate">Vector Memory</span>
-                  <span className="text-[9px] bg-zinc-800 px-1 rounded text-zinc-400">98% Match</span>
-               </div>
-               <div className="text-[9px] text-zinc-500 font-mono mt-0.5 truncate">Schema defs & relational rules</div>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2 group cursor-pointer">
-            <div className="p-1 rounded bg-[#121214] border border-zinc-800 text-zinc-400 group-hover:text-zinc-200 group-hover:border-zinc-500/50 transition-colors">
-              <Github size={12} />
-            </div>
-            <div className="flex-1 min-w-0">
-               <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-zinc-300 truncate">PR #142 Draft</span>
-                  <span className="text-[9px] text-zinc-500">2m ago</span>
-               </div>
-               <div className="text-[9px] text-zinc-500 font-mono mt-0.5 truncate">chore: refine AI interface</div>
-            </div>
-          </div>
+          <button
+            onClick={() => {
+              navigate('/assistant');
+            }}
+            className="p-1.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-200 transition-colors"
+            title="Fullscreen Workspace mode"
+          >
+            <Maximize2 size={13} />
+          </button>
 
+          <button 
+            onClick={toggleRightSidebar}
+            className="p-1.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-200 transition-colors"
+            title="Collapse Assistant"
+          >
+            <X size={13} />
+          </button>
         </div>
       </div>
 
-      {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 bg-[#09090b]">
+      {/* Synchronized Brain Cortex Telemetry Indicators (Compact) */}
+      <div className="p-3 bg-[#121215]/60 border-b border-zinc-800/80 shrink-0 select-none">
+        <div className="text-[9px] font-semibold text-zinc-500 uppercase tracking-widest mb-2 flex items-center justify-between">
+          <span>Obsidian Brain Cache</span>
+          <span className="text-[8px] bg-indigo-950/40 text-indigo-400 px-1.5 rounded-sm border border-indigo-500/10 font-mono">Synced</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+          <div className="p-1.5 rounded bg-zinc-900/60 border border-zinc-800/80">
+            <div className="text-zinc-400 font-bold font-mono">{cortexSynapses?.length || 0}</div>
+            <div className="text-[8px] text-zinc-500 mt-0.5 truncate uppercase">Rules</div>
+          </div>
+          <div className="p-1.5 rounded bg-zinc-900/60 border border-zinc-800/80">
+            <div className="text-zinc-400 font-bold font-mono">{notes?.length || 0}</div>
+            <div className="text-[8px] text-zinc-500 mt-0.5 truncate uppercase">Docs</div>
+          </div>
+          <div className="p-1.5 rounded bg-zinc-900/60 border border-zinc-800/80">
+            <div className="text-zinc-400 font-bold font-mono">{projects?.reduce((acc, p) => acc + (p.dreamRecommendations?.length || 0), 0)}</div>
+            <div className="text-[8px] text-zinc-500 mt-0.5 truncate uppercase">Dreams</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Chat Conversation Feed */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 bg-[#09090b] select-text">
         {messages.map((msg) => (
           <motion.div
             key={msg.id}
@@ -282,15 +1906,15 @@ export function RightSidebar() {
             className={`flex flex-col gap-1 text-[11px] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
           >
             {msg.role === 'agent' && (
-              <div className="flex items-center gap-1.5 mb-0.5 text-[9px] font-medium text-blue-400 uppercase tracking-widest pl-1">
-                <Cpu size={10} /> DevSpace Engine
+              <div className="flex items-center gap-1.5 mb-0.5 text-[9px] font-semibold text-blue-400 uppercase tracking-widest pl-1">
+                <Cpu size={10} className="animate-pulse" /> Aether Orchestrator
               </div>
             )}
             <div
-              className={`px-3 py-2 rounded-lg max-w-full leading-relaxed ${
+              className={`px-3 py-2 rounded-xl max-w-full leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-blue-50 border border-blue-500 shadow-md shadow-blue-500/10'
-                  : 'bg-[#121214] text-zinc-300 border border-zinc-800/80 shadow-sm'
+                  ? 'bg-blue-650 text-blue-50 border border-blue-500/20 shadow-md'
+                  : 'bg-[#121214] text-zinc-350 border border-zinc-800/80 shadow-sm'
               }`}
             >
               {msg.role === 'user' ? (
@@ -300,83 +1924,117 @@ export function RightSidebar() {
                    <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.content}</Markdown>
                  </div>
               )}
+
+              {msg.actionFeedback && (
+                <div className="mt-2 pt-1 border-t border-emerald-500/25 text-emerald-400 font-mono text-[9px] flex items-center gap-1.5">
+                  <CheckCircle2 size={10} className="text-emerald-400 shrink-0" />
+                  <span className="truncate">{msg.actionFeedback}</span>
+                </div>
+              )}
             </div>
           </motion.div>
         ))}
+
+        {isProcessing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col items-start gap-1 text-[11px]"
+          >
+            <div className="text-[9px] text-zinc-500 font-mono">Aether Consulting Brain...</div>
+            <div className="bg-[#121214] border border-zinc-800 rounded-xl px-3 py-2 flex items-center gap-2">
+              <Loader2 size={11} className="text-indigo-400 animate-spin" />
+              <span className="text-zinc-500 font-mono animate-pulse">Syncing states...</span>
+            </div>
+          </motion.div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Dictating vocal actions Overlay in sidebar info */}
+      <AnimatePresence>
+        {isRecording && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="bg-[#18181b] border-t border-red-500/30 p-3 text-center space-y-1 select-none"
+          >
+            <div className="text-red-400 text-[10px] font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 animate-pulse font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Recording Voice Command
+            </div>
+            <div className="text-xl font-bold font-mono text-zinc-100">{recordingSeconds}s</div>
+            <button
+              onClick={stopRecording}
+              className="px-3.5 py-1 text-[10px] bg-red-650 hover:bg-red-700 font-semibold text-white rounded-full mx-auto"
+            >
+              Stop & Process
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Error Box */}
+      {errorMsg && (
+        <div className="bg-rose-950/20 border-t border-rose-500/10 p-2 text-[9px] font-mono text-rose-400 text-center flex items-center justify-center gap-1.5 select-none">
+          <AlertCircle size={11} /> <span>{errorMsg}</span>
+          <button onClick={() => setErrorMsg('')} className="underline font-bold">close</button>
+        </div>
+      )}
+
       {/* Input Area */}
-      <div className="p-3 bg-[#0c0c0e] border-t border-zinc-800 shrink-0">
-        <div className={`relative flex flex-col gap-2 bg-[#121214] border rounded-lg p-2 transition-colors ${isRecording ? 'border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]' : 'border-zinc-800 focus-within:border-blue-500/50'}`}>
+      <div className="p-3 bg-[#0c0c0e] border-t border-zinc-800 shrink-0 select-none">
+        <div className="relative flex flex-col gap-2 bg-[#121214] border border-zinc-800 focus-within:border-indigo-500/50 rounded-xl p-2.5 transition-all">
+           
            <div className="flex items-center">
-             {isRecording ? (
-                <div className="flex items-center gap-2 w-full px-2 py-1">
-                   <div className="flex gap-0.5 items-end h-3">
-                      <motion.div animate={{ height: ["4px", "12px", "4px"] }} transition={{ repeat: Infinity, duration: 0.8 }} className="w-1 bg-amber-500 rounded-full" />
-                      <motion.div animate={{ height: ["6px", "10px", "6px"] }} transition={{ repeat: Infinity, duration: 1.2 }} className="w-1 bg-amber-500 rounded-full" />
-                      <motion.div animate={{ height: ["3px", "12px", "3px"] }} transition={{ repeat: Infinity, duration: 0.9 }} className="w-1 bg-amber-500 rounded-full" />
-                   </div>
-                   <span className="text-amber-500 text-xs font-mono ml-2">Listening... {formatTime(recordingTime)}</span>
-                </div>
-             ) : (
-                <>
-                   <Terminal size={12} className="text-zinc-500 ml-1.5 shrink-0" />
-                   <input 
-                     type="text" 
-                     value={inputValue}
-                     onChange={e => setInputValue(e.target.value)}
-                     onKeyDown={e => e.key === 'Enter' && handleSend()}
-                     placeholder="Prompt DevSpace..."
-                     className="w-full bg-transparent border-none py-1 pl-2.5 pr-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-0"
-                   />
-                </>
-             )}
+              <Terminal size={12} className="text-zinc-500 ml-1 shrink-0" />
+              <input 
+                type="text" 
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSend()}
+                placeholder="Talk to Aether..."
+                className="w-full bg-transparent border-none py-1 pl-2.5 pr-2 text-xs text-zinc-150 placeholder:text-zinc-650 focus:outline-none focus:ring-0 select-text"
+              />
            </div>
            
-           <div className="flex items-center justify-between pt-1 border-t border-zinc-800/50 mt-1">
+           <div className="flex items-center justify-between pt-1.5 border-t border-zinc-800/40 mt-1">
              <div className="flex items-center gap-1">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
                 <button 
                   onClick={() => fileInputRef.current?.click()}
                   className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors relative" 
                   title="Attach file"
-                  disabled={isRecording}
                 >
                   <Paperclip size={12} />
                   {attachedFiles.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 text-[8px] flex items-center justify-center rounded-full text-white font-bold">{attachedFiles.length}</span>
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-blue-500 text-[8px] flex items-center justify-center rounded-full text-white font-bold">{attachedFiles.length}</span>
                   )}
                 </button>
+
                 <button 
-                  onClick={toggleRecording}
-                  className={`p-1.5 rounded transition-colors ${
-                     isRecording ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
-                  }`} 
-                  title="Voice command"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`p-1.5 rounded transition-colors ${isRecording ? 'text-red-500 bg-red-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="Voice command dictation"
                 >
-                  {isRecording ? <StopCircle size={12} /> : <Mic size={12} />}
+                  <Mic size={12} className={isRecording ? 'animate-pulse' : ''} />
                 </button>
              </div>
+
              <button 
                onClick={() => handleSend()}
-               disabled={isRecording}
-               className={`p-1.5 rounded transition-colors flex items-center gap-1.5 bg-[#09090b] border border-zinc-800 ${
-                  isRecording ? 'text-zinc-600 cursor-not-allowed border-zinc-800/50' : 'text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10'
-               }`}
+               disabled={isProcessing}
+               className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-950/20 transition-colors flex items-center gap-1 shadow-sm"
              >
-               <span className="text-[10px] font-medium hidden sm:inline-block">Send</span>
-               <Send size={12} />
+               <span className="text-[10px] font-semibold px-1">Send</span>
+               <Send size={11} />
              </button>
            </div>
         </div>
-        <div className="flex justify-between items-center mt-2 px-1">
-          <span className="text-[9px] text-zinc-500 flex items-center gap-1">
-             <Zap size={10} className="text-blue-500/70"/> Gemini API
-          </span>
-          <span className="text-[9px] text-zinc-600">
-             <kbd className="font-mono bg-[#121214] border border-zinc-800 px-1 rounded">↵</kbd> Send
-          </span>
+
+        <div className="flex justify-between items-center mt-2 px-1 text-[9px] text-zinc-500">
+          <span>🎯 Double-click floating widget to toggles</span>
+          <span className="text-zinc-600">↵ to Send</span>
         </div>
       </div>
 

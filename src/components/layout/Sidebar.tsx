@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit } from 'lucide-react';
+import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
@@ -7,6 +7,7 @@ import { useData } from '../../context/DataProvider';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: Sparkles, label: 'AI Assistant', path: '/assistant' },
   { icon: CheckSquare, label: 'Issues', path: '/issues' },
   { icon: FolderGit2, label: 'Projects', path: '/projects' },
   { icon: FileText, label: 'Notes', path: '/notes' },
@@ -93,16 +94,9 @@ export function Sidebar() {
       {/* System Status / User Footer */}
       <section className="mt-auto">
         <div className="bg-[#121214] border border-zinc-800 rounded-lg p-3">
-          <div className="text-[10px] text-zinc-500 mb-1 flex items-center justify-between">
+          <div className="text-[10px] text-zinc-500 flex items-center justify-between">
             <span>DV</span>
             <span>dev@devspace.ai</span>
-          </div>
-          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden mt-2">
-            <div className="h-full w-2/3 bg-blue-500"></div>
-          </div>
-          <div className="flex justify-between text-[10px] mt-2 text-zinc-400">
-            <span>Memory Usage</span>
-            <span>82% Limit</span>
           </div>
         </div>
       </section>

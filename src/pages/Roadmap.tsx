@@ -1,4 +1,4 @@
-import { Calendar, ChevronLeft, ChevronRight, Loader2, Target, Plus, X, ListTodo, Presentation, Rocket, Focus, AlertCircle, ExternalLink, Sparkles, LayoutList, Check } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Loader2, Target, Plus, X, ListTodo, Presentation, Rocket, Focus, AlertCircle, ExternalLink, Sparkles, LayoutList, Check, Mic, Send, CheckCircle } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
@@ -17,7 +17,7 @@ const getHexForPhaseColor = (colorClass: string) => {
 };
 
 export function Roadmap() {
-  const { projects, issues, phases, addPhase, deletePhase, activeProjectId, setActiveProjectId } = useData();
+  const { projects, issues, phases, addPhase, updatePhase, deletePhase, addIssue, updateIssue, activeProjectId, setActiveProjectId } = useData();
   const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
@@ -28,6 +28,245 @@ export function Roadmap() {
     duration: 1, 
     color: 'text-blue-500 bg-blue-500 border-blue-500' 
   });
+
+  // Voice Command & Natural Language Smart Architect Console states
+  const [voiceText, setVoiceText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [successLogs, setSuccessLogs] = useState<string[]>([]);
+
+  const handleToggleListening = () => {
+    setVoiceError(null);
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceError("Web Speech API is not supported in this browser environment. You can type commands manually in the console bar below!");
+      return;
+    }
+
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech Recognition Error:", event.error);
+        if (event.error === 'not-allowed') {
+          setVoiceError("Microphone permission was denied inside the application preview. Please grant access or type manually.");
+        } else {
+          setVoiceError(`Audio capture notification: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setVoiceText(transcript);
+      };
+
+      recognition.start();
+    } catch (e: any) {
+      setVoiceError(`Audio module initialization warning: ${e.message}`);
+      setIsListening(false);
+    }
+  };
+
+  const handleExecuteVoiceCommand = async (commandToExecute?: string) => {
+    const activeCommand = commandToExecute !== undefined ? commandToExecute : voiceText;
+    if (!activeCommand.trim()) return;
+
+    setIsProcessingVoice(true);
+    setVoiceError(null);
+
+    const activeProject = projects.find(p => p.id === activeProjectId);
+
+    const promptText = `
+You are an expert AI scrum master assistant compiled into the SaaS Project OS.
+Process this spoken voice typing intent: "${activeCommand}"
+
+Context Details:
+Active Project ID: "${activeProjectId || ""}"
+Active Project Name: "${activeProject?.name || ""}"
+Current Roadmap Phases: ${JSON.stringify(activePhases.map(p => ({ id: p.id, name: p.name, startMonth: p.startMonth, duration: p.duration, goal: p.goal || "" })))}
+Current Issue/Tasks: ${JSON.stringify(issues.filter(i => i.projectId === activeProjectId).map(i => ({ id: i.id, title: i.title, priority: i.priority, status: i.status })))}
+
+You MUST convert this spoken command into one or more operations on the roadmap.
+Return a RAW JSON array of actions wrapped inside standard markdown code block: \`\`\`json ... \`\`\`.
+Do not output any introductory or concluding text.
+
+JSON Schema format:
+{
+  "actions": [
+    {
+      "type": "CREATE_PHASE",
+      "payload": {
+        "name": "Phase Name",
+        "goal": "Describe goal clearly",
+        "startMonth": 5, // 0-indexed month (0=Jan, 1=Feb, 2=Mar, 3=Apr, 4=May, 5=Jun, 6=Jul, 7=Aug, 8=Sep, 9=Oct, 10=Nov, 11=Dec)
+        "duration": 6, // number of months (1 to 12)
+        "color": "text-blue-500 bg-blue-500 border-blue-500" // or emerald-500, purple-500, rose-500, amber-500
+      }
+    },
+    {
+      "type": "UPDATE_PHASE",
+      "payload": {
+        "phaseId": "match existing phase id from the context",
+        "goal": "updated objectives",
+        "name": "updated name if specified"
+      }
+    },
+    {
+      "type": "ADD_ISSUE",
+      "payload": {
+        "title": "Task title",
+        "priority": "Medium", // Low, Medium, High, Critical
+        "phaseId": "match phase uuid if can, otherwise leave empty",
+        "status": "To Do" // or Done if they said "I finished / completed this"
+      }
+    },
+    {
+      "type": "COMPLETE_ISSUE",
+      "payload": {
+        "issueId": "match existing issue id from context for completion"
+      }
+    }
+  ]
+}
+`;
+
+    try {
+      const response = await fetch("/api/gemini/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: promptText }],
+          context: `You are ScrumMaster Agent compiling voice typing intent to structural JSON commands.`,
+        }),
+      });
+
+      let accumText = "";
+      if (response.ok && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const inner = line.slice(6).trim();
+              if (inner === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(inner);
+                if (parsed.text) accumText += parsed.text;
+              } catch {}
+            }
+          }
+        }
+      }
+
+      // Now extract and parse the JSON block
+      const jsonStart = accumText.indexOf("```json");
+      const jsonEnd = accumText.lastIndexOf("```");
+      let jsonString = accumText;
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        jsonString = accumText.slice(jsonStart + 7, jsonEnd).trim();
+      } else if (accumText.includes("{")) {
+        // Fallback trace
+        const firstBrace = accumText.indexOf("{");
+        const lastBrace = accumText.lastIndexOf("}");
+        jsonString = accumText.slice(firstBrace, lastBrace + 1);
+      }
+
+      const parsedResult = JSON.parse(jsonString);
+      if (parsedResult && Array.isArray(parsedResult.actions)) {
+        let executedLogs: string[] = [];
+        
+        for (const act of parsedResult.actions) {
+          if (act.type === "CREATE_PHASE" && activeProjectId) {
+            const year = new Date().getFullYear();
+            const monthStr = (act.payload.startMonth + 1).toString().padStart(2, '0');
+            addPhase({
+              projectId: activeProjectId,
+              name: act.payload.name,
+              startDate: `${year}-${monthStr}-01`,
+              endDate: act.payload.duration.toString(),
+              color: act.payload.color || "text-blue-500 bg-blue-500 border-blue-500",
+              goal: act.payload.goal
+            });
+            executedLogs.push(`🚀 Created Phase: "${act.payload.name}" starting in month idx ${act.payload.startMonth} with goal: "${act.payload.goal}"`);
+          } 
+          else if (act.type === "UPDATE_PHASE") {
+            updatePhase(act.payload.phaseId, {
+              ...(act.payload.goal ? { goal: act.payload.goal } : {}),
+              ...(act.payload.name ? { name: act.payload.name } : {})
+            });
+            executedLogs.push(`⚙️ Updated objectives for phase ID: ${act.payload.phaseId}`);
+          }
+          else if (act.type === "ADD_ISSUE" && activeProjectId) {
+            const pId = act.payload.phaseId || (activePhases[0]?.id || "");
+            addIssue({
+              projectId: activeProjectId,
+              title: act.payload.title,
+              description: "Voice-typed collaborative task constraint.",
+              type: "Task",
+              status: act.payload.status === "To Do" || act.payload.status === "Todo" || !act.payload.status ? "Todo" : (act.payload.status === "In Progress" ? "In Progress" : "Done"),
+              priority: act.payload.priority || "Medium",
+              phaseId: pId || undefined,
+            });
+            executedLogs.push(`📝 Added task "${act.payload.title}" (${act.payload.status || "Todo"}) to phase ID "${pId}"`);
+          }
+          else if (act.type === "COMPLETE_ISSUE") {
+            let targetId = act.payload.issueId;
+            if (targetId === "AUTO_FIRST" || !targetId || !issues.some(iss => iss.id === targetId)) {
+              const activeProjIssues = issues.filter(i => i.projectId === activeProjectId && i.status !== "Done");
+              if (activeProjIssues.length > 0) {
+                targetId = activeProjIssues[0].id;
+              }
+            }
+            if (targetId && issues.some(iss => iss.id === targetId)) {
+              updateIssue(targetId, { status: "Done" });
+              const foundIssue = issues.find(i => i.id === targetId);
+              executedLogs.push(`✅ Marked task "${foundIssue?.title || 'Active Task'}" as Completed!`);
+            } else {
+              executedLogs.push(`⚠️ No open tasks found to mark as completed.`);
+            }
+          }
+        }
+
+        if (executedLogs.length > 0) {
+          setSuccessLogs(executedLogs);
+          setVoiceText('');
+          // Auto clear logs after 8 seconds
+          setTimeout(() => setSuccessLogs([]), 8000);
+        } else {
+          setVoiceError("The AI interpreted the voice command but could not extract active changes. Try saying: 'Add task [Name] to Phase [PhaseName]'");
+        }
+      } else {
+        setVoiceError("Could not compile voice intent into structured changes. Try a cleaner request form.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setVoiceError(`Failed compile translation: ${err.message}. Try checking formatting specifications.`);
+    } finally {
+      setIsProcessingVoice(false);
+    }
+  };
 
   const activeIssuesWithDates = useMemo(() => {
     return issues.filter(i => i.projectId === activeProjectId && i.dueDate).map(issue => {
@@ -191,6 +430,127 @@ export function Roadmap() {
                </div>
             </div>
          </div>
+      )}
+
+      {/* COGNITIVE VOICE & NATURAL LANGUAGE ARCHITECT CONSOLE */}
+      {activeProjectId && (
+        <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 mb-6 animate-in fade-in slide-in-from-top duration-300">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b border-zinc-850 pb-3 mb-4 gap-2">
+            <div>
+              <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest flex items-center gap-1.5 font-mono">
+                <span className="flex h-2 w-2 relative">
+                  {isListening && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${isListening ? 'bg-emerald-500' : 'bg-zinc-600'}`}></span>
+                </span>
+                🎙️ Cognitive Voice & Natural Language Architect
+              </h3>
+              <p className="text-[11px] text-zinc-500 mt-0.5">
+                Directly dictate roadmap modifications or type commands. The ScrumMaster agent compiles spoken parameters into active roadmap migrations.
+              </p>
+            </div>
+            {isListening && (
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="h-4 w-0.5 bg-emerald-500 animate-[bounce_0.8s_infinite_-0.2s]"></span>
+                <span className="h-5 w-0.5 bg-emerald-400 animate-[bounce_0.8s_infinite]"></span>
+                <span className="h-3 w-0.5 bg-emerald-500 animate-[bounce_0.8s_infinite_0.2s]"></span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleToggleListening}
+              type="button"
+              className={`p-2.5 rounded-lg border transition-all flex items-center gap-2 text-xs font-semibold cursor-pointer shrink-0 ${
+                isListening
+                  ? "bg-rose-950/40 text-rose-300 border-rose-500/40 hover:bg-rose-900/40"
+                  : "bg-emerald-950/40 text-emerald-300 border-emerald-500/10 hover:border-emerald-500/30 hover:bg-emerald-900/30"
+              }`}
+              title={isListening ? "Stop listening" : "Start speaking"}
+            >
+              <Mic size={15} className={isListening ? "animate-pulse" : ""} />
+              <span>{isListening ? "Listening..." : "Voice Capture"}</span>
+            </button>
+
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={voiceText}
+                onChange={(e) => setVoiceText(e.target.value)}
+                placeholder="e.g. From June to December, I want to deliver Public Release, and add task Check secure headers."
+                disabled={isProcessingVoice}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleExecuteVoiceCommand();
+                }}
+                className="w-full bg-zinc-900 border border-zinc-800 disabled:opacity-50 rounded-lg pl-3 pr-10 py-2.5 text-xs text-zinc-200 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
+              />
+              <button
+                onClick={() => handleExecuteVoiceCommand()}
+                disabled={isProcessingVoice || !voiceText.trim()}
+                className="absolute right-1.5 top-1.5 p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:hover:bg-blue-600 transition-colors cursor-pointer"
+              >
+                <Send size={12} />
+              </button>
+            </div>
+          </div>
+
+          {/* Prompt Chips */}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-zinc-800/40 pt-3">
+            <span className="text-[10px] text-zinc-550 font-mono shrink-0">Command Presets:</span>
+            {[
+              "From June to December, I want to deliver Public Beta platform.",
+              "Add urgent task Deploy API Gateway inside existing phase.",
+              "Mark active task as done.",
+            ].map((chip) => (
+              <button
+                key={chip}
+                onClick={() => {
+                  setVoiceText(chip);
+                  handleExecuteVoiceCommand(chip);
+                }}
+                disabled={isProcessingVoice}
+                className="text-[9px] bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-400 hover:text-zinc-200 px-2 py-0.5 rounded-full transition-all cursor-pointer whitespace-nowrap"
+              >
+                "{chip}"
+              </button>
+            ))}
+          </div>
+
+          {/* Feedback & Error Logs */}
+          <AnimatePresence>
+            {voiceError && (
+              <div className="mt-3 p-2.5 rounded bg-rose-950/20 text-rose-400 border border-rose-500/10 text-[10.5px] leading-relaxed flex items-center gap-2">
+                <AlertCircle size={13} className="shrink-0" />
+                <span>{voiceError}</span>
+              </div>
+            )}
+
+            {isProcessingVoice && (
+              <div className="mt-3 p-2.5 rounded bg-blue-950/10 text-blue-300 border border-blue-500/10 text-[10.5px] leading-relaxed flex items-center gap-2">
+                <Loader2 size={13} className="animate-spin shrink-0" />
+                <span>Interpreting vocal parameters to compile actionable milestone JSON instructions...</span>
+              </div>
+            )}
+
+            {successLogs.length > 0 && (
+              <div className="mt-3 p-3 bg-emerald-950/20 text-emerald-300 border border-emerald-500/10 rounded space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider font-mono text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle size={12} /> Voice Command Compiled Successfully!
+                </div>
+                <div className="space-y-1">
+                  {successLogs.map((log, idx) => (
+                    <div key={idx} className="text-[10.5px] flex items-start gap-1.5 leading-relaxed font-sans">
+                      <span className="text-emerald-500 font-mono select-none">&gt;</span>
+                      <span>{log}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
       )}
 
       <div className="flex gap-4 mb-6">

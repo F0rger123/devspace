@@ -46,7 +46,7 @@ const FileTreeItem = ({ item, level = 0, onNodeClick, activePath }: { item: any;
 };
 
 export function Brain() {
-  const { projects, issues, phases, aiContextRules, setAiContextRules, githubRepo, githubToken, activeProjectId } = useData();
+  const { projects, issues, phases, aiContextRules, setAiContextRules, githubRepo, githubToken, activeProjectId, cortexSynapses, setCortexSynapses } = useData();
   const [nodes, setNodes] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
   const [fileTree, setFileTree] = useState<any[]>([]);
@@ -486,6 +486,8 @@ export function Brain() {
                 memoryAssistantSpeaking={memoryAssistantSpeaking}
                 handleVocalSync={handleVocalSync}
                 vocalLogs={vocalLogs}
+                 cortexSynapses={cortexSynapses}
+                 setCortexSynapses={setCortexSynapses}
              />
           ) : false ? (
              <div className="absolute inset-0 flex flex-col md:flex-row p-6 gap-6 overflow-hidden bg-[#09090b]/40">
