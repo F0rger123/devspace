@@ -612,7 +612,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   });
 
   const [passcodePin, setPasscodePin] = useState<string>(() => {
-    return getStored<string>('whatsapp_passcode_pin', '1234');
+    return getStored<string>('whatsapp_passcode_pin', '');
   });
 
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
@@ -625,15 +625,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           if (data) {
-            if (Array.isArray(data.projects) && data.projects.length > 0) setProjects(data.projects);
-            if (Array.isArray(data.issues) && data.issues.length > 0) setIssues(data.issues);
-            if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes);
-            if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases);
-            if (Array.isArray(data.agents) && data.agents.length > 0) setAgents(data.agents);
-            if (Array.isArray(data.cortexSynapses) && data.cortexSynapses.length > 0) setCortexSynapses(data.cortexSynapses);
-            if (typeof data.aiContextRules === 'string' && data.aiContextRules) setAiContextRules(data.aiContextRules);
-            if (typeof data.passcodePin === 'string' && data.passcodePin) {
-              setPasscodePin(data.passcodePin);
+            if (data.initialized) {
+              // Server has backup disk persistence, treat it as single absolute authority (even if arrays are empty)
+              setProjects(data.projects || []);
+              setIssues(data.issues || []);
+              setNotes(data.notes || []);
+              setPhases(data.phases || []);
+              setAgents(data.agents || []);
+              setCortexSynapses(data.cortexSynapses || []);
+              if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
+              if (typeof data.passcodePin === 'string') {
+                setPasscodePin(data.passcodePin);
+                localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
+              }
+            } else {
+              // Server not yet initialized, load whatever we have in localStorage or defaults, and save it up
+              if (Array.isArray(data.projects) && data.projects.length > 0) setProjects(data.projects);
+              if (Array.isArray(data.issues) && data.issues.length > 0) setIssues(data.issues);
+              if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes);
+              if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases);
+              if (Array.isArray(data.agents) && data.agents.length > 0) setAgents(data.agents);
+              if (Array.isArray(data.cortexSynapses) && data.cortexSynapses.length > 0) setCortexSynapses(data.cortexSynapses);
+              if (typeof data.aiContextRules === 'string' && data.aiContextRules) setAiContextRules(data.aiContextRules);
+              if (typeof data.passcodePin === 'string' && data.passcodePin) {
+                setPasscodePin(data.passcodePin);
+                localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
+              }
             }
           }
         }
@@ -646,7 +663,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     loadServerState();
   }, []);
 
-  // Post state cache to server on local changes (debounced by 800ms)
+  // Post state cache to server on local changes (debounced by 400ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
 
@@ -669,7 +686,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         console.error("Failed to auto-sync changes to server:", e);
       }
-    }, 800);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, passcodePin, isInitialLoadDone]);

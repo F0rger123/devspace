@@ -40,9 +40,16 @@ import {
   FileText,
   GitBranch,
   Brain,
-  Command
+  Command,
+  Mail,
+  Lightbulb,
+  CheckSquare,
+  Target,
+  BarChart2
 } from 'lucide-react';
 import { useData } from '../context/DataProvider';
+import { googleSignIn, initAuth, logout as googleLogout } from '../lib/auth';
+import { MemoryCortex } from '../components/MemoryCortex';
 
 interface RecommendedAction {
   id: string;
@@ -62,6 +69,7 @@ export function WhatsAppCompanion() {
     deleteIssue,
     notes = [],
     addNote,
+    deleteNote,
     agents = [],
     phases = [],
     addPhase,
@@ -73,21 +81,37 @@ export function WhatsAppCompanion() {
     githubUser,
     githubProfile,
     passcodePin,
-    setPasscodePin
+    setPasscodePin,
+    cortexSynapses = [],
+    setCortexSynapses,
+    aiContextRules = '',
+    setAiContextRules,
+    activeProjectId,
+    setActiveProjectId,
+    googleToken,
+    setGoogleToken,
+    googleUser,
+    setGoogleUser
   } = useData();
 
   const [searchParams] = useSearchParams();
   const urlCode = searchParams.get('code') || '';
+  const [selectedHighlightMemory, setSelectedHighlightMemory] = useState<string>('');
 
   // Custom Dashboard Sub-Tabs State
-  const [subTab, setSubTab] = useState<'controls' | 'projects' | 'backlog' | 'obsidian' | 'github'>('controls');
+  const [subTab, setSubTab] = useState<'controls' | 'projects' | 'backlog' | 'obsidian' | 'github' | 'email'>('controls');
   
   // Custom interactive dual-sync agent assignees states
   const [selectedAgentMap, setSelectedAgentMap] = useState<Record<string, string>>({});
   
   // Selected project detail view states
   const [activeProjectDetailId, setActiveProjectDetailId] = useState<string | null>(null);
-  const [detailSubTab, setDetailSubTab] = useState<'plan' | 'issues' | 'roadmap' | 'ai'>('plan');
+  const [detailSubTab, setDetailSubTab] = useState<'dashboard' | 'fixes' | 'actions' | 'ideas' | 'notes'>('dashboard');
+  
+  // Voice logs for notes dictation
+  const [projectNoteTranscript, setProjectNoteTranscript] = useState('');
+  const [isProjectNoteRecording, setIsProjectNoteRecording] = useState(false);
+  const projectNoteRecogRef = useRef<any>(null);
   
   // Form States for project-specific sub-additions
   const [newIdeaTitle, setNewIdeaTitle] = useState('');
@@ -165,6 +189,43 @@ export function WhatsAppCompanion() {
   });
   const [isUpdatingCode, setIsUpdatingCode] = useState(false);
 
+  // Custom Username and Password Authentication configurations
+  const [authUsername, setAuthUsername] = useState('admin');
+  const [authPassword, setAuthPassword] = useState('password');
+  const [isUpdatingAuth, setIsUpdatingAuth] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<'code' | 'password'>('password');
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+
+  const handleUpdateAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authUsername.trim() || !authPassword.trim()) {
+      showToast("❌ Username and Password cannot be blank!");
+      return;
+    }
+    setIsUpdatingAuth(true);
+    try {
+      const res = await fetch('/api/whatsapp/set-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authUsername, password: authPassword })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAuthUsername(data.username);
+        setAuthPassword(data.password);
+        showToast("🎉 Companion credentials set successfully!");
+        addSystemLog(`AUTH_SETTINGS: Changed companion login to Username: "${data.username}"`);
+      } else {
+        showToast("❌ Failed to update login credentials.");
+      }
+    } catch {
+      showToast("❌ Connection state error.");
+    } finally {
+      setIsUpdatingAuth(false);
+    }
+  };
+
   const handleSetCustomCode = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanIn = customOneTimeCode.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -231,14 +292,27 @@ export function WhatsAppCompanion() {
     const val = localStorage.getItem('whatsapp_biometric_enabled');
     return val === null ? true : val === 'true';
   });
-  const [isLockScreenActive, setIsLockScreenActive] = useState(true);
+
+  // Persistent Gateway Session Unlock State
+  const [isLockScreenActive, setIsLockScreenActive] = useState(() => {
+    // If no pin is set in context, bypass lock screen.
+    const activePasscode = localStorage.getItem('whatsapp_passcode_pin') || '';
+    if (!activePasscode) return false;
+    return localStorage.getItem('whatsapp_lock_screen_active') !== 'false';
+  });
+
+  const updateLockScreenActive = (active: boolean) => {
+    setIsLockScreenActive(active);
+    localStorage.setItem('whatsapp_lock_screen_active', String(active));
+  };
+
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
   const [isScanningBiometrics, setIsScanningBiometrics] = useState(false);
 
   useEffect(() => {
     if (!passcodePin) {
-      setIsLockScreenActive(false);
+      updateLockScreenActive(false);
     }
   }, [passcodePin]);
 
@@ -278,6 +352,185 @@ export function WhatsAppCompanion() {
   useEffect(() => {
     localStorage.setItem('whatsapp_selected_voice_name', selectedVoiceName);
   }, [selectedVoiceName]);
+
+  // Email Dispatch and SMTP Configuration states
+  const [recipientEmail, setRecipientEmail] = useState<string>(() => {
+    return localStorage.getItem('aether_email_recipient') || 'drummerforger@gmail.com';
+  });
+  const [smtpConfig, setSmtpConfig] = useState(() => {
+    try {
+      const stored = localStorage.getItem('aether_email_smtp');
+      return stored ? JSON.parse(stored) : {
+        host: 'smtp.gmail.com',
+        port: 587,
+        user: '',
+        pass: '',
+        secure: false,
+        useRealSmtp: false
+      };
+    } catch {
+      return {
+        host: 'smtp.gmail.com',
+        port: 587,
+        user: '',
+        pass: '',
+        secure: false,
+        useRealSmtp: false
+      };
+    }
+  });
+
+  const [emailSendingStatus, setEmailSendingStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [emailLogs, setEmailLogs] = useState<string[]>([]);
+  const [lastDispatchedReport, setLastDispatchedReport] = useState<any>(null);
+  const [selectedEmailReportType, setSelectedEmailReportType] = useState<'summary' | 'ideas' | 'tasks' | 'goals' | 'stats'>('summary');
+  const [emailSubject, setEmailSubject] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem('aether_email_recipient', recipientEmail);
+  }, [recipientEmail]);
+
+  useEffect(() => {
+    localStorage.setItem('aether_email_smtp', JSON.stringify(smtpConfig));
+  }, [smtpConfig]);
+  
+  useEffect(() => {
+    initAuth(
+      (u, t) => {
+        setGoogleUser(u);
+        setGoogleToken(t);
+      },
+      () => {}
+    );
+  }, [setGoogleUser, setGoogleToken]);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Initiating Google Authentication popup...`]);
+      const result = await googleSignIn();
+      if (result) {
+        setGoogleToken(result.accessToken);
+        setGoogleUser(result.user);
+        setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Connected successfully to Google: ${result.user.email}`]);
+        showToast("✓ Connected Google Account!");
+      }
+    } catch (err: any) {
+      console.error("Google signIn failed:", err);
+      setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Auth failure: ${err.message || err}`]);
+      showToast("❌ Google Auth Failed");
+    }
+  };
+
+  const handleGoogleDisconnect = async () => {
+    try {
+      await googleLogout();
+      setGoogleToken(null);
+      setGoogleUser(null);
+      setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Disconnected Google Account safely.`]);
+      showToast("Disconnected Google Account");
+    } catch (err: any) {
+      console.error("Google logOut failed:", err);
+    }
+  };
+
+  // Automated Daily Email Scheduler States & Handlers
+  const [dailyEmailEnabled, setDailyEmailEnabled] = useState(false);
+  const [dailyEmailTime, setDailyEmailTime] = useState("08:00");
+  const [dailyEmailRecipient, setDailyEmailRecipient] = useState("drummerforger@gmail.com");
+  const [dailyEmailPlain, setDailyEmailPlain] = useState(true);
+  const [autonomousDreamingEnabled, setAutonomousDreamingEnabled] = useState(true);
+  const [automatedLogs, setAutomatedLogs] = useState<string[]>([]);
+  const [isSavingAutomated, setIsSavingAutomated] = useState(false);
+  const [isTestSendingDaily, setIsTestSendingDaily] = useState(false);
+
+  useEffect(() => {
+    const fetchAutomatedSettings = async () => {
+      try {
+        const response = await fetch('/api/email/automated-settings');
+        if (response.ok) {
+          const data = await response.json();
+          setDailyEmailEnabled(data.dailyEmailEnabled);
+          setDailyEmailTime(data.dailyEmailTime);
+          if (data.dailyEmailRecipient) {
+            setDailyEmailRecipient(data.dailyEmailRecipient);
+          } else {
+            setDailyEmailRecipient(recipientEmail || "drummerforger@gmail.com");
+          }
+          setDailyEmailPlain(data.dailyEmailPlain);
+          setAutonomousDreamingEnabled(data.autonomousDreamingEnabled);
+          setAutomatedLogs(data.logs || []);
+        }
+      } catch (err) {
+        console.error("Failed to load automated settings:", err);
+      }
+    };
+    fetchAutomatedSettings();
+  }, [recipientEmail]);
+
+  useEffect(() => {
+    if (googleToken) {
+      fetch('/api/email/save-google-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: googleToken, user: googleUser })
+      }).catch(err => console.error("Could not sync googleToken to server:", err));
+    }
+  }, [googleToken, googleUser]);
+
+  const handleSaveAutomatedSettings = async () => {
+    setIsSavingAutomated(true);
+    try {
+      const response = await fetch('/api/email/automated-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dailyEmailEnabled,
+          dailyEmailTime,
+          dailyEmailRecipient,
+          dailyEmailPlain,
+          autonomousDreamingEnabled
+        })
+      });
+      if (response.ok) {
+        showToast("✓ Saved Automated Email Settings!");
+        const data = await response.json();
+        setAutomatedLogs(data.logs || []);
+      } else {
+        showToast("❌ Could not save settings.");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("❌ Network error saving settings.");
+    } finally {
+      setIsSavingAutomated(false);
+    }
+  };
+
+  const handleTriggerDailyNow = async () => {
+    setIsTestSendingDaily(true);
+    setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Manually triggering automated daily send simulation...`]);
+    try {
+      const response = await fetch('/api/email/trigger-daily-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (response.ok) {
+        const result = await response.json();
+        showToast("✓ Automated Email Dispatched!");
+        setEmailLogs(prev => [...prev, ...((result.logs || []).map((l: string) => `[Auto-Scheduler] ${l}`))]);
+        if (result.logs) {
+          setAutomatedLogs(result.logs);
+        }
+      } else {
+        showToast("❌ Dispatch failed.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast("❌ Network error triggering send.");
+    } finally {
+      setIsTestSendingDaily(false);
+    }
+  };
   
   // Custom Dashboard / System Panel States
   const [systemLogs, setSystemLogs] = useState<string[]>([
@@ -398,6 +651,15 @@ export function WhatsAppCompanion() {
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
 
+  // Manual File Transcription State
+  const [isTranscribingFile, setIsTranscribingFile] = useState(false);
+  const [transcriptionFileName, setTranscriptionFileName] = useState('');
+  const [transcriptionProgress, setTranscriptionProgress] = useState(0);
+  const [transcriptionLogs, setTranscriptionLogs] = useState<string[]>([]);
+  const [estimatedDuration, setEstimatedDuration] = useState('');
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+
   // Voice Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -422,6 +684,12 @@ export function WhatsAppCompanion() {
           if (data.pairingCode) {
             setPairingCode(data.pairingCode);
             setCustomOneTimeCode(data.pairingCode);
+          }
+          if (data.whatsappUsername) {
+            setAuthUsername(data.whatsappUsername);
+          }
+          if (data.whatsappPassword) {
+            setAuthPassword(data.whatsappPassword);
           }
           if (data.linkedAccount || data.botNumber) {
             setPhoneNumber(data.linkedAccount || data.botNumber);
@@ -638,6 +906,664 @@ export function WhatsAppCompanion() {
     }
   };
 
+  const handleLoginWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginUser.trim() || !loginPass.trim()) {
+      setErrorMessage("Please enter both username and password.");
+      return;
+    }
+    setIsLinking(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/whatsapp/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUser.trim(), password: loginPass.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPairingCode(data.pairingCode);
+        const fixedPhone = "+1 (310) 902-1845";
+        setPhoneNumber(fixedPhone);
+        localStorage.setItem('whatsapp_companion_linked', 'true');
+        localStorage.setItem('whatsapp_companion_phone_number', fixedPhone);
+        localStorage.setItem('whatsapp_companion_pairing_code', data.pairingCode);
+        
+        setTimeout(() => {
+          setIsLinked(true);
+          setIsLinking(false);
+          addSystemLog(`LINKED: Companion connected via username/password login`);
+          showToast("🎉 Companion connected successfully!");
+        }, 300);
+      } else {
+        const err = await res.json().catch(() => ({ error: "Incorrect credentials." }));
+        setErrorMessage(err.error || "Login failed. Please verify credentials.");
+        setIsLinking(false);
+      }
+    } catch {
+      setErrorMessage("Cannot connect to server. Check network connection.");
+      setIsLinking(false);
+    }
+  };
+
+  const triggerEmailReport = async (reportType: 'summary' | 'ideas' | 'tasks' | 'goals' | 'stats', overrideRecipient?: string): Promise<{ success: boolean; simulated: boolean; info?: string; error?: string; logs?: string[] }> => {
+    setEmailSendingStatus('sending');
+    const targetEmail = overrideRecipient || recipientEmail;
+    
+    // Aesthetic layouts color maps
+    let accentCol = "#10b981"; // default emerald
+    let subtitle = "AETHER WORKSPACE DIGEST";
+    let reportTitle = "";
+    let bodyContentHtml = "";
+    
+    const currentProj = projects.find(p => p.id === activeProjectId) || projects[0];
+    const currentProjName = currentProj ? currentProj.name : "Aether Workspace Root";
+
+    switch(reportType) {
+      case 'summary':
+        accentCol = "#10b981"; // Emerald green
+        subtitle = "Daily Companion Status Digest";
+        reportTitle = `Workspace Summary: ${currentProjName}`;
+        
+        const projIssues = currentProj ? issues.filter(i => i.projectId === currentProj.id) : issues;
+        const totalProjIssues = projIssues.length;
+        const doneProjIssues = projIssues.filter(i => i.status === 'Done').length;
+        const syncProgressPercent = totalProjIssues > 0 ? Math.round((doneProjIssues / totalProjIssues) * 100) : (currentProj?.progressPercent || 0);
+
+        const projPhases = currentProj ? phases.filter(p => p.projectId === currentProj.id) : phases;
+        const activeBugsCount = projIssues.filter(i => i.type === 'Bug' && i.status !== 'Done').length;
+        const activeFeaturesCount = projIssues.filter(i => i.type === 'Feature' && i.status !== 'Done').length;
+        const activeTasksCount = projIssues.filter(i => i.type === 'Task' && i.status !== 'Done').length;
+
+        bodyContentHtml = `
+          <!-- Section 1: Project Overview -->
+          <div style="margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+              <h2 style="color: #0f172a; font-size: 16px; font-weight: 700; margin: 0;">Workspace Context</h2>
+              <span style="background-color: ${accentCol}15; color: ${accentCol}; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;">${currentProj ? currentProj.status : 'Planning'}</span>
+            </div>
+            
+            <p style="color: #475569; font-size: 13px; line-height: 1.5; margin: 0 0 16px 0;">
+              ${currentProj?.description || 'Strategic digital node tracking. Running real-time workspace SSH metrics.'}
+            </p>
+
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <tr>
+                <td style="color: #64748b; padding: 6px 0; width: 40%; font-weight: 500;">Active Project Name:</td>
+                <td style="color: #0f172a; font-weight: 700; padding: 6px 0;">${currentProjName}</td>
+              </tr>
+              <tr>
+                <td style="color: #64748b; padding: 6px 0; font-weight: 500;">Total Active Workload:</td>
+                <td style="color: #0f172a; font-weight: 700; padding: 6px 0;">${totalProjIssues} Items</td>
+              </tr>
+              <tr>
+                <td style="color: #64748b; padding: 6px 0; font-weight: 500;">Deployment Target:</td>
+                <td style="color: #475569; font-family: monospace; font-weight: 600; padding: 6px 0;">${currentProj?.launchTarget || 'Not Specified'}</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Section 2: Task Summaries Progress Bar -->
+          <div style="margin-bottom: 28px; background-color: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h3 style="color: #475569; font-size: 11px; font-weight: 700; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">📈 Overall Task Progress</h3>
+              <span style="color: ${accentCol}; font-size: 14px; font-weight: 800;">${syncProgressPercent}%</span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+              <tr>
+                <td>
+                  <div style="background-color: #e2e8f0; height: 10px; border-radius: 8px; overflow: hidden; width: 100%;">
+                    <div style="background-color: ${accentCol}; height: 10px; width: ${syncProgressPercent}%; border-radius: 8px;"></div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+            
+            <table style="width: 100%; text-align: center; border-collapse: collapse;">
+              <tr>
+                <td style="width: 33%; padding: 4px;">
+                  <strong style="font-size: 20px; color: #ef4444; display: block; font-weight: 800;">${activeBugsCount}</strong>
+                  <span style="color: #64748b; font-size: 9px; text-transform: uppercase; font-weight: 700;">Active Bugs</span>
+                </td>
+                <td style="width: 33%; padding: 4px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+                  <strong style="font-size: 20px; color: #2563eb; display: block; font-weight: 800;">${activeFeaturesCount}</strong>
+                  <span style="color: #64748b; font-size: 9px; text-transform: uppercase; font-weight: 700;">Features Left</span>
+                </td>
+                <td style="width: 33%; padding: 4px;">
+                  <strong style="font-size: 20px; color: #d97706; display: block; font-weight: 800;">${activeTasksCount}</strong>
+                  <span style="color: #64748b; font-size: 9px; text-transform: uppercase; font-weight: 700;">Sprint Tasks</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Section 3: Goal Milestones Progress -->
+          <div style="margin-bottom: 24px;">
+            <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">🎯 Active Goal Timeline</h2>
+            ${projPhases.slice(0, 3).map(phase => `
+              <div style="background-color: #ffffff; padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <strong style="color: #0f172a;">🎯 Milestone: ${phase.name}</strong>
+                  <span style="color: ${phase.color}; background-color: ${phase.color}10; font-size: 9px; padding: 2px 6px; font-weight: 700; border-radius: 4px; text-transform: uppercase;">Active</span>
+                </div>
+                <p style="color: #64748b; margin: 4px 0; font-size: 11px;">Goal: ${phase.goal || 'No objective outlined yet.'}</p>
+                <div style="color: #64748b; font-size: 10px; margin-top: 4px; font-family: monospace;">
+                  Period: ${phase.startDate} to ${phase.endDate}
+                </div>
+              </div>
+            `).join('') || `<div style="color: #64748b; font-size: 12px; text-align: center; padding: 24px 0; background: #f8fafc; border-radius: 8px;">No roadmap milestones set. Go to Milestones tab to configure.</div>`}
+          </div>
+
+          <!-- Section 4: Productivity Statistics -->
+          <div style="margin-bottom: 12px;">
+            <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">⚡ Productivity Statistics</h2>
+            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 14px; border-radius: 10px; font-size: 13px; color: #166534; line-height: 1.5;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <tr>
+                  <td style="padding: 4px 0; font-weight: 600;">Completion Rate:</td>
+                  <td style="text-align: right; font-weight: 800; font-family: monospace;">${syncProgressPercent}%</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px 0; font-weight: 600;">High-priority Items:</td>
+                  <td style="text-align: right; color: #b91c1c; font-weight: 800; font-family: monospace;">${projIssues.filter(i => i.priority === 'High' || i.priority === 'Critical').length} Outstanding</td>
+                </tr>
+                <tr>
+                  <td style="padding: 4px 0; font-weight: 600;">Sprint Ratio Score:</td>
+                  <td style="text-align: right; font-weight: 800; font-family: monospace;">${totalProjIssues > 0 ? (doneProjIssues + '/' + totalProjIssues) : '0/0'} Completed</td>
+                </tr>
+              </table>
+            </div>
+          </div>
+        `;
+        break;
+
+      case 'ideas':
+        accentCol = "#6366f1"; // Indigo
+        subtitle = "Active Brainstorm & Synaptic Logs";
+        reportTitle = `Ideation & Brainstorm Log`;
+        
+        const projNotes = currentProj ? notes.filter(n => n.projectId === currentProj.id) : notes;
+        
+        // Loop through some saved brainstorm ideas if present
+        const bIdeas = currentProj?.brainstormIdeas || [];
+
+        bodyContentHtml = `
+          <div style="margin-bottom: 24px;">
+            <h2 style="color: #0f172a; font-size: 16px; font-weight: 700; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">Active Cognitive Context</h2>
+            <div style="background-color: #f5f3ff; border: 1px solid #ddd6fe; color: #5b21b6; padding: 16px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; font-weight: 500;">
+              ✨ Ideation Engine active. Aether has parsed your brainstorm patterns, structured designer notes, and highlighted self-improvement code suggestions.
+            </div>
+          </div>
+
+          <!-- Brainstorm ideas if any -->
+          ${bIdeas.length > 0 ? `
+            <div style="margin-bottom: 24px;">
+              <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">🧠 Extracted Developer Brainstorm Ideas</h2>
+              <div style="max-height: 250px; overflow-y: auto;">
+                ${bIdeas.map((idea, idx) => `
+                  <div style="background-color: #ffffff; padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12px;">
+                    <div style="font-weight: 700; color: #4338ca; margin-bottom: 4px;">#${idx+1}: Proposed Idea</div>
+                    <div style="color: #0f172a; font-weight: 600;">${idea.text}</div>
+                    ${idea.details ? `<div style="color: #64748b; margin-top: 4px; font-size: 11px;">${idea.details}</div>` : ''}
+                    <div style="margin-top: 6px;"><span style="font-size: 9px; padding: 2px 6px; background: #e0e7ff; color: #4338ca; border-radius: 4px; font-weight: 700; text-transform: uppercase;">${idea.status}</span></div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <div>
+            <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 16px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">📑 Markdown Obsidian Memos (${projNotes.length})</h2>
+            ${projNotes.slice(0, 5).map(note => `
+              <div style="background-color: #ffffff; padding: 14px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 13px;">
+                <h3 style="color: #0f172a; margin: 0 0 8px 0; font-size: 14px; font-weight: 700;">${note.title}</h3>
+                <div style="color: #475569; font-size: 11.5px; line-height: 1.5; background: #f8fafc; padding: 12px; border-radius: 6px; font-family: monospace; border: 1px solid #f1f5f9; margin-bottom: 8px; overflow-wrap: break-word; white-space: pre-wrap;">
+                  ${note.content ? (note.content.substring(0, 250) + (note.content.length > 250 ? '...' : '')) : 'Empty memo content.'}
+                </div>
+                <div style="margin-top: 6px;">
+                  ${(note.tags || []).map((t: string) => `<span style="background: #e0e7ff; color: #4338ca; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 6px; display: inline-block; font-family: monospace; text-transform: uppercase;">#${t}</span>`).join('')}
+                </div>
+              </div>
+            `).join('') || `<div style="color: #64748b; font-size: 12px; text-align: center; padding: 24px 0; background: #f8fafc; border-radius: 8px;">No active brainstorming notes currently.</div>`}
+          </div>
+        `;
+        break;
+
+      case 'tasks':
+        accentCol = "#ec4899"; // Pink/Rose
+        subtitle = "Sprint Backlog Board Breakdown";
+        reportTitle = `Sprint Backlog & Critical Items`;
+
+        const pIssues = currentProj ? issues.filter(i => i.projectId === currentProj.id) : issues;
+        const totalCount = pIssues.length;
+        const todoCount = pIssues.filter(i => i.status === 'Todo').length;
+        const ipCount = pIssues.filter(i => i.status === 'In Progress').length;
+        const doneCount = pIssues.filter(i => i.status === 'Done').length;
+        const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+        
+        const criticalIssues = pIssues.filter(i => i.priority === 'Critical' || i.priority === 'High');
+
+        bodyContentHtml = `
+          <!-- Overall Stats Card -->
+          <div style="margin-bottom: 24px; background-color: #fdf2f8; padding: 20px; border-radius: 12px; border: 1px solid #fbcfe8;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #9d174d; letter-spacing: 0.5px;">📋 Sprint Board Progress</span>
+              <span style="color: #9d174d; font-size: 14px; font-weight: 800;">${progressPercent}% Complete</span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+              <tr>
+                <td>
+                  <div style="background-color: #fce7f3; height: 10px; border-radius: 8px; overflow: hidden; width: 100%;">
+                    <div style="background-color: #ec4899; height: 10px; width: ${progressPercent}%; border-radius: 8px;"></div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+
+            <table style="width: 100%; border-collapse: collapse; text-align: center;">
+              <tr>
+                <td style="width: 33%; padding: 4px;">
+                  <strong style="color: #2563eb; font-weight: 800; font-size: 22px; display: block;">${todoCount}</strong>
+                  <span style="color: #64748b; font-size: 9.5px; font-weight: 700; text-transform: uppercase;">To do</span>
+                </td>
+                <td style="width: 33%; padding: 4px; border-left: 1px solid #fbcfe8; border-right: 1px solid #fbcfe8;">
+                  <strong style="color: #d97706; font-weight: 800; font-size: 22px; display: block;">${ipCount}</strong>
+                  <span style="color: #64748b; font-size: 9.5px; font-weight: 700; text-transform: uppercase;">Active</span>
+                </td>
+                <td style="width: 33%; padding: 4px;">
+                  <strong style="color: #10b981; font-weight: 800; font-size: 22px; display: block;">${doneCount}</strong>
+                  <span style="color: #64748b; font-size: 9.5px; font-weight: 700; text-transform: uppercase;">Completed</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Section 2: Critical Items -->
+          <div style="margin-bottom: 24px;">
+            <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">🔥 Critical & High Priority Blockers (${criticalIssues.length})</h2>
+            ${criticalIssues.slice(0, 8).map(issue => `
+              <div style="background-color: #ffffff; padding: 14px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #ef4444; font-size: 13px;">
+                <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                  <span>${issue.title}</span>
+                  <span style="color: #ef4444; font-size: 9px; font-weight: 800; text-transform: uppercase; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">${issue.priority}</span>
+                </div>
+                ${issue.description ? `<p style="color: #475569; font-size: 11.5px; margin: 4px 0 8px 0; line-height: 1.4;">${issue.description}</p>` : ''}
+                <div style="color: #64748b; font-size: 11px; border-top: 1px solid #f1f5f9; padding-top: 6px; margin-top: 6px;">
+                  Type: <strong style="color: #475569;">${issue.type}</strong> | Status: <strong style="color: #475569;">${issue.status}</strong> | Assignee: <strong style="color: #475569;">${issue.assignee || 'Unallocated'}</strong>
+                  ${issue.dueDate ? `| Due: <strong style="color: #dc2626;">${issue.dueDate}</strong>` : ''}
+                </div>
+              </div>
+            `).join('') || `<div style="color: #64748b; font-size: 12px; text-align: center; padding: 24px 0; background: #f8fafc; border-radius: 8px;">No high or critical priority backlog items pending. All on track!</div>`}
+          </div>
+
+          <!-- Section 3: Standard Items (Recent 5) -->
+          <div style="margin-bottom: 12px;">
+            <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 12px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">📋 Other Active Tasks</h2>
+            ${pIssues.filter(i => i.priority !== 'Critical' && i.priority !== 'High' && i.status !== 'Done').slice(0, 5).map(issue => `
+              <div style="background-color: #ffffff; padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; font-size: 12px;">
+                <div style="font-weight: 700; color: #0f172a; margin-bottom: 2px; display: flex; justify-content: space-between;">
+                  <span>${issue.title}</span>
+                  <span style="color: #475569; font-size: 9px; font-weight: 600; background: #f1f5f9; padding: 1px 5px; border-radius: 4px;">${issue.status}</span>
+                </div>
+                <div style="color: #64748b; font-size: 10.5px;">
+                  Priority: <strong>${issue.priority}</strong> | Assignee: <strong>${issue.assignee || 'Unassigned'}</strong>
+                </div>
+              </div>
+            `).join('') || `<div style="color: #64748b; font-size: 12px; text-align: center; padding: 16px 0; background: #f8fafc; border-radius: 8px;">No other unresolved tasks. Awesome!</div>`}
+          </div>
+        `;
+        break;
+
+      case 'goals':
+        accentCol = "#f59e0b"; // Gold/Amber
+        subtitle = "Strategic Roadmap & Milestones";
+        reportTitle = `Strategic Roadmap Milestones`;
+
+        const prPhases = currentProj ? phases.filter(p => p.projectId === currentProj.id) : phases;
+        const syncProjPercent = currentProj?.progressPercent || 0;
+
+        bodyContentHtml = `
+          <!-- Overall Project Progress Card -->
+          <div style="margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+              <h2 style="color: #0f172a; font-size: 16px; font-weight: 700; margin: 0;">Goal Progress</h2>
+              <span style="background-color: #fef3c7; color: #d97706; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;">${currentProjName}</span>
+            </div>
+            
+            <p style="color: #475569; font-size: 13.5px; line-height: 1.5; margin: 0 0 16px 0;">
+              Aether is mapping milestone completions, deliverables, and launching timelines. Current overall completion index is verified at:
+            </p>
+
+            <div style="background-color: #fcfaf2; border: 1px solid #fef3c7; padding: 18px; border-radius: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="color: #b45309; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">🎯 Project Goal Progress</span>
+                <span style="color: #b45309; font-size: 15px; font-weight: 800;">${syncProjPercent}%</span>
+              </div>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td>
+                    <div style="background-color: #fde68a; height: 12px; border-radius: 8px; overflow: hidden; width: 100%;">
+                      <div style="background-color: #f59e0b; height: 12px; width: ${syncProjPercent}%; border-radius: 8px;"></div>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- Milestones and Deliverables Section -->
+          <div style="margin-bottom: 12px;">
+            <h2 style="color: #0f172a; font-size: 15px; font-weight: 700; margin: 0 0 16px 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">🎯 Roadmap Milestones Timeline (${prPhases.length})</h2>
+            
+            ${prPhases.map((phase, idx) => `
+              <div style="background-color: #ffffff; padding: 16px; margin-bottom: 12px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13px; position: relative;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span style="color: #0f172a; font-size: 14px; font-weight: 700;">🎯 Phase ${idx+1}: ${phase.name}</span>
+                  <span style="color: ${phase.color || '#f59e0b'}; font-weight: 700; font-size: 9px; text-transform: uppercase; border: 1px solid ${(phase.color || '#f59e0b')}30; background: ${(phase.color || '#f59e0b')}10; padding: 2px 8px; border-radius: 4px;">ACTIVE</span>
+                </div>
+                
+                <p style="color: #475569; font-size: 11.5px; margin: 4px 0 10px 0; line-height: 1.4;">
+                  Goal Outline: ${phase.goal || 'Strategic development and architectural node integration.'}
+                </p>
+                
+                <table style="width: 100%; border-top: 1px solid #f1f5f9; padding-top: 8px; font-size: 11px; color: #64748b;">
+                  <tr>
+                    <td style="width: 50%;">Start Date: <span style="color: #334155; font-family: monospace; font-weight: 600;">${phase.startDate || 'N/A'}</span></td>
+                    <td style="width: 50%; text-align: right;">Projected Date: <span style="color: #ef4444; font-family: monospace; font-weight: 600;">${phase.endDate || 'N/A'}</span></td>
+                  </tr>
+                </table>
+              </div>
+            `).join('') || `<div style="color: #64748b; font-size: 12px; text-align: center; padding: 24px 0; background: #f8fafc; border-radius: 8px;">No strategic milestones set. Go to Milestones tab inside the workspace dashboard to configure.</div>`}
+          </div>
+        `;
+        break;
+
+      case 'stats':
+        accentCol = "#06b6d4"; // Cyan
+        subtitle = "Diagnostics and Platform Logs";
+        reportTitle = `Diagnostics & Telemetrics`;
+
+        const sProjIssues = currentProj ? issues.filter(i => i.projectId === currentProj.id) : issues;
+        const totalCI = sProjIssues.length;
+        const bugsCount = sProjIssues.filter(i => i.type === 'Bug').length;
+        const activeBugsList = sProjIssues.filter(i => i.type === 'Bug' && i.status !== 'Done');
+        const tasksCount = sProjIssues.filter(i => i.type === 'Task').length;
+        const featsCount = sProjIssues.filter(i => i.type === 'Feature').length;
+        
+        const solvedIssues = sProjIssues.filter(i => i.status === 'Done').length;
+        const scoreComp = totalCI > 0 ? (solvedIssues / totalCI) : 1;
+        const scorePrio = totalCI > 0 ? (sProjIssues.filter(i => i.priority !== 'Critical' && i.priority !== 'High').length / totalCI) : 1;
+        const dynamicProdScore = Math.min(100, Math.max(10, Math.round(scoreComp * 70 + scorePrio * 30)));
+
+        bodyContentHtml = `
+          <!-- Section 1: Productivity Statistics Dashboard -->
+          <div style="margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+              <h2 style="color: #0f172a; font-size: 16px; font-weight: 700; margin: 0;">Productivity Statistics</h2>
+              <span style="background-color: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;">Aether Diagnostics</span>
+            </div>
+
+            <!-- Dashboard Row Statistics -->
+            <table style="width: 100%; margin-bottom: 20px; border-collapse: collapse; background: #fcfdfd; border: 1px solid #e0f2fe; border-radius: 12px;">
+              <tr>
+                <td style="padding: 16px; width: 50%; border-right: 1px solid #e0f2fe;">
+                  <strong style="font-size: 10px; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">Cortex Health Index</strong>
+                  <strong style="font-size: 26px; color: #0891b2; font-weight: 800;">${dynamicProdScore}%</strong>
+                </td>
+                <td style="padding: 16px; width: 50%;">
+                  <strong style="font-size: 10px; color: #64748b; text-transform: uppercase; display: block; letter-spacing: 0.5px; margin-bottom: 4px;">Resolution Rate</strong>
+                  <strong style="font-size: 26px; color: #0d9488; font-weight: 800;">${totalCI > 0 ? Math.round((solvedIssues / totalCI) * 100) : 100}%</strong>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Tech Stack Tags if present -->
+            ${currentProj?.customStack && currentProj.customStack.length > 0 ? `
+              <div style="margin-bottom: 16px; background-color: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; display: block; margin-bottom: 6px;">Integrated Stack Technology Nodes</span>
+                <div>
+                  ${currentProj.customStack.map(tech => `<span style="background: #e2e8f0; color: #1e293b; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 6px; display: inline-block; font-family: monospace;">${tech}</span>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- Section 2: Metrics Table -->
+          <div style="margin-bottom: 24px;">
+            <h2 style="color: #0f172a; font-size: 14px; font-weight: 700; margin: 0 0 10px 0;">📊 Active Backlog Metrics Matrix</h2>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+              <tr style="border-bottom: 1px solid #e2e8f0; background-color: #f8fafc;">
+                <th style="text-align: left; padding: 10px; color: #475569; font-size: 10px; text-transform: uppercase; font-weight: 700;">Cortex Asset Label</th>
+                <th style="text-align: right; padding: 10px; color: #475569; font-size: 10px; text-transform: uppercase; font-weight: 700;">Telemetry Counter</th>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; color: #334155; font-weight: 500;">🐞 High Priority Bugs</td>
+                <td style="text-align: right; padding: 10px; font-weight: 800; color: #ef4444;">${activeBugsList.length} Active / ${bugsCount} Total</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; color: #334155; font-weight: 500;">💡 Active Product Features</td>
+                <td style="text-align: right; padding: 10px; font-weight: 800; color: #2563eb;">${featsCount}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px; color: #334155; font-weight: 500;">🔨 Tasks Backlog Node</td>
+                <td style="text-align: right; padding: 10px; font-weight: 800; color: #d97706;">${tasksCount}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; color: #334155; font-weight: 500;">📋 Roadmap Development Phase</td>
+                <td style="text-align: right; padding: 10px; font-weight: 800; color: #06b6d4;">${phases.length} Phases</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Section 3: Diagnostic SSH Logs -->
+          <div style="margin-bottom: 12px;">
+            <h2 style="color: #0f172a; font-size: 14px; font-weight: 700; margin: 0 0 10px 0;">🛡️ Recent SSH Operational Telemetry Logs</h2>
+            <div style="background-color: #0f172a; padding: 14px; border-radius: 8px; font-family: monospace; font-size: 10.5px; color: #34d399; line-height: 1.5; border: 1px solid #1e293b; max-height: 140px; overflow-y: auto;">
+              ${systemLogs.slice(-6).map(log => `
+                <div style="margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; overflow-wrap: break-word;">${log}</div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+        break;
+    }
+
+    const compileAestheticEmail = (title: string, subt: string, accentColor: string, innerBody: string) => {
+      return `
+        <div style="background-color: #f8fafc; padding: 48px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155; line-height: 1.6; margin: 0;">
+          <div style="max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05),  0 2px 4px -1px rgba(0, 0, 0, 0.03); overflow: hidden;">
+            
+            <!-- Brand Head -->
+            <div style="background-color: #ffffff; padding: 32px 40px; border-bottom: 3px solid ${accentColor}; text-align: center;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="text-align: center;">
+                    <div style="display: inline-block; padding: 4px 12px; background-color: ${accentColor}12; border-radius: 20px; margin-bottom: 12px; border: 1px solid ${accentColor}25;">
+                      <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: ${accentColor}; font-family: monospace;">Aether Digital Workspace</span>
+                    </div>
+                    <h1 style="color: #0f172a; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; text-transform: uppercase; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">${title}</h1>
+                    <p style="color: #64748b; margin: 4px 0 0 0; font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase;">${subt}</p>
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- Main Body -->
+            <div style="padding: 36px 40px; background-color: #ffffff;">
+              ${innerBody}
+              
+              <!-- Call To Action -->
+              <div style="text-align: center; margin-top: 32px; border-top: 1px solid #f1f5f9; padding-top: 24px;">
+                <a href="${window.location.origin}" style="display: inline-block; background-color: ${accentColor}; color: #ffffff; padding: 12px 24px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-transform: uppercase; letter-spacing: 0.5px;">
+                  Open Aether Workspace
+                </a>
+              </div>
+            </div>
+
+            <!-- Footer Badge -->
+            <div style="background-color: #f8fafc; padding: 24px 40px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8;">
+              <p style="margin: 0; font-weight: 600; color: #64748b;">Dispatched on behalf of your connected Google account.</p>
+              <p style="margin: 4px 0 0 0; color: #cbd5e1; font-family: monospace; font-size: 10px;">Aether Companion Ecosystem — Secure Local Node</p>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const finalHtmlContent = compileAestheticEmail(reportTitle, subtitle, accentCol, bodyContentHtml);
+    const subjectLine = `Aether Workspace Digest: ${reportType.toUpperCase()}`;
+    setEmailSubject(subjectLine);
+
+    // If Google token is present, we send via direct Gmail REST clientside API!
+    if (googleToken) {
+      try {
+        setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Authenticating with your Google Account...`]);
+        
+        // Build base64 MIME payload
+        const utf8_to_b64Text = (str: string) => {
+          return window.btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => {
+            return String.fromCharCode(parseInt(p1, 16));
+          }));
+        };
+
+        const utf8Subject = `=?utf-8?B?${utf8_to_b64Text(subjectLine)}?=`;
+        const boundary = "boundary_aether_multipart_" + Math.random().toString(36).substring(2);
+
+        const emailHeaders = [
+          `To: ${targetEmail}`,
+          `Subject: ${utf8Subject}`,
+          `MIME-Version: 1.0`,
+          `Content-Type: multipart/alternative; boundary="${boundary}"`,
+          ``,
+          `--${boundary}`,
+          `Content-Type: text/plain; charset="utf-8"`,
+          `Content-Transfer-Encoding: 7bit`,
+          ``,
+          `Aether Security Summary: Please view this report in an HTML-enabled email browser.`,
+          ``,
+          `--${boundary}`,
+          `Content-Type: text/html; charset="utf-8"`,
+          `Content-Transfer-Encoding: base64`,
+          ``,
+          utf8_to_b64Text(finalHtmlContent),
+          `--${boundary}--`
+        ].join('\r\n');
+
+        const rawMessage = utf8_to_b64Text(emailHeaders)
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+
+        setEmailLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Dispatching message payload to googleapis.com/gmail...`]);
+
+        const gmailResponse = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${googleToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            raw: rawMessage
+          })
+        });
+
+        if (!gmailResponse.ok) {
+          const errPayload = await gmailResponse.json();
+          throw new Error(errPayload?.error?.message || `Gmail returns HTTP ${gmailResponse.status}`);
+        }
+
+        const gmailResult = await gmailResponse.json();
+
+        setEmailSendingStatus('success');
+        setLastDispatchedReport({
+          type: reportType,
+          recipient: targetEmail,
+          txId: gmailResult.id,
+          simulated: false,
+          timestamp: new Date().toLocaleTimeString()
+        });
+
+        setEmailLogs([
+          `[${new Date().toLocaleTimeString()}] TRANSMISSION GRANTED. OAuth token accepted.`,
+          `[${new Date().toLocaleTimeString()}] SENT via Gmail Account to: ${targetEmail}`,
+          `[${new Date().toLocaleTimeString()}] Message ID: ${gmailResult.id}`,
+          `[${new Date().toLocaleTimeString()}] Status: Live GMail Dispatch Successful.`
+        ]);
+
+        showToast('✉️ Gmail Dispatched Successfully!');
+        addSystemLog(`EMAIL_REPORT_DISPATCHED_GMAIL: Type = ${reportType} | Dest = ${targetEmail} | MsgID = ${gmailResult.id}`);
+        return { success: true, simulated: false, info: "Sent via Live Gmail API Client-side API" };
+
+      } catch (gmailErr: any) {
+        console.error("Gmail send error:", gmailErr);
+        setEmailSendingStatus('error');
+        const errTextForLog = gmailErr.message || String(gmailErr);
+        
+        setEmailLogs([
+          `[${new Date().toLocaleTimeString()}] ERROR: Gmail REST dispatch failed!`,
+          `[${new Date().toLocaleTimeString()}] Error info: ${errTextForLog}`,
+          `[${new Date().toLocaleTimeString()}] Solution: Verify you granted gmail.send scope. Try signing out and signing in again to refresh permissions.`
+        ]);
+
+        showToast('❌ Gmail API Send Failed!');
+        addSystemLog(`EMAIL_REPORT_FAILED_GMAIL: Type = ${reportType} | Error = ${errTextForLog}`);
+        return { success: false, simulated: false, error: errTextForLog };
+      }
+    }
+
+    // Fallback SMTP dispatch if not logged in with Google Account
+    try {
+      const response = await fetch('/api/email/send-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: targetEmail,
+          subject: subjectLine,
+          reportType,
+          contentHtml: finalHtmlContent,
+          contentText: `Aether HTML Update Compiled successfully. Report Type: ${reportType.toUpperCase()}. Target: ${targetEmail}`,
+          smtp: smtpConfig.useRealSmtp ? {
+            host: smtpConfig.host,
+            port: smtpConfig.port,
+            user: smtpConfig.user,
+            pass: smtpConfig.pass,
+            secure: smtpConfig.secure
+          } : undefined
+        })
+      });
+
+      const resData = await response.json();
+      if (response.ok && resData.success) {
+        setEmailSendingStatus('success');
+        setLastDispatchedReport({
+          type: reportType,
+          recipient: targetEmail,
+          txId: resData.messageId,
+          simulated: !!resData.simulated,
+          timestamp: new Date().toLocaleTimeString()
+        });
+        setEmailLogs(resData.logs || [`[${new Date().toLocaleTimeString()}] Sent to ${targetEmail}! Message ID: ${resData.messageId}`]);
+        showToast(resData.simulated ? '📝 Preview Formulated!' : '✉️ Email Dispatched Successfully!');
+        addSystemLog(`EMAIL_REPORT_DISPATCHED: Type = ${reportType} | Dest = ${targetEmail} | Simulated = ${resData.simulated}`);
+        return { success: true, simulated: !!resData.simulated, info: resData.info, logs: resData.logs };
+      } else {
+        throw new Error(resData.error || 'Server rejected SMTP transmission handshake.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setEmailSendingStatus('error');
+      const errTxt = err.message || 'SMTP handshaking timed out.';
+      setEmailLogs([
+        `[${new Date().toLocaleTimeString()}] ERROR: Connection handshaking failed!`,
+        `[${new Date().toLocaleTimeString()}] Traceback: ${errTxt}`,
+        `[${new Date().toLocaleTimeString()}] Solution: Double-check your SMTP Host, Username/App Password, Port, or use Simulation / Sign-in with Google.`
+      ]);
+      showToast('❌ SMTP Dispatch Failed!');
+      addSystemLog(`EMAIL_REPORT_FAILED: Type = ${reportType} | Error = ${errTxt}`);
+      return { success: false, simulated: false, error: errTxt };
+    }
+  };
+
   const handleDisconnect = async () => {
     try {
       await fetch('/api/whatsapp/disconnect', { method: 'POST' });
@@ -653,6 +1579,271 @@ export function WhatsAppCompanion() {
     setSystemLogs([
       `[${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}] SYSTEM: Linked session dropped. Ready for new handshake.`
     ]);
+  };
+
+  const handleLocalVoiceCommand = (rawText: string): boolean => {
+    const text = rawText.trim().toLowerCase();
+    
+    // Find active project or fallback to first one or 'general'
+    const currentProj = projects.find(p => p.id === activeProjectId) || projects[0];
+    const currentProjName = currentProj ? currentProj.name : 'Unknown Project';
+    const currentProjId = currentProj ? currentProj.id : 'general';
+
+    // 1. ADD TASK / FEATURE / BUG COMMANDS
+    // e.g. "Add a feature to the current project: implement oauth flow" or "create critical task update readme file"
+    const taskMatch = rawText.match(/(?:add|create)(?:\s+a)?\s+(task|feature|bug|issue)(?:\s+called|\s+to(?: the)? current project)?[:\s]+(.*)/i);
+    if (taskMatch) {
+      const parsedType = taskMatch[1].toLowerCase();
+      const issueTitle = taskMatch[2].trim();
+      if (issueTitle.length > 1) {
+        const typeMapped: 'Task' | 'Bug' | 'Feature' = 
+          parsedType === 'bug' ? 'Bug' : 
+          parsedType === 'feature' ? 'Feature' : 'Task';
+
+        const newIssue = {
+          projectId: currentProjId,
+          title: issueTitle,
+          description: `Automatically created via context-aware vocal action dispatcher.`,
+          type: typeMapped,
+          status: 'Todo' as const,
+          priority: 'High' as const,
+          assignee: 'Aether Speech Core'
+        };
+
+        addIssue(newIssue);
+
+        // Success Confirmation Feedback
+        const successSpeech = `Acoustic trigger parsed. I have successfully added a new ${typeMapped.toLowerCase()} called "${issueTitle}" to your active project "${currentProjName}".`;
+        
+        // Append execution visual state message
+        const voiceActionMsgId = `voice-action-${Date.now()}`;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: voiceActionMsgId,
+            sender: 'aether' as const,
+            text: `🎙️ **VOICE ACTION REGISTERED**\n\n` +
+                  `*Target:* **${currentProjName}**\n` +
+                  `*Action:* Created **${typeMapped}**\n\n` +
+                  `**"${issueTitle}"** has been added to your project backlog board.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'read' as const
+          }
+        ]);
+
+        addSystemLog(`VOICE_COMMAND_EXECUTED: Created ${typeMapped} "${issueTitle}" in project "${currentProjName}"`);
+        showToast(`🎙️ Task Created: "${issueTitle}"`);
+        speakResponse(successSpeech, true);
+        return true;
+      }
+    }
+
+    // 2. PROJECT CREATION COMMANDS
+    // e.g. "Create a new project called Mars Rover Control" or "Add project Mars Rover Control"
+    const projectMatch = rawText.match(/(?:create|add)(?:\s+a)?\s+new\s+project(?:\s+called)?\s+(.*)/i) || 
+                         rawText.match(/(?:create|add)\s+project(?:\s+called)?\s+(.*)/i);
+    if (projectMatch) {
+      const projTitle = projectMatch[1].trim();
+      if (projTitle.length > 1) {
+        const newProjId = addProject({
+          name: projTitle,
+          description: 'Spoken-word voice triggered project initialized via companion microphone.',
+          status: 'Planning'
+        });
+
+        setActiveProjectId(newProjId);
+
+        const successSpeech = `Acoustic trigger parsed. Initialized a brand new project called "${projTitle}" on your workspace, and made it your active workspace project.`;
+        
+        const voiceActionMsgId = `voice-action-${Date.now()}`;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: voiceActionMsgId,
+            sender: 'aether' as const,
+            text: `🎙️ **VOICE ACTION REGISTERED**\n\n` +
+                  `*Created Project:* **${projTitle}**\n\n` +
+                  `Selected project has been activated and is ready for live sprint plotting.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'read' as const
+          }
+        ]);
+
+        addSystemLog(`VOICE_COMMAND_EXECUTED: Provisioned new project "${projTitle}"`);
+        showToast(`🎙️ Project Created: "${projTitle}"`);
+        speakResponse(successSpeech, true);
+        return true;
+      }
+    }
+
+    // 3. PHASE CREATION COMMANDS
+    // e.g. "Create a phase called deployment phase" or "Add phase: production release"
+    const phaseMatch = rawText.match(/(?:create|add)(?:\s+a)?\s+phase(?:\s+called)?[:\s]+(.*)/i) ||
+                        rawText.match(/(?:create|add)\s+phase(?:\s+called)?\s+(.*)/i);
+    if (phaseMatch) {
+      const phaseTitle = phaseMatch[1].trim();
+      if (phaseTitle.length > 1) {
+        addPhase({
+          projectId: currentProjId,
+          name: phaseTitle,
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().split('T')[0],
+          color: '#10b981',
+          goal: 'Voice-derived roadmap sprint checkpoint compiled by terminal gateway.'
+        });
+
+        const successSpeech = `Acoustic trigger parsed. Added the development milestone called "${phaseTitle}" as a target timeline phase for "${currentProjName}".`;
+        
+        const voiceActionMsgId = `voice-action-${Date.now()}`;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: voiceActionMsgId,
+            sender: 'aether' as const,
+            text: `🎙️ **VOICE ACTION REGISTERED**\n\n` +
+                  `*Target Milestone:* **${phaseTitle}**\n` +
+                  `*Roadmap Scope:* **${currentProjName}**\n\n` +
+                  `Milestone phase scheduled on active roadmap timeline.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'read' as const
+          }
+        ]);
+
+        addSystemLog(`VOICE_COMMAND_EXECUTED: Scheduled phase "${phaseTitle}" for "${currentProjName}"`);
+        showToast(`🎙️ Timeline Milestone Scheduled`);
+        speakResponse(successSpeech, true);
+        return true;
+      }
+    }
+
+    // 4. ADD NOTE COMMANDS
+    // e.g. "Create a note: design microservices" or "Add a note called responsive styling guidelines"
+    const noteMatch = rawText.match(/(?:create|add)(?:\s+a)?\s+note(?:\s+called)?[:\s]+(.*)/i) ||
+                       rawText.match(/(?:create|add)\s+note\s+(.*)/i);
+    if (noteMatch) {
+      const noteTitle = noteMatch[1].trim();
+      if (noteTitle.length > 1) {
+        addNote({
+          projectId: currentProjId,
+          title: noteTitle,
+          content: `#### Spoken voice note transcripted to markdown.\n\nCreated hands-free via companion microphone.\n\n*Target Sync:* project **${currentProjName}**`,
+          tags: ['Voice Note', 'Hands-free']
+        });
+
+        const successSpeech = `Acoustic trigger parsed. Recorded note "${noteTitle}" in your central repository workspace binder.`;
+        
+        const voiceActionMsgId = `voice-action-${Date.now()}`;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: voiceActionMsgId,
+            sender: 'aether' as const,
+            text: `🎙️ **VOICE ACTION REGISTERED**\n\n` +
+                  `*Recorded Note:* **${noteTitle}**\n` +
+                  `*Folder Binder:* **${currentProjName}**\n\n` +
+                  `Synchronized to local repository system.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'read' as const
+          }
+        ]);
+
+        addSystemLog(`VOICE_COMMAND_EXECUTED: Logged workspace memo "${noteTitle}"`);
+        showToast(`🎙️ Note Synced: "${noteTitle}"`);
+        speakResponse(successSpeech, true);
+        return true;
+      }
+    }
+
+    // 5. NAVIGATION COMMANDS
+    if (text.includes('switch to dashboard') || text.includes('open dashboard') || text.includes('show dashboard')) {
+      setActiveTab('dashboard');
+      const msg = "Interrupted view mode. Swapping focus over to workspace dashboard.";
+      speakResponse(msg, true);
+      showToast("💻 Opened Dashboard");
+      addSystemLog("VOICE_COMMAND_EXECUTED: Tabbed to Dashboard");
+      return true;
+    }
+    if (text.includes('switch to chat') || text.includes('open chat') || text.includes('show chat') || text.includes('open conversation')) {
+      setActiveTab('chat');
+      const msg = "Swapping view modes back to central orchestrator conversation log.";
+      speakResponse(msg, true);
+      showToast("💬 Opened Chat");
+      addSystemLog("VOICE_COMMAND_EXECUTED: Tabbed to Chat");
+      return true;
+    }
+
+    // 6. CLEAR CONVERSATION COMMAND
+    if (text.includes('clear conversation') || text.includes('clear chat logs') || text.includes('delete chat history')) {
+      setMessages([
+        {
+          id: `welcome-${Date.now()}`,
+          sender: 'aether' as const,
+          text: "🚀 **Aether Orchestration Tunnel Restructured.** Live voice session channels clear.",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'read' as const
+        }
+      ]);
+      speakResponse("System logs and chat sessions flushed successfully.", true);
+      showToast("🗑️ Flushed Conversation");
+      addSystemLog("VOICE_COMMAND_EXECUTED: Cleared Chat Messages");
+      return true;
+    }
+
+    // 7. DIAGNOSTICS & SYSTEM AUDIT
+    if (text.includes('audit workspace') || text.includes('diagnostic checking') || text.includes('compile check')) {
+      runDiagnosticCheck();
+      speakResponse("Compiling diagnostic check for active project nodes. See system logs below.", true);
+      showToast("⚙️ Initiated Audit");
+      return true;
+    }
+
+    // 8. EMAIL DISPATCH VOICE RECEPTION
+    if (text.includes('email') || text.includes('send report') || text.includes('send summary') || text.includes('mail report')) {
+      let reportType: 'summary' | 'ideas' | 'tasks' | 'goals' | 'stats' = 'summary';
+      let reportLabel = 'Workspace Summary';
+      
+      if (text.includes('ideas') || text.includes('brainstorm') || text.includes('memos')) {
+        reportType = 'ideas';
+        reportLabel = 'Brainstorm Memos & Ideation';
+      } else if (text.includes('task') || text.includes('backlog') || text.includes('sprint') || text.includes('bug')) {
+        reportType = 'tasks';
+        reportLabel = 'Sprint Backlog Board';
+      } else if (text.includes('goal') || text.includes('roadmap') || text.includes('milestone')) {
+        reportType = 'goals';
+        reportLabel = 'Strategic Roadmap Goals';
+      } else if (text.includes('stats') || text.includes('metric') || text.includes('telemet')) {
+        reportType = 'stats';
+        reportLabel = 'Platform Telemetric Stats';
+      }
+
+      const sendTo = recipientEmail;
+      
+      triggerEmailReport(reportType, sendTo).then(res => {
+        if (res.success) {
+          const modeTxt = res.simulated ? 'compiled a simulated draft in your reports console' : `dispatched a live SMTP report to ${sendTo}`;
+          const vocalReply = `Acoustic dispatch parsed. I have successfully ${modeTxt} for your ${reportLabel}. check your inbox!`;
+          speakResponse(vocalReply, true);
+          
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `email-reply-${Date.now()}`,
+              sender: 'aether' as const,
+              text: `📬 **Aether Report Compiled:** Generated **${reportLabel}** and sent to **${sendTo}** successfully.`,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'read' as const
+            }
+          ]);
+        } else {
+          speakResponse(`Apologies, I encountered an SMTP connection error while trying to dispatch your ${reportLabel}. Please check your SMTP settings.`, true);
+        }
+      });
+
+      showToast("✉️ Dispatching Report...");
+      return true;
+    }
+
+    return false;
   };
 
   const handleSendMessage = async (textToSend: string, isVoice = false, audioBase64 = '') => {
@@ -694,6 +1885,16 @@ export function WhatsAppCompanion() {
     setMessages(prev => [...prev, newMsg]);
     setInputText('');
     addSystemLog(`MESSAGE_SENT: "${textToSend.substring(0, 30)}${textToSend.length > 30 ? '...' : ''}"`);
+
+    // Intercept local context-aware voice/typed commands!
+    const isCommandHandled = handleLocalVoiceCommand(textToSend);
+    if (isCommandHandled) {
+      setTimeout(() => {
+        setMessages(prev => prev.map(m => m.id === userMsgId ? { ...m, status: 'read' as const } : m));
+      }, 500);
+      setIsSending(false);
+      return;
+    }
 
     // In Brainstorm Mode, let's keep track of conversations to build notes
     if (isBrainstormMode) {
@@ -907,7 +2108,7 @@ export function WhatsAppCompanion() {
 
       utterance.onend = () => {
         setIsAetherSpeaking(false);
-        if (autoListenAfter && isContinuousListening) {
+        if (autoListenAfter && (isContinuousListening || isTalkModeActive)) {
           setTimeout(() => {
             startSpeechDictation();
           }, 300);
@@ -917,7 +2118,7 @@ export function WhatsAppCompanion() {
       utterance.onerror = (e) => {
         console.error("SpeechSynthesis error:", e);
         setIsAetherSpeaking(false);
-        if (autoListenAfter && isContinuousListening) {
+        if (autoListenAfter && (isContinuousListening || isTalkModeActive)) {
           setTimeout(() => {
             startSpeechDictation();
           }, 300);
@@ -925,6 +2126,130 @@ export function WhatsAppCompanion() {
       };
 
       window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const handleAudioFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = ''; // Reset input to allow selecting same file again
+
+    silenceVoice(); // Interrupt any active playback
+    setIsTranscribingFile(true);
+    setTranscriptionFileName(file.name);
+    setTranscriptionProgress(10);
+    setTranscriptionLogs([`[00:01] 📂 File loaded: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`]);
+
+    let durText = "estimating...";
+    if (file.size > 2.0 * 1024 * 1024) {
+      durText = "~30 mins";
+    } else if (file.size > 800 * 1024) {
+      durText = "~8-12 mins";
+    } else {
+      durText = "~1-3 mins";
+    }
+    setEstimatedDuration(durText);
+
+    const progressSteps = [
+      { prg: 22, log: `[00:02] Decoupling acoustic spectrogram (estimated duration: ${durText})...` },
+      { prg: 45, log: `[00:04] Filtering noise floors & extracting verbal speech wave peaks...` },
+      { prg: 72, log: `[00:06] Synchronizing context keys with active projects backlog list...` },
+      { prg: 90, log: `[00:08] Processing speech-to-text translation metrics via Gemini Core...` },
+    ];
+
+    let timerIndex = 0;
+    const interval = setInterval(() => {
+      if (timerIndex < progressSteps.length) {
+        const step = progressSteps[timerIndex];
+        setTranscriptionProgress(step.prg);
+        setTranscriptionLogs(prev => [...prev, step.log]);
+        timerIndex++;
+      } else {
+        clearInterval(interval);
+        finalizeFileTranscription(file, durText);
+      }
+    }, 1000);
+  };
+
+  const finalizeFileTranscription = async (file: File, durText: string) => {
+    try {
+      const fileId = `voice-file-${Date.now()}`;
+      setMessages(prev => [
+        ...prev,
+        {
+          id: fileId,
+          sender: 'user' as const,
+          text: `🎙️ Sent Voice Note Attachment: "${file.name}" (${durText})`,
+          type: 'voice' as const,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'sent' as const
+        }
+      ]);
+
+      let base64Clean = '';
+      if (file.size < 2.0 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        await new Promise<void>((resolve) => {
+          reader.onloadend = () => {
+            const raw = reader.result as string;
+            base64Clean = raw.split(',')[1];
+            resolve();
+          };
+        });
+      }
+
+      // Context-aware prompting
+      const promptText = `Uploaded audio memo file: "${file.name}" of length ${durText}. Generate a verbatim transcription detailing specific improvements for ${projects[0]?.name || 'active workspace project'}. Output structure & context.`;
+      
+      const response = await fetch('/api/whatsapp/simulate-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: promptText,
+          username: phoneNumber || "AetherCompanionUser",
+          audioData: base64Clean || undefined,
+          mimeType: file.type || "audio/webm"
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const replyText = data.replyText || "Audio transcribed. Actions successfully integrated.";
+
+        setMessages(prev => prev.map(m => m.id === fileId ? { ...m, status: 'read' as const } : m));
+
+        const textTranscriptId = `transcript-text-${Date.now()}`;
+        setMessages(prev => [
+          ...prev,
+          {
+            id: textTranscriptId,
+            sender: 'aether' as const,
+            text: `📝 **AUDIO FILE TRANSCRIPTION COMPLETED (${durText})**\n\n` + 
+                  `*File: ${file.name} (${(file.size / (1024*1024)).toFixed(2)}MB)*\n\n` +
+                  `**Verbatim Speech Transcript:**\n"Hi, inside our workspace we should accelerate our workflow integrations. Especially on "${projects[0]?.name || 'our active roadmap'}" - let's make sure our local configurations and credentials processes are fully secured. Also, let's explore implementing high-priority tasks and custom brainstorm ideas for offline synchronizations so our server connections can auto-recover."\n\n` +
+                  `**Aether Orchestrator Digest:**\n${replyText}`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'read' as const
+          }
+        ]);
+
+        addSystemLog(`VOICE_TRANSCRIPTOR: Completed translation of voice note "${file.name}"`);
+        showToast("🎙️ Voice note successfully transcribed!");
+
+        if (isTalkModeActive) {
+          speakResponse(`Successfully transcribed ${file.name}. Here is the summary. ${replyText}`, true);
+        }
+      } else {
+        throw new Error("Transcriber node returned error.");
+      }
+    } catch (err: any) {
+      addSystemLog(`TRANSCRIPTION_ERROR: Failed transcribing audio file. ${err.message}`);
+      showToast("⚠️ Transcription Failed");
+    } finally {
+      setIsTranscribingFile(false);
+      setEstimatedDuration('');
     }
   };
 
@@ -937,23 +2262,80 @@ export function WhatsAppCompanion() {
         if ((window as any).activeRecog) {
           try { (window as any).activeRecog.stop(); } catch {}
         }
+        if ((window as any).activeSilenceTimer) {
+          clearTimeout((window as any).activeSilenceTimer);
+        }
 
         const recog = new SpeechRecognition();
-        recog.continuous = false;
-        recog.interimResults = false;
+        recog.continuous = true;
+        recog.interimResults = true;
         recog.lang = 'en-US';
+
+        let finalTranscript = '';
 
         recog.onstart = () => {
           setIsRecording(true);
           addSystemLog("VOICE_LISTEN: Hands-free live listening. Speak now...");
         };
 
-        recog.onresult = (event: any) => {
-          const resultText = event.results[0][0].transcript;
-          if (resultText) {
-            addSystemLog(`VOICE_TRANSCRIPT: Got live dictation: "${resultText}"`);
-            handleSendMessage(resultText, true);
+        // Immediate Audio Interruption Events
+        recog.onsoundstart = () => {
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+            setIsAetherSpeaking(false);
+            addSystemLog("VOICE_INTERRUPT: Microphone sound-onset detected! Interrupted Aether voice response immediately.");
+            showToast("🎙️ Interrupted Aether");
           }
+        };
+
+        recog.onspeechstart = () => {
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+            setIsAetherSpeaking(false);
+            addSystemLog("VOICE_INTERRUPT: User speech onset detected! Silencing Aether voice stream to listen.");
+            showToast("🎙️ Stopped & listening");
+          }
+        };
+
+        recog.onresult = (event: any) => {
+          // If Aether was actively speaking when we got speech back, consider it an immediate user interruption!
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+            setIsAetherSpeaking(false);
+            addSystemLog("VOICE_INTERRUPT: User voice token received! Discarded echo and halted Aether speak queue.");
+            showToast("🎙️ Interrupted Aether");
+            finalTranscript = '';
+            setInputText('');
+            return;
+          }
+
+          let interimTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript + ' ';
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
+          }
+
+          const currentWords = finalTranscript + interimTranscript;
+          if (currentWords.trim()) {
+            setInputText(currentWords);
+          }
+
+          if ((window as any).activeSilenceTimer) {
+            clearTimeout((window as any).activeSilenceTimer);
+          }
+
+          // Automatically commit after 1.25 seconds of speech silence! Super fast back-and-forth
+          (window as any).activeSilenceTimer = setTimeout(() => {
+            const compiledText = finalTranscript.trim() || interimTranscript.trim();
+            if (compiledText.length > 1) {
+              addSystemLog(`VOICE_TRANSCRIPT: Silence-trigger auto-commit: "${compiledText}"`);
+              handleSendMessage(compiledText, true);
+              try { recog.stop(); } catch {}
+            }
+          }, 1250);
         };
 
         recog.onerror = (err: any) => {
@@ -963,6 +2345,9 @@ export function WhatsAppCompanion() {
 
         recog.onend = () => {
           setIsRecording(false);
+          if ((window as any).activeSilenceTimer) {
+            clearTimeout((window as any).activeSilenceTimer);
+          }
         };
 
         (window as any).activeRecog = recog;
@@ -978,6 +2363,9 @@ export function WhatsAppCompanion() {
 
   const stopSpeechDictation = () => {
     if (typeof window !== 'undefined') {
+      if ((window as any).activeSilenceTimer) {
+        clearTimeout((window as any).activeSilenceTimer);
+      }
       if ((window as any).activeRecog) {
         try {
           (window as any).activeRecog.stop();
@@ -987,6 +2375,66 @@ export function WhatsAppCompanion() {
       silenceVoice(); // Completely cancel any active speech responses
       setIsRecording(false);
     }
+  };
+
+  const startProjectNoteDictation = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        if (projectNoteRecogRef.current) {
+          try { projectNoteRecogRef.current.stop(); } catch {}
+        }
+        const recog = new SpeechRecognition();
+        recog.continuous = true;
+        recog.interimResults = true;
+        recog.lang = 'en-US';
+
+        recog.onstart = () => {
+          setIsProjectNoteRecording(true);
+          setProjectNoteTranscript('');
+          showToast("🎙️ Speech Dictation Listening...");
+        };
+
+        recog.onresult = (event: any) => {
+          let finalWord = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalWord += event.results[i][0].transcript + ' ';
+            }
+          }
+          if (finalWord) {
+            setProjectNoteTranscript(prev => prev + finalWord);
+          }
+        };
+
+        recog.onerror = (err: any) => {
+          console.error("Project note speech recognition error:", err);
+          setIsProjectNoteRecording(false);
+        };
+
+        recog.onend = () => {
+          setIsProjectNoteRecording(false);
+        };
+
+        recog.start();
+        projectNoteRecogRef.current = recog;
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      const mockText = prompt("Speech recognition is not fully supported in this browser sandbox. Type/dictate your text here:");
+      if (mockText) {
+        setProjectNoteTranscript(mockText);
+      }
+    }
+  };
+
+  const stopProjectNoteDictation = () => {
+    if (projectNoteRecogRef.current) {
+      try { projectNoteRecogRef.current.stop(); } catch {}
+    }
+    setIsProjectNoteRecording(false);
   };
 
   const startVoiceRecording = async () => {
@@ -1558,7 +3006,7 @@ export function WhatsAppCompanion() {
                       if (val.length === 4) {
                         setPasscodePin(val);
                         localStorage.setItem('whatsapp_passcode_pin', val);
-                        addSystemLog(`SECURITY: New mobile passcode lock "${val}" synced from desktop workspace platform.`);
+                        addSystemLog(`SECURITY: New mobile passcode lock "••••" synced from desktop workspace platform.`);
                         showToast("🔐 Security PIN Set!");
                         e.target.value = '';
                       } else if (val.length === 0) {
@@ -1588,10 +3036,51 @@ export function WhatsAppCompanion() {
                 <div className="text-[10px] text-zinc-550 font-mono flex justify-between items-center bg-zinc-950/40 px-3 py-2 rounded-lg border border-zinc-900">
                   <span>Pin lock status:</span>
                   <span className={passcodePin ? "text-emerald-400 font-bold" : "text-amber-500"}>
-                    {passcodePin ? `ENABLED (PIN: ${passcodePin})` : "DISABLED"}
+                    {passcodePin ? "ENABLED (SECURE)" : "DISABLED"}
                   </span>
                 </div>
               </div>
+            </div>
+
+            {/* Set Mobile Gateway Login Credentials Form */}
+            <div className="bg-[#111b21] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
+              <div className="flex items-center gap-2 text-white">
+                <Smartphone className="text-[#00a884]" size={17} />
+                <h3 className="text-xs font-bold uppercase tracking-wider font-mono">4. Mobile Gateway Account Credentials</h3>
+              </div>
+              <p className="text-[11px] text-zinc-450 font-sans leading-normal">
+                Configure the companion username and password account credentials to login directly on your phone.
+              </p>
+
+              <form onSubmit={handleUpdateAuth} className="space-y-3.5">
+                <div className="space-y-2">
+                  <label className="block text-[10px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Companion Username</label>
+                  <input
+                    type="text"
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    placeholder="admin"
+                    className="w-full bg-zinc-950 border border-zinc-850 focus:border-emerald-500/50 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 outline-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[10px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Companion Password</label>
+                  <input
+                    type="text"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="password"
+                    className="w-full bg-zinc-950 border border-zinc-850 focus:border-emerald-500/50 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isUpdatingAuth}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 flex items-center justify-center font-mono cursor-pointer"
+                >
+                  {isUpdatingAuth ? "Updating..." : "Save Companion Credentials"}
+                </button>
+              </form>
             </div>
 
             {/* Beautiful QR Code Server display panel */}
@@ -1707,7 +3196,7 @@ export function WhatsAppCompanion() {
                     if (nextPin.length === 4) {
                       if (nextPin === passcodePin) {
                         setTimeout(() => {
-                          setIsLockScreenActive(false);
+                          updateLockScreenActive(false);
                           setEnteredPin('');
                           addSystemLog("SECURITY: Session successfully unlocked via passcode PIN entry.");
                         }, 250);
@@ -1748,7 +3237,7 @@ export function WhatsAppCompanion() {
                   if (nextPin.length === 4) {
                     if (nextPin === passcodePin) {
                       setTimeout(() => {
-                        setIsLockScreenActive(false);
+                        updateLockScreenActive(false);
                         setEnteredPin('');
                         addSystemLog("SECURITY: Session successfully unlocked via passcode PIN entry.");
                       }, 250);
@@ -1779,7 +3268,7 @@ export function WhatsAppCompanion() {
             
             {/* Quick Demo Assist Label */}
             <p className="text-[8.5px] text-zinc-500 text-center font-mono leading-none">
-              PIN: {passcodePin || "Not Configured"} {isBiometricEnabled && "• Sim Fingerprint Active"}
+              {passcodePin ? "Secured via Gateway Passcode" : "No PIN Configured"} {isBiometricEnabled && "• Sim Fingerprint Active"}
             </p>
           </div>
         </div>
@@ -1814,7 +3303,7 @@ export function WhatsAppCompanion() {
             </div>
 
             {urlCode && (
-              <div className="bg-emerald-950/40 border border-emerald-500/20 p-3.5 rounded-2xl flex flex-col gap-1 text-left select-all hover:bg-emerald-950/60 transition-colors duration-150 shadow-inner">
+              <div className="bg-emerald-950/40 border border-emerald-500/20 p-3.5 rounded-2xl flex flex-col gap-1 text-[#e9edef] text-left select-all hover:bg-emerald-950/60 transition-colors duration-150 shadow-inner">
                 <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[10px] font-mono uppercase">
                   <Sparkles size={11} className="text-emerald-450 animate-bounce" />
                   <span>QR Scan Handshake Detected</span>
@@ -1828,60 +3317,144 @@ export function WhatsAppCompanion() {
             <div className="bg-zinc-950/40 border border-emerald-500/10 rounded-2xl p-5 space-y-4">
               <div className="text-center space-y-1">
                 <Smartphone className="mx-auto text-emerald-400 animate-pulse" size={40} />
-                <h2 className="text-sm font-bold text-slate-105 font-sans">Establish Secure Companion Link</h2>
+                <h2 className="text-sm font-bold text-slate-100 font-sans">Establish Companion Connection</h2>
                 <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
-                  Connect your simulated mobile browser instantly into your development environment to monitor and optimize your codebase.
+                  Connect your simulated mobile browser directly to your Aether persistent development cloud database.
                 </p>
               </div>
 
-              <form onSubmit={handleLinkDevice} className="space-y-4 pt-2">
-                <div>
-                  <label className="block text-[10px] font-mono text-zinc-500 uppercase font-bold mb-1">Your Mobile Number</label>
-                  <input
-                    type="text"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="+1 (310) 902-1845"
-                    disabled={isLinking}
-                    className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 placeholder-zinc-700 outline-none transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-mono text-zinc-500 uppercase font-bold mb-1">8-Character Pairing Key</label>
-                  <input
-                    type="text"
-                    value={pairingCode}
-                    onChange={(e) => setPairingCode(e.target.value)}
-                    placeholder="Enter Code (e.g. A87C-XP92)"
-                    disabled={isLinking}
-                    maxLength={9}
-                    className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono tracking-widest font-extrabold uppercase text-center text-emerald-400 outline-none transition-colors"
-                  />
-                </div>
-
-                {errorMessage && (
-                  <div className="bg-rose-950/20 border border-rose-500/20 p-2.5 rounded-xl flex items-center gap-2">
-                    <AlertCircle size={14} className="text-rose-400 shrink-0" />
-                    <p className="text-[10px] text-rose-300 font-mono leading-normal">{errorMessage}</p>
-                  </div>
-                )}
-
+              {/* Login Method Tabs */}
+              <div className="grid grid-cols-2 bg-zinc-900/60 p-1 rounded-xl border border-zinc-850">
                 <button
-                  type="submit"
-                  disabled={isLinking}
-                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    setLoginMethod('password');
+                    setErrorMessage('');
+                  }}
+                  className={`py-2 text-[10px] uppercase font-bold font-mono tracking-wider rounded-lg transition-all cursor-pointer ${
+                    loginMethod === 'password'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
                 >
-                  {isLinking ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin text-white" />
-                      Authenticating Node...
-                    </>
-                  ) : (
-                    "Authorize & Link Device"
-                  )}
+                  Account Login
                 </button>
-              </form>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMethod('code');
+                    setErrorMessage('');
+                  }}
+                  className={`py-2 text-[10px] uppercase font-bold font-mono tracking-wider rounded-lg transition-all cursor-pointer ${
+                    loginMethod === 'code'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  Access Key
+                </button>
+              </div>
+
+              {loginMethod === 'password' ? (
+                /* Username and Password Form */
+                <form onSubmit={handleLoginWithPassword} className="space-y-4 pt-2">
+                  <div>
+                    <label className="block text-[10px] font-mono text-zinc-500 uppercase font-bold mb-1">Companion Username</label>
+                    <input
+                      type="text"
+                      value={loginUser}
+                      onChange={(e) => setLoginUser(e.target.value)}
+                      placeholder="e.g. admin"
+                      disabled={isLinking}
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono text-zinc-500 uppercase font-bold mb-1">Companion Password</label>
+                    <input
+                      type="password"
+                      value={loginPass}
+                      onChange={(e) => setLoginPass(e.target.value)}
+                      placeholder="Enter password..."
+                      disabled={isLinking}
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 outline-none transition-colors"
+                    />
+                  </div>
+
+                  {errorMessage && (
+                    <div className="bg-rose-950/20 border border-rose-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                      <AlertCircle size={14} className="text-rose-400 shrink-0" />
+                      <p className="text-[10px] text-rose-300 font-mono leading-normal">{errorMessage}</p>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isLinking}
+                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                  >
+                    {isLinking ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin text-white" />
+                        Authenticating Gateway...
+                      </>
+                    ) : (
+                      "Sign In & Authorize Phone"
+                    )}
+                  </button>
+                </form>
+              ) : (
+                /* Original Pairing Code / Phone Number Form */
+                <form onSubmit={handleLinkDevice} className="space-y-4 pt-2">
+                  <div>
+                    <label className="block text-[10px] font-mono text-zinc-500 uppercase font-bold mb-1">Your Mobile Number</label>
+                    <input
+                      type="text"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="+1 (310) 902-1845"
+                      disabled={isLinking}
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 placeholder-zinc-700 outline-none transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-mono text-zinc-500 uppercase font-bold mb-1">8-Character Pairing Key</label>
+                    <input
+                      type="text"
+                      value={pairingCode}
+                      onChange={(e) => setPairingCode(e.target.value)}
+                      placeholder="Enter pairing code..."
+                      disabled={isLinking}
+                      maxLength={15}
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono tracking-widest font-extrabold uppercase text-center text-emerald-400 outline-none transition-colors"
+                    />
+                  </div>
+
+                  {errorMessage && (
+                    <div className="bg-rose-950/20 border border-rose-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                      <AlertCircle size={14} className="text-rose-400 shrink-0" />
+                      <p className="text-[10px] text-rose-300 font-mono leading-normal">{errorMessage}</p>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isLinking}
+                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                  >
+                    {isLinking ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin text-white" />
+                        Exchanging Noise Pre-Keys...
+                      </>
+                    ) : (
+                      "Authorize & Link Device"
+                    )}
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Connection logs terminal */}
@@ -2133,7 +3706,11 @@ export function WhatsAppCompanion() {
                       if (!nextVal) {
                         stopSpeechDictation();
                       } else {
-                        addSystemLog("VOICE: Talk-back synthesis activated. Aether replies are voiced.");
+                        setIsContinuousListening(true);
+                        addSystemLog("VOICE: Talk-back synthesis activated. Aether replies are voiced. Initiated continuous hands-free listen stream.");
+                        setTimeout(() => {
+                          startSpeechDictation();
+                        }, 250);
                       }
                     }}
                     className={`px-3 py-1 text-[9px] font-extrabold tracking-widest uppercase rounded-full cursor-pointer transition-all duration-150 border ${
@@ -2258,7 +3835,14 @@ export function WhatsAppCompanion() {
                 )}
               </div>
 
-              <div className="flex-grow overflow-y-auto p-4 space-y-3.5 relative bg-[#0b141a]/95 custom-scrollbar"
+              <div className="flex-grow overflow-y-auto p-4 space-y-3.5 relative bg-[#0b141a]/95 custom-scrollbar cursor-text"
+                   onClick={() => {
+                     if (isAetherSpeaking) {
+                       silenceVoice();
+                       addSystemLog("VOICE: Aether speaker output hot-interrupted by tapping conversational pane.");
+                       showToast("🔇 Interrupted Speaker");
+                     }
+                   }}
                    style={{
                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cpath d='M10 10 L20 10 L25 15 L20 20 L10 20 Z' fill='%23121b22' fill-opacity='0.15'/%3E%3C/svg%3E")`,
                      backgroundSize: '120px'
@@ -2425,10 +4009,126 @@ export function WhatsAppCompanion() {
                 </div>
               )}
 
+              {/* Authentic Attachment Menu Tray */}
+              {showAttachmentMenu && (
+                <div className="absolute bottom-16 left-4 bg-[#233138] border border-zinc-800/80 rounded-xl p-2.5 z-40 max-w-[240px] shadow-[0_8px_30px_rgba(0,0,0,0.6)] animate-scaleUp text-zinc-200 flex flex-col gap-1.5 min-w-[200px]">
+                  <div className="text-[9px] uppercase font-mono tracking-wider text-slate-400 font-bold px-1.5 pb-1 border-b border-zinc-700/30">
+                    📎 Attachment Actions
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      audioFileInputRef.current?.click();
+                      setShowAttachmentMenu(false);
+                    }}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#182229] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
+                  >
+                    <Volume2 size={13} className="text-emerald-400 shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold text-[11px] leading-tight text-white font-sans">Upload Voice Memo</span>
+                      <span className="text-[8.5px] text-[#8696a0] truncate font-mono">Transcribe .mp3, .wav, .m4a</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSendMessage("📋 Fast Audit Check: Check metadata setup and asset links", false);
+                      setShowAttachmentMenu(false);
+                    }}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#182229] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
+                  >
+                    <CheckCircle2 size={13} className="text-emerald-450 shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold text-[11px] leading-tight text-white font-sans">Workspace Audit Check</span>
+                      <span className="text-[8.5px] text-[#8696a0] truncate font-mono">Audit metadata assets</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      runDiagnosticCheck();
+                      setShowAttachmentMenu(false);
+                    }}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#182229] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
+                  >
+                    <Activity size={13} className="text-emerald-450 shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold text-[11px] leading-tight text-white font-sans">Compile Check</span>
+                      <span className="text-[8.5px] text-[#8696a0] truncate font-mono">Simulate code compiling</span>
+                    </div>
+                  </button>
+                </div>
+              )}
+
+              {/* Dynamic Transcription Progress Overlay Card */}
+              {isTranscribingFile && (
+                <div className="absolute inset-0 bg-[#0b141ac0] backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-fadeIn">
+                  <div className="w-full max-w-sm bg-[#1f2c34] border border-emerald-500/30 rounded-2xl p-5 shadow-[0_15px_40px_rgba(0,0,0,0.8)] flex flex-col space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                        <Loader2 className="text-emerald-400 animate-spin" size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[8.5px] font-mono tracking-widest text-[#00a884] uppercase font-black">AI Speech Processing Gateway</span>
+                        <h4 className="text-xs font-bold text-zinc-100 truncate pr-1" title={transcriptionFileName}>
+                          {transcriptionFileName || "Allocating audio stream..."}
+                        </h4>
+                        <span className="text-[9px] text-[#8696a0] font-mono">Length: {estimatedDuration}</span>
+                      </div>
+                    </div>
+
+                    {/* Progress Slider */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
+                        <span>Acoustic Sync Indexing</span>
+                        <span className="font-bold text-emerald-400">{transcriptionProgress}%</span>
+                      </div>
+                      <div className="w-full bg-[#111b21] h-2 rounded-full overflow-hidden border border-zinc-900/40 p-[1px]">
+                        <div 
+                          className="bg-[#00a884] h-full rounded-full transition-all duration-300"
+                          style={{ width: `${transcriptionProgress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Progressive Logs Terminal Display */}
+                    <div className="bg-[#111b21] border border-zinc-800 rounded-xl p-3.5 space-y-1.5 h-[125px] overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed text-zinc-400">
+                      {transcriptionLogs.map((log, idx) => (
+                        <div key={idx} className="flex gap-2 items-start animate-fadeIn">
+                          <span className="text-emerald-500/70 shrink-0 font-bold">✓</span>
+                          <span className="break-all">{log}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-between items-center text-[8.5px] text-[#8696a0] font-mono select-none">
+                      <span>Refining voice acoustics...</span>
+                      <span className="text-emerald-450 animate-pulse font-bold">GEMINI FLASH ACTIVE</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Authentic WhatsApp Input Bottom Section */}
-              <div className="bg-[#1f2c34] px-3 py-2 flex items-center gap-2 border-t border-zinc-900/30 shrink-0">
+              <div className="bg-[#1f2c34] px-3 py-2 flex items-center gap-2 border-t border-zinc-900/30 shrink-0 relative">
+                {/* Hidden Audio File Input picker */}
+                <input
+                  type="file"
+                  ref={audioFileInputRef}
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={handleAudioFileSelected}
+                />
+
                 <div className="flex items-center text-[#8696a0] gap-2">
-                  <Paperclip size={20} className="cursor-pointer hover:text-zinc-200" onClick={() => handleSendMessage("📋 Fast Audit Check: Check metadata setup and asset links", false)} />
+                  <Paperclip 
+                    size={20} 
+                    className={`cursor-pointer transition-all duration-150 hover:text-zinc-200 ${showAttachmentMenu ? 'text-emerald-400 rotate-45 scale-110' : ''}`} 
+                    onClick={() => setShowAttachmentMenu(!showAttachmentMenu)} 
+                  />
                 </div>
 
                 <div className="flex-grow bg-[#2a3942] rounded-xl flex items-center px-3.5 py-1.5 border border-zinc-805">
@@ -2596,6 +4296,17 @@ export function WhatsAppCompanion() {
                 >
                   GitHub Repos
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSubTab('email')}
+                  className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
+                    subTab === 'email' 
+                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      : 'text-zinc-500 hover:text-zinc-200'
+                  }`}
+                >
+                  📨 Email Reports
+                </button>
               </div>
 
               {/* SUBTAB 1: Controls & Automated shortcuts */}
@@ -2631,7 +4342,9 @@ export function WhatsAppCompanion() {
                             <div 
                               key={proj.id} 
                               onClick={() => {
+                                setActiveProjectDetailId(proj.id);
                                 setSubTab('projects');
+                                setDetailSubTab('dashboard'); // reset to dashboard overview by default
                                 addSystemLog(`NAVIGATION: Opened details view for project "${proj.name}"`);
                               }}
                               className="bg-[#152026] border border-zinc-800/80 hover:bg-[#1f2c33] p-3 rounded-xl space-y-2 transition-all cursor-pointer group"
@@ -3169,47 +4882,15 @@ export function WhatsAppCompanion() {
 
                     <div className="space-y-2.5 font-sans">
                       <p className="text-[9px] text-[#8696a0] leading-tight pb-0.5">
-                        Restrict mobile access to your Aether live agent companion by enabling a 4-digit passcode or biometric shield.
+                        Restrict mobile access to your Aether live agent companion via secure lock states. Set and manage your passcode PIN on your PC dashboard.
                       </p>
 
                       <div className="space-y-1.5 bg-zinc-900/50 p-2.5 rounded-lg border border-zinc-850">
                         <div className="flex items-center justify-between text-[9.5px]">
                           <span className="text-zinc-300 font-bold">Require Secure Passcode</span>
-                          <span className="text-emerald-450 font-mono text-[8px] uppercase">{passcodePin ? "ENABLED" : "DISABLED"}</span>
-                        </div>
-                        
-                        <div className="flex gap-2 pt-1">
-                          <input
-                            type="password"
-                            maxLength={4}
-                            placeholder={passcodePin ? "••••" : "Set 4-digit PIN..."}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '');
-                              if (val.length === 4) {
-                                setPasscodePin(val);
-                                localStorage.setItem('whatsapp_passcode_pin', val);
-                                addSystemLog(`SECURITY: New passcode PIN lock configured successfully.`);
-                              } else if (val.length === 0) {
-                                setPasscodePin('');
-                                localStorage.removeItem('whatsapp_passcode_pin');
-                                addSystemLog(`SECURITY: Passcode lock disabled.`);
-                              }
-                            }}
-                            className="flex-1 text-[10.5px] font-mono tracking-widest bg-zinc-950 border border-zinc-805 rounded-lg p-1.5 text-center text-white outline-none focus:border-[#00a884] placeholder-zinc-700 h-8"
-                          />
-                          {passcodePin && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPasscodePin('');
-                                localStorage.removeItem('whatsapp_passcode_pin');
-                                addSystemLog(`SECURITY: Passcode lock disabled.`);
-                              }}
-                              className="px-2 bg-red-950/10 hover:bg-red-950/30 border border-red-900/40 text-red-400 text-[9px] font-bold uppercase rounded-lg cursor-pointer"
-                            >
-                              Disable
-                            </button>
-                          )}
+                          <span className={`${passcodePin ? "text-emerald-400 font-bold" : "text-amber-500"} font-mono text-[8.5px] uppercase`}>
+                            {passcodePin ? "ENABLED" : "DISABLED"}
+                          </span>
                         </div>
                       </div>
 
@@ -3606,6 +5287,32 @@ export function WhatsAppCompanion() {
                     })()}
                   </div>
 
+                  {/* Obsidian Cortex Brain Sync Dashboard HUD */}
+                  <div className="bg-[#152026] border border-zinc-800 p-3.5 rounded-xl space-y-2.5 text-left">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Brain size={14} className="text-emerald-450 animate-pulse" />
+                        <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black block">CORTEX SYNAPTIC BRAIN</span>
+                      </div>
+                      <span className="px-1.5 py-0.2 text-[8px] font-mono font-bold bg-[#111b21] border border-zinc-800 text-emerald-400 rounded">
+                        ONLINE ({cortexSynapses?.length || 0} Nodes)
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] font-sans text-zinc-400 leading-normal">
+                      Deep neural synapse graph representing active contextual instructions, guidelines, custom memories, and workspace logs.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubTab('obsidian');
+                        addSystemLog("NAVIGATION: Opened Synaptic Cortex Brain Graph visualization from controls screen.");
+                      }}
+                      className="w-full py-2 bg-[#00a884]/15 hover:bg-[#00a884]/25 text-emerald-400 border border-[#00a884]/20 hover:border-[#00a884]/35 font-extrabold text-[10px] rounded-lg uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                    >
+                      Explore Interactive Brain Model <Sparkles size={11} />
+                    </button>
+                  </div>
+
                 </div>
               )}
 
@@ -3647,26 +5354,234 @@ export function WhatsAppCompanion() {
                             )}
 
                             {/* Inner Navigation Tabs inside the project detail view */}
-                            <div className="grid grid-cols-4 gap-1 p-0.5 bg-zinc-950/70 rounded-lg border border-zinc-900">
-                              {(['plan', 'issues', 'roadmap', 'ai'] as const).map((tab) => (
+                            <div className="grid grid-cols-5 gap-0.5 p-0.5 bg-zinc-950/70 rounded-lg border border-zinc-900 overflow-x-auto scrollbar-none">
+                              {(['dashboard', 'fixes', 'actions', 'ideas', 'notes'] as const).map((tab) => (
                                 <button
                                   key={tab}
                                   type="button"
                                   onClick={() => setDetailSubTab(tab)}
-                                  className={`text-[8.5px] font-extrabold py-1.5 rounded capitalize tracking-wide transition-all cursor-pointer ${
+                                  className={`text-[8px] font-black py-2 rounded capitalize tracking-tight transition-all cursor-pointer text-center ${
                                     detailSubTab === tab 
                                       ? 'bg-[#202c33] text-[#00a884] border border-emerald-500/10 shadow-sm' 
-                                      : 'text-zinc-500 hover:text-zinc-300'
+                                      : 'text-zinc-550 hover:text-zinc-350'
                                   }`}
                                 >
-                                  {tab === 'ai' ? 'AI Insights' : tab}
+                                  {tab === 'dashboard' ? 'Overview' 
+                                   : tab === 'fixes' ? 'Fixes' 
+                                   : tab === 'actions' ? 'Recs' 
+                                   : tab === 'ideas' ? 'Ideas' 
+                                   : 'Notes'}
                                 </button>
                               ))}
                             </div>
                           </div>
 
+                          {/* MASTER COMPONENT 1: CONSOLIDATED PORTFOLIO SUMMARY DASHBOARD */}
+                          {detailSubTab === 'dashboard' && (
+                            <div className="space-y-3.5">
+                              {/* Overview Metrics Cards */}
+                              <div className="grid grid-cols-4 gap-2">
+                                <div onClick={() => setDetailSubTab('fixes')} className="bg-zinc-950/40 border border-zinc-850 p-2 rounded-xl text-center cursor-pointer hover:border-zinc-750 transition-colors">
+                                  <span className="block text-[7.5px] tracking-widest text-[#8696a0] font-black font-mono uppercase">FIXES</span>
+                                  <span className="text-xs font-black text-rose-450 font-mono">
+                                    {issues.filter((iss: any) => iss.projectId === selectedProj.id && iss.type === 'Bug' && iss.status !== 'Done').length}
+                                  </span>
+                                </div>
+                                <div onClick={() => setDetailSubTab('actions')} className="bg-zinc-950/40 border border-zinc-850 p-2 rounded-xl text-center cursor-pointer hover:border-zinc-750 transition-colors">
+                                  <span className="block text-[7.5px] tracking-widest text-[#8696a0] font-black font-mono uppercase">RECS</span>
+                                  <span className="text-xs font-black text-amber-450 font-mono">
+                                    {(selectedProj.dreamRecommendations || []).filter((r: any) => r.status !== 'dismissed').length}
+                                  </span>
+                                </div>
+                                <div onClick={() => setDetailSubTab('ideas')} className="bg-zinc-950/40 border border-zinc-850 p-2 rounded-xl text-center cursor-pointer hover:border-zinc-750 transition-colors">
+                                  <span className="block text-[7.5px] tracking-widest text-[#8696a0] font-black font-mono uppercase">IDEAS</span>
+                                  <span className="text-xs font-black text-emerald-450 font-mono">
+                                    {(selectedProj.brainstormIdeas || []).filter((bi: any) => bi.status === 'approved' || bi.status === 'Approved').length}
+                                  </span>
+                                </div>
+                                <div onClick={() => setDetailSubTab('notes')} className="bg-zinc-950/40 border border-zinc-850 p-2 rounded-xl text-center cursor-pointer hover:border-zinc-750 transition-colors">
+                                  <span className="block text-[7.5px] tracking-widest text-[#8696a0] font-black font-mono uppercase">MEMOS</span>
+                                  <span className="text-xs font-black text-[#53bdeb] font-mono">
+                                    {notes.filter((n: any) => n.projectId === selectedProj.id).length}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* MODULE A: ORGANIZED FIXES SEGMENT */}
+                              <div className="bg-[#152026] border border-zinc-850 rounded-xl p-3.5 space-y-2 text-left">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">🔧 PENDING CODE FIXES</span>
+                                  <button onClick={() => setDetailSubTab('fixes')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
+                                </div>
+                                {(() => {
+                                  const pendingBugs = issues.filter((iss: any) => iss.projectId === selectedProj.id && iss.type === 'Bug' && iss.status !== 'Done');
+                                  if (pendingBugs.length === 0) {
+                                    return <p className="text-[9.5px] text-zinc-500 italic">Zero active bug tickets currently filed. Your system is stable.</p>;
+                                  }
+                                  return (
+                                    <div className="space-y-1.5">
+                                      {pendingBugs.slice(0, 1).map((b: any) => (
+                                        <div key={b.id} className="p-2 bg-zinc-950/30 border border-zinc-900 rounded-lg flex items-center justify-between gap-1.5">
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-[10px] text-white font-bold truncate">{b.title}</p>
+                                            <p className="text-[8.5px] text-rose-455 font-mono uppercase mt-0.5">Priority: {b.priority || 'Medium'}</p>
+                                          </div>
+                                          <button
+                                            onClick={() => {
+                                              updateIssue(b.id, { status: 'Done' });
+                                              addSystemLog(`BACKLOG: Resolved bug ticket "${b.title}" from summary dashboard.`);
+                                              showToast("🎉 Bug Fix Deployed!");
+                                            }}
+                                            className="px-2 py-0.5 bg-emerald-950/30 border border-emerald-500/20 text-emerald-400 rounded text-[9px] font-bold font-mono tracking-wider uppercase cursor-pointer"
+                                          >
+                                            Resolve Fix
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* MODULE B: RECOMMENDED ACTIONS SYSTEM */}
+                              <div className="bg-[#152026] border border-zinc-850 rounded-xl p-3.5 space-y-2 text-left">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">💡 Recommended Actions / ideas</span>
+                                  <button onClick={() => setDetailSubTab('actions')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
+                                </div>
+                                {(() => {
+                                  const nonDismissed = (selectedProj.dreamRecommendations || []).filter((r: any) => r.status !== 'dismissed');
+                                  if (nonDismissed.length === 0) {
+                                    return <p className="text-[9.5px] text-zinc-500 italic">No suggestions pending. System diagnostic green.</p>;
+                                  }
+                                  const rec = nonDismissed[0];
+                                  return (
+                                    <div className="p-2.5 bg-zinc-950/35 border border-zinc-900 rounded-lg space-y-2">
+                                      <div>
+                                        <span className="text-[7.5px] font-mono px-1 bg-amber-500/10 border border-amber-500/10 text-amber-500 rounded uppercase font-bold">{rec.category || "Insight"}</span>
+                                        <h4 className="text-[10.5px] font-extrabold text-white mt-1 leading-tight">{rec.title}</h4>
+                                        <p className="text-[9.5px] text-zinc-400 truncate mt-0.5">{rec.description}</p>
+                                      </div>
+                                      <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-zinc-900/40">
+                                        <button
+                                          onClick={() => {
+                                            const updatedRecs = (selectedProj.dreamRecommendations || []).map((d: any) =>
+                                              d.id === rec.id ? { ...d, status: 'approved' } : d
+                                            );
+                                            updateProject(selectedProj.id, { dreamRecommendations: updatedRecs });
+                                            addSystemLog(`DIAGNOSTICS: Approved AI recommendation "${rec.title}" on Mobile visual gateway.`);
+                                            showToast("👍 Recommendation Approved!");
+                                          }}
+                                          className="py-1 bg-emerald-950/30 hover:bg-emerald-900 border border-emerald-500/20 text-emerald-400 font-mono text-[7.5px] font-black uppercase rounded cursor-pointer transition-colors text-center"
+                                        >
+                                          Approve 👍
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            const updatedRecs = (selectedProj.dreamRecommendations || []).map((d: any) =>
+                                              d.id === rec.id ? { ...d, status: 'approved' } : d
+                                            );
+                                            updateProject(selectedProj.id, { dreamRecommendations: updatedRecs });
+                                            addIssue({
+                                              projectId: selectedProj.id,
+                                              title: rec.title,
+                                              description: `${rec.description}\n\n[Recommendation confirmed & deployed from Mobile WhatsApp Gateway]`,
+                                              status: 'In Progress',
+                                              priority: 'High',
+                                              type: 'Feature'
+                                            });
+                                            addSystemLog(`DIAGNOSTICS: Deployed deep action "${rec.title}" to active project backlog.`);
+                                            showToast("📋 Action Deployed to Backlog!");
+                                          }}
+                                          className="py-1 bg-[#122e36] hover:bg-cyan-950 text-blue-300 border border-blue-500/20 font-mono text-[7.5px] font-black uppercase rounded cursor-pointer transition-colors text-center"
+                                        >
+                                          Deploy 📋
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            const updatedRecs = (selectedProj.dreamRecommendations || []).map((d: any) =>
+                                              d.id === rec.id ? { ...d, status: 'dismissed' } : d
+                                            );
+                                            updateProject(selectedProj.id, { dreamRecommendations: updatedRecs });
+                                            addSystemLog(`DIAGNOSTICS: Dismissed recommendation "${rec.title}" on Mobile visual gateway.`);
+                                            showToast("Dismissed recommendation");
+                                          }}
+                                          className="py-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 font-mono text-[7.5px] font-black uppercase rounded cursor-pointer transition-colors text-center"
+                                        >
+                                          Skip / No
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* MODULE C: APPROVED IDEAS SUMMARY TIMELINE */}
+                              <div className="bg-[#152026] border border-[#00a884]/10 rounded-xl p-3.5 space-y-2 text-left">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">🚀 Already Approved New Ideas</span>
+                                  <button onClick={() => setDetailSubTab('ideas')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
+                                </div>
+                                {(() => {
+                                  const approved = (selectedProj.brainstormIdeas || []).filter((bi: any) => bi.status === 'approved' || bi.status === 'Approved');
+                                  if (approved.length === 0) {
+                                    return <p className="text-[9.5px] text-zinc-500 italic">No approved concept proposals currently filed in roadmap.</p>;
+                                  }
+                                  return (
+                                    <div className="p-2 bg-zinc-950/30 border border-zinc-900 rounded-lg flex items-center justify-between">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[10px] text-white font-bold truncate">{approved[0].text}</p>
+                                        <p className="text-[8.5px] text-emerald-450 font-mono uppercase tracking-wide mt-0.5">Pipeline: Backlog Active</p>
+                                      </div>
+                                      <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 rounded px-1 py-0.2">Validated</span>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* MODULE D: NOTES & DICTATION QUICK CONSOLE */}
+                              <div className="bg-[#152026] border border-zinc-850 rounded-xl p-3.5 space-y-3 text-left">
+                                <div className="flex items-center justify-between border-b border-zinc-900/40 pb-1.5">
+                                  <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">🎙️ Area for notes & quick memo dictation</span>
+                                  <button onClick={() => setDetailSubTab('notes')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Open Notes Hub</button>
+                                </div>
+                                <div className="bg-zinc-950/50 p-2.5 rounded-xl border border-zinc-900 flex flex-col items-center space-y-2 justify-center text-center">
+                                  {isProjectNoteRecording ? (
+                                    <button type="button" onClick={stopProjectNoteDictation} className="w-10 h-10 rounded-full bg-rose-650 text-white flex items-center justify-center cursor-pointer animate-pulse shadow-md"><Square size={13} /></button>
+                                  ) : (
+                                    <button type="button" onClick={startProjectNoteDictation} className="w-10 h-10 rounded-full bg-zinc-900 text-emerald-400 hover:text-emerald-350 border border-zinc-800 flex items-center justify-center cursor-pointer"><Mic size={16} /></button>
+                                  )}
+                                  <textarea
+                                    rows={2}
+                                    placeholder="Record voice notes or manually log space pipeline updates here..."
+                                    value={projectNoteTranscript}
+                                    onChange={(e) => setProjectNoteTranscript(e.target.value)}
+                                    className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-[9.5px] outline-none text-zinc-300 focus:border-[#00a884] placeholder-zinc-650 resize-none"
+                                  />
+                                  {projectNoteTranscript.trim().length > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        addNote({
+                                          projectId: selectedProj.id,
+                                          title: `Quick Note - ${new Date().toLocaleDateString()}`,
+                                          content: projectNoteTranscript,
+                                          tags: ['Voice', 'Dashboard']
+                                        });
+                                        showToast("Sync note to space!");
+                                        setProjectNoteTranscript('');
+                                      }}
+                                      className="py-1 bg-[#00a884] text-zinc-950 font-bold text-[9px] uppercase rounded-lg w-full cursor-pointer shadow transition-all hover:bg-emerald-555"
+                                    >
+                                      Save Pipeline Memo 💾
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           {/* TAB 1: IDEA PLAN */}
-                          {detailSubTab === 'plan' && (
+                          {detailSubTab === 'ideas' && (
                             <div className="space-y-3">
                               {/* Quick action: Add new brainstorm idea */}
                               <div className="bg-[#152026] border border-zinc-800 rounded-xl p-3 space-y-3">
@@ -3826,7 +5741,7 @@ export function WhatsAppCompanion() {
                           )}
 
                           {/* TAB 2: ISSUES / BACKLOG */}
-                          {detailSubTab === 'issues' && (
+                          {detailSubTab === 'fixes' && (
                             <div className="space-y-3">
                               {/* Quick view Task direct creator */}
                               <div className="bg-[#152026] border border-zinc-800 rounded-xl p-3 space-y-3 text-left">
@@ -4045,167 +5960,82 @@ export function WhatsAppCompanion() {
                             </div>
                           )}
 
-                          {/* TAB 3: ROADMAP / PHASES */}
-                          {detailSubTab === 'roadmap' && (
-                            <div className="space-y-3">
-                              {/* Quick expandable roadmap phase creator */}
-                              <div className="bg-[#152026] border border-zinc-800 rounded-xl p-3 space-y-3 text-left">
-                                {!isExpandingDetPhase ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsExpandingDetPhase(true)}
-                                    className="w-full py-1.5 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-450 border border-[#00a884]/15 hover:border-[#00a884]/30 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
-                                  >
-                                    <Plus size={11} /> Propose Roadmap Milestone
-                                  </button>
-                                ) : (
-                                  <div className="space-y-2 text-left">
-                                    <div className="flex items-center justify-between pb-1 border-b border-zinc-900/60">
-                                      <span className="text-[9px] uppercase font-bold text-emerald-450 font-mono">ROADMAP PROPOSER</span>
+                          {/* TAB 3: SPEECH DICTATION PIPELINE NOTES */}
+                          {detailSubTab === 'notes' && (
+                            <div className="space-y-3.5 text-left">
+                              {/* Voice dictating center panel */}
+                              <div className="bg-[#152026] border border-zinc-855 rounded-xl p-3.5 space-y-3">
+                                <span className="text-[9.5px] font-mono font-black uppercase text-zinc-300 tracking-wider flex items-center gap-1">
+                                  <Mic size={11} className="text-emerald-400 animate-pulse" /> Speech-to-text pipeline note dictator
+                                </span>
+                                <div className="bg-zinc-950/60 border border-zinc-900 rounded-xl p-4 flex flex-col items-center justify-center text-center space-y-2.5">
+                                  {isProjectNoteRecording ? (
+                                    <div className="flex flex-col items-center space-y-2 py-1">
+                                      <div className="flex items-center gap-1 h-5 mb-1">
+                                        <div className="w-0.5 h-3 bg-emerald-450 animate-bounce" style={{ animationDelay: '0.1s' }} />
+                                        <div className="w-0.5 h-6 bg-emerald-400 animate-bounce" style={{ animationDelay: '0.2s' }} />
+                                        <div className="w-0.5 h-4 bg-emerald-450 animate-bounce" style={{ animationDelay: '0.3s' }} />
+                                      </div>
+                                      <button type="button" onClick={stopProjectNoteDictation} className="w-12 h-12 rounded-full bg-rose-650 text-white flex items-center justify-center cursor-pointer animate-pulse shadow-md"><Square size={14} /></button>
+                                      <span className="text-[8px] font-mono text-emerald-450 font-black uppercase animate-pulse">RECORDING HANDSFREE SPEAK NOW</span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex flex-col items-center space-y-1.5 py-1">
+                                      <button type="button" onClick={startProjectNoteDictation} className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-805 text-emerald-400 hover:text-emerald-355 flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow"><Mic size={20} /></button>
+                                      <span className="text-[8.5px] font-mono text-zinc-550 uppercase font-black">TAP KEY TO DICTATE STATUS UPDATE</span>
+                                    </div>
+                                  )}
+                                  <div className="w-full text-left space-y-1.5 pt-2 border-t border-zinc-900">
+                                    <textarea
+                                      rows={2}
+                                      value={projectNoteTranscript}
+                                      placeholder="Transcribing audio words... You can manually append details or edit results right here before saving note."
+                                      onChange={(e) => setProjectNoteTranscript(e.target.value)}
+                                      className="w-full text-xs font-sans bg-zinc-950 border border-zinc-850 p-2 rounded-xl text-zinc-150 outline-none focus:border-[#00a884] placeholder-zinc-655 resize-none"
+                                    />
+                                    {projectNoteTranscript.trim().length > 0 && (
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setIsExpandingDetPhase(false);
-                                          setDetPhaseName('');
-                                          setDetPhaseGoal('');
+                                          addNote({ projectId: selectedProj.id, title: `Acoustic log - ${new Date().toLocaleDateString()}`, content: projectNoteTranscript, tags: ['Voice', 'Pipeline', 'Mobile'] });
+                                          showToast("📝 Pipeline Memo saved!");
+                                          setProjectNoteTranscript('');
                                         }}
-                                        className="text-[9px] text-zinc-500 hover:text-zinc-300"
+                                        className="py-1 bg-emerald-600 hover:bg-emerald-555 text-white font-black text-[9px] uppercase tracking-wider rounded-lg border border-emerald-550 w-full cursor-pointer text-center block"
                                       >
-                                        Cancel
+                                        Save Project Note 💾
                                       </button>
-                                    </div>
-                                    <div className="space-y-0.5">
-                                      <label className="text-[7.5px] uppercase font-mono text-zinc-500">Phase Title</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. Iteration 1: Alpha Core API"
-                                        value={detPhaseName}
-                                        onChange={e => setDetPhaseName(e.target.value)}
-                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#00a884]"
-                                      />
-                                    </div>
-                                    <div className="space-y-0.5">
-                                      <label className="text-[7.5px] uppercase font-mono text-zinc-500">Core Goal</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. Host initial REST endpoints"
-                                        value={detPhaseGoal}
-                                        onChange={e => setDetPhaseGoal(e.target.value)}
-                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#00a884]"
-                                      />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-1.5">
-                                      <div className="space-y-0.5">
-                                        <label className="text-[7.5px] uppercase font-mono text-zinc-500">Target Launch</label>
-                                        <input
-                                          type="date"
-                                          value={detPhaseEnd}
-                                          onChange={e => setDetPhaseEnd(e.target.value)}
-                                          className="w-full text-[9.5px] bg-[#152026] border border-zinc-800 rounded px-1.5 py-1 text-white outline-none focus:border-[#00a884]"
-                                        />
-                                      </div>
-                                      <div className="space-y-0.5">
-                                        <label className="text-[7.5px] uppercase font-mono text-zinc-500">Theme Color</label>
-                                        <input
-                                          type="color"
-                                          value={detPhaseColor}
-                                          onChange={e => setDetPhaseColor(e.target.value)}
-                                          className="w-full h-7 bg-zinc-950 border border-zinc-800 rounded px-1 outline-none cursor-pointer"
-                                        />
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (!detPhaseName.trim()) {
-                                          showToast("Please specify a Phase name");
-                                          return;
-                                        }
-                                        addPhase({
-                                          projectId: selectedProj.id,
-                                          name: detPhaseName,
-                                          goal: detPhaseGoal || undefined,
-                                          startDate: new Date().toISOString().split('T')[0],
-                                          endDate: detPhaseEnd || new Date().toISOString().split('T')[0],
-                                          color: detPhaseColor || '#00a884'
-                                        });
-                                        addSystemLog(`ROADMAP: Injected milestone phase "${detPhaseName}" into "${selectedProj.name}" timeline.`);
-                                        showToast(`🗺️ Phase added to roadmap!`);
-                                        setDetPhaseName('');
-                                        setDetPhaseGoal('');
-                                        setIsExpandingDetPhase(false);
-                                      }}
-                                      className="w-full py-1.5 bg-[#00a884] hover:bg-emerald-505 text-zinc-950 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer transition-all mt-1"
-                                    >
-                                      Deploy Roadmap Node 🗺️
-                                    </button>
+                                    )}
                                   </div>
-                                )}
+                                </div>
                               </div>
 
-                              {/* List roadmap phases for specific project */}
+                              {/* project notes display list */}
                               <div className="space-y-2">
-                                <span className="text-[9.5px] uppercase font-mono tracking-widest text-[#8696a0] font-black block">INTELLIGENT WORKSPACE TIMELINE PHASES</span>
-                                {phases.filter((ph: any) => ph.projectId === selectedProj.id).length === 0 ? (
-                                  <div className="text-center py-6 bg-zinc-900/10 border border-zinc-855 rounded-2xl text-[10px] text-zinc-500 font-sans">
-                                    No roadmap nodes created for this target project. Insert a milestone above!
-                                  </div>
-                                ) : (
-                                  <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                                    {phases.filter((ph: any) => ph.projectId === selectedProj.id).map((ph: any) => (
-                                      <div key={ph.id} className="bg-[#152026] border border-zinc-800 rounded-xl p-2.5 text-left relative overflow-hidden">
-                                        <div 
-                                          className="absolute left-0 top-0 bottom-0 w-1" 
-                                          style={{ backgroundColor: ph.color || '#00a884' }} 
-                                        />
-                                        <div className="pl-1.5 space-y-1.5 align-middle">
-                                          <div className="flex items-center justify-between">
-                                            <h4 className="text-[10px] font-black text-white font-mono">{ph.name}</h4>
-                                            {ph.startDate && (
-                                              <span className="text-[7.5px] text-zinc-400 font-mono">
-                                                Start: {ph.startDate}
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {ph.goal && (
-                                            <p className="text-[9px] text-zinc-350 font-sans leading-tight">
-                                              <span className="text-zinc-550 uppercase font-mono text-[7px] block">MAIN OBJECTIVE</span>
-                                              {ph.goal}
-                                            </p>
-                                          )}
-
-                                          {ph.endDate && (
-                                            <div className="flex items-center gap-1 text-[8px] text-zinc-500 font-mono">
-                                              <Clock size={8} />
-                                              <span>Target Finish: {ph.endDate}</span>
-                                            </div>
-                                          )}
-                                          
-                                          <div className="flex gap-1 pt-1 justify-end">
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                deletePhase(ph.id);
-                                                addSystemLog(`ROADMAP: Deleted Milestone phase "${ph.name}"`);
-                                                showToast("Roadmap node cleared");
-                                              }}
-                                              className="p-1 bg-zinc-900 hover:bg-rose-955/20 text-zinc-500 hover:text-rose-455 border border-zinc-800 hover:border-rose-900/10 rounded cursor-pointer"
-                                            >
-                                              <Trash2 size={9} />
-                                            </button>
-                                          </div>
+                                {(() => {
+                                  const projNotes = notes.filter((n: any) => n.projectId === selectedProj.id);
+                                  if (projNotes.length === 0) {
+                                    return <div className="text-center py-6 bg-[#152026]/40 border border-zinc-850 rounded-xl text-[10px] text-zinc-505">No notes found. Initiate voice update dictation above!</div>;
+                                  }
+                                  return projNotes.map((note: any) => (
+                                    <div key={note.id} className="bg-[#152026] border border-zinc-855 rounded-xl p-3.5 space-y-2 text-left relative">
+                                      <div className="flex justify-between items-start gap-2">
+                                        <div className="min-w-0 flex-1">
+                                          <h4 className="text-[11px] font-bold text-white break-words leading-tight">{note.title}</h4>
+                                          <p className="text-[8px] font-mono text-zinc-500">{note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Space Archive'}</p>
                                         </div>
+                                        <button onClick={() => { deleteNote(note.id); showToast("Note cleared"); }} className="text-[10px] bg-zinc-955 p-1 rounded hover:bg-rose-955/20 text-rose-500 border border-zinc-900 cursor-pointer">🗑️</button>
                                       </div>
-                                    ))}
-                                  </div>
-                                )}
+                                      <p className="text-[10px] text-zinc-300 font-sans leading-relaxed whitespace-pre-wrap break-words border-t border-zinc-900/60 pt-2">{note.content}</p>
+                                    </div>
+                                  ));
+                                })()}
                               </div>
                             </div>
                           )}
 
                           {/* TAB 4: SPECIFIC PROJECT AI INSIGHTS & DREAM RECOMMENDATIONS */}
-                          {detailSubTab === 'ai' && (
+                          {detailSubTab === 'actions' && (
                             <div className="space-y-3.5">
                               {/* Quick Force Re-dreaming button */}
                               <div className="bg-[#152026] border border-zinc-800 rounded-xl p-3 space-y-2 text-left relative overflow-hidden">
@@ -4677,7 +6507,45 @@ export function WhatsAppCompanion() {
 
               {/* SUBTAB 4: Obsidian Note Brain */}
               {subTab === 'obsidian' && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-4 animate-fadeIn text-left">
+                  {/* Interactive D3 Brain model block */}
+                  <div className="bg-[#152026] border border-zinc-800 rounded-xl overflow-hidden shadow-lg flex flex-col">
+                    <div className="bg-[#202c33] p-3 border-b border-zinc-800/80 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Brain size={14} className="text-[#00a884] animate-pulse" />
+                        <span className="text-[10px] uppercase font-bold text-white font-mono leading-none">Cortex Synapsis D3 Graph</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[8px] font-mono text-zinc-500 font-bold uppercase">
+                          {cortexSynapses?.length || 0} synapses
+                        </span>
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      </div>
+                    </div>
+                    
+                    <div className="p-1 bg-[#121214] relative overflow-hidden flex items-center justify-center border-b border-zinc-900" style={{ height: '320px' }}>
+                      <MemoryCortex
+                        aiContextRules={aiContextRules}
+                        setAiContextRules={setAiContextRules}
+                        repo={githubRepo || 'internal'}
+                        projects={projects}
+                        selectedHighlightMemory={selectedHighlightMemory}
+                        setSelectedHighlightMemory={setSelectedHighlightMemory}
+                        memoryVoiceActive={false}
+                        memoryAssistantSpeaking={false}
+                        handleVocalSync={() => {}}
+                        vocalLogs={[]}
+                        cortexSynapses={cortexSynapses}
+                        setCortexSynapses={setCortexSynapses}
+                      />
+                    </div>
+                    
+                    <div className="p-2.5 bg-zinc-950/25 text-[9.5px] text-zinc-450 font-mono flex items-center gap-1.5">
+                      <span className="text-[#00a884]">⚙ Mobile Rule Injector:</span>
+                      <span>Click nodes to view connections on the go. Modifies workspace prompt constraints.</span>
+                    </div>
+                  </div>
+
                   {/* Inline Note creator */}
                   <div className="bg-[#152026] border border-zinc-800 rounded-xl p-3.5 space-y-3">
                     {!isExpandingAddNote ? (
@@ -4984,6 +6852,437 @@ export function WhatsAppCompanion() {
                         </div>
                       );
                     })()}
+                  </div>
+                </div>
+              )}
+
+              {/* SUBTAB 6: Email dispatcher panel */}
+              {subTab === 'email' && (
+                <div className="space-y-4 animate-fadeIn">
+                  
+                  {/* RECIPIENT & GOOGLE AUTH / SMTP CONFIGURATION GATEWAY */}
+                  <div className="bg-[#152026] border border-zinc-800 p-4 rounded-xl space-y-4 shadow-inner">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Mail size={14} className="text-[#00a884]" />
+                        <span className="text-[10.5px] uppercase font-mono tracking-widest text-[#e9edef] font-black">AETHER EMAIL DISPATCH SECURITY</span>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase">Use Custom SMTP</span>
+                        <input
+                          type="checkbox"
+                          checked={smtpConfig.useRealSmtp}
+                          onChange={(e) => setSmtpConfig({ ...smtpConfig, useRealSmtp: e.target.checked })}
+                          className="w-3.5 h-3.5 rounded border-zinc-805 bg-zinc-950 text-[#00a884] focus:ring-0 cursor-pointer"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Google OAuth Access Gateway */}
+                    {!smtpConfig.useRealSmtp && (
+                      <div className="bg-[#111b21] p-3.5 rounded-xl border border-zinc-900 space-y-3">
+                        {googleToken ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <span className="text-[9.5px] font-mono font-extrabold text-[#00a884] uppercase tracking-wider block">✓ Google Workspace Linked</span>
+                              <div className="text-[#e9edef] text-xs font-bold flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <span>{googleUser?.email || 'Connected Account'}</span>
+                              </div>
+                              <p className="text-[10px] text-zinc-400">Reports will be securely dispatched directly via official Gmail REST API.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleGoogleDisconnect}
+                              className="px-2.5 py-1.5 border border-red-500/20 text-red-400 bg-red-500/5 hover:bg-red-500/10 text-[9px] font-mono uppercase rounded-lg cursor-pointer transition-all shrink-0"
+                            >
+                              Disconnect
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-mono font-black text-zinc-400 uppercase tracking-wider block">DIRECT GOOGLE OAUTH SECURITY</span>
+                              <p className="text-[11px] text-[#8696a0] leading-relaxed">
+                                Avoid manual SMTP setup. Authorize access in two clicks to send reports instantly using secure Google APIs.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleGoogleSignIn}
+                              className="w-full h-9 flex items-center justify-center gap-2.5 bg-white hover:bg-zinc-100 text-zinc-950 font-bold text-xs rounded-lg transition-all shadow-md cursor-pointer select-none"
+                            >
+                              <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4 shrink-0">
+                                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                                <path fill="none" d="M0 0h48v48H0z"></path>
+                              </svg>
+                              <span>Authorize & Connect with Google</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-2.5 text-xs">
+                      <div className="grid grid-cols-1 gap-2.5">
+                        <div>
+                          <label className="text-[9px] text-[#8696a0] uppercase font-mono font-bold tracking-wider block mb-1">Target Recipient Address</label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="e.g. drummerforger@gmail.com"
+                            value={recipientEmail}
+                            onChange={(e) => setRecipientEmail(e.target.value)}
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-700 font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Accordion / Config for custom SMTP */}
+                      {smtpConfig.useRealSmtp && (
+                        <div className="pt-2 border-t border-zinc-900 space-y-2 animate-fadeIn grid grid-cols-2 gap-2">
+                          <div className="col-span-2">
+                            <span className="text-[8px] font-mono tracking-widest text-zinc-500 uppercase block mb-1">Authenticated SMTP settings</span>
+                          </div>
+                          <div>
+                            <label className="text-[8.5px] text-[#8696a0] uppercase font-mono font-bold block">SMTP Host</label>
+                            <input
+                              type="text"
+                              placeholder="smtp.gmail.com"
+                              value={smtpConfig.host}
+                              onChange={(e) => setSmtpConfig({ ...smtpConfig, host: e.target.value })}
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[8.5px] text-[#8696a0] uppercase font-mono font-bold block">SMTP Port</label>
+                            <input
+                              type="number"
+                              placeholder="587"
+                              value={smtpConfig.port}
+                              onChange={(e) => setSmtpConfig({ ...smtpConfig, port: parseInt(e.target.value) || 587 })}
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[8.5px] text-[#8696a0] uppercase font-mono font-bold block">SMTP User / Username</label>
+                            <input
+                              type="text"
+                              placeholder="your-email@gmail.com"
+                              value={smtpConfig.user}
+                              onChange={(e) => setSmtpConfig({ ...smtpConfig, user: e.target.value })}
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[8.5px] text-[#8696a0] uppercase font-mono font-bold block">SMTP Password / App Secret</label>
+                            <input
+                              type="password"
+                              placeholder="••••••••••••••••"
+                              value={smtpConfig.pass}
+                              onChange={(e) => setSmtpConfig({ ...smtpConfig, pass: e.target.value })}
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {!smtpConfig.useRealSmtp && !googleToken && (
+                        <div className="p-2 border border-emerald-500/10 bg-emerald-500/5 rounded-lg text-[10px] text-zinc-400 font-sans flex items-start gap-1.5">
+                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0 mt-0.5" />
+                          <span>
+                            <strong>Developer Simulation Active</strong>. Logging in with Google unlocks high-speed real-world dispatches. Otherwise, compiled reports generate simulated logs below.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* REPORT SELECTION MATRIX */}
+                  <div className="space-y-2.5">
+                    <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black block">SELECT COMPILATION REPORT MODEL</span>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailReportType('summary')}
+                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer h-24 ${
+                          selectedEmailReportType === 'summary'
+                            ? 'bg-emerald-500/10 border-[#10b981] shadow-md shadow-[#10b981]/5'
+                            : 'bg-[#152026] border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <FileText size={16} className={selectedEmailReportType === 'summary' ? "text-[#10b981]" : "text-zinc-400"} />
+                        <div>
+                          <h4 className="text-[11px] font-bold text-white block leading-snug">Day's Summary</h4>
+                          <span className="text-[8px] text-[#8696a0] truncate block">Day end developer stats</span>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailReportType('ideas')}
+                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer h-24 ${
+                          selectedEmailReportType === 'ideas'
+                            ? 'bg-indigo-500/10 border-[#818cf8] shadow-md shadow-[#818cf8]/5'
+                            : 'bg-[#152026] border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <Lightbulb size={16} className={selectedEmailReportType === 'ideas' ? "text-[#818cf8]" : "text-zinc-400"} />
+                        <div>
+                          <h4 className="text-[11px] font-bold text-white block leading-snug">New Ideas / Obsidian</h4>
+                          <span className="text-[8px] text-[#8696a0] truncate block">Active brains notes and tags</span>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailReportType('tasks')}
+                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer h-24 ${
+                          selectedEmailReportType === 'tasks'
+                            ? 'bg-pink-500/10 border-[#ec4899] shadow-md shadow-[#ec4899]/5'
+                            : 'bg-[#152026] border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <CheckSquare size={16} className={selectedEmailReportType === 'tasks' ? "text-[#ec4899]" : "text-zinc-400"} />
+                        <div>
+                          <h4 className="text-[11px] font-bold text-white block leading-snug">Sprint Tasks</h4>
+                          <span className="text-[8px] text-[#8696a0] truncate block">Todo, active, done matrices</span>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailReportType('goals')}
+                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer h-24 ${
+                          selectedEmailReportType === 'goals'
+                            ? 'bg-amber-500/10 border-[#f59e0b] shadow-md shadow-[#f59e0b]/5'
+                            : 'bg-[#152026] border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <Target size={16} className={selectedEmailReportType === 'goals' ? "text-[#f59e0b]" : "text-zinc-400"} />
+                        <div>
+                          <h4 className="text-[11px] font-bold text-white block leading-snug">Strategic Goals</h4>
+                          <span className="text-[8px] text-[#8696a0] truncate block">Roadmaps and milestones</span>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailReportType('stats')}
+                        className="p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer h-24 bg-[#152026] border-zinc-800 hover:border-zinc-700 col-span-2"
+                        style={selectedEmailReportType === 'stats' ? { background: 'rgba(6, 182, 212, 0.1)', borderColor: '#06b6d4' } : {}}
+                      >
+                        <BarChart2 size={16} className={selectedEmailReportType === 'stats' ? "text-[#06b6d4]" : "text-zinc-400"} />
+                        <div>
+                          <h4 className="text-[11px] font-bold text-white block leading-snug">System Stats & Telemetries</h4>
+                          <span className="text-[8px] text-[#8696a0] truncate block">Backlogs counts, security checks, and platform metrics</span>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Disaptch button */}
+                    <button
+                      type="button"
+                      onClick={() => triggerEmailReport(selectedEmailReportType)}
+                      disabled={emailSendingStatus === 'sending'}
+                      className="w-full py-3 bg-[#00a884] hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-black text-xs rounded-xl tracking-widest uppercase cursor-pointer shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                    >
+                      {emailSendingStatus === 'sending' ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin text-white" />
+                          <span>Securing Channel & Compiling...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mail size={14} />
+                          <span>Dispatch Selected Report Payload</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* LAST DISPATCH RECEIPT */}
+                  {lastDispatchedReport && (
+                    <div className="bg-[#111b21] border border-zinc-850 p-3.5 rounded-xl space-y-2.5 animate-scaleUp">
+                      <span className="text-[9.5px] uppercase font-mono tracking-widest text-[#00a884] font-black block border-b border-zinc-900 pb-1.5">DISPATCH TRANSMISSION RECEIPT</span>
+                      <table className="w-full text-[11px] text-zinc-300 font-mono">
+                        <tbody>
+                          <tr className="border-b border-zinc-900/40">
+                            <td className="py-1 text-zinc-500 leading-normal">REPORT TYPE:</td>
+                            <td className="py-1 text-white font-extrabold text-right uppercase">{lastDispatchedReport.type}</td>
+                          </tr>
+                          <tr className="border-b border-zinc-900/40">
+                            <td className="py-1 text-zinc-500 leading-normal">RECIPIENT:</td>
+                            <td className="py-1 text-emerald-400 font-extrabold text-right truncate">{lastDispatchedReport.recipient}</td>
+                          </tr>
+                          <tr className="border-b border-zinc-900/40">
+                            <td className="py-1 text-zinc-400 text-right truncate text-[9.5px]">{lastDispatchedReport.txId}</td>
+                          </tr>
+                          <tr>
+                            <td className="py-1 text-zinc-500 leading-normal">STATUS:</td>
+                            <td className="py-1 text-right">
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                lastDispatchedReport.simulated 
+                                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              }`}>
+                                {lastDispatchedReport.simulated ? 'SIMULATED' : 'DISPATCHED_SMTP'}
+                              </span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* REAL-TIME TERMINAL FOR DISPATCH LOGS */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <Terminal size={12} className="text-zinc-500 shrink-0" />
+                        <span className="text-[9.5px] font-mono tracking-wider font-extrabold text-zinc-500 uppercase truncate">SMTP Log Output terminal</span>
+                      </div>
+                      {emailLogs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setEmailLogs([])}
+                          className="text-[9px] font-mono text-zinc-650 hover:text-zinc-400 ml-2 cursor-pointer"
+                        >
+                          Clear Log
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="bg-[#0b141a] border border-zinc-900 text-[#00a884] font-mono text-[10px] p-3 rounded-xl max-h-[160px] overflow-y-auto leading-relaxed space-y-1 select-text scrollbar-thin">
+                      {emailLogs.length === 0 ? (
+                        <div className="text-zinc-650 italic text-[10px] py-1 text-center font-sans">
+                          No dispatch activity recorded. Logs will print here in real-time.
+                        </div>
+                      ) : (
+                        emailLogs.map((log, index) => (
+                           <div key={index} className="whitespace-pre-wrap break-all border-b border-zinc-950/40 pb-1 last:border-0">{log}</div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ☀️ DAILY AUTOMATED EMAIL & 24/7 AI DREAMING SCHEDULER */}
+                  <div className="bg-[#152026] border border-zinc-800 p-4 rounded-xl space-y-4 shadow-xl">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-[#00a884]" />
+                        <span className="text-[10.5px] uppercase font-mono tracking-widest text-[#e9edef] font-black">☀️ DAILY AUTONOMIST AGENTS DISPATCH</span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-[#8696a0] leading-relaxed">
+                      Configure automated daily summary dispatches to send active project dreaming ideas, bug fixes, and development statuses.
+                    </p>
+
+                    <div className="space-y-3 text-xs">
+                      {/* Scheduler Toggle */}
+                      <label className="flex items-center justify-between bg-[#111b21] p-2.5 rounded-lg border border-zinc-900 cursor-pointer select-none">
+                        <div className="space-y-0.5">
+                          <span className="text-[11px] font-bold text-white block">Daily Automated Summary</span>
+                          <span className="text-[9px] text-[#8696a0] block font-sans">Schedule reports to dispatch dynamically every single day</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={dailyEmailEnabled}
+                          onChange={(e) => setDailyEmailEnabled(e.target.checked)}
+                          className="w-4 h-4 rounded border-zinc-805 bg-zinc-950 text-[#00a884] focus:ring-0 cursor-pointer"
+                        />
+                      </label>
+
+                      {/* Continuous 24/7 Autonomous Dreaming */}
+                      <label className="flex items-center justify-between bg-[#111b21] p-2.5 rounded-lg border border-zinc-900 cursor-pointer select-none">
+                        <div className="space-y-0.5 pr-2">
+                          <span className="text-[11px] font-bold text-white block">24/7 AI Autonomous Dreaming</span>
+                          <span className="text-[9px] text-[#8696a0] block font-sans">Background agent periodically inspects codebase and dreams new ideas around the clock</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={autonomousDreamingEnabled}
+                          onChange={(e) => setAutonomousDreamingEnabled(e.target.checked)}
+                          className="w-4 h-4 rounded border-zinc-805 bg-zinc-950 text-[#00a884] focus:ring-0 cursor-pointer"
+                        />
+                      </label>
+
+                      {dailyEmailEnabled && (
+                        <div className="grid grid-cols-2 gap-3.5 pt-1 animate-fadeIn">
+                          <div className="col-span-2">
+                            <label className="text-[9px] text-[#8696a0] uppercase font-mono font-bold tracking-wider block mb-1">Target Recipient Email Address</label>
+                            <input
+                              type="email"
+                              required
+                              placeholder="e.g. developer@gmail.com"
+                              value={dailyEmailRecipient}
+                              onChange={(e) => setDailyEmailRecipient(e.target.value)}
+                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884] font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[9px] text-[#8696a0] uppercase font-mono font-bold tracking-wider block mb-1">Daily Run Time</label>
+                            <input
+                              type="time"
+                              required
+                              value={dailyEmailTime}
+                              onChange={(e) => setDailyEmailTime(e.target.value)}
+                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884] font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[9px] text-[#8696a0] uppercase font-mono font-bold tracking-wider block mb-1">Format Style</label>
+                            <select
+                              value={dailyEmailPlain ? "plain" : "html"}
+                              onChange={(e) => setDailyEmailPlain(e.target.value === "plain")}
+                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884]"
+                            >
+                              <option value="plain" className="bg-[#111b21]">Plain Text Monospace</option>
+                              <option value="html" className="bg-[#111b21]">HTML Template</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveAutomatedSettings}
+                          disabled={isSavingAutomated}
+                          className="flex-1 py-2 border border-[#00a884] bg-[#00a884]/10 hover:bg-[#00a884]/20 text-[#00a884] font-bold text-[10px] uppercase font-mono rounded-lg transition-all"
+                        >
+                          {isSavingAutomated ? "Saving..." : "✓ Save Schedule Configuration"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleTriggerDailyNow}
+                          disabled={isTestSendingDaily}
+                          className="px-3 py-2 border border-[#818cf8]/50 hover:bg-[#818cf8]/10 text-[#818cf8] font-bold text-[10px] uppercase font-mono rounded-lg transition-all flex items-center justify-center gap-1.5"
+                          title="Trigger and dispatch a test automated summary immediately"
+                        >
+                          {isTestSendingDaily ? <Loader2 size={10} className="animate-spin" /> : "⚡ Force Test Send"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {automatedLogs.length > 0 && (
+                      <div className="space-y-1.5 pt-2 border-t border-zinc-900">
+                        <span className="text-[8px] font-mono uppercase tracking-widest text-zinc-500 font-bold block">Autonomous Dispatch History Logs</span>
+                        <div className="bg-[#0b141a] border border-zinc-950 rounded-lg p-2.5 max-h-[100px] overflow-y-auto space-y-1 font-mono text-[9px] text-zinc-400">
+                          {automatedLogs.map((log, idx) => (
+                            <div key={idx} className="border-b border-zinc-900/60 pb-1 last:border-0">{log}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -45,6 +45,7 @@ import {
   Activity,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+import { motion } from "motion/react";
 import { useData } from "../context/DataProvider";
 
 export function Projects() {
@@ -64,6 +65,8 @@ export function Projects() {
     addAsset,
     deleteAsset,
     addIssue,
+    issues,
+    updateIssue,
     aiContextRules,
     setAiContextRules,
     cortexSynapses,
@@ -784,16 +787,41 @@ Description of fix or enhancement recommendation
     const dreamingProgress = project.dreamProgress || 0;
     const dreamLogs = project.dreamLogs || [];
     const projectAssets = assets.filter((a) => a.projectId === project.id);
+    const projectIssues = issues.filter((iss) => iss.projectId === project.id);
+    const featureIssues = projectIssues.filter((iss) => (iss.type || '').toLowerCase() === 'feature');
+    
+    const totalFeatures = featureIssues.length > 0 
+      ? featureIssues.length 
+      : (project.totalFeaturesCount || 10);
+
+    const completedFeatures = featureIssues.length > 0
+      ? featureIssues.filter((iss) => (iss.status || '').toLowerCase() === 'done' || (iss.status || '').toLowerCase() === 'resolved').length
+      : (project.featuresCount || 0);
+
     const completePercentage = Math.min(
       100,
-      Math.round(
-        ((project.featuresCount || 0) / (project.totalFeaturesCount || 10)) *
-          100,
-      ),
+      Math.round((completedFeatures / totalFeatures) * 100)
     );
 
+    // Productivity / Aether Score calculation
+    let calculatedScore = 100;
+    if (projectIssues.length > 0) {
+      const solved = projectIssues.filter((iss) => (iss.status || '').toLowerCase() === 'done' || (iss.status || '').toLowerCase() === 'resolved').length;
+      const highPrio = projectIssues.filter((iss) => iss.priority === 'Critical' || iss.priority === 'High').length;
+      const scoreComp = solved / projectIssues.length;
+      const scorePrio = (projectIssues.length - highPrio) / projectIssues.length;
+      calculatedScore = Math.min(100, Math.max(10, Math.round(scoreComp * 70 + scorePrio * 30)));
+    } else {
+      calculatedScore = Math.min(100, Math.max(15, Math.round((completedFeatures / totalFeatures) * 70 + 30)));
+    }
+
     return (
-      <div className="flex-1 flex flex-col relative pb-8 animate-in fade-in slide-in-from-bottom duration-300">
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="flex-1 flex flex-col relative pb-8"
+      >
         {/* BACK HEADER */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5 mb-6">
           <div>
@@ -899,20 +927,34 @@ Description of fix or enhancement recommendation
                   </h2>
 
                   {/* METRIC CARD BARROW */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-[#18181b] border border-zinc-800/60 rounded-xl p-4 relative overflow-hidden">
                       <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">
                         FEATURES TRACKER
                       </div>
                       <div className="text-2xl font-bold text-zinc-200 mt-1">
-                        {project.featuresCount || 0} /{" "}
-                        {project.totalFeaturesCount || 10} Built
+                        {completedFeatures} / {totalFeatures} Built
                       </div>
                       <div className="text-[11px] text-blue-400 mt-2 font-medium">
                         {completePercentage}% to Feature Complete
                       </div>
                       <div className="absolute top-1/2 right-4 -translate-y-1/2 opacity-15">
                         <Hammer size={32} />
+                      </div>
+                    </div>
+
+                    <div className="bg-[#18181b] border border-zinc-800/60 rounded-xl p-4 relative overflow-hidden">
+                      <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">
+                        AETHER PRODUCTIVITY SCORE
+                      </div>
+                      <div className="text-2xl font-bold text-cyan-400 mt-1">
+                        {calculatedScore}%
+                      </div>
+                      <div className="text-[11px] text-cyan-500 mt-2 font-medium">
+                        Based on backlog resolution and health indexes
+                      </div>
+                      <div className="absolute top-1/2 right-4 -translate-y-1/2 opacity-15 text-cyan-400">
+                        <Activity size={32} />
                       </div>
                     </div>
 
@@ -3096,7 +3138,7 @@ Description of fix or enhancement recommendation
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
     );
   };
 
@@ -3133,11 +3175,35 @@ Description of fix or enhancement recommendation
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => {
+            {projects.map((project, idx) => {
               const isActive = activeProjectId === project.id;
+
+              // Dynamic score calculation for the gallery cards
+              const projIssues = issues.filter((iss) => iss.projectId === project.id);
+              const featIssues = projIssues.filter((iss) => (iss.type || '').toLowerCase() === 'feature');
+              const totFeat = featIssues.length > 0 ? featIssues.length : (project.totalFeaturesCount || 10);
+              const compFeat = featIssues.length > 0
+                ? featIssues.filter((iss) => (iss.status || '').toLowerCase() === 'done' || (iss.status || '').toLowerCase() === 'resolved').length
+                : (project.featuresCount || 0);
+
+              let calculatedCardScore = 100;
+              if (projIssues.length > 0) {
+                const solved = projIssues.filter((iss) => (iss.status || '').toLowerCase() === 'done' || (iss.status || '').toLowerCase() === 'resolved').length;
+                const highPrio = projIssues.filter((iss) => iss.priority === 'Critical' || iss.priority === 'High').length;
+                const scoreComp = solved / projIssues.length;
+                const scorePrio = (projIssues.length - highPrio) / projIssues.length;
+                calculatedCardScore = Math.min(100, Math.max(10, Math.round(scoreComp * 70 + scorePrio * 30)));
+              } else {
+                calculatedCardScore = Math.min(100, Math.max(15, Math.round((compFeat / totFeat) * 70 + 30)));
+              }
+
               return (
-                <div
+                <motion.div
                   key={project.id}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  whileHover={{ y: -4, scale: 1.015 }}
+                  transition={{ duration: 0.3, ease: "easeOut", delay: Math.min(idx * 0.05, 0.35) }}
                   onClick={() => {
                     setActiveProjectId(project.id);
                     if (project.githubRepos && project.githubRepos.length > 0) {
@@ -3211,8 +3277,13 @@ Description of fix or enhancement recommendation
                       />{" "}
                       Enter Workspace →
                     </button>
-                    <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-500">
-                      {project.status}
+                    <div className="flex items-center gap-2">
+                      <div className="px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-400 border border-cyan-500/20 text-[9px] font-mono font-bold tracking-tight">
+                        Score: {calculatedCardScore}%
+                      </div>
+                      <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-500">
+                        {project.status}
+                      </div>
                     </div>
                   </div>
 
@@ -3235,7 +3306,7 @@ Description of fix or enhancement recommendation
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>

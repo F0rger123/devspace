@@ -9,6 +9,7 @@ const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/documents');
 provider.addScope('https://www.googleapis.com/auth/drive.readonly');
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('https://www.googleapis.com/auth/gmail.send');
 
 const githubProvider = new GithubAuthProvider();
 githubProvider.addScope('repo'); // for checking repositories

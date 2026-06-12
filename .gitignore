@@ -1,6 +1,6 @@
 node_modules/
 build/
-dist/
+# dist_removed_to_allow_artifact_upload
 coverage/
 .DS_Store
 *.log
