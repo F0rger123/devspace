@@ -625,7 +625,7 @@ export function Automations() {
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6">
+    <div className="flex flex-col h-screen overflow-hidden w-full max-w-7xl mx-auto space-y-6 pb-4">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1f1f23] pb-5">
         <div>
@@ -674,7 +674,9 @@ export function Automations() {
         </div>
       </div>
 
-      {/* DUAL WORKSPACE LAYOUT */}
+      {/* Scrollable Body */}
+      <div className="flex-1 overflow-y-auto pr-1 pb-12 scrollbar-thin">
+        {/* DUAL WORKSPACE LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* LEFT COLUMN: ACTIVE WORKFLOW BUILDER (lg:col-span-8) */}
@@ -1376,6 +1378,7 @@ export function Automations() {
         </div>
 
       </div>
+    </div>
     </div>
   );
 }

@@ -632,7 +632,7 @@ export function Dashboard() {
   }, [trendingRepos, searchQuery, selectedLanguage]);
 
   return (
-    <div className="flex-1 flex flex-col gap-6 pb-12 w-full max-w-7xl mx-auto px-4 md:px-6 relative z-0">
+    <div className="flex flex-col h-screen overflow-hidden gap-6 pb-4 w-full max-w-7xl mx-auto px-4 md:px-6 relative z-0">
       
       {/* Animated nebula drift backdrop layer behind main dashboard content */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-[-1] opacity-60">
@@ -663,8 +663,10 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Quick Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {/* Scrollable Body */}
+      <div className="flex-1 overflow-y-auto pr-1 space-y-6 pb-12 scrollbar-thin">
+        {/* Quick Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         
         {/* Activity Score */}
         <div className="p-5 rounded-2xl border border-zinc-800 bg-[#121214]/60 backdrop-blur-sm hover:border-zinc-700/60 transition-all flex flex-col justify-between h-[128px] group">
@@ -1455,6 +1457,7 @@ export function Dashboard() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

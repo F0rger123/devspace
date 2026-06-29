@@ -7,6 +7,7 @@ import {
   Loader2,
   X,
   Trash,
+  Trash2,
   Sparkles,
   Code2,
   Globe,
@@ -48,6 +49,7 @@ import {
   Clock,
   BookMarked,
   Bot,
+  Users,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
@@ -81,6 +83,13 @@ export function Projects() {
     startProjectDreaming,
     agents,
     setAgents,
+    invitations,
+    sendInvitation,
+    acceptInvitation,
+    declineInvitation,
+    updateCollaboratorRole,
+    removeCollaborator,
+    googleUser,
   } = useData();
 
   const [showModal, setShowModal] = useState(false);
@@ -98,7 +107,7 @@ export function Projects() {
     }
   };
   const [workspaceTab, setWorkspaceTab] = useState<
-    "goals" | "brainstorm" | "dream" | "stack" | "ship"
+    "goals" | "brainstorm" | "dream" | "stack" | "ship" | "collaboration"
   >("goals");
 
   // Git shipping tab states
@@ -123,6 +132,13 @@ export function Projects() {
     githubRepo: "",
     status: "Active" as any,
   });
+
+  // COLLABORATION INVITATION STATES
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'editor' | 'viewer'>('editor');
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   // INLINE REPOSITORY SPECIFICS STATES (WORKSPACE MODE)
   const [inlineGitTab, setInlineGitTab] = useState<'link' | 'create' | 'direct'>('link');
@@ -1255,6 +1271,35 @@ Description of fix or enhancement recommendation
     }, 2000);
   };
 
+  const handleSendInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError(null);
+    setInviteSuccess(null);
+
+    const emailToInvite = inviteEmail.trim().toLowerCase();
+    if (!emailToInvite) {
+      setInviteError("Please enter a valid email address.");
+      return;
+    }
+
+    if (emailToInvite === (googleUser?.email || '').trim().toLowerCase()) {
+      setInviteError("You cannot invite yourself to your own project.");
+      return;
+    }
+
+    setInviteLoading(true);
+    try {
+      await sendInvitation(viewingWorkspaceId || '', emailToInvite, inviteRole);
+      setInviteSuccess(`An invitation has been successfully sent to ${emailToInvite} with role ${inviteRole}!`);
+      setInviteEmail('');
+      setInviteRole('editor');
+    } catch (err: any) {
+      setInviteError(err.message || "Failed to send collaboration invitation.");
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   const renderWorkspace = (project: any) => {
     const isDreaming = project.isDreamingActive || false;
     const dreamingProgress = project.dreamProgress || 0;
@@ -1290,8 +1335,9 @@ Description of fix or enhancement recommendation
 
     return (
       <div 
-        className="flex-1 flex flex-col relative pb-8"
+        className="flex flex-col h-screen overflow-hidden relative pb-4"
       >
+        <div className="flex-1 overflow-y-auto pr-1 pb-12 scrollbar-thin">
         {/* BACK HEADER */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5 mb-6">
           <div>
@@ -1301,13 +1347,29 @@ Description of fix or enhancement recommendation
             >
               &larr; Back to Projects Gallery
             </button>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-zinc-100">
                 {project.name}
               </h1>
               <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-2 py-0.5 rounded font-mono uppercase tracking-wider">
                 {project.status}
               </span>
+              {(() => {
+                const myEmail = (googleUser?.email || '').trim().toLowerCase();
+                const isOwner = project.ownerId === googleUser?.uid || project.ownerId === 'anonymous' || !project.ownerId;
+                const myRole = isOwner ? 'admin' : (project.collaboratorRoles?.[myEmail] || 'editor');
+                return (
+                  <span className={`text-[10px] border px-2 py-0.5 rounded font-mono uppercase tracking-wider ${
+                    myRole === 'admin'
+                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/25'
+                      : myRole === 'editor'
+                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/25'
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  }`}>
+                    {myRole} ACCESS
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
               {project.description || "No description provided."}
@@ -1384,6 +1446,11 @@ Description of fix or enhancement recommendation
               id: "ship",
               label: "🚀 Git Operations & Shipping",
               icon: Rocket,
+            },
+            {
+              id: "collaboration",
+              label: "👥 Collaboration & Invite",
+              icon: Users,
             },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -3423,22 +3490,57 @@ Description of fix or enhancement recommendation
                           placeholder="e.g. feat: establish real-time sync with database"
                           className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded px-3 py-1.5 outline-none focus:border-blue-500"
                         />
-                        <button
-                          type="button"
-                          disabled={isShippingActive}
-                          onClick={() => handlePushGitCode(project)}
-                          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/10 border border-blue-500/20"
-                        >
-                          {isShippingActive ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin" /> Packaging Commit {shipProgress}%...
-                            </>
-                          ) : (
-                            <>
-                              <Rocket size={13} /> Push Code & Deploy Branch To GitHub
-                            </>
-                          )}
-                        </button>
+                        {(() => {
+                          const myEmail = (googleUser?.email || '').trim().toLowerCase();
+                          const isOwner = project.ownerId === googleUser?.uid || project.ownerId === 'anonymous' || !project.ownerId;
+                          const myRole = isOwner ? 'admin' : (project.collaboratorRoles?.[myEmail] || 'editor');
+                          
+                          const pushPolicy = project.githubPushPolicy || 'editors';
+                          let canPush = false;
+                          if (isOwner) {
+                            canPush = true;
+                          } else if (pushPolicy === 'open') {
+                            canPush = true;
+                          } else if (pushPolicy === 'editors') {
+                            canPush = myRole === 'admin' || myRole === 'editor';
+                          } else if (pushPolicy === 'admins') {
+                            canPush = myRole === 'admin';
+                          } else if (pushPolicy === 'owner') {
+                            canPush = false;
+                          }
+
+                          if (!canPush) {
+                            return (
+                              <div className="bg-red-950/15 border border-red-900/25 rounded-lg p-3 text-center space-y-1 text-[11px] leading-relaxed">
+                                <p className="font-semibold text-red-400 flex items-center justify-center gap-1 font-mono uppercase tracking-wider">
+                                  <span>🔒</span> Push Access Restricted
+                                </p>
+                                <p className="text-zinc-400 text-[10px]">
+                                  This workspace uses a <strong className="text-zinc-300 uppercase font-mono">"{pushPolicy}"</strong> policy. Your active role is <strong className="text-zinc-300 uppercase font-mono">"{myRole}"</strong>, which does not grant push privileges.
+                                </p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              type="button"
+                              disabled={isShippingActive}
+                              onClick={() => handlePushGitCode(project)}
+                              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/10 border border-blue-500/20 cursor-pointer"
+                            >
+                              {isShippingActive ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin" /> Packaging Commit {shipProgress}%...
+                                </>
+                              ) : (
+                                <>
+                                  <Rocket size={13} /> Push Code & Deploy Branch To GitHub
+                                </>
+                              )}
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -4023,6 +4125,349 @@ Description of fix or enhancement recommendation
               </div>
             </div>
           )}
+
+          {workspaceTab === "collaboration" && (() => {
+            const myEmail = (googleUser?.email || '').trim().toLowerCase();
+            const isOwner = project.ownerId === googleUser?.uid || project.ownerId === 'anonymous' || !project.ownerId;
+            const myRole = isOwner ? 'admin' : (project.collaboratorRoles?.[myEmail] || 'editor');
+            const isAdmin = myRole === 'admin';
+
+            return (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Send Invitation Form */}
+                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg relative overflow-hidden">
+                    {!isAdmin && (
+                      <div className="absolute inset-0 bg-[#0c0c0e]/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 text-center">
+                        <span className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-sm mb-2">🔒</span>
+                        <h4 className="text-xs font-bold text-zinc-200">Admin Privileges Required</h4>
+                        <p className="text-[10px] text-zinc-500 mt-1 max-w-[240px]">Only project administrators can invite new team members or update permissions.</p>
+                      </div>
+                    )}
+                    <h2 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
+                      👥 Invite Collaborator
+                    </h2>
+                    <p className="text-xs text-zinc-400 mb-4">
+                      Send an invitation to collaborate on this project. The invitee will be able to see and edit this project from their own DevSpace account once they accept.
+                    </p>
+                    
+                    <form onSubmit={handleSendInviteSubmit} className="space-y-4">
+                      <div>
+                        <label className="block text-xs text-zinc-400 font-medium mb-1">
+                          User Email Address
+                        </label>
+                        <input 
+                          type="email"
+                          required
+                          placeholder="collaborator@domain.com"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                          className="w-full bg-[#1c1c1f] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500 text-zinc-200 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-400 font-medium mb-1">
+                          Collaborator Permission Level (Access Role)
+                        </label>
+                        <select
+                          value={inviteRole}
+                          onChange={(e) => setInviteRole(e.target.value as any)}
+                          className="w-full bg-[#1c1c1f] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500 text-zinc-300 transition-colors font-sans"
+                        >
+                          <option value="viewer">Viewer (Read-only project view)</option>
+                          <option value="editor">Editor (Can edit goals, issues, brainstorm, and notes)</option>
+                          <option value="admin">Admin (Full edit, invite collaborators, and manage roles)</option>
+                        </select>
+                      </div>
+                      {inviteError && (
+                        <p className="text-xs text-red-400 font-mono">{inviteError}</p>
+                      )}
+                      {inviteSuccess && (
+                        <p className="text-xs text-emerald-400 font-mono">{inviteSuccess}</p>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={inviteLoading}
+                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white font-medium rounded py-2 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {inviteLoading ? 'Sending...' : 'Send Collaboration Invitation'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Team Members List */}
+                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg">
+                    <h2 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
+                      👥 Active Project Team
+                    </h2>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-zinc-900/60 border border-zinc-850 rounded">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 font-mono text-xs flex items-center justify-center font-bold">
+                            OWN
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-zinc-200">Owner</p>
+                            <p className="text-[10px] text-zinc-500">{project.ownerId === 'anonymous' ? 'Local Default User' : 'Workspace Creator'}</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] bg-blue-500/10 text-blue-400 font-mono px-2 py-0.5 rounded border border-blue-500/20">OWNER / ADMIN</span>
+                      </div>
+
+                      {project.collaborators?.filter((c: string) => c !== (googleUser?.email || '') || !isOwner).map((collab: string, idx: number) => {
+                        const isCollabOwner = project.ownerId === 'anonymous' ? false : collab === googleUser?.email;
+                        const collabRole = project.collaboratorRoles?.[collab] || 'editor';
+
+                        return (
+                          <div key={idx} className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-xl animate-in fade-in duration-200 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 font-mono text-xs flex items-center justify-center font-bold">
+                                  {collab.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-zinc-200 truncate">{collab}</p>
+                                  <p className="text-[10px] text-zinc-500 capitalize">{collabRole} Access</p>
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center gap-1.5">
+                                {isAdmin ? (
+                                  <>
+                                    <select
+                                      value={collabRole}
+                                      onChange={(e) => updateCollaboratorRole(project.id, collab, e.target.value as any)}
+                                      className="bg-zinc-850 border border-zinc-750 text-zinc-300 rounded text-[10px] px-1.5 py-1 focus:outline-none focus:border-blue-500"
+                                    >
+                                      <option value="viewer">Viewer</option>
+                                      <option value="editor">Editor</option>
+                                      <option value="admin">Admin</option>
+                                    </select>
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`Are you sure you want to remove ${collab} from this project?`)) {
+                                          removeCollaborator(project.id, collab);
+                                        }
+                                      }}
+                                      className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded transition-colors"
+                                      title="Remove collaborator"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase ${
+                                    collabRole === 'admin' 
+                                      ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' 
+                                      : collabRole === 'editor'
+                                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                        : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                  }`}>
+                                    {collabRole}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* GitHub Handle Mapping & Status controls */}
+                            <div className="bg-zinc-950/65 rounded-lg p-2.5 border border-zinc-850/40 text-[10px] space-y-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-1 text-zinc-400">
+                                  <Github size={11} className="text-zinc-500" />
+                                  <span>GitHub Handle:</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {isAdmin || collab === googleUser?.email ? (
+                                    <div className="flex items-center">
+                                      <span className="text-zinc-600 mr-0.5 font-mono">@</span>
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. jdoe"
+                                        defaultValue={project.gitHubCollaboratorUsernames?.[collab] || ''}
+                                        onBlur={(e) => {
+                                          const val = e.target.value.trim().replace(/^@/, '');
+                                          const currentMap = project.gitHubCollaboratorUsernames || {};
+                                          if (currentMap[collab] !== val) {
+                                            updateProject(project.id, {
+                                              gitHubCollaboratorUsernames: {
+                                                ...currentMap,
+                                                [collab]: val
+                                              }
+                                            });
+                                          }
+                                        }}
+                                        className="bg-zinc-900 border border-zinc-800 focus:border-zinc-700 text-zinc-200 rounded px-1.5 py-0.5 text-[9px] w-28 outline-none font-mono"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <span className="font-mono text-zinc-400">
+                                      {project.gitHubCollaboratorUsernames?.[collab] ? `@${project.gitHubCollaboratorUsernames[collab]}` : 'Not Linked'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between border-t border-zinc-850/30 pt-2">
+                                <span className="text-zinc-500">Repository Push Status:</span>
+                                <div className="flex items-center gap-1.5 font-mono">
+                                  {(() => {
+                                    const githubStatus = project.gitHubCollaboratorStatus?.[collab] || 'none';
+                                    return (
+                                      <>
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] border ${
+                                          githubStatus === 'active'
+                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                            : githubStatus === 'pending'
+                                              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/25'
+                                              : 'bg-zinc-900 text-zinc-500 border-zinc-800'
+                                        }`}>
+                                          {githubStatus === 'active' ? 'WRITE GRANTED' : githubStatus === 'pending' ? 'PENDING ORG ACCEPT' : 'NO PUSH PERMIT'}
+                                        </span>
+                                        {isAdmin && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const nextStatus = githubStatus === 'active' ? 'none' : githubStatus === 'pending' ? 'active' : 'pending';
+                                              const currentStatusMap = project.gitHubCollaboratorStatus || {};
+                                              updateProject(project.id, {
+                                                gitHubCollaboratorStatus: {
+                                                  ...currentStatusMap,
+                                                  [collab]: nextStatus
+                                                }
+                                              });
+                                            }}
+                                            className="text-[9px] text-blue-400 hover:text-blue-300 font-bold font-sans cursor-pointer ml-1"
+                                          >
+                                            {githubStatus === 'active' ? 'Revoke' : githubStatus === 'pending' ? 'Approve' : 'Grant'}
+                                          </button>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* GitHub Write Access Policies and Gatekeeper Dashboard */}
+                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+                      <Github size={14} className="text-blue-400" /> GitHub Repo Push Authorization Policy
+                    </h2>
+                    <span className="text-[9px] font-mono bg-zinc-950 border border-zinc-850 text-zinc-500 px-1.5 py-0.5 rounded uppercase">Repository Gatekeeper</span>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Specify who is authorized to directly commit and push source code to your linked GitHub repository (<strong className="text-zinc-300">{project.githubRepos?.[0] || 'Not connected'}</strong>) from this DevSpace workspace.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                    {/* Left Policy Selection */}
+                    <div className="md:col-span-1 space-y-3">
+                      <label className="block text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                        Repository Policy
+                      </label>
+                      <select
+                        value={project.githubPushPolicy || 'editors'}
+                        disabled={!isAdmin}
+                        onChange={(e) => {
+                          updateProject(project.id, { githubPushPolicy: e.target.value as any });
+                        }}
+                        className="w-full bg-[#1c1c1f] border border-zinc-850 hover:border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                      >
+                        <option value="owner">👑 Owner Only (Strict lock)</option>
+                        <option value="admins">🔑 Admins Only (Project Executives)</option>
+                        <option value="editors">📝 Admins & Editors (Standard Team)</option>
+                        <option value="open">🟢 Open Collaboration (All Team Members)</option>
+                      </select>
+                      <p className="text-[10px] text-zinc-500 leading-normal font-mono">
+                        {project.githubPushPolicy === 'owner' && "🔒 Only the project owner can push code. Other team members can view or brainstorm."}
+                        {(!project.githubPushPolicy || project.githubPushPolicy === 'editors') && "📝 Both Admins and Editors are authorized to package and push code."}
+                        {project.githubPushPolicy === 'admins' && "🔑 Only administrators are authorized to push commits."}
+                        {project.githubPushPolicy === 'open' && "🟢 Any team member, including Viewers, can execute push pipelines."}
+                      </p>
+                    </div>
+
+                    {/* Center Repository Write Key status */}
+                    <div className="md:col-span-2 bg-[#09090b] border border-zinc-850 rounded-lg p-4 space-y-3">
+                      <h3 className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                        🛠️ Automated Push Pipeline Token Status
+                      </h3>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center justify-between p-2 bg-zinc-950 rounded border border-zinc-900">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span className="text-zinc-400 text-[10px]">Owner GitHub OAuth Token Status:</span>
+                          </div>
+                          <span className="font-mono text-[9px] text-emerald-400 uppercase bg-emerald-950/20 px-1.5 py-0.5 rounded border border-emerald-900/30">Active & Synced</span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 bg-zinc-950 rounded border border-zinc-900">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            <span className="text-zinc-400 text-[10px]">Active Git Deploy Key Mapping:</span>
+                          </div>
+                          <span className="font-mono text-[9px] text-blue-400 uppercase bg-blue-950/20 px-1.5 py-0.5 rounded border border-blue-900/30">Devspace SSH Key</span>
+                        </div>
+
+                        <div className="p-2 bg-zinc-950/50 border border-zinc-900 rounded text-[10px] text-zinc-500 leading-relaxed font-sans">
+                          💡 When team members make edits and click push under the permitted policy, DevSpace securely executes the repository commits using verified credential tokens.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sent Invitations Tracker */}
+                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg">
+                  <h2 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
+                    📨 Sent Invitations History
+                  </h2>
+                  {invitations.filter((i: any) => i.projectId === project.id).length === 0 ? (
+                    <p className="text-xs text-zinc-500 font-mono py-4 text-center">No collaboration invitations have been sent yet for this project.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-zinc-800 text-zinc-400">
+                            <th className="py-2.5 font-semibold">Recipient Email</th>
+                            <th className="py-2.5 font-semibold">Invited As</th>
+                            <th className="py-2.5 font-semibold">Sent On</th>
+                            <th className="py-2.5 font-semibold text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-850 text-zinc-300">
+                          {invitations.filter((i: any) => i.projectId === project.id).map((invite: any) => (
+                            <tr key={invite.id} className="hover:bg-zinc-900/40">
+                              <td className="py-3 font-medium">{invite.receiverEmail}</td>
+                              <td className="py-3 font-mono text-[10px] text-zinc-400 capitalize">{invite.role || 'editor'}</td>
+                              <td className="py-3 text-zinc-500">{new Date(invite.createdAt).toLocaleString()}</td>
+                              <td className="py-3 text-center">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono border ${
+                                  invite.status === 'accepted' 
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                    : invite.status === 'declined' 
+                                      ? 'bg-red-500/10 text-red-400 border-red-500/20' 
+                                      : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                }`}>
+                                  {invite.status.toUpperCase()}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {showVoiceSyncModal && project && (
@@ -4324,6 +4769,7 @@ Description of fix or enhancement recommendation
           </div>
         )}
       </div>
+      </div>
     );
   };
 
@@ -4335,7 +4781,7 @@ Description of fix or enhancement recommendation
   }
 
   return (
-    <div className="flex-1 flex flex-col relative min-h-full pb-8">
+    <div className="flex flex-col h-screen overflow-hidden relative pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
@@ -4352,6 +4798,48 @@ Description of fix or enhancement recommendation
           <Plus size={14} /> New Project
         </button>
       </div>
+
+      {/* Scrollable Body */}
+      <div className="flex-1 overflow-y-auto pr-1 pb-12 scrollbar-thin space-y-6">
+        {/* PENDING COLLABORATION INVITATIONS NOTICE */}
+      {invitations.filter((i: any) => i.status === 'pending').length > 0 && (
+        <div className="mb-6 p-5 bg-[#0e0f12] border border-yellow-500/20 rounded-xl space-y-4 animate-in slide-in-from-top-4 duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+              <Users size={16} />
+            </div>
+            <div>
+              <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider font-mono">Incoming Project Invitations</h2>
+              <p className="text-[11px] text-zinc-400 mt-0.5">Other developers have invited you to collaborate on their workspaces. Accept to gain workspace access.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {invitations.filter((i: any) => i.status === 'pending').map((invite: any) => (
+              <div key={invite.id} className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg flex flex-col justify-between gap-3 hover:border-zinc-750 transition-colors">
+                <div>
+                  <h3 className="text-xs font-semibold text-zinc-200">📁 {invite.projectName}</h3>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 font-mono">From: {invite.senderEmail} ({invite.senderName})</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => acceptInvitation(invite.id)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[10px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <Check size={11} /> Accept
+                  </button>
+                  <button
+                    onClick={() => declineInvitation(invite.id)}
+                    className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-semibold text-[10px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <X size={11} /> Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto relative pb-8">
         {projects.length === 0 ? (
@@ -4508,6 +4996,7 @@ Description of fix or enhancement recommendation
             })}
           </div>
         )}
+      </div>
       </div>
 
       {editingProject && (

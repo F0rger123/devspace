@@ -184,6 +184,25 @@ export const WakeCanvasVisualizer: React.FC<WakeCanvasVisualizerProps> = ({
           if (burstIntensityRef.current < 0) burstIntensityRef.current = 0;
         }
 
+        const timeMs = now * 0.004;
+
+        // NEW: Draw glowing background ambient aura
+        let themeColor = 'rgba(16, 185, 129, 0.15)'; // Emerald
+        if (isSpeaking) {
+          themeColor = 'rgba(245, 158, 11, 0.2)'; // Amber
+        } else if (isListening) {
+          themeColor = 'rgba(20, 184, 166, 0.18)'; // Teal
+        }
+        ctx.save();
+        const bgGlow = ctx.createRadialGradient(cx, cy, 5, cx, cy, 32);
+        bgGlow.addColorStop(0, themeColor);
+        bgGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = bgGlow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 32, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
         // 1. Draw and update shockwaves (Expanding Rings)
         const activeShockwaves = shockwavesRef.current;
         for (let i = activeShockwaves.length - 1; i >= 0; i--) {
@@ -244,11 +263,69 @@ export const WakeCanvasVisualizer: React.FC<WakeCanvasVisualizerProps> = ({
           }
         }
 
+        // NEW: Draw beautiful rotating outer sci-fi technical rings
+        ctx.save();
+        ctx.lineWidth = 1;
+        // Ring 1 (Dashed Amber/Teal spinning clockwise)
+        ctx.beginPath();
+        ctx.arc(cx, cy, 25, 0, Math.PI * 2);
+        ctx.strokeStyle = isSpeaking 
+          ? 'rgba(245, 158, 11, 0.25)' 
+          : isListening 
+            ? 'rgba(20, 184, 166, 0.3)' 
+            : 'rgba(16, 185, 129, 0.2)';
+        ctx.setLineDash([4, 12]);
+        ctx.translate(cx, cy);
+        ctx.rotate(timeMs * 0.5);
+        ctx.translate(-cx, -cy);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.lineWidth = 0.75;
+        // Ring 2 (Finetoothed spinning counter-clockwise)
+        ctx.beginPath();
+        ctx.arc(cx, cy, 21, 0, Math.PI * 2);
+        ctx.strokeStyle = isSpeaking 
+          ? 'rgba(234, 179, 8, 0.15)' 
+          : 'rgba(16, 185, 129, 0.15)';
+        ctx.setLineDash([2, 5]);
+        ctx.translate(cx, cy);
+        ctx.rotate(-timeMs * 0.3);
+        ctx.translate(-cx, -cy);
+        ctx.stroke();
+        ctx.restore();
+
+        // NEW: Draw pulsing organic core sphere in center
+        const corePulse = 16 + Math.sin(timeMs * 2.5) * 2 + (isSpeaking ? Math.sin(timeMs * 8) * 2.5 : 0);
+        ctx.save();
+        const coreGradient = ctx.createRadialGradient(cx, cy, 1, cx, cy, corePulse);
+        if (isSpeaking) {
+          coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+          coreGradient.addColorStop(0.3, 'rgba(234, 179, 8, 0.85)');
+          coreGradient.addColorStop(0.7, 'rgba(245, 158, 11, 0.45)');
+          coreGradient.addColorStop(1, 'rgba(249, 115, 22, 0)');
+        } else if (isListening) {
+          coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+          coreGradient.addColorStop(0.3, 'rgba(45, 212, 191, 0.8)');
+          coreGradient.addColorStop(0.7, 'rgba(20, 184, 166, 0.4)');
+          coreGradient.addColorStop(1, 'rgba(13, 148, 136, 0)');
+        } else {
+          coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+          coreGradient.addColorStop(0.4, 'rgba(52, 211, 153, 0.6)');
+          coreGradient.addColorStop(0.8, 'rgba(16, 185, 129, 0.25)');
+          coreGradient.addColorStop(1, 'rgba(4, 120, 87, 0)');
+        }
+        ctx.fillStyle = coreGradient;
+        ctx.beginPath();
+        ctx.arc(cx, cy, corePulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
         // 3. Draw Radial Audio Spectrum (Equalizer bars projecting outward)
         // We animate them dynamically based on whether Aether is triggered, listening or speaking!
         const totalBars = 36;
         const baseRadius = 26; // Snugs right outside the circular mic icon button
-        const timeMs = now * 0.004;
 
         for (let i = 0; i < totalBars; i++) {
           const angle = (i / totalBars) * Math.PI * 2;

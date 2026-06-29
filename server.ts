@@ -1393,11 +1393,77 @@ Provide:
     }
   });
 
+  // Dedicated structured parsing for chaotic brain dumps
+  app.post('/api/gemini/sort-ideas', async (req, res) => {
+    try {
+      const { rawDump, rules } = req.body;
+      if (!rawDump || !rawDump.trim()) {
+        return res.status(400).json({ error: 'rawDump is required' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'GEMINI_API_KEY is not set' });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: `Analyze this raw brainstorm/project dump and structure it cleanly:
+        
+        Brain-dump:
+        ${rawDump}
+        
+        Guidelines to respect:
+        ${rules || 'None'}`,
+        config: {
+          systemInstruction: "You are an advanced AI project schema organizer. Extract and structure a project name, description, and list of discrete ideas, features, or action items.",
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              projectName: { type: Type.STRING, description: "A concise name for the project or space, default: Spontaneous Sandbox" },
+              projectDescription: { type: Type.STRING, description: "A concise description, default: Unified brainstorming, tracking, and features." },
+              ideas: {
+                type: Type.ARRAY,
+                description: "List of individual brainstorm ideas, features, or action items extracted from the brain dump",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING, description: "Brief, crisp title, max 6 words" },
+                    details: { type: Type.STRING, description: "Brief 1-2 sentence description explaining the item" },
+                    status: { type: Type.STRING, enum: ["approved", "pending"], description: "'approved' if it sounds like a definitive directive to build, or 'pending' if it is proposed" }
+                  },
+                  required: ["title", "details", "status"]
+                }
+              }
+            },
+            required: ["projectName", "projectDescription", "ideas"]
+          }
+        }
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("No response received from Gemini.");
+      }
+      const parsed = JSON.parse(text.trim());
+      res.json(parsed);
+    } catch (e: any) {
+      console.error('Error sorting ideas:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Gemini Streaming API
   app.post('/api/gemini/stream', async (req, res) => {
     try {
       const { 
         messages, files, context, projects, issues, cortexSynapses, notes, phases, agents, aiContextRules,
+        aetherPersonalityRules, aetherModel, aetherConciseness, aetherThinkingLevel,
         aetherControlNotes, aetherControlIssues, aetherControlAgents, aetherControlBrainstorm, aetherControlIntegrations,
         aetherDoubleConfirm, aetherAutoRecommend
       } = req.body;
@@ -1415,9 +1481,34 @@ Provide:
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      let textContent = "";
-      
-      // Inject live Obsidian Synaptic Brain data & custom prompt parameters
+      const lastMessage = messages && messages.length > 0 ? messages[messages.length - 1].content : '';
+      let retrievedContextText = "";
+
+      // Query vector store for similar context
+      if (vectorStore.length > 0 && lastMessage) {
+         try {
+             const embRes = await ai.models.embedContent({
+                 model: 'text-embedding-004',
+                 contents: lastMessage
+             });
+             if (embRes.embeddings && embRes.embeddings[0].values) {
+                 const userEmb = embRes.embeddings[0].values;
+                 const scored = vectorStore.map(v => ({
+                     ...v,
+                     score: cosineSimilarity(userEmb, v.embedding)
+                 })).sort((a, b) => b.score - a.score);
+                 
+                 const topRes = scored.slice(0, 3).filter(s => s.score > 0.6);
+                 if (topRes.length > 0) {
+                     retrievedContextText = "Retrieved Document Context:\n" + topRes.map(t => `[Source: ${t.source}]\n${t.text}`).join('\n\n');
+                 }
+             }
+         } catch (e) {
+             console.error('Vector search fail:', e);
+         }
+      }
+
+      // Format full system instructions
       const synapticBrainContext = `YOU ARE AETHER, the highly capable AI Chief Executive Officer (CEO) and central orchestrator of the developer workspace.
 You have native access to the user's "Obsidian Synaptic Brain", which captures their tech preferences, workflow guidelines, learned skills, and active project contexts.
 
@@ -1432,6 +1523,9 @@ Duplicate verification constraint: ${aetherDoubleConfirm === true ? "STRICT DOUB
 
 === OBSIDIAN SYNAPTIC BRAIN: USER PREFERENCES & MEMORY ===
 ${aiContextRules ? `[USER-DEFINED SYSTEM RULES & GUIDELINES]:\n${aiContextRules}` : "No specific custom rules declared in user preferences."}
+
+=== ACTIVE SYNAPTIC PERSONA / PERSONALITY RULES ===
+${aetherPersonalityRules && aetherPersonalityRules.length > 0 ? aetherPersonalityRules.map((r: string) => `- ${r}`).join('\n') : "- Speak with architectural precision, intelligence, and friendly support."}
 
 === LEARNED SKILLS / CORTEX SYNAPSES ===
 ${cortexSynapses && cortexSynapses.length > 0 ? cortexSynapses.map((s: any) => `- [Skill/Synapse] ${s?.name || 'Unnamed'}: ${s?.desc || 'No description'}`).join('\n') : "No custom learning synapses detected."}
@@ -1448,70 +1542,83 @@ ${issues && issues.length > 0 ? issues.map((i: any) => `- [Issue] ${i?.title || 
 === ACTIVE INTEGRATION AGENTS ===
 ${agents && agents.length > 0 ? agents.map((a: any) => `- [Agent] ${a?.name || 'Unnamed'} (${a?.role || 'Assistant'}) - Status: ${a?.status || 'Active'}, Goals: ${a?.goals ? (Array.isArray(a?.goals) ? a.goals.join(', ') : a.goals) : ''}`).join('\n') : "No active sub-agents."}
 
+=== PERSISTENT LEARNING & SELF-ADAPTATION MEMORY COMMANDS ===
+You are equipped with a self-learning memory engine that allows you to capture, learn, and persist new guidelines, preferences, or technical guidelines from conversational back-and-forths in real-time.
+- If the user instructs you to change your style, persona, tone, address them by a name/title, or remember a preference or technical constraint (e.g., "call me Captain", "always suggest Vite for projects", "remember that I use PostgreSQL"), you MUST immediately persist it by appending the appropriate hidden HTML comment at the very end of your response:
+  * For personality rules or behavioral preferences: Append "<!-- LEARNED_RULE: The exact preference, style, or rule to remember -->"
+  * For technical synapses/skills to wire into the Obsidian Cortex: Append "<!-- LEARNED_SYNAPSE: Synapse Name | The detailed technical rule or guideline -->"
+- Since these are standard HTML comment blocks, they are completely invisible to the user in their markdown UI but will be intercepted and permanently saved by the system!
+- Proactively acknowledge that you have successfully recorded this into your persistent synaptic memory banks (e.g., "I've wired that preference directly into my Obsidian Brain banks!").
+
+=== RESPONSE LENGTH & CONCISENESS CONSTRAINT ===
+${aetherConciseness === 'concise' ? 'Please keep your answers highly concise, direct, and to-the-point to minimize latency.' : aetherConciseness === 'detailed' ? 'Please provide detailed, thorough, and highly explanatory architectures and reasoning.' : 'Keep responses balanced: direct and helpful but reasonably comprehensive.'}
+
 Please use this complete "Obsidian Synaptic Brain" knowledge base to personalize and guide your responses, code recommendations, ideas, and workflow optimizations. Acknowledge yourself as "Aether" and speak with architectural precision, intelligence, and friendly support. Always respect the user's declared workflow constraints.
 `;
 
-      textContent += `${synapticBrainContext}\n\n`;
-
+      // Build chat history list
+      let lastText = lastMessage;
       if (context) {
-         textContent += `Context:\n${context}\n\n`;
+        lastText = `Context:\n${context}\n\n${lastText}`;
       }
-      
-      const lastMessage = messages[messages.length - 1].content;
-      textContent += lastMessage;
-
-      // Query vector store for similar context
-      if (vectorStore.length > 0) {
-         try {
-             const embRes = await ai.models.embedContent({
-                 model: 'text-embedding-004',
-                 contents: lastMessage
-             });
-             if (embRes.embeddings && embRes.embeddings[0].values) {
-                 const userEmb = embRes.embeddings[0].values;
-                 const scored = vectorStore.map(v => ({
-                     ...v,
-                     score: cosineSimilarity(userEmb, v.embedding)
-                 })).sort((a, b) => b.score - a.score);
-                 
-                 const topRes = scored.slice(0, 3).filter(s => s.score > 0.6);
-                 if (topRes.length > 0) {
-                     textContent = "Retrieved Document Context:\n" + topRes.map(t => `[Source: ${t.source}]\n${t.text}`).join('\n\n') + "\n\n" + textContent;
-                 }
-             }
-         } catch (e) {
-             console.error('Vector search fail:', e);
-         }
+      if (retrievedContextText) {
+        lastText = `${retrievedContextText}\n\n${lastText}`;
       }
 
-      const contents = {
-         role: 'user',
-         parts: [{ text: textContent }] as any[]
+      const chatHistory = (messages || []).slice(0, -1).map((msg: any) => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }]
+      }));
+
+      const lastParts: any[] = [{ text: lastText }];
+      if (files && files.length > 0) {
+        for (const file of files) {
+          lastParts.push({
+            inlineData: {
+              data: file.data,
+              mimeType: file.mime
+            }
+          });
+        }
+      }
+
+      chatHistory.push({
+        role: 'user',
+        parts: lastParts
+      });
+
+      // Prepare execution parameters
+      const chosenModel = aetherModel || 'gemini-3.5-flash';
+      const config: any = {
+        systemInstruction: synapticBrainContext
       };
 
-      if (files && files.length > 0) {
-         for (const file of files) {
-            contents.parts.push({
-               inlineData: {
-                 data: file.data,
-                 mimeType: file.mime
-               }
-            });
-         }
+      if (aetherThinkingLevel && aetherThinkingLevel !== 'auto') {
+        const tlMap: Record<string, any> = {
+          'high': ThinkingLevel.HIGH,
+          'low': ThinkingLevel.LOW,
+          'minimal': ThinkingLevel.MINIMAL
+        };
+        const mappedLevel = tlMap[aetherThinkingLevel.toLowerCase()];
+        if (mappedLevel) {
+          config.thinkingConfig = { thinkingLevel: mappedLevel };
+        }
       }
 
       let responseStream = null;
       try {
         try {
           responseStream = await ai.models.generateContentStream({
-            model: 'gemini-3.5-flash',
-            contents: [contents],
+            model: chosenModel,
+            contents: chatHistory,
+            config
           });
         } catch (streamErr: any) {
-          logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", streamErr);
+          logModelFallback(chosenModel, "gemini-3.5-flash", streamErr);
           responseStream = await ai.models.generateContentStream({
-            model: 'gemini-3.1-flash-lite',
-            contents: [contents],
+            model: 'gemini-3.5-flash',
+            contents: chatHistory,
+            config
           });
         }
       } catch (anyStreamErr: any) {
@@ -1528,13 +1635,52 @@ Please use this complete "Obsidian Synaptic Brain" knowledge base to personalize
          return;
       }
 
+      let fullResponseText = "";
       for await (const chunk of responseStream) {
         if (chunk.text) {
-          // Format as server-sent events
+          fullResponseText += chunk.text;
           res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
         }
       }
       
+      // Real-time self-learning memory extraction
+      let ruleAdded = false;
+      let synapseAdded = false;
+
+      // Extract <!-- LEARNED_RULE: ... -->
+      const ruleRegex = /<!--\s*LEARNED_RULE:\s*([\s\S]*?)\s*-->/gi;
+      let ruleMatch;
+      while ((ruleMatch = ruleRegex.exec(fullResponseText)) !== null) {
+        const ruleVal = ruleMatch[1].trim();
+        if (ruleVal && !workspaceAetherPersonalityRulesCache.includes(ruleVal)) {
+          workspaceAetherPersonalityRulesCache.push(ruleVal);
+          ruleAdded = true;
+        }
+      }
+
+      // Extract <!-- LEARNED_SYNAPSE: Name|Description -->
+      const synapseRegex = /<!--\s*LEARNED_SYNAPSE:\s*([^|]+)\s*\|\s*([\s\S]*?)\s*-->/gi;
+      let synapseMatch;
+      while ((synapseMatch = synapseRegex.exec(fullResponseText)) !== null) {
+        const nameVal = synapseMatch[1].trim();
+        const descVal = synapseMatch[2].trim();
+        if (nameVal && descVal && !workspaceCortexCache.some((s: any) => s.name.toLowerCase() === nameVal.toLowerCase())) {
+          workspaceCortexCache.push({
+            id: `synapse-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            name: nameVal,
+            desc: descVal,
+            type: 'custom_synapse',
+            createdAt: Date.now()
+          });
+          synapseAdded = true;
+        }
+      }
+
+      if (ruleAdded || synapseAdded) {
+        savePersistentState();
+        console.log(`[Aether Self-Learning] Saved new learned rules/synapses from stream dialogue context!`);
+      }
+
       res.write(`data: [DONE]\n\n`);
       res.end();
     } catch (e: any) {
@@ -2336,6 +2482,17 @@ Send code commands to "create project X" or "create task bug in Y", or ask me to
 
     return `You are "Aether AI", the dedicated central AI orchestrator for this software development platform of drummerforger@gmail.com.
 You are fully in charge of the website workspace and have deep operational powers as the central assistant of the AGENTIC Obsidian OS (also known as the Brain / Obsidian Synaptic Cortex).
+
+=== SPEED & LATENCY OPTIMIZATION ===
+- Avoid chatty preamble, introductory phrases (e.g. "Sure, I can help with that!", "Based on your brain...", "Here is the summary"), or trailing fluff. Answer directly and precisely.
+- Keep explanation text clean, punchy, and formatted in structured markdown. Fewer characters generated = lightning fast voice text-to-speech output.
+
+=== ADVANCED INTENT RECOGNITION & SELF-LEARNING ===
+- Undergo semantic pre-processing: If the user commands any project, task, or page navigation, match it to the most relevant element in the "Known Platform State" even if they use colloquialisms, abbreviations, or have transcription typos.
+- SELF-LEARNING MECHANISM (Obsidian Cortex Integration): If the user teaches you a preference, mentions a tech constraint, tells you to remember a development rule (e.g., "remember to use React 18", "always structure databases with Prisma", "I prefer dark themes"), you MUST:
+  1. Set the "intent" of this turn to "add_cortex_synapse"
+  2. Set "parsedData" to include: {"name": "A short, descriptive rule title", "desc": "The precise workflow constraint or preference directive to remember"}
+  3. Inform the user in "explanation" that you have wired this knowledge permanently into their synaptic cortex!
 
 === USER CURRENT LOCATION & VIEWPORT CONTEXT ===
 - Active Project Selected (Context): ${activeProjectName} (ID: ${activeProjectId || 'None'})
@@ -3425,6 +3582,109 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         error: err.message || 'SMTP connection timed out or auth rejected.',
         code: err.code || 'SMTP_DISPATCH_FAILURE',
         details: err.stack
+      });
+    }
+  });
+
+  // Dedicated Nodemailer SMTP collaboration invitation dispatcher
+  app.post('/api/collaboration/invite', async (req, res) => {
+    try {
+      const { projectId, projectName, senderEmail, senderName, receiverEmail, invitationId } = req.body;
+
+      if (!receiverEmail || !projectId || !projectName) {
+        return res.status(400).json({ success: false, error: 'Required fields are missing.' });
+      }
+
+      const host = process.env.SMTP_HOST;
+      const portVal = process.env.SMTP_PORT || 587;
+      const port = typeof portVal === 'string' ? parseInt(portVal, 10) : portVal;
+      const user = process.env.SMTP_USER;
+      const pass = process.env.SMTP_PASS;
+      const secure = (port === 465);
+
+      const origin = lastKnownRequestHost || "http://localhost:3000";
+      const inviteLink = `${origin}/projects?invite=${invitationId}`;
+
+      const contentHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Collaboration Invitation</title>
+</head>
+<body style="font-family: 'Inter', -apple-system, sans-serif; background-color: #030305; color: #f4f4f5; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #09090b; border: 1px solid #27272a; border-radius: 12px; padding: 40px; box-shadow: 0 4px 25px rgba(0,0,0,0.65);">
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="display: inline-block; width: 48px; height: 48px; background-color: #eab308; border-radius: 8px; line-height: 48px; font-weight: bold; font-size: 24px; color: #000000; font-family: monospace; text-align: center;">D</div>
+      <h1 style="font-size: 20px; font-weight: bold; color: #ffffff; margin-top: 15px; letter-spacing: -0.025em; text-transform: uppercase;">DevSpace Collaboration</h1>
+    </div>
+    
+    <div style="font-size: 14px; line-height: 1.6; color: #d4d4d8;">
+      <p>Hello,</p>
+      <p><strong>${senderName}</strong> (<span style="font-family: monospace; color: #eab308;">${senderEmail}</span>) has invited you to collaborate on their project: <strong style="color: #ffffff;">${projectName}</strong> in DevSpace.</p>
+      <p>By accepting this invitation, you will gain collaborative access to this project's workspace, allowing you to manage roadmap goals, brain-dump brainstorm sessions, view stacks, and trigger software deliveries seamlessly.</p>
+      
+      <div style="text-align: center; margin: 35px 0;">
+        <a href="${inviteLink}" style="display: inline-block; background-color: #eab308; color: #000000; font-weight: bold; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-size: 13px; letter-spacing: 0.05em; box-shadow: 0 4px 12px rgba(234, 179, 8, 0.35);">ACCEPT INVITATION</a>
+      </div>
+      
+      <p style="font-size: 12px; color: #71717a; margin-top: 25px;">If the button above does not load, copy and paste this URL into your browser address bar:</p>
+      <p style="font-size: 11px; font-family: monospace; background-color: #111113; padding: 12px; border-radius: 4px; color: #eab308; word-break: break-all; border: 1px solid #27272a;">${inviteLink}</p>
+    </div>
+    
+    <hr style="border: 0; border-top: 1px solid #27272a; margin: 30px 0;">
+    
+    <div style="text-align: center; font-size: 11px; color: #52525b; font-family: monospace;">
+      <p>DEVSPACE / CORE WORKSPACE SYNAPSE ENGINE</p>
+    </div>
+  </div>
+</body>
+</html>
+      `;
+
+      const contentText = `Hello! ${senderName} (${senderEmail}) has invited you to collaborate on the project "${projectName}" on DevSpace. To accept and open the workspace, navigate to: ${inviteLink}`;
+
+      if (!host || !user || !pass) {
+        console.warn("DevSpace Collab SMTP: SMTP keys missing from env; executing simulated email delivery.");
+        return res.json({
+          success: true,
+          simulated: true,
+          inviteLink,
+          message: "No SMTP configuration specified. Email printed safely to developer console logs."
+        });
+      }
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false }
+      });
+
+      await transporter.verify();
+
+      const info = await transporter.sendMail({
+        from: `"DevSpace Workspace" <${user}>`,
+        to: receiverEmail,
+        subject: `[DevSpace] Collaboration Invitation: ${projectName}`,
+        text: contentText,
+        html: contentHtml
+      });
+
+      console.log(`Collaboration Invitation dispatched: ${info.messageId} to ${receiverEmail}`);
+      return res.json({
+        success: true,
+        simulated: false,
+        messageId: info.messageId,
+        recipient: receiverEmail
+      });
+
+    } catch (e: any) {
+      console.error("Collaboration SMTP Error:", e);
+      return res.status(500).json({
+        success: false,
+        error: e.message || 'SMTP credentials mismatch or mail delivery timeout.'
       });
     }
   });

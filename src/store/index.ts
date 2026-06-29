@@ -16,18 +16,40 @@ interface StoreState {
   setRightSidebarOpen: (open: boolean) => void;
 }
 
+const initialSidebarOpen = localStorage.getItem('isSidebarOpen') !== 'false';
+const initialSidebarMinimized = localStorage.getItem('isSidebarMinimized') === 'true';
+const initialRightSidebarOpen = localStorage.getItem('isRightSidebarOpen') !== 'false';
+
 export const useStore = create<StoreState>((set) => ({
   isCommandPaletteOpen: false,
   toggleCommandPalette: () => set((state) => ({ isCommandPaletteOpen: !state.isCommandPaletteOpen })),
   setCommandPaletteOpen: (open) => set({ isCommandPaletteOpen: open }),
-  isSidebarOpen: true,
-  toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
-  isSidebarMinimized: false,
-  toggleSidebarMinimized: () => set((state) => ({ isSidebarMinimized: !state.isSidebarMinimized })),
-  setSidebarMinimized: (minimized) => set({ isSidebarMinimized: minimized }),
-  isRightSidebarOpen: true,
-  toggleRightSidebar: () => set((state) => ({ isRightSidebarOpen: !state.isRightSidebarOpen })),
+  isSidebarOpen: initialSidebarOpen,
+  toggleSidebar: () => set((state) => {
+    const nextVal = !state.isSidebarOpen;
+    localStorage.setItem('isSidebarOpen', String(nextVal));
+    return { isSidebarOpen: nextVal };
+  }),
+  isSidebarMinimized: initialSidebarMinimized,
+  toggleSidebarMinimized: () => set((state) => {
+    const nextVal = !state.isSidebarMinimized;
+    localStorage.setItem('isSidebarMinimized', String(nextVal));
+    return { isSidebarMinimized: nextVal };
+  }),
+  setSidebarMinimized: (minimized) => set(() => {
+    localStorage.setItem('isSidebarMinimized', String(minimized));
+    return { isSidebarMinimized: minimized };
+  }),
+  isRightSidebarOpen: initialRightSidebarOpen,
+  toggleRightSidebar: () => set((state) => {
+    const nextVal = !state.isRightSidebarOpen;
+    localStorage.setItem('isRightSidebarOpen', String(nextVal));
+    return { isRightSidebarOpen: nextVal };
+  }),
   isRightSidebarExpanded: false,
   toggleRightSidebarExpanded: () => set((state) => ({ isRightSidebarExpanded: !state.isRightSidebarExpanded })),
-  setRightSidebarOpen: (open) => set({ isRightSidebarOpen: open }),
+  setRightSidebarOpen: (open) => set(() => {
+    localStorage.setItem('isRightSidebarOpen', String(open));
+    return { isRightSidebarOpen: open };
+  }),
 }));

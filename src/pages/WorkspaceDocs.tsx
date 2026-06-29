@@ -557,7 +557,7 @@ export function WorkspaceDocs() {
   });
 
   return (
-    <div className="flex-1 flex flex-col pb-8 min-h-full">
+    <div className="flex flex-col h-screen overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
@@ -604,7 +604,9 @@ export function WorkspaceDocs() {
         </div>
       )}
 
-      {/* Mode Switcher Tabs */}
+      {/* Scrollable Body */}
+      <div className="flex-1 overflow-y-auto pr-1 pb-12 scrollbar-thin">
+        {/* Mode Switcher Tabs */}
       <div className="flex items-center gap-2 border-b border-zinc-800 mb-6 p-1 bg-[#121214] border rounded-lg self-start">
          <button
             type="button"
@@ -961,6 +963,8 @@ export function WorkspaceDocs() {
               </motion.div>
             )}
          </div>
+      </div>
+
       </div>
 
       {/* CREATE GOOGLE DOC OR LOCAL DOC MODAL */}

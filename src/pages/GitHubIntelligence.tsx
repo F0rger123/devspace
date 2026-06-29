@@ -262,7 +262,7 @@ export function GitHubIntelligence() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col pb-8 relative min-h-full">
+    <div className="flex flex-col h-screen overflow-hidden pb-4 relative">
       
       {/* Header sections */}
       <div className="flex items-center justify-between mb-6">

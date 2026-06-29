@@ -1,9 +1,22 @@
 import { Bell, HelpCircle, Search, Menu, PanelRight } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
+import { useData } from '../../context/DataProvider';
 
 export function Header() {
   const { toggleCommandPalette, toggleSidebar, toggleRightSidebar } = useStore();
+  const { userProfile, googleUser } = useData();
+  const navigate = useNavigate();
+
+  const getInitials = () => {
+    if (userProfile?.displayName) {
+      return userProfile.displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+    }
+    if (googleUser?.email) {
+      return googleUser.email[0].toUpperCase();
+    }
+    return 'D';
+  };
 
   return (
     <header className="h-11 border-b border-zinc-900 flex items-center justify-between px-4 bg-[#050505] shrink-0">
@@ -39,9 +52,21 @@ export function Header() {
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.7)]"></div>
           <span className="text-[11px] font-medium text-zinc-400">SPRINT 4: <span className="text-yellow-500 font-bold">82%</span></span>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 cursor-pointer">
-          <Bell size={16} className="text-zinc-500 hover:text-zinc-300 transition-colors" />
-          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-zinc-700 to-zinc-800 border border-zinc-700"></div>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Bell size={16} className="text-zinc-500 hover:text-zinc-300 cursor-pointer transition-colors" />
+          <button
+            onClick={() => navigate('/settings')}
+            className="w-6 h-6 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center font-bold text-xs cursor-pointer transition-transform hover:scale-105"
+            style={{
+              backgroundColor: userProfile?.avatarColor || '#3b82f6',
+              borderColor: `${userProfile?.avatarColor || '#3b82f6'}80`,
+              color: '#ffffff',
+              textShadow: '0 1px 2px rgba(0,0,0,0.4)'
+            }}
+            title={`View profile: ${userProfile?.displayName || googleUser?.email || 'User'}`}
+          >
+            {getInitials()}
+          </button>
         </div>
         <button onClick={toggleRightSidebar} className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors ml-1">
           <PanelRight size={16} />

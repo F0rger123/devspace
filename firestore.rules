@@ -16,10 +16,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
     function incoming() {
       return request.resource.data;
     }
@@ -48,36 +44,113 @@ service cloud.firestore {
         && data.createdAt is number;
     }
 
+    // Validation for Users
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128
+        && data.email is string && data.email.size() <= 200
+        && data.username is string && data.username.size() <= 100
+        && data.createdAt is number;
+    }
+
+    // Validation for Invitations
+    function isValidInvitation(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.projectId is string && data.projectId.size() <= 128
+        && data.projectName is string && data.projectName.size() <= 200
+        && data.senderId is string && data.senderId.size() <= 128
+        && data.senderEmail is string && data.senderEmail.size() <= 200
+        && data.senderName is string && data.senderName.size() <= 100
+        && data.receiverEmail is string && data.receiverEmail.size() <= 200
+        && data.status in ['pending', 'accepted', 'declined']
+        && data.createdAt is number;
+    }
+
     // Rules for projects
     match /projects/{projectId} {
-      allow read: if isVerifiedUser();
-      allow create: if isVerifiedUser() 
+      allow read: if isSignedIn() && (
+        existing() == null || 
+        !('ownerId' in existing()) || 
+        existing().ownerId == request.auth.uid || 
+        (request.auth.token.email != null && existing().collaborators is list && request.auth.token.email in existing().collaborators)
+      );
+      
+      allow create: if isSignedIn() 
         && isValidId(projectId) 
         && isValidProject(incoming())
         && incoming().id == projectId;
-      allow update: if isVerifiedUser() 
+        
+      allow update: if isSignedIn() 
         && isValidId(projectId)
         && isValidProject(incoming())
         && incoming().id == projectId
-        && incoming().createdAt == existing().createdAt; // createdAt is immutable
-      allow delete: if isVerifiedUser() && isValidId(projectId);
+        && (
+          existing() == null || 
+          !('ownerId' in existing()) || 
+          existing().ownerId == request.auth.uid || 
+          (request.auth.token.email != null && existing().collaborators is list && request.auth.token.email in existing().collaborators)
+        );
+        
+      allow delete: if isSignedIn() 
+        && isValidId(projectId)
+        && (
+          existing() == null || 
+          !('ownerId' in existing()) || 
+          existing().ownerId == request.auth.uid
+        );
     }
 
     // Rules for issues
     match /issues/{issueId} {
-      allow read: if isVerifiedUser();
-      allow create: if isVerifiedUser() 
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() 
         && isValidId(issueId) 
         && isValidIssue(incoming())
         && incoming().id == issueId
-        && exists(/databases/$(database)/documents/projects/$(incoming().projectId)); // project must exist!
-      allow update: if isVerifiedUser() 
+        && exists(/databases/$(database)/documents/projects/$(incoming().projectId));
+      allow update: if isSignedIn() 
         && isValidId(issueId)
         && isValidIssue(incoming())
         && incoming().id == issueId
-        && incoming().projectId == existing().projectId // projectId is immutable
-        && incoming().createdAt == existing().createdAt; // createdAt is immutable
-      allow delete: if isVerifiedUser() && isValidId(issueId);
+        && incoming().projectId == existing().projectId
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(issueId);
+    }
+
+    // Rules for users
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() 
+        && request.auth.uid == userId 
+        && isValidUser(incoming());
+      allow delete: if false;
+    }
+
+    // Rules for invitations
+    match /invitations/{invitationId} {
+      allow read: if isSignedIn() && (
+        existing() == null || 
+        existing().senderId == request.auth.uid || 
+        (request.auth.token.email != null && existing().receiverEmail == request.auth.token.email)
+      );
+      allow create: if isSignedIn() 
+        && isValidId(invitationId)
+        && isValidInvitation(incoming())
+        && incoming().id == invitationId
+        && incoming().senderId == request.auth.uid;
+      allow update: if isSignedIn() 
+        && isValidId(invitationId)
+        && isValidInvitation(incoming())
+        && incoming().id == invitationId
+        && (
+          existing().senderId == request.auth.uid || 
+          (request.auth.token.email != null && existing().receiverEmail == request.auth.token.email)
+        );
+      allow delete: if isSignedIn() 
+        && isValidId(invitationId)
+        && (
+          existing().senderId == request.auth.uid || 
+          (request.auth.token.email != null && existing().receiverEmail == request.auth.token.email)
+        );
     }
   }
 }

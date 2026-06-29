@@ -7,6 +7,7 @@ import { CommandPalette } from '../ui/CommandPalette';
 import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
+import { AuthScreen } from '../auth/AuthScreen';
 
 const EMBERS = [
   { left: '4%', size: '3px', delay: '0s', type: 'animate-ember-1', blur: '0.5px' },
@@ -165,13 +166,13 @@ export function CursorAmbers() {
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
         if (mouse.active) {
-          // Elastic attraction pull
-          const pull = Math.min(0.2, 110 / dist);
-          p.vx += (dx / dist) * pull * 0.14;
-          p.vy += (dy / dist) * pull * 0.14;
+          // High speed elastic attraction pull
+          const pull = Math.min(0.8, 300 / dist);
+          p.vx += (dx / dist) * pull * 0.42;
+          p.vy += (dy / dist) * pull * 0.42;
 
-          // Elegant swirl/orbit path around target
-          const swirlForce = 0.045;
+          // High-velocity orbital swirl vortex path around mouse pointer
+          const swirlForce = 0.14;
           p.vx += (-dy / dist) * swirlForce;
           p.vy += (dx / dist) * swirlForce;
         } else {
@@ -228,7 +229,7 @@ export function CursorAmbers() {
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { isAssistantOpen, isAssistantMinimized } = useData();
+  const { isAssistantOpen, isAssistantMinimized, googleUser } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
@@ -244,6 +245,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
     window.addEventListener('aether-pc-navigate', handleNavigate);
     return () => window.removeEventListener('aether-pc-navigate', handleNavigate);
   }, [navigate]);
+
+  if (!googleUser) {
+    return <AuthScreen />;
+  }
 
   if (isWhatsAppRoute) {
     return (
@@ -314,8 +319,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <main className={`flex-grow flex flex-col min-w-0 overflow-hidden bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isAssistantOpen && isAssistantMinimized ? 'mr-[440px]' : ''
           }`}>
-            <div className={`flex-grow overflow-y-auto ${isAssistantRoute ? 'p-0' : 'p-4 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
-              <div className="w-full min-h-full flex flex-col">
+            <div className={`flex-grow overflow-hidden ${isAssistantRoute ? 'p-0' : 'p-4 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
+              <div className="w-full h-full flex flex-col overflow-hidden">
                 {children}
               </div>
             </div>

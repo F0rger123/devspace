@@ -26,8 +26,18 @@ const navItems = [
 export function Sidebar() {
   const toggleCommandPalette = useStore(state => state.toggleCommandPalette);
   const { isSidebarOpen, isSidebarMinimized, toggleSidebarMinimized } = useStore();
-  const { projects, activeProjectId, setActiveProjectId } = useData();
+  const { projects, activeProjectId, setActiveProjectId, userProfile, googleUser } = useData();
   const navigate = useNavigate();
+
+  const getInitials = () => {
+    if (userProfile?.displayName) {
+      return userProfile.displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+    }
+    if (googleUser?.email) {
+      return googleUser.email[0].toUpperCase();
+    }
+    return 'DV';
+  };
 
   if (!isSidebarOpen) return null;
 
@@ -184,12 +194,35 @@ export function Sidebar() {
 
       {/* System Status / User Footer */}
       <section className="mt-auto w-full">
-        <div className={cn("bg-[#0c0c0e] border border-zinc-900 rounded-lg shadow-inner", isSidebarMinimized ? "p-1.5 flex justify-center" : "p-3")}>
-          <div className={cn("text-[10px] text-zinc-500 flex items-center", isSidebarMinimized ? "justify-center" : "justify-between")}>
-            <span className="font-bold text-yellow-500" title="dev@devspace.ai">DV</span>
-            {!isSidebarMinimized && <span className="font-mono">dev@devspace.ai</span>}
+        <button
+          onClick={() => navigate('/settings')}
+          className={cn(
+            "w-full bg-[#0c0c0e] hover:bg-zinc-900/65 border border-zinc-900 rounded-lg shadow-inner text-left transition-all cursor-pointer flex items-center gap-2.5",
+            isSidebarMinimized ? "p-1.5 justify-center" : "p-3"
+          )}
+          title={`View Profile: ${userProfile?.displayName || googleUser?.email || 'User'}`}
+        >
+          <div
+            className="w-6 h-6 rounded-full border flex items-center justify-center font-bold text-[10px]"
+            style={{
+              backgroundColor: userProfile?.avatarColor || '#3b82f6',
+              borderColor: `${userProfile?.avatarColor || '#3b82f6'}60`,
+              color: '#ffffff'
+            }}
+          >
+            {getInitials()}
           </div>
-        </div>
+          {!isSidebarMinimized && (
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-zinc-250 truncate leading-none mb-0.5">
+                {userProfile?.displayName || googleUser?.email?.split('@')[0] || 'Developer'}
+              </p>
+              <p className="text-[9px] font-mono text-zinc-500 truncate leading-none">
+                {userProfile?.title || googleUser?.email || 'Lead Engineer'}
+              </p>
+            </div>
+          )}
+        </button>
       </section>
 
     </nav>

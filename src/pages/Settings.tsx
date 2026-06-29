@@ -6,6 +6,7 @@ import { WakeWordEngine } from '../components/ui/WakeWordEngine';
 
 export function Settings() {
   const { 
+    userProfile, updateUserProfile,
     aiContextRules, setAiContextRules, 
     aiPersona, setAiPersona,
     aetherControlNotes, setAetherControlNotes,
@@ -41,10 +42,44 @@ export function Settings() {
     navRoadmapShortcutKey, setNavRoadmapShortcutKey,
     navRoadmapShortcutMouse, setNavRoadmapShortcutMouse,
     isAssistantMinimized, setIsAssistantMinimized,
-    aetherPersonalityRules, setAetherPersonalityRules
+    aetherPersonalityRules, setAetherPersonalityRules,
+    aetherModel, setAetherModel,
+    aetherConciseness, setAetherConciseness,
+    aetherThinkingLevel, setAetherThinkingLevel
   } = useData();
-  const [activeTab, setActiveTab] = useState('aether');
+  const [activeTab, setActiveTab] = useState('profile'); // Default to profile to showcase first-class user profiles
   
+  const [profileName, setProfileName] = useState('');
+  const [profileTitle, setProfileTitle] = useState('');
+  const [profileBio, setProfileBio] = useState('');
+  const [profileAvatarColor, setProfileAvatarColor] = useState('#3b82f6');
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (userProfile) {
+      setProfileName(userProfile.displayName || '');
+      setProfileTitle(userProfile.title || '');
+      setProfileBio(userProfile.bio || '');
+      setProfileAvatarColor(userProfile.avatarColor || '#3b82f6');
+    }
+  }, [userProfile]);
+  
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileMessage(null);
+    try {
+      await updateUserProfile({
+        displayName: profileName,
+        title: profileTitle,
+        bio: profileBio,
+        avatarColor: profileAvatarColor,
+      });
+      setProfileMessage('✓ Profile updated successfully in Cloud Firestore!');
+      setTimeout(() => setProfileMessage(null), 4000);
+    } catch (err: any) {
+      setProfileMessage(`❌ Failed to update profile: ${err?.message || 'Unknown error'}`);
+    }
+  };
   const [newTriggerPhrase, setNewTriggerPhrase] = useState('');
   const [newTriggerPath, setNewTriggerPath] = useState('/');
   const [newPersonalityRule, setNewPersonalityRule] = useState('');
@@ -504,7 +539,7 @@ export function Settings() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col pb-8 min-h-full">
+    <div className="flex flex-col h-screen overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
@@ -951,6 +986,91 @@ export function Settings() {
                   <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5 animate-pulse" />
                   <div className="text-[10px] text-purple-300/80 leading-relaxed">
                     <strong>Dynamic Vocal Calibration:</strong> Aether automatically monitors and learns your personality requests on-the-fly. For example, simply say <em>"Aether, call me Sir from now on"</em> or <em>"Aether, stop being funny"</em> and the Synaptic Memory list will dynamically adapt and save!
+                  </div>
+                </div>
+
+                {/* Aether Core Engine & Speed Controls */}
+                <div className="border border-zinc-800 bg-[#0d0d0f] rounded-xl p-5 space-y-5">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-cyan-400">
+                      <Settings2 size={16} className="animate-spin-slow" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                        Aether Synaptic Engine & Speed Controls
+                      </h3>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                        Finetune Aether's core model engine, reasoning level, and conciseness format to balance cognitive competence with lightning response speed.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                    {/* Model Selector */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                        Core AI Engine
+                      </label>
+                      <select
+                        value={aetherModel}
+                        onChange={(e) => setAetherModel(e.target.value)}
+                        className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-zinc-200 focus:outline-none focus:border-zinc-700 cursor-pointer"
+                      >
+                        <option value="gemini-3.5-flash">Balanced (Gemini 3.5 Flash)</option>
+                        <option value="gemini-3.1-pro-preview">Cognitive Pro (Gemini 3.1 Pro - Paid Key)</option>
+                        <option value="gemini-3.1-flash-lite">Ultra Fast Lite (Gemini 3.1 Flash Lite)</option>
+                      </select>
+                      <p className="text-[9px] text-zinc-500 leading-normal">
+                        {aetherModel === 'gemini-3.1-pro-preview' 
+                          ? '⚡ Paid Flow: Maximum reasoning competence for coding and logical planning.'
+                          : aetherModel === 'gemini-3.1-flash-lite'
+                          ? '🚀 Lowest Latency: Strips overhead to maximize streaming throughput.'
+                          : '✨ Standard default: Excellent mix of analytical competence and speed.'}
+                      </p>
+                    </div>
+
+                    {/* Conciseness Selector */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                        Response Conciseness
+                      </label>
+                      <select
+                        value={aetherConciseness}
+                        onChange={(e) => setAetherConciseness(e.target.value)}
+                        className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-zinc-200 focus:outline-none focus:border-zinc-700 cursor-pointer"
+                      >
+                        <option value="concise">Concise & Direct (High Speed)</option>
+                        <option value="balanced">Standard Balanced</option>
+                        <option value="detailed">Explanatory & Detailed (Pro Architecture)</option>
+                      </select>
+                      <p className="text-[9px] text-zinc-500 leading-normal">
+                        {aetherConciseness === 'concise' 
+                          ? '⚡ Drastically improves performance by keeping answers punchy.'
+                          : aetherConciseness === 'detailed'
+                          ? '📖 Outputs comprehensive walkthroughs; takes slightly longer to stream.'
+                          : '⚖️ Standard balanced developer explanations.'}
+                      </p>
+                    </div>
+
+                    {/* Thinking Level Selector */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider block">
+                        Reasoning Depth
+                      </label>
+                      <select
+                        value={aetherThinkingLevel}
+                        onChange={(e) => setAetherThinkingLevel(e.target.value)}
+                        className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-zinc-200 focus:outline-none focus:border-zinc-700 cursor-pointer"
+                      >
+                        <option value="auto">Auto-Managed (Dynamic)</option>
+                        <option value="high">High Reasoning (Full Thinking)</option>
+                        <option value="low">Low Latency (Fast Thinking)</option>
+                        <option value="minimal">Minimal / None (Instant Start)</option>
+                      </select>
+                      <p className="text-[9px] text-zinc-500 leading-normal">
+                        Configure the thinking depth parameter. Setting to Low or Minimal skips heavy reasoning loops, launching speech/text streams instantly.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1966,18 +2086,105 @@ export function Settings() {
           )}
           
           {activeTab === 'profile' && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-fade-in">
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100 mb-1">Global Developer Profile & AI Memory</h3>
-                <p className="text-xs text-zinc-400">Define context, tech stack rules, and persistent memories that the AI brain should know across all projects.</p>
+                <p className="text-xs text-zinc-400">Define context, tech stack rules, personal title, bio, and persistent memories that the AI brain and collaborators should know.</p>
               </div>
 
+              {/* Developer Profile Form */}
               <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-5">
                 <div className="mb-4 flex items-center justify-between">
-                   <label className="text-xs font-semibold text-blue-400 flex items-center gap-2">
-                      <Bot size={14} /> Persistent AI Context Block
-                   </label>
-                   <span className="text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Auto-saves</span>
+                  <label className="text-xs font-semibold text-yellow-500 flex items-center gap-2 uppercase tracking-wider">
+                    👤 Personal Developer Profile
+                  </label>
+                  <span className="text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Firestore Persistent</span>
+                </div>
+
+                <form onSubmit={handleProfileSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 font-medium mb-1">Display Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. John Doe"
+                        value={profileName}
+                        onChange={(e) => setProfileName(e.target.value)}
+                        className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 font-medium mb-1">Professional Title / Role</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Senior Frontend Engineer"
+                        value={profileTitle}
+                        onChange={(e) => setProfileTitle(e.target.value)}
+                        className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 font-medium mb-1">Short Bio</label>
+                    <textarea
+                      placeholder="Write a brief bio about your developer skills or role..."
+                      value={profileBio}
+                      onChange={(e) => setProfileBio(e.target.value)}
+                      rows={3}
+                      className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 font-medium mb-1">Theme Avatar Accent Color</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={profileAvatarColor}
+                        onChange={(e) => setProfileAvatarColor(e.target.value)}
+                        className="w-8 h-8 rounded border border-zinc-800 bg-transparent cursor-pointer"
+                      />
+                      <span className="text-xs font-mono text-zinc-400 uppercase">{profileAvatarColor}</span>
+                      
+                      <div className="flex gap-1.5 ml-auto">
+                        {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'].map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setProfileAvatarColor(c)}
+                            className="w-5 h-5 rounded-full border border-zinc-900 transition-transform hover:scale-110 cursor-pointer"
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {profileMessage && (
+                    <p className={`text-xs font-semibold py-1 px-2 rounded font-mono ${profileMessage.startsWith('✓') ? 'text-emerald-400 bg-emerald-950/15 border border-emerald-950/40' : 'text-red-400 bg-red-950/15 border border-red-950/40'}`}>
+                      {profileMessage}
+                    </p>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold text-xs rounded transition-colors shadow-lg cursor-pointer"
+                    >
+                      Save Profile Details
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* AI Memory Context Block */}
+              <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <label className="text-xs font-semibold text-blue-400 flex items-center gap-2">
+                    <Bot size={14} /> Persistent AI Context Block
+                  </label>
+                  <span className="text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Auto-saves</span>
                 </div>
                 
                 <textarea 
@@ -1992,12 +2199,13 @@ export function Settings() {
                 </p>
               </div>
 
+              {/* Active Agent Persona */}
               <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-5">
                 <div className="mb-4 flex items-center justify-between">
-                   <label className="text-xs font-semibold text-purple-400 flex items-center gap-2">
-                      <Bot size={14} /> Active Agent Persona
-                   </label>
-                   <span className="text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Saved to storage</span>
+                  <label className="text-xs font-semibold text-purple-400 flex items-center gap-2">
+                    <Bot size={14} /> Active Agent Persona
+                  </label>
+                  <span className="text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">Saved to storage</span>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

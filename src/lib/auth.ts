@@ -1,10 +1,21 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, GithubAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  GithubAuthProvider, 
+  onAuthStateChanged, 
+  User,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile
+} from 'firebase/auth';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 const provider = new GoogleAuthProvider();
@@ -30,22 +41,62 @@ try {
 } catch (e) {}
 
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: User, token: string | null) => void,
   onAuthFailure?: () => void
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
+      if (onAuthSuccess) {
+        onAuthSuccess(user, cachedAccessToken);
       }
     } else {
       cachedAccessToken = null;
       if (onAuthFailure) onAuthFailure();
     }
   });
+};
+
+export const signUpWithEmailPassword = async (email: string, password: string, username: string): Promise<User> => {
+  try {
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = credential.user;
+    
+    // Update profile displayName
+    await updateProfile(user, { displayName: username });
+    
+    // Create User record in Firestore
+    const userDocRef = doc(db, 'users', user.uid);
+    await setDoc(userDocRef, {
+      uid: user.uid,
+      email: email,
+      username: username,
+      createdAt: Date.now()
+    });
+
+    return user;
+  } catch (error: any) {
+    console.error('Email sign up error:', error);
+    throw error;
+  }
+};
+
+export const loginWithEmailPassword = async (email: string, password: string): Promise<User> => {
+  try {
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    return credential.user;
+  } catch (error: any) {
+    console.error('Email sign in error:', error);
+    throw error;
+  }
+};
+
+export const sendPasswordReset = async (email: string): Promise<void> => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error: any) {
+    console.error('Password reset error:', error);
+    throw error;
+  }
 };
 
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
@@ -58,6 +109,20 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    
+    // Register Google User in users collection if not already there
+    try {
+      const userDocRef = doc(db, 'users', result.user.uid);
+      await setDoc(userDocRef, {
+        uid: result.user.uid,
+        email: result.user.email || '',
+        username: result.user.displayName || result.user.email?.split('@')[0] || 'User',
+        createdAt: Date.now()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Could not register Google user in users collection:', e);
+    }
+
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     if (error?.code === 'auth/operation-not-allowed') {
@@ -82,9 +147,6 @@ export const githubSignIn = async (): Promise<{ user: User; accessToken: string,
       throw new Error('Failed to get access token from Firebase Auth');
     }
     
-    // AdditionalUserInfo from credential handles the username for github
-    // but the username is present on result.user for most part, but we can also get it via REST API.
-    // Better to just fetch it using API.
     const token = credential.accessToken;
     let username = '';
     
@@ -95,6 +157,19 @@ export const githubSignIn = async (): Promise<{ user: User; accessToken: string,
         const ghUser = await ghRes.json();
         if (ghUser && ghUser.login) username = ghUser.login;
     } catch(e) {}
+    
+    // Register Github User in users collection if not already there
+    try {
+      const userDocRef = doc(db, 'users', result.user.uid);
+      await setDoc(userDocRef, {
+        uid: result.user.uid,
+        email: result.user.email || '',
+        username: username || result.user.displayName || 'GithubUser',
+        createdAt: Date.now()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Could not register Github user in users collection:', e);
+    }
     
     return { user: result.user, accessToken: token, username };
   } catch (error: any) {
@@ -118,4 +193,8 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const logout = async () => {
   await auth.signOut();
   cachedAccessToken = null;
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem('app_google_token');
+    window.localStorage.removeItem('app_google_user');
+  }
 };

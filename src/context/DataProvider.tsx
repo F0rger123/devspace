@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { collection, getDocs, setDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, setDoc, doc, deleteDoc, query, where, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { db } from '../lib/auth';
+import { db, auth } from '../lib/auth';
 
 enum OperationType {
   CREATE = 'create',
@@ -121,6 +121,12 @@ export type Project = {
   dreamLogs?: string[];
   dreamFocus?: 'refactor' | 'security' | 'performance' | 'accessibility' | 'design' | 'new_ideas' | 'general';
   lastDreamedTime?: number;
+  ownerId?: string;
+  collaborators?: string[];
+  collaboratorRoles?: { [email: string]: 'admin' | 'editor' | 'viewer' };
+  githubPushPolicy?: 'owner' | 'admins' | 'editors' | 'open';
+  gitHubCollaboratorUsernames?: { [email: string]: string };
+  gitHubCollaboratorStatus?: { [email: string]: 'none' | 'pending' | 'active' };
 };
 
 export type Issue = {
@@ -281,6 +287,15 @@ type DataContextType = {
 
   googleUser: any;
   setGoogleUser: React.Dispatch<React.SetStateAction<any>>;
+  userProfile: any | null;
+  updateUserProfile: (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => Promise<void>;
+  invitations: any[];
+  setInvitations: React.Dispatch<React.SetStateAction<any[]>>;
+  sendInvitation: (projectId: string, receiverEmail: string, role?: 'admin' | 'editor' | 'viewer') => Promise<void>;
+  acceptInvitation: (invitationId: string) => Promise<void>;
+  declineInvitation: (invitationId: string) => Promise<void>;
+  updateCollaboratorRole: (projectId: string, email: string, role: 'admin' | 'editor' | 'viewer') => Promise<void>;
+  removeCollaborator: (projectId: string, email: string) => Promise<void>;
   googleToken: string | null;
   setGoogleToken: React.Dispatch<React.SetStateAction<string | null>>;
   githubToken: string | null;
@@ -291,6 +306,12 @@ type DataContextType = {
   setGithubRepo: React.Dispatch<React.SetStateAction<string | null>>;
   aiPersona: string;
   setAiPersona: React.Dispatch<React.SetStateAction<string>>;
+  aetherModel: string;
+  setAetherModel: React.Dispatch<React.SetStateAction<string>>;
+  aetherConciseness: string;
+  setAetherConciseness: React.Dispatch<React.SetStateAction<string>>;
+  aetherThinkingLevel: string;
+  setAetherThinkingLevel: React.Dispatch<React.SetStateAction<string>>;
   aetherControlNotes: boolean;
   setAetherControlNotes: React.Dispatch<React.SetStateAction<boolean>>;
   aetherControlIssues: boolean;
@@ -724,6 +745,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   });
 
   const [googleUser, setGoogleUser] = useState<any>(() => getStored('app_google_user', null));
+  const [userProfile, setUserProfile] = useState<any | null>(() => getStored('app_user_profile', null));
+  const [invitations, setInvitations] = useState<any[]>([]);
   const [googleToken, setGoogleToken] = useState<string | null>(() => getStored('app_google_token', null));
   const [githubToken, setGithubToken] = useState<string | null>(() => getStored('app_github_token', null));
   const [githubProfile, setGithubProfile] = useState<any>(() => getStored('app_github_profile', null));
@@ -802,6 +825,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [aetherControlIntegrations, setAetherControlIntegrations] = useState<boolean>(() => getStored('app_aether_control_integrations', false));
   const [aetherDoubleConfirm, setAetherDoubleConfirm] = useState<boolean>(() => getStored('app_aether_double_confirm', false));
   const [aetherAutoRecommend, setAetherAutoRecommend] = useState<boolean>(() => getStored('app_aether_auto_recommend', true));
+  const [aetherModel, setAetherModel] = useState<string>(() => getStored('app_aether_model', 'gemini-3.5-flash'));
+  const [aetherConciseness, setAetherConciseness] = useState<string>(() => getStored('app_aether_conciseness', 'balanced'));
+  const [aetherThinkingLevel, setAetherThinkingLevel] = useState<string>(() => getStored('app_aether_thinking_level', 'auto'));
   const [cortexSynapses, setCortexSynapses] = useState<CortexSynapse[]>(() => {
     const list = getStored<CortexSynapse[]>('app_cortex_synapses', []);
     if (list.length === 0) {
@@ -895,29 +921,70 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // Synchronize with Firestore
       try {
-        const projectsSnap = await getDocs(collection(db, 'projects'));
-        const fbProjects: Project[] = [];
-        projectsSnap.forEach((docSnap) => {
-          fbProjects.push(docSnap.data() as Project);
-        });
+        let fbProjects: Project[] = [];
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          // Fetch owned projects
+          try {
+            const ownedQuery = query(collection(db, 'projects'), where('ownerId', '==', currentUser.uid));
+            const ownedSnap = await getDocs(ownedQuery);
+            ownedSnap.forEach((docSnap) => {
+              fbProjects.push(docSnap.data() as Project);
+            });
+          } catch (err) {
+            console.warn("Failed to fetch owned projects:", err);
+          }
+
+          // Fetch collaborative projects
+          if (currentUser.email) {
+            try {
+              const collabQuery = query(collection(db, 'projects'), where('collaborators', 'array-contains', currentUser.email.trim().toLowerCase()));
+              const collabSnap = await getDocs(collabQuery);
+              collabSnap.forEach((docSnap) => {
+                const proj = docSnap.data() as Project;
+                if (!fbProjects.some(p => p.id === proj.id)) {
+                  fbProjects.push(proj);
+                }
+              });
+            } catch (err) {
+              console.warn("Failed to fetch collab projects:", err);
+            }
+          }
+        }
+
+        const allowedProjectIds = fbProjects.map(p => p.id);
+        const allowedProjectNames = fbProjects.map(p => (p.name || '').toLowerCase());
 
         const issuesSnap = await getDocs(collection(db, 'issues'));
         const fbIssues: Issue[] = [];
         issuesSnap.forEach((docSnap) => {
-          fbIssues.push(docSnap.data() as Issue);
+          const item = docSnap.data() as Issue;
+          if (allowedProjectIds.includes(item.projectId)) {
+            fbIssues.push(item);
+          }
         });
 
-        const notesSnap = await getDocs(collection(db, 'notes'));
         const fbNotes: Note[] = [];
-        notesSnap.forEach((docSnap) => {
-          fbNotes.push(docSnap.data() as Note);
-        });
+        try {
+          const notesSnap = await getDocs(collection(db, 'notes'));
+          notesSnap.forEach((docSnap) => {
+            const item = docSnap.data() as Note;
+            if (allowedProjectIds.includes(item.projectId)) {
+              fbNotes.push(item);
+            }
+          });
+        } catch (e) {}
 
-        const synapsesSnap = await getDocs(collection(db, 'cortexSynapses'));
         const fbSynapses: CortexSynapse[] = [];
-        synapsesSnap.forEach((docSnap) => {
-          fbSynapses.push(docSnap.data() as CortexSynapse);
-        });
+        try {
+          const synapsesSnap = await getDocs(collection(db, 'cortexSynapses'));
+          synapsesSnap.forEach((docSnap) => {
+            const item = docSnap.data() as CortexSynapse;
+            if (!item.projectName || allowedProjectNames.includes(item.projectName.toLowerCase())) {
+              fbSynapses.push(item);
+            }
+          });
+        } catch (e) {}
 
         if (fbProjects.length > 0) {
           // Merge fbProjects with finalProjects (from server cache) to protect dreamed recommendations and progress
@@ -1155,7 +1222,221 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_aether_personality_rules', aetherPersonalityRules); }, [aetherPersonalityRules]);
   useEffect(() => { setStored('app_github_user', githubUser); }, [githubUser]);
 
-  useEffect(() => { setStored('app_google_user', googleUser); }, [googleUser]);
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        const cleanUser = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        };
+        setGoogleUser(cleanUser);
+        setStored('app_google_user', cleanUser);
+        
+        // Fetch or initialize user profile
+        try {
+          const profileDoc = await getDoc(doc(db, 'users', user.uid));
+          if (profileDoc.exists()) {
+            const data = profileDoc.data();
+            setUserProfile(data);
+            setStored('app_user_profile', data);
+          } else {
+            const initialProfile = {
+              uid: user.uid,
+              email: user.email || '',
+              username: user.displayName || user.email?.split('@')[0] || 'User',
+              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+              title: 'Full-Stack Developer',
+              bio: 'Active DevSpace collaborator and software designer.',
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+            try {
+              await setDoc(doc(db, 'users', user.uid), initialProfile);
+            } catch (setErr) {
+              console.warn("Failed to save initial profile to Firestore (offline fallback):", setErr);
+            }
+            setUserProfile(initialProfile);
+            setStored('app_user_profile', initialProfile);
+          }
+        } catch (e) {
+          console.warn("Failed to fetch/initialize user profile from Firestore, using offline fallback:", e);
+          const cachedProfile = getStored<any>('app_user_profile', null);
+          if (cachedProfile && cachedProfile.uid === user.uid) {
+            setUserProfile(cachedProfile);
+          } else {
+            const fallbackProfile = {
+              uid: user.uid,
+              email: user.email || '',
+              username: user.displayName || user.email?.split('@')[0] || 'User',
+              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+              title: 'Full-Stack Developer',
+              bio: 'Active DevSpace collaborator and software designer.',
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+            setUserProfile(fallbackProfile);
+            setStored('app_user_profile', fallbackProfile);
+          }
+        }
+
+        // Fetch user invitations
+        try {
+          const invQuery = query(collection(db, 'invitations'), where('receiverEmail', '==', (user.email || '').trim().toLowerCase()));
+          const invitationsSnap = await getDocs(invQuery);
+          const fbInvitations: any[] = [];
+          invitationsSnap.forEach((docSnap) => {
+            fbInvitations.push(docSnap.data());
+          });
+          setInvitations(fbInvitations);
+        } catch (e) {
+          console.warn("Failed to fetch user invitations from Firestore (offline fallback):", e);
+        }
+      } else {
+        setGoogleUser(null);
+        setStored('app_google_user', null);
+        setUserProfile(null);
+        setInvitations([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const sendInvitation = async (projectId: string, receiverEmail: string, role: 'admin' | 'editor' | 'viewer' = 'editor') => {
+    if (!auth.currentUser) throw new Error("Must be logged in to send invitations");
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) throw new Error("Project not found");
+
+    const id = crypto.randomUUID();
+    const newInvitation = {
+      id,
+      projectId,
+      projectName: proj.name,
+      senderId: auth.currentUser.uid,
+      senderEmail: auth.currentUser.email || '',
+      senderName: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'User',
+      receiverEmail: receiverEmail.trim().toLowerCase(),
+      status: 'pending',
+      role,
+      createdAt: Date.now()
+    };
+
+    await setDocWithSanitize(doc(db, 'invitations', id), newInvitation);
+    setInvitations(prev => [...prev, newInvitation]);
+
+    // Dispatch email notification via SMTP on backend
+    try {
+      const response = await fetch('/api/collaboration/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          projectName: proj.name,
+          senderEmail: auth.currentUser.email || '',
+          senderName: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'User',
+          receiverEmail: receiverEmail.trim().toLowerCase(),
+          invitationId: id,
+          role
+        })
+      });
+      if (!response.ok) {
+        const errPayload = await response.json().catch(() => ({}));
+        console.error("Backend failed to dispatch invitation email:", errPayload);
+      } else {
+        const resData = await response.json();
+        console.log("Invitation email processed successfully:", resData);
+      }
+    } catch (apiErr) {
+      console.error("Failed to connect to backend SMTP dispatcher:", apiErr);
+    }
+  };
+
+  const acceptInvitation = async (invitationId: string) => {
+    if (!auth.currentUser) throw new Error("Must be logged in to accept invitations");
+    const invite = invitations.find(i => i.id === invitationId);
+    if (!invite) throw new Error("Invitation not found");
+
+    // 1. Update invitation status to accepted
+    const updatedInvite = { ...invite, status: 'accepted' };
+    await setDocWithSanitize(doc(db, 'invitations', invitationId), updatedInvite);
+    setInvitations(prev => prev.map(inv => inv.id === invitationId ? updatedInvite : inv));
+
+    // 2. Add user to project collaborators
+    try {
+      const projSnap = await getDocs(query(collection(db, 'projects'), where('id', '==', invite.projectId)));
+      if (!projSnap.empty) {
+        const projDoc = projSnap.docs[0];
+        const projData = projDoc.data() as Project;
+        const collaborators = projData.collaborators || [];
+        if (!collaborators.includes(auth.currentUser.email || '')) {
+          collaborators.push(auth.currentUser.email || '');
+        }
+        const collaboratorRoles = projData.collaboratorRoles || {};
+        collaboratorRoles[auth.currentUser.email || ''] = invite.role || 'editor';
+
+        const updatedProj = { ...projData, collaborators, collaboratorRoles };
+        await setDocWithSanitize(doc(db, 'projects', invite.projectId), updatedProj);
+        setProjects(prev => prev.map(p => p.id === invite.projectId ? updatedProj : p));
+      }
+    } catch (e) {
+      console.error("Failed to add collaborator to project:", e);
+    }
+  };
+
+  const declineInvitation = async (invitationId: string) => {
+    if (!auth.currentUser) throw new Error("Must be logged in to decline invitations");
+    const invite = invitations.find(i => i.id === invitationId);
+    if (!invite) throw new Error("Invitation not found");
+
+    const updatedInvite = { ...invite, status: 'declined' };
+    await setDocWithSanitize(doc(db, 'invitations', invitationId), updatedInvite);
+    setInvitations(prev => prev.map(inv => inv.id === invitationId ? updatedInvite : inv));
+  };
+
+  const updateUserProfile = async (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => {
+    if (!auth.currentUser) throw new Error("Must be logged in to update profile");
+    const updatedProfile = {
+      ...(userProfile || {}),
+      ...updates,
+      uid: auth.currentUser.uid,
+      email: auth.currentUser.email || '',
+      updatedAt: Date.now()
+    };
+    await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
+    setUserProfile(updatedProfile);
+  };
+
+  const updateCollaboratorRole = async (projectId: string, email: string, role: 'admin' | 'editor' | 'viewer') => {
+    if (!auth.currentUser) throw new Error("Must be logged in to update roles");
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) throw new Error("Project not found");
+
+    const collaboratorRoles = { ...(proj.collaboratorRoles || {}) };
+    collaboratorRoles[email] = role;
+
+    const updatedProj = { ...proj, collaboratorRoles };
+    await setDocWithSanitize(doc(db, 'projects', projectId), updatedProj);
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProj : p));
+  };
+
+  const removeCollaborator = async (projectId: string, email: string) => {
+    if (!auth.currentUser) throw new Error("Must be logged in to remove collaborators");
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) throw new Error("Project not found");
+
+    const collaborators = (proj.collaborators || []).filter(c => c !== email);
+    const collaboratorRoles = { ...(proj.collaboratorRoles || {}) };
+    delete collaboratorRoles[email];
+
+    const updatedProj = { ...proj, collaborators, collaboratorRoles };
+    await setDocWithSanitize(doc(db, 'projects', projectId), updatedProj);
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProj : p));
+  };
+
+  useEffect(() => { setStored('app_user_profile', userProfile); }, [userProfile]);
   useEffect(() => { setStored('app_google_token', googleToken); }, [googleToken]);
   useEffect(() => { setStored('app_github_token', githubToken); }, [githubToken]);
   useEffect(() => { setStored('app_github_profile', githubProfile); }, [githubProfile]);
@@ -1168,6 +1449,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_aether_control_integrations', aetherControlIntegrations); }, [aetherControlIntegrations]);
   useEffect(() => { setStored('app_aether_double_confirm', aetherDoubleConfirm); }, [aetherDoubleConfirm]);
   useEffect(() => { setStored('app_aether_auto_recommend', aetherAutoRecommend); }, [aetherAutoRecommend]);
+  useEffect(() => { setStored('app_aether_model', aetherModel); }, [aetherModel]);
+  useEffect(() => { setStored('app_aether_conciseness', aetherConciseness); }, [aetherConciseness]);
+  useEffect(() => { setStored('app_aether_thinking_level', aetherThinkingLevel); }, [aetherThinkingLevel]);
   useEffect(() => { setStored('app_cortex_synapses', cortexSynapses); }, [cortexSynapses]);
   useEffect(() => { setStored('app_voice_queue', voiceQueue); }, [voiceQueue]);
   useEffect(() => { setStored('app_voice_triggers', voiceTriggers); }, [voiceTriggers]);
@@ -1200,7 +1484,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const addProject = (p: Omit<Project, 'id' | 'createdAt'>): string => {
     const id = crypto.randomUUID();
-    const newProj = { ...p, id, createdAt: Date.now() };
+    const ownerId = auth.currentUser?.uid || 'anonymous';
+    const email = auth.currentUser?.email || '';
+    const newProj = { 
+      ...p, 
+      id, 
+      createdAt: Date.now(),
+      ownerId,
+      collaborators: email ? [email.trim().toLowerCase()] : [],
+      collaboratorRoles: email ? { [email.trim().toLowerCase()]: 'admin' as const } : {}
+    };
     setProjects(prev => [...prev, newProj]);
     setDocWithSanitize(doc(db, 'projects', id), newProj).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
     return id;
@@ -2110,6 +2403,10 @@ Description of fix or enhancement recommendation
       aetherPersonalityRules, setAetherPersonalityRules,
       githubUser, setGithubUser,
       googleUser, setGoogleUser,
+      userProfile, updateUserProfile,
+      invitations, setInvitations,
+      sendInvitation, acceptInvitation, declineInvitation,
+      updateCollaboratorRole, removeCollaborator,
       googleToken, setGoogleToken,
       githubToken, setGithubToken,
       githubProfile, setGithubProfile,
@@ -2122,6 +2419,9 @@ Description of fix or enhancement recommendation
       aetherControlIntegrations, setAetherControlIntegrations,
       aetherDoubleConfirm, setAetherDoubleConfirm,
       aetherAutoRecommend, setAetherAutoRecommend,
+      aetherModel, setAetherModel,
+      aetherConciseness, setAetherConciseness,
+      aetherThinkingLevel, setAetherThinkingLevel,
       cortexSynapses, setCortexSynapses,
       voiceQueue, setVoiceQueue, addVoiceAction, updateVoiceActionStatus, deleteVoiceAction, applyVoiceAction,
       passcodePin, setPasscodePin,

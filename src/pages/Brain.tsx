@@ -367,7 +367,7 @@ export function Brain() {
   }, [graphType]);
 
   return (
-    <div className="flex-1 flex flex-col pb-8 min-h-full">
+    <div className="flex flex-col h-screen overflow-hidden pb-4">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">

@@ -9,7 +9,9 @@
         "name": { "type": "string", "description": "Display name of the project" },
         "description": { "type": "string", "description": "Detailed description of the project" },
         "status": { "type": "string", "enum": ["Active", "Paused", "Completed", "Planning"], "description": "Current state of the project" },
-        "createdAt": { "type": "number", "description": "Unix epoch timestamp when the project was created" }
+        "createdAt": { "type": "number", "description": "Unix epoch timestamp when the project was created" },
+        "ownerId": { "type": "string", "description": "UID of the project owner" },
+        "collaborators": { "type": "array", "description": "Array of user emails collaborating on the project" }
       },
       "required": ["id", "name", "description", "status", "createdAt"]
     },
@@ -27,6 +29,35 @@
         "createdAt": { "type": "number", "description": "Unix epoch timestamp when the issue was logged" }
       },
       "required": ["id", "projectId", "title", "type", "status", "priority", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A user profile registered in DevSpace",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique Firebase Auth user ID" },
+        "email": { "type": "string", "description": "Email address of the user" },
+        "username": { "type": "string", "description": "Username of the user" },
+        "createdAt": { "type": "number", "description": "Unix epoch timestamp when user registered" }
+      },
+      "required": ["uid", "email", "username", "createdAt"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "An invitation to collaborate on a project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the invitation" },
+        "projectId": { "type": "string", "description": "ID of the project being shared" },
+        "projectName": { "type": "string", "description": "Name of the project being shared" },
+        "senderId": { "type": "string", "description": "UID of the user sending the invitation" },
+        "senderEmail": { "type": "string", "description": "Email of the sender" },
+        "senderName": { "type": "string", "description": "Username/Name of the sender" },
+        "receiverEmail": { "type": "string", "description": "Email of the user being invited" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"], "description": "Status of the invitation" },
+        "createdAt": { "type": "number", "description": "Timestamp when the invitation was sent" }
+      },
+      "required": ["id", "projectId", "projectName", "senderId", "senderEmail", "senderName", "receiverEmail", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -37,6 +68,14 @@
     "/issues/{issueId}": {
       "schema": "Issue",
       "description": "Collection of issues or tasks tracked in the workspace"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles registered in DevSpace"
+    },
+    "/invitations/{invitationId}": {
+      "schema": "Invitation",
+      "description": "Collaboration invitations for projects"
     }
   }
 }

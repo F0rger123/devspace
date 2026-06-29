@@ -227,115 +227,34 @@ export function IdeaExpansion() {
     setIsSortingAndInjecting(true);
 
     try {
-      const promptText = `
-        You are an advanced AI project schema organizer. Your task is to analyze a raw, chaotic stream of project ideas, guidelines, updates, feature requests, or bugs and:
-        1. Classify discrete ideas or features.
-        2. Format them so they can be securely injected.
-        
-        Provide your response in EXACTLY this format (with no trailing comments or extra Markdown):
-        
-        PROJECT_NAME: [A concise, clean name for the project or space, default: Spontaneous Sandbox]
-        PROJECT_DESC: [A concise description, default: Unified brainstorming, tracking, and features.]
-        
-        IDEA_START
-        TITLE: [Brief, crisp title, max 6 words]
-        DETAILS: [Brief 1-2 sentence description explaining the item]
-        STATUS: [either "approved" if it sounds like a definitive directive, or "pending" if it is proposed]
-        IDEA_END
-
-        IDEA_START
-        TITLE: [Next item]
-        DETAILS: [Next description]
-        STATUS: [either "approved" or "pending"]
-        IDEA_END
-
-        Raw brain-dump content:
-        ${rawDump}
-      `;
-
-      const response = await fetch('/api/gemini/stream', {
+      const response = await fetch('/api/gemini/sort-ideas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: promptText }],
-          context: `Focus purely on extracting distinct actionable concepts. Follow guidelines: ${aiContextRules || ''}`
+          rawDump,
+          rules: aiContextRules || ''
         })
       });
 
       if (!response.ok) {
         throw new Error(`Server API failure: ${response.status}`);
       }
-      if (!response.body) throw new Error('No body stream response.');
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let currentContent = '';
+      const parsedDataJson = await response.json();
+      const finalProjName = parsedDataJson.projectName || 'Spontaneous Sandbox';
+      const finalProjDesc = parsedDataJson.projectDescription || 'Autonomous roadmap synthesized by DevSpace Idea Engine.';
+      const rawIdeas = parsedDataJson.ideas || [];
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        const chunkLines = chunk.split('\n');
-        for (const line of chunkLines) {
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                currentContent += data.text;
-              }
-            } catch (e) {
-              // partial chunk parse ignore
-            }
-          }
-        }
-      }
-
-      let finalProjName = 'Spontaneous Sandbox';
-      let finalProjDesc = 'Autonomous roadmap synthesized by DevSpace Idea Engine.';
-
-      const nameMatch = currentContent.match(/PROJECT_NAME:\s*(.*)/i);
-      if (nameMatch) finalProjName = nameMatch[1].trim();
-
-      const descMatch = currentContent.match(/PROJECT_DESC:\s*(.*)/i);
-      if (descMatch) finalProjDesc = descMatch[1].trim();
-
-      const regex = /IDEA_START\s*([\s\S]*?)\s*IDEA_END/g;
-      let match;
-      const parsedIdeas: any[] = [];
-
-      while ((match = regex.exec(currentContent)) !== null) {
-        const block = match[1];
-        let title = '';
-        let details = '';
-        let status: 'approved' | 'pending' = 'pending';
-
-        const titleMatch = block.match(/TITLE:\s*(.*)/i);
-        if (titleMatch) title = titleMatch[1].trim();
-
-        const detailsMatch = block.match(/DETAILS:\s*(.*)/i);
-        if (detailsMatch) details = detailsMatch[1].trim();
-
-        const statusMatch = block.match(/STATUS:\s*(.*)/i);
-        if (statusMatch) {
-          const sVal = statusMatch[1].trim().toLowerCase();
-          if (sVal.includes('approved')) {
-            status = 'approved';
-          }
-        }
-
-        if (title) {
-          parsedIdeas.push({
-            id: `idea-${Date.now()}-${Math.floor(Math.random() * 105100)}`,
-            text: title,
-            details: details || 'Extracted dynamically via Voice/Text Brain Dump.',
-            status,
-            createdAt: Date.now()
-          });
-        }
-      }
+      const parsedIdeas: any[] = rawIdeas.map((idea: any) => ({
+        id: `idea-${Date.now()}-${Math.floor(Math.random() * 105100)}`,
+        text: idea.title || 'Untitled Idea',
+        details: idea.details || 'Extracted dynamically via Voice/Text Brain Dump.',
+        status: idea.status === 'approved' ? 'approved' : 'pending',
+        createdAt: Date.now()
+      }));
 
       if (parsedIdeas.length === 0) {
-        alert("The AI analyzer had trouble generating structured ideas in the specified format. Try writing with more distinct directives!");
+        alert("The AI analyzer did not find distinct ideas in your brain-dump. Try writing with more distinct directives!");
         setIsSortingAndInjecting(false);
         return;
       }
@@ -641,7 +560,7 @@ export function IdeaExpansion() {
   };
 
   return (
-    <div className="flex-1 flex flex-col pb-8 min-h-full">
+    <div className="flex flex-col h-screen overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">

@@ -115,6 +115,10 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     aetherControlIntegrations,
     aetherDoubleConfirm,
     aetherAutoRecommend,
+    aetherModel,
+    aetherConciseness,
+    aetherThinkingLevel,
+    aetherPersonalityRules,
     activationShortcutKey,
     stopShortcutKey
   } = useData();
@@ -1126,6 +1130,10 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           phases: phases || [],
           agents: agents || [],
           aiContextRules: aiContextRules || "",
+          aetherPersonalityRules: aetherPersonalityRules || [],
+          aetherModel: aetherModel || 'gemini-3.5-flash',
+          aetherConciseness: aetherConciseness || 'balanced',
+          aetherThinkingLevel: aetherThinkingLevel || 'auto',
           aetherControlNotes: aetherControlNotes ?? true,
           aetherControlIssues: aetherControlIssues ?? true,
           aetherControlAgents: aetherControlAgents ?? true,
