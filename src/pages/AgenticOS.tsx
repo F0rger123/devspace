@@ -1326,7 +1326,7 @@ export function AgenticOS() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-zinc-950 font-sans text-xs text-zinc-300">
+    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-zinc-950 font-sans text-xs text-zinc-300">
       
       {/* Side orchestrator list */}
       <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-900 bg-[#09090b] flex flex-col shrink-0">

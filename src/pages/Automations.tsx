@@ -625,7 +625,7 @@ export function Automations() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden w-full max-w-7xl mx-auto space-y-6 pb-4">
+    <div className="flex flex-col h-full overflow-hidden w-full max-w-7xl mx-auto space-y-6 pb-4">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1f1f23] pb-5">
         <div>

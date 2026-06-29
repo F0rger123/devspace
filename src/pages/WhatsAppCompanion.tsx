@@ -3107,7 +3107,7 @@ export function WhatsAppCompanion() {
 
   if (isLaptopView) {
     return (
-      <div className="flex flex-col min-h-screen bg-[#080d10] text-[#e9edef] font-sans relative w-full overflow-x-hidden animate-fadeIn select-text">
+      <div className="flex flex-col min-h-full bg-[#080d10] text-[#e9edef] font-sans relative w-full overflow-x-hidden animate-fadeIn select-text">
         {/* SECURE TOP HEADER CARD */}
         <div className="bg-[#16161a] border-b border-zinc-900 px-6 py-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md bg-opacity-95 shadow">
           <div className="flex items-center gap-3">

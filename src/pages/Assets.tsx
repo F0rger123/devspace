@@ -65,7 +65,7 @@ export function Assets() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden pb-4">
+    <div className="flex flex-col h-full overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
