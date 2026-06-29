@@ -1,4 +1,79 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { collection, getDocs, setDoc, doc, deleteDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { db } from '../lib/auth';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const firebaseAuth = getAuth();
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: firebaseAuth.currentUser?.uid || null,
+      email: firebaseAuth.currentUser?.email || null,
+      emailVerified: firebaseAuth.currentUser?.emailVerified || null,
+      isAnonymous: firebaseAuth.currentUser?.isAnonymous || null,
+      tenantId: firebaseAuth.currentUser?.tenantId || null,
+      providerInfo: firebaseAuth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+export function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(v => sanitizeForFirestore(v)).filter(v => v !== undefined && v !== null);
+  }
+  if (typeof obj === 'object') {
+    const res: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined && val !== null) {
+        res[key] = sanitizeForFirestore(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+export async function setDocWithSanitize(ref: any, data: any) {
+  return setDoc(ref, sanitizeForFirestore(data));
+}
 
 export type Project = {
   id: string;
@@ -51,6 +126,7 @@ export type Project = {
 export type Issue = {
   id: string;
   projectId: string;
+  parentId?: string; // ID of the parent Issue/Task for nested sub-tasks
   title: string;
   description?: string;
   type: 'Task' | 'Bug' | 'Feature';
@@ -152,6 +228,11 @@ export type Agent = {
   modelEngine?: 'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | 'claude-3.5-sonnet';
 };
 
+export type VoiceTrigger = {
+  phrase: string;
+  path: string;
+};
+
 type DataContextType = {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
@@ -192,6 +273,9 @@ type DataContextType = {
   aiContextRules: string;
   setAiContextRules: React.Dispatch<React.SetStateAction<string>>;
 
+  aetherPersonalityRules: string[];
+  setAetherPersonalityRules: React.Dispatch<React.SetStateAction<string[]>>;
+
   githubUser: string;
   setGithubUser: React.Dispatch<React.SetStateAction<string>>;
 
@@ -231,6 +315,69 @@ type DataContextType = {
   applyVoiceAction: (id: string) => string;
   passcodePin: string;
   setPasscodePin: React.Dispatch<React.SetStateAction<string>>;
+  voiceTriggers: VoiceTrigger[];
+  setVoiceTriggers: React.Dispatch<React.SetStateAction<VoiceTrigger[]>>;
+  wakeWord: string;
+  setWakeWord: React.Dispatch<React.SetStateAction<string>>;
+  isWakeWordEnabled: boolean;
+  setIsWakeWordEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  vocalDiagnostics: string[];
+  setVocalDiagnostics: React.Dispatch<React.SetStateAction<string[]>>;
+  addVocalDiagnostic: (msg: string) => void;
+  trainedPhrases: string[];
+  setTrainedPhrases: React.Dispatch<React.SetStateAction<string[]>>;
+  trainedWakeWordModel: {
+    audioBase64?: string;
+    pitchHz?: number;
+    resonanceConfidence?: number;
+    vocalFrequenceScore?: number;
+    calibratedAt?: string;
+  } | null;
+  setTrainedWakeWordModel: React.Dispatch<React.SetStateAction<any>>;
+  selectedVoiceName: string;
+  setSelectedVoiceName: React.Dispatch<React.SetStateAction<string>>;
+  speechPitch: number;
+  setSpeechPitch: React.Dispatch<React.SetStateAction<number>>;
+  speechRate: number;
+  setSpeechRate: React.Dispatch<React.SetStateAction<number>>;
+  activationShortcutKey: string;
+  setActivationShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  activationShortcutMouse: string;
+  setActivationShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+  stopShortcutKey: string;
+  setStopShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  stopShortcutMouse: string;
+  setStopShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+
+  micShortcutKey: string;
+  setMicShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  micShortcutMouse: string;
+  setMicShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+  clearShortcutKey: string;
+  setClearShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  clearShortcutMouse: string;
+  setClearShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+  muteVoiceShortcutKey: string;
+  setMuteVoiceShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  muteVoiceShortcutMouse: string;
+  setMuteVoiceShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+  navProjectsShortcutKey: string;
+  setNavProjectsShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  navProjectsShortcutMouse: string;
+  setNavProjectsShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+  navNotesShortcutKey: string;
+  setNavNotesShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  navNotesShortcutMouse: string;
+  setNavNotesShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+  navRoadmapShortcutKey: string;
+  setNavRoadmapShortcutKey: React.Dispatch<React.SetStateAction<string>>;
+  navRoadmapShortcutMouse: string;
+  setNavRoadmapShortcutMouse: React.Dispatch<React.SetStateAction<string>>;
+
+  isAssistantMinimized: boolean;
+  setIsAssistantMinimized: React.Dispatch<React.SetStateAction<boolean>>;
+  isAssistantOpen: boolean;
+  setIsAssistantOpen: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 const DataContext = createContext<DataContextType | null>(null);
@@ -536,6 +683,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   });
 
   const [aiContextRules, setAiContextRules] = useState<string>(() => getStored('app_ai_context', ''));
+  const [aetherPersonalityRules, setAetherPersonalityRules] = useState<string[]>(() => getStored('app_aether_personality_rules', []));
   const [githubUser, setGithubUser] = useState<string>(() => getStored('app_github_user', 'google'));
 
   const [voiceQueue, setVoiceQueue] = useState<VoiceAction[]>(() => {
@@ -581,6 +729,72 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [githubProfile, setGithubProfile] = useState<any>(() => getStored('app_github_profile', null));
   const [githubRepo, setGithubRepo] = useState<string | null>(() => getStored('app_last_github_repo', null));
   const [aiPersona, setAiPersona] = useState<string>(() => getStored('app_ai_persona', 'Scrum Master'));
+  
+  const [voiceTriggers, setVoiceTriggers] = useState<VoiceTrigger[]>(() => {
+    const list = getStored<VoiceTrigger[]>('app_voice_triggers', []);
+    if (list.length === 0) {
+      return [
+        { phrase: 'go to projects', path: '/projects' },
+        { phrase: 'show projects', path: '/projects' },
+        { phrase: 'go to roadmap', path: '/roadmap' },
+        { phrase: 'show roadmap', path: '/roadmap' },
+        { phrase: 'go to dashboard', path: '/' },
+        { phrase: 'show dashboard', path: '/' },
+        { phrase: 'go to issues', path: '/issues' },
+        { phrase: 'show issues', path: '/issues' },
+        { phrase: 'go to notes', path: '/notes' },
+        { phrase: 'show notes', path: '/notes' },
+        { phrase: 'open settings', path: '/settings' },
+        { phrase: 'go to settings', path: '/settings' },
+        { phrase: 'go to ideas', path: '/ideas' },
+        { phrase: 'go to agents', path: '/agents' },
+        { phrase: 'go to brain', path: '/brain' },
+      ];
+    }
+    return list;
+  });
+  const [wakeWord, setWakeWord] = useState<string>(() => getStored('app_voice_lakeword', 'hey aether'));
+  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState<boolean>(() => getStored('app_voice_wakeword_enabled', true));
+  
+  const [vocalDiagnostics, setVocalDiagnostics] = useState<string[]>([
+    `[${new Date().toLocaleTimeString()}] INFO: Bootstrapping high-fidelity vocal synapse engine...`,
+    `[${new Date().toLocaleTimeString()}] INFO: Web Speech API detected. Initializing standby listeners.`
+  ]);
+
+  const addVocalDiagnostic = (msg: string) => {
+    setVocalDiagnostics(prev => {
+      const updated = [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev];
+      return updated.slice(0, 35);
+    });
+  };
+
+  const [trainedPhrases, setTrainedPhrases] = useState<string[]>(() => getStored<string[]>('app_trained_phrases', []));
+  const [trainedWakeWordModel, setTrainedWakeWordModel] = useState<any>(() => getStored<any>('app_trained_wakeword_model', null));
+  const [selectedVoiceName, setSelectedVoiceName] = useState<string>(() => getStored('app_speech_selected_voice', ''));
+  const [speechPitch, setSpeechPitch] = useState<number>(() => getStored('app_speech_pitch', 1.0));
+  const [speechRate, setSpeechRate] = useState<number>(() => getStored('app_speech_rate', 1.05));
+  
+  const [activationShortcutKey, setActivationShortcutKey] = useState<string>(() => getStored('app_shortcut_activation_key', 'Alt+k'));
+  const [activationShortcutMouse, setActivationShortcutMouse] = useState<string>(() => getStored('app_shortcut_activation_mouse', 'none'));
+  const [stopShortcutKey, setStopShortcutKey] = useState<string>(() => getStored('app_shortcut_stop_key', 'Escape'));
+  const [stopShortcutMouse, setStopShortcutMouse] = useState<string>(() => getStored('app_shortcut_stop_mouse', 'none'));
+
+  const [micShortcutKey, setMicShortcutKey] = useState<string>(() => getStored('app_shortcut_mic_key', 'Alt+m'));
+  const [micShortcutMouse, setMicShortcutMouse] = useState<string>(() => getStored('app_shortcut_mic_mouse', 'none'));
+  const [clearShortcutKey, setClearShortcutKey] = useState<string>(() => getStored('app_shortcut_clear_key', 'Alt+c'));
+  const [clearShortcutMouse, setClearShortcutMouse] = useState<string>(() => getStored('app_shortcut_clear_mouse', 'none'));
+  const [muteVoiceShortcutKey, setMuteVoiceShortcutKey] = useState<string>(() => getStored('app_shortcut_mute_key', 'Alt+u'));
+  const [muteVoiceShortcutMouse, setMuteVoiceShortcutMouse] = useState<string>(() => getStored('app_shortcut_mute_mouse', 'none'));
+  const [navProjectsShortcutKey, setNavProjectsShortcutKey] = useState<string>(() => getStored('app_shortcut_nav_projects_key', 'Alt+p'));
+  const [navProjectsShortcutMouse, setNavProjectsShortcutMouse] = useState<string>(() => getStored('app_shortcut_nav_projects_mouse', 'none'));
+  const [navNotesShortcutKey, setNavNotesShortcutKey] = useState<string>(() => getStored('app_shortcut_nav_notes_key', 'Alt+n'));
+  const [navNotesShortcutMouse, setNavNotesShortcutMouse] = useState<string>(() => getStored('app_shortcut_nav_notes_mouse', 'none'));
+  const [navRoadmapShortcutKey, setNavRoadmapShortcutKey] = useState<string>(() => getStored('app_shortcut_nav_roadmap_key', 'Alt+r'));
+  const [navRoadmapShortcutMouse, setNavRoadmapShortcutMouse] = useState<string>(() => getStored('app_shortcut_nav_roadmap_mouse', 'none'));
+
+  const [isAssistantMinimized, setIsAssistantMinimized] = useState<boolean>(() => getStored('app_assistant_minimized', false));
+  const [isAssistantOpen, setIsAssistantOpen] = useState<boolean>(false);
+  
   const [aetherControlNotes, setAetherControlNotes] = useState<boolean>(() => getStored('app_aether_control_notes', true));
   const [aetherControlIssues, setAetherControlIssues] = useState<boolean>(() => getStored('app_aether_control_issues', true));
   const [aetherControlAgents, setAetherControlAgents] = useState<boolean>(() => getStored('app_aether_control_agents', true));
@@ -617,9 +831,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
-  // Fetch server state cache on mount
+  // Fetch server state cache on mount and sync with Firestore
   useEffect(() => {
     async function loadServerState() {
+      let finalProjects: Project[] = [];
+      let finalIssues: Issue[] = [];
+
       try {
         const res = await fetch('/api/voice/sync-cache');
         if (res.ok) {
@@ -627,26 +844,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (data) {
             if (data.initialized) {
               // Server has backup disk persistence, treat it as single absolute authority (even if arrays are empty)
-              setProjects(data.projects || []);
-              setIssues(data.issues || []);
+              finalProjects = data.projects || [];
+              finalIssues = data.issues || [];
+              setProjects(finalProjects);
+              setIssues(finalIssues);
               setNotes(data.notes || []);
               setPhases(data.phases || []);
               setAgents(data.agents || []);
               setCortexSynapses(data.cortexSynapses || []);
               if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
+              if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
               if (typeof data.passcodePin === 'string') {
                 setPasscodePin(data.passcodePin);
                 localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
               }
             } else {
               // Server not yet initialized, load whatever we have in localStorage or defaults, and save it up
-              if (Array.isArray(data.projects) && data.projects.length > 0) setProjects(data.projects);
-              if (Array.isArray(data.issues) && data.issues.length > 0) setIssues(data.issues);
+              if (Array.isArray(data.projects) && data.projects.length > 0) {
+                finalProjects = data.projects;
+                setProjects(data.projects);
+              }
+              if (Array.isArray(data.issues) && data.issues.length > 0) {
+                finalIssues = data.issues;
+                setIssues(data.issues);
+              }
               if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes);
               if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases);
               if (Array.isArray(data.agents) && data.agents.length > 0) setAgents(data.agents);
               if (Array.isArray(data.cortexSynapses) && data.cortexSynapses.length > 0) setCortexSynapses(data.cortexSynapses);
               if (typeof data.aiContextRules === 'string' && data.aiContextRules) setAiContextRules(data.aiContextRules);
+              if (Array.isArray(data.aetherPersonalityRules) && data.aetherPersonalityRules.length > 0) setAetherPersonalityRules(data.aetherPersonalityRules);
               if (typeof data.passcodePin === 'string' && data.passcodePin) {
                 setPasscodePin(data.passcodePin);
                 localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
@@ -656,6 +883,120 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       } catch (e) {
         console.error("Failed to load server state cache:", e);
+      }
+
+      // If they were empty, load defaults from state/localStorage
+      if (finalProjects.length === 0) {
+        finalProjects = getStored<Project[]>('app_projects', []);
+      }
+      if (finalIssues.length === 0) {
+        finalIssues = getStored<Issue[]>('app_issues', []);
+      }
+
+      // Synchronize with Firestore
+      try {
+        const projectsSnap = await getDocs(collection(db, 'projects'));
+        const fbProjects: Project[] = [];
+        projectsSnap.forEach((docSnap) => {
+          fbProjects.push(docSnap.data() as Project);
+        });
+
+        const issuesSnap = await getDocs(collection(db, 'issues'));
+        const fbIssues: Issue[] = [];
+        issuesSnap.forEach((docSnap) => {
+          fbIssues.push(docSnap.data() as Issue);
+        });
+
+        const notesSnap = await getDocs(collection(db, 'notes'));
+        const fbNotes: Note[] = [];
+        notesSnap.forEach((docSnap) => {
+          fbNotes.push(docSnap.data() as Note);
+        });
+
+        const synapsesSnap = await getDocs(collection(db, 'cortexSynapses'));
+        const fbSynapses: CortexSynapse[] = [];
+        synapsesSnap.forEach((docSnap) => {
+          fbSynapses.push(docSnap.data() as CortexSynapse);
+        });
+
+        if (fbProjects.length > 0) {
+          // Merge fbProjects with finalProjects (from server cache) to protect dreamed recommendations and progress
+          const mergedProjects = fbProjects.map(fbP => {
+            const serverP = finalProjects.find(sp => sp.id === fbP.id);
+            if (serverP) {
+              const currentRecs = fbP.dreamRecommendations || [];
+              const serverRecs = serverP.dreamRecommendations || [];
+              const mergedRecs = [...currentRecs];
+              serverRecs.forEach((sr: any) => {
+                if (!mergedRecs.some((r: any) => r.id === sr.id || r.title.toLowerCase() === sr.title.toLowerCase())) {
+                  mergedRecs.push(sr);
+                }
+              });
+              
+              const currentBrainstorms = fbP.brainstormIdeas || [];
+              const serverBrainstorms = serverP.brainstormIdeas || [];
+              const mergedBrainstorms = [...currentBrainstorms];
+              serverBrainstorms.forEach((sb: any) => {
+                if (!mergedBrainstorms.some((b: any) => b.id === sb.id || b.text.toLowerCase() === sb.text.toLowerCase())) {
+                  mergedBrainstorms.push(sb);
+                }
+              });
+
+              return {
+                ...fbP,
+                dreamRecommendations: mergedRecs,
+                brainstormIdeas: mergedBrainstorms,
+                isDreamingActive: fbP.isDreamingActive ?? serverP.isDreamingActive,
+                dreamProgress: fbP.dreamProgress ?? serverP.dreamProgress,
+                dreamLogs: fbP.dreamLogs || serverP.dreamLogs || [],
+                dreamFocus: fbP.dreamFocus || serverP.dreamFocus,
+                lastDreamedTime: fbP.lastDreamedTime || serverP.lastDreamedTime
+              };
+            }
+            return fbP;
+          });
+          setProjects(mergedProjects);
+          finalProjects = mergedProjects;
+        } else if (finalProjects.length > 0) {
+          // Empty in Firestore, seed with currently resolved projects
+          for (const proj of finalProjects) {
+            await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+          }
+        }
+
+        if (fbIssues.length > 0) {
+          setIssues(fbIssues);
+          finalIssues = fbIssues;
+        } else if (finalIssues.length > 0) {
+          // Empty in Firestore, seed with currently resolved issues
+          for (const iss of finalIssues) {
+            await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+          }
+        }
+
+        if (fbNotes.length > 0) {
+          setNotes(fbNotes);
+        } else {
+          const localNotes = getStored<Note[]>('app_notes', []);
+          if (localNotes.length > 0) {
+            for (const note of localNotes) {
+              await setDocWithSanitize(doc(db, 'notes', note.id), note);
+            }
+          }
+        }
+
+        if (fbSynapses.length > 0) {
+          setCortexSynapses(fbSynapses);
+        } else {
+          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+          if (localSynapses.length > 0) {
+            for (const syn of localSynapses) {
+              await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+            }
+          }
+        }
+      } catch (fbErr) {
+        console.error("Failed to load / seed to Firestore status:", fbErr);
       } finally {
         setIsInitialLoadDone(true);
       }
@@ -680,6 +1021,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             phases,
             agents,
             aiContextRules,
+            aetherPersonalityRules,
             passcodePin
           })
         });
@@ -689,7 +1031,117 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, passcodePin, isInitialLoadDone]);
+  }, [projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, isInitialLoadDone]);
+
+  // Post projects to Firestore on updates (debounced by 450ms)
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        for (const proj of projects) {
+          await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+        }
+      } catch (e) {
+        console.error("Failed to auto-sync projects to Firestore:", e);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [projects, isInitialLoadDone]);
+
+  // Post issues to Firestore on updates (debounced by 450ms)
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        for (const iss of issues) {
+          await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+        }
+      } catch (e) {
+        console.error("Failed to auto-sync issues to Firestore:", e);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [issues, isInitialLoadDone]);
+
+  // Post notes to Firestore on updates (debounced by 450ms)
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        for (const note of notes) {
+          await setDocWithSanitize(doc(db, 'notes', note.id), note);
+        }
+      } catch (e) {
+        console.error("Failed to auto-sync notes to Firestore:", e);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [notes, isInitialLoadDone]);
+
+  // Post cortexSynapses to Firestore on updates (debounced by 450ms)
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        for (const syn of cortexSynapses) {
+          await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+        }
+      } catch (e) {
+        console.error("Failed to auto-sync cortex synapses to Firestore:", e);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [cortexSynapses, isInitialLoadDone]);
+
+  // Periodically fetch the latest projects and dreams from server to stay updated 24/7
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/voice/sync-cache');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.projects)) {
+            setProjects(prev => prev.map(p => {
+              const serverProj = data.projects.find((sp: any) => sp.id === p.id);
+              if (serverProj) {
+                // Merge recommendations and logs that were added by server-side dreaming
+                const currentRecs = p.dreamRecommendations || [];
+                const serverRecs = serverProj.dreamRecommendations || [];
+                const mergedRecs = [...currentRecs];
+                
+                serverRecs.forEach((sr: any) => {
+                  if (!mergedRecs.some((r: any) => r.id === sr.id || r.title.toLowerCase() === sr.title.toLowerCase())) {
+                    mergedRecs.push(sr);
+                  }
+                });
+
+                return {
+                  ...p,
+                  dreamRecommendations: mergedRecs,
+                  dreamLogs: serverProj.dreamLogs || p.dreamLogs || []
+                };
+              }
+              return p;
+            }));
+          }
+        }
+      } catch (e) {
+        console.error("Periodic dream recommendations sync failed:", e);
+      }
+    }, 1000 * 30); // check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [isInitialLoadDone]);
 
   useEffect(() => { setStored('whatsapp_passcode_pin', passcodePin); }, [passcodePin]);
   useEffect(() => { setStored('app_projects', projects); }, [projects]);
@@ -700,6 +1152,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_active_project', activeProjectId); }, [activeProjectId]);
   useEffect(() => { setStored('devspace_agents', agents); }, [agents]);
   useEffect(() => { setStored('app_ai_context', aiContextRules); }, [aiContextRules]);
+  useEffect(() => { setStored('app_aether_personality_rules', aetherPersonalityRules); }, [aetherPersonalityRules]);
   useEffect(() => { setStored('app_github_user', githubUser); }, [githubUser]);
 
   useEffect(() => { setStored('app_google_user', googleUser); }, [googleUser]);
@@ -717,32 +1170,87 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_aether_auto_recommend', aetherAutoRecommend); }, [aetherAutoRecommend]);
   useEffect(() => { setStored('app_cortex_synapses', cortexSynapses); }, [cortexSynapses]);
   useEffect(() => { setStored('app_voice_queue', voiceQueue); }, [voiceQueue]);
+  useEffect(() => { setStored('app_voice_triggers', voiceTriggers); }, [voiceTriggers]);
+  useEffect(() => { setStored('app_voice_lakeword', wakeWord); }, [wakeWord]);
+  useEffect(() => { setStored('app_voice_wakeword_enabled', isWakeWordEnabled); }, [isWakeWordEnabled]);
+  useEffect(() => { setStored('app_trained_phrases', trainedPhrases); }, [trainedPhrases]);
+  useEffect(() => { setStored('app_trained_wakeword_model', trainedWakeWordModel); }, [trainedWakeWordModel]);
+  useEffect(() => { setStored('app_speech_selected_voice', selectedVoiceName); }, [selectedVoiceName]);
+  useEffect(() => { setStored('app_speech_pitch', speechPitch); }, [speechPitch]);
+  useEffect(() => { setStored('app_speech_rate', speechRate); }, [speechRate]);
+  useEffect(() => { setStored('app_shortcut_activation_key', activationShortcutKey); }, [activationShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_activation_mouse', activationShortcutMouse); }, [activationShortcutMouse]);
+  useEffect(() => { setStored('app_shortcut_stop_key', stopShortcutKey); }, [stopShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_stop_mouse', stopShortcutMouse); }, [stopShortcutMouse]);
+
+  useEffect(() => { setStored('app_shortcut_mic_key', micShortcutKey); }, [micShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_mic_mouse', micShortcutMouse); }, [micShortcutMouse]);
+  useEffect(() => { setStored('app_shortcut_clear_key', clearShortcutKey); }, [clearShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_clear_mouse', clearShortcutMouse); }, [clearShortcutMouse]);
+  useEffect(() => { setStored('app_shortcut_mute_key', muteVoiceShortcutKey); }, [muteVoiceShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_mute_mouse', muteVoiceShortcutMouse); }, [muteVoiceShortcutMouse]);
+  useEffect(() => { setStored('app_shortcut_nav_projects_key', navProjectsShortcutKey); }, [navProjectsShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_nav_projects_mouse', navProjectsShortcutMouse); }, [navProjectsShortcutMouse]);
+  useEffect(() => { setStored('app_shortcut_nav_notes_key', navNotesShortcutKey); }, [navNotesShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_nav_notes_mouse', navNotesShortcutMouse); }, [navNotesShortcutMouse]);
+  useEffect(() => { setStored('app_shortcut_nav_roadmap_key', navRoadmapShortcutKey); }, [navRoadmapShortcutKey]);
+  useEffect(() => { setStored('app_shortcut_nav_roadmap_mouse', navRoadmapShortcutMouse); }, [navRoadmapShortcutMouse]);
+
+  useEffect(() => { setStored('app_assistant_minimized', isAssistantMinimized); }, [isAssistantMinimized]);
 
   const addProject = (p: Omit<Project, 'id' | 'createdAt'>): string => {
     const id = crypto.randomUUID();
-    setProjects(prev => [...prev, { ...p, id, createdAt: Date.now() }]);
+    const newProj = { ...p, id, createdAt: Date.now() };
+    setProjects(prev => [...prev, newProj]);
+    setDocWithSanitize(doc(db, 'projects', id), newProj).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
     return id;
   };
   const updateProject = (id: string, p: Partial<Project>) => {
-    setProjects(prev => prev.map(proj => proj.id === id ? { ...proj, ...p } : proj));
+    setProjects(prev => prev.map(proj => {
+      if (proj.id === id) {
+        const updated = { ...proj, ...p };
+        setDocWithSanitize(doc(db, 'projects', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
+        return updated;
+      }
+      return proj;
+    }));
   };
   const deleteProject = (id: string) => {
+    // Clean up project issues in Firestore
+    const associatedIssues = issues.filter(i => i.projectId === id);
+    associatedIssues.forEach(i => {
+      deleteDoc(doc(db, 'issues', i.id)).catch(() => {});
+    });
+
     setProjects(prev => prev.filter(proj => proj.id !== id));
     setIssues(prev => prev.filter(i => i.projectId !== id));
     setPhases(prev => prev.filter(p => p.projectId !== id));
     setNotes(prev => prev.filter(n => n.projectId !== id));
     setAssets(prev => prev.filter(a => a.projectId !== id));
     if (activeProjectId === id) setActiveProjectId(null);
+
+    deleteDoc(doc(db, 'projects', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `projects/${id}`));
   };
 
   const addIssue = (i: Omit<Issue, 'id' | 'createdAt'>) => {
-    setIssues(prev => [...prev, { ...i, id: crypto.randomUUID(), createdAt: Date.now() }]);
+    const id = crypto.randomUUID();
+    const newIss = { ...i, id, createdAt: Date.now() };
+    setIssues(prev => [...prev, newIss]);
+    setDocWithSanitize(doc(db, 'issues', id), newIss).catch(e => handleFirestoreError(e, OperationType.WRITE, `issues/${id}`));
   };
   const updateIssue = (id: string, i: Partial<Issue>) => {
-    setIssues(prev => prev.map(iss => iss.id === id ? { ...iss, ...i } : iss));
+    setIssues(prev => prev.map(iss => {
+      if (iss.id === id) {
+        const updated = { ...iss, ...i };
+        setDocWithSanitize(doc(db, 'issues', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `issues/${id}`));
+        return updated;
+      }
+      return iss;
+    }));
   };
   const deleteIssue = (id: string) => {
     setIssues(prev => prev.filter(iss => iss.id !== id));
+    deleteDoc(doc(db, 'issues', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `issues/${id}`));
   };
 
   const addPhase = (p: Omit<Phase, 'id'>) => {
@@ -757,13 +1265,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const addNote = (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     const now = Date.now();
-    setNotes(prev => [...prev, { ...n, id: crypto.randomUUID(), createdAt: now, updatedAt: now }]);
+    const id = crypto.randomUUID();
+    const newNote = { ...n, id, createdAt: now, updatedAt: now };
+    setNotes(prev => [...prev, newNote]);
+    setDocWithSanitize(doc(db, 'notes', id), newNote).catch(e => handleFirestoreError(e, OperationType.WRITE, `notes/${id}`));
   };
   const updateNote = (id: string, n: Partial<Note>) => {
-    setNotes(prev => prev.map(note => note.id === id ? { ...note, ...n, updatedAt: Date.now() } : note));
+    setNotes(prev => prev.map(note => {
+      if (note.id === id) {
+        const updated = { ...note, ...n, updatedAt: Date.now() };
+        setDocWithSanitize(doc(db, 'notes', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `notes/${id}`));
+        return updated;
+      }
+      return note;
+    }));
   };
   const deleteNote = (id: string) => {
     setNotes(prev => prev.filter(note => note.id !== id));
+    deleteDoc(doc(db, 'notes', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `notes/${id}`));
   };
 
   const startProjectDreaming = async (
@@ -1298,6 +1817,22 @@ Description of fix or enhancement recommendation
         break;
       }
 
+      case 'navigate_to': {
+        const path = parsedData.path || '/';
+        const projName = parsedData.projectNameMentioned || '';
+        
+        if (projName && (path === '/projects' || path === '/notes')) {
+          const matched = projects.find((p: any) => p.name.toLowerCase().includes(projName.toLowerCase()));
+          if (matched) {
+            setActiveProjectId(matched.id);
+          }
+        }
+        
+        window.dispatchEvent(new CustomEvent('aether-pc-navigate', { detail: { path } }));
+        feedback = `Navigating PC display view to: ${path}`;
+        break;
+      }
+
       default:
         feedback = 'Transcript generated, but no automated routing was applicable.';
     }
@@ -1305,6 +1840,262 @@ Description of fix or enhancement recommendation
     setVoiceQueue(prev => prev.map(v => v.id === id ? { ...v, status: 'applied', explanation: feedback } : v));
     return feedback;
   };
+
+  // Keep references to active state for stable polling hook callbacks
+  const projectsRef = useRef(projects);
+  const issuesRef = useRef(issues);
+  const activeProjectIdRef = useRef(activeProjectId);
+  const cortexSynapsesRef = useRef(cortexSynapses);
+  const agentsRef = useRef(agents);
+
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+  useEffect(() => { issuesRef.current = issues; }, [issues]);
+  useEffect(() => { activeProjectIdRef.current = activeProjectId; }, [activeProjectId]);
+  useEffect(() => { cortexSynapsesRef.current = cortexSynapses; }, [cortexSynapses]);
+  useEffect(() => { agentsRef.current = agents; }, [agents]);
+
+  // Synchronous execution helper for instant cross-device orchestration
+  const executeActionDirectly = (act: any): string => {
+    const { intent, parsedData } = act;
+    if (!intent || intent === 'chat_query' || intent === 'unknown' || !parsedData) return '';
+
+    switch (intent) {
+      case 'create_project': {
+        const name = parsedData.name || 'New Voice Project';
+        const description = parsedData.description || 'Drafted via AI vocal voice dictation command.';
+        const frameworks = parsedData.frameworks || ['React'];
+        const customStack = parsedData.customStack || frameworks;
+
+        addProject({
+          name,
+          description,
+          frameworks,
+          customStack,
+          status: 'Planning',
+          brainstormIdeas: [],
+          seenRecommendedIdeas: [],
+          dreamRecommendations: []
+        });
+        return `Successfully bootstrapped project "${name}" in Planning state.`;
+      }
+
+      case 'create_issue': {
+        let projectId = parsedData.projectId;
+        if (!projectId && parsedData.projectNameMentioned) {
+          const matched = projectsRef.current.find(p => 
+            p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase())
+          );
+          if (matched) projectId = matched.id;
+        }
+        if (!projectId) {
+          projectId = activeProjectIdRef.current || projectsRef.current[0]?.id;
+        }
+        if (!projectId) {
+          return 'Failed to append task: No active project context.';
+        }
+
+        const projectRef = projectsRef.current.find(p => p.id === projectId);
+        const title = parsedData.title || 'Vocal Task';
+        const desc = parsedData.description || 'Transcribed via voice';
+        const type = parsedData.type || 'Task';
+        const priority = parsedData.priority || 'Medium';
+
+        addIssue({
+          projectId,
+          title,
+          description: desc,
+          type,
+          priority,
+          status: 'Todo'
+        });
+
+        return `Added task "${title}" [${type}, ${priority}] into "${projectRef?.name || 'Workspace'}".`;
+      }
+
+      case 'update_issue_status': {
+        const mentionTitle = parsedData.issueTitleMentioned?.toLowerCase() || '';
+        const newStatus = parsedData.newStatus || 'Done';
+
+        let targetIssue = null;
+        if (mentionTitle) {
+          targetIssue = issuesRef.current.find(iss => 
+            iss.title.toLowerCase().includes(mentionTitle)
+          );
+        }
+        if (!targetIssue && activeProjectIdRef.current) {
+          targetIssue = issuesRef.current.find(iss => 
+            iss.projectId === activeProjectIdRef.current && iss.status !== 'Done'
+          );
+        }
+
+        if (targetIssue) {
+          updateIssue(targetIssue.id, { status: newStatus });
+          return `Successfully updated status of "${targetIssue.title}" issue to -> "${newStatus}".`;
+        } else {
+          return `No open issue matching "${parsedData.issueTitleMentioned || 'active backlog items'}" detected to update.`;
+        }
+      }
+
+      case 'add_brainstorm_idea': {
+        let projectId = parsedData.projectId;
+        if (!projectId && parsedData.projectNameMentioned) {
+          const matched = projectsRef.current.find(p => 
+            p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase())
+          );
+          if (matched) projectId = matched.id;
+        }
+        if (!projectId) projectId = activeProjectIdRef.current || projectsRef.current[0]?.id;
+
+        if (!projectId) {
+          return 'Could not register brainstorm: No active project context.';
+        }
+
+        const projectRef = projectsRef.current.find(p => p.id === projectId);
+        if (!projectRef) return 'Project lookup reference missing.';
+
+        const text = parsedData.text || 'Voice brainstorm idea input';
+        const details = parsedData.details || '';
+
+        const existing = projectRef.brainstormIdeas || [];
+        const newIdea = {
+          id: crypto.randomUUID(),
+          text,
+          details,
+          status: 'pending' as const,
+          createdAt: Date.now()
+        };
+
+        updateProject(projectId, {
+          brainstormIdeas: [...existing, newIdea]
+        });
+
+        return `Appended brainstorm idea "${text}" under project "${projectRef.name}".`;
+      }
+
+      case 'add_note': {
+        let projectId = parsedData.projectId;
+        if (!projectId && parsedData.projectNameMentioned) {
+          const matched = projectsRef.current.find(p => 
+            p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase())
+          );
+          if (matched) projectId = matched.id;
+        }
+        if (!projectId) projectId = activeProjectIdRef.current || projectsRef.current[0]?.id;
+
+        if (!projectId) {
+          return 'No project available to attach note.';
+        }
+
+        const projectRef = projectsRef.current.find(p => p.id === projectId);
+        const title = parsedData.title || `Voice Note - ${new Date().toLocaleTimeString()}`;
+        const content = parsedData.content || 'Doc transcribed via AI interface.';
+        const tags = parsedData.tags || ['Voice'];
+
+        addNote({
+          projectId,
+          title,
+          content,
+          tags
+        });
+
+        return `Committed voice documentation note "${title}" under project "${projectRef?.name || 'Workspace'}".`;
+      }
+
+      case 'add_cortex_synapse': {
+        const name = parsedData.name || parsedData.title || `Cognitive Standard - ${Date.now()}`;
+        const desc = parsedData.desc || parsedData.description || 'Behavior constraint formulated via workspace assistant.';
+        const type = 'custom_synapse' as const;
+
+        const newSynapse = {
+          id: `synapse-${crypto.randomUUID()}`,
+          name,
+          desc,
+          type,
+          createdAt: Date.now()
+        };
+
+        setCortexSynapses(prev => [...(prev || []), newSynapse]);
+        return `Successfully anchored new rule "${name}" in the Obsidian Synaptic Cortex!`;
+      }
+
+      case 'navigate_to': {
+        const path = parsedData.path || '/';
+        const projName = parsedData.projectNameMentioned || '';
+        
+        if (projName && (path === '/projects' || path === '/notes')) {
+          const matched = projectsRef.current.find((p: any) => p.name.toLowerCase().includes(projName.toLowerCase()));
+          if (matched) {
+            setActiveProjectId(matched.id);
+          }
+        }
+        
+        window.dispatchEvent(new CustomEvent('aether-pc-navigate', { detail: { path } }));
+        return `Navigating PC display view to: ${path}`;
+      }
+
+      default:
+        return 'Command executed, but no automatic mapping matches this instruction.';
+    }
+  };
+
+  // Real-time synchronization hook for remote mobile companion actions/commands
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.pathname === '/whatsapp-companion') {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/whatsapp/pending-actions');
+        if (response.ok) {
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            return;
+          }
+          const data = await response.json();
+          if (data.actions && data.actions.length > 0) {
+            data.actions.forEach((act: any) => {
+              let feedback = 'Fired automatically via cross-device companion orchestration.';
+              
+              if (act.intent && act.intent !== 'chat_query' && act.intent !== 'unknown') {
+                try {
+                  const resultFeedback = executeActionDirectly(act);
+                  if (resultFeedback) {
+                    feedback = resultFeedback;
+                  }
+                } catch (err: any) {
+                  feedback = `Orchestration error: ${err.message}`;
+                }
+              }
+
+              const isApplied = act.intent && act.intent !== 'chat_query' && act.intent !== 'unknown';
+              setVoiceQueue(prev => [
+                {
+                  id: act.id || crypto.randomUUID(),
+                  transcript: act.transcript,
+                  intent: act.intent,
+                  confidence: act.confidence || 1.0,
+                  parsedData: act.parsedData,
+                  explanation: isApplied ? feedback : (act.explanation || 'No detail provided'),
+                  status: isApplied ? 'applied' : 'pending',
+                  createdAt: act.createdAt || Date.now()
+                },
+                ...prev
+              ]);
+
+              window.dispatchEvent(new CustomEvent('aether-remote-action-executed', {
+                detail: { action: act, feedback }
+              }));
+            });
+          }
+        }
+      } catch (err) {
+        // Suppress network errors gracefully when offline
+      }
+    }, 2000); // Poll every 2 seconds for snappy responsiveness
+
+    return () => clearInterval(pollInterval);
+  }, []);
 
   return (
     <DataContext.Provider value={{
@@ -1316,6 +2107,7 @@ Description of fix or enhancement recommendation
       activeProjectId, setActiveProjectId,
       agents, setAgents,
       aiContextRules, setAiContextRules,
+      aetherPersonalityRules, setAetherPersonalityRules,
       githubUser, setGithubUser,
       googleUser, setGoogleUser,
       googleToken, setGoogleToken,
@@ -1332,7 +2124,36 @@ Description of fix or enhancement recommendation
       aetherAutoRecommend, setAetherAutoRecommend,
       cortexSynapses, setCortexSynapses,
       voiceQueue, setVoiceQueue, addVoiceAction, updateVoiceActionStatus, deleteVoiceAction, applyVoiceAction,
-      passcodePin, setPasscodePin
+      passcodePin, setPasscodePin,
+      voiceTriggers, setVoiceTriggers,
+      wakeWord, setWakeWord,
+      isWakeWordEnabled, setIsWakeWordEnabled,
+      vocalDiagnostics, setVocalDiagnostics, addVocalDiagnostic,
+      trainedPhrases, setTrainedPhrases,
+      trainedWakeWordModel, setTrainedWakeWordModel,
+      selectedVoiceName, setSelectedVoiceName,
+      speechPitch, setSpeechPitch,
+      speechRate, setSpeechRate,
+      activationShortcutKey, setActivationShortcutKey,
+      activationShortcutMouse, setActivationShortcutMouse,
+      stopShortcutKey, setStopShortcutKey,
+      stopShortcutMouse, setStopShortcutMouse,
+
+      micShortcutKey, setMicShortcutKey,
+      micShortcutMouse, setMicShortcutMouse,
+      clearShortcutKey, setClearShortcutKey,
+      clearShortcutMouse, setClearShortcutMouse,
+      muteVoiceShortcutKey, setMuteVoiceShortcutKey,
+      muteVoiceShortcutMouse, setMuteVoiceShortcutMouse,
+      navProjectsShortcutKey, setNavProjectsShortcutKey,
+      navProjectsShortcutMouse, setNavProjectsShortcutMouse,
+      navNotesShortcutKey, setNavNotesShortcutKey,
+      navNotesShortcutMouse, setNavNotesShortcutMouse,
+      navRoadmapShortcutKey, setNavRoadmapShortcutKey,
+      navRoadmapShortcutMouse, setNavRoadmapShortcutMouse,
+
+      isAssistantMinimized, setIsAssistantMinimized,
+      isAssistantOpen, setIsAssistantOpen
     }}>
       {children}
     </DataContext.Provider>

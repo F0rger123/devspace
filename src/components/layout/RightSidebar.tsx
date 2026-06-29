@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { 
   Bot, 
   Zap, 
@@ -53,6 +53,8 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
+import { db } from '../../lib/auth';
+import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
 
 type Message = {
   id: string;
@@ -61,6 +63,30 @@ type Message = {
   isVoice?: boolean;
   actionFeedback?: string;
 };
+
+function areSessionsEqual(a: any[] | null | undefined, b: any[] | null | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const sa = a[i];
+    const sb = b[i];
+    if (!sa || !sb) return sa === sb;
+    if (sa.id !== sb.id) return false;
+    if (sa.title !== sb.title) return false;
+    const ma = sa.messages || [];
+    const mb = sb.messages || [];
+    if (ma.length !== mb.length) return false;
+    for (let j = 0; j < ma.length; j++) {
+      const msgA = ma[j];
+      const msgB = mb[j];
+      if (!msgA || !msgB) return msgA === msgB;
+      if (msgA.id !== msgB.id) return false;
+      if (msgA.role !== msgB.role) return false;
+      if (msgA.content !== msgB.content) return false;
+    }
+  }
+  return true;
+}
 
 export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   const navigate = useNavigate();
@@ -88,7 +114,9 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     aetherControlBrainstorm,
     aetherControlIntegrations,
     aetherDoubleConfirm,
-    aetherAutoRecommend
+    aetherAutoRecommend,
+    activationShortcutKey,
+    stopShortcutKey
   } = useData();
 
   const { 
@@ -98,15 +126,29 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     toggleRightSidebarExpanded 
   } = useStore();
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'agent',
-      content: 'System online. I am Aether, your central brain orchestrator. I have full synaptic mapping to your Obsidian Notes, Maps of Spring, and AgenticOS. How can I assist you today?'
+  const getDynamicGreeting = () => {
+    const hr = new Date().getHours();
+    let timeGreeting = "Greetings";
+    if (hr < 12) timeGreeting = "Good morning";
+    else if (hr < 18) timeGreeting = "Good afternoon";
+    else timeGreeting = "Good evening";
+
+    const projectsCount = projects?.length || 0;
+    const rulesCount = cortexSynapses?.length || 0;
+    const hasDreams = projects?.some(p => (p.dreamRecommendations || []).length > 0);
+
+    let welcome = `${timeGreeting}, drummerforger! Aether online and synchronized.\n\n`;
+    welcome += `I am holding our continuous synaptic memory of **${rulesCount} custom rules** and **${projectsCount} active projects** fully loaded.\n\n`;
+    if (hasDreams) {
+      welcome += `Last night, I dreamed up several fresh optimizations and code refactors for your active branches. Let me know if you would like me to retrieve my latest dream recommendations or review outstanding tasks!`;
+    } else {
+      welcome += `I am standing by as your central brain orchestrator. Let's design some incredible features today. What are we building next?`;
     }
-  ]);
+    return welcome;
+  };
 
   // Session states for past conversations
+  const [isSessionsLoaded, setIsSessionsLoaded] = useState(false);
   const [chatSessions, setChatSessions] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('aether_chat_sessions');
@@ -139,7 +181,36 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       }
     ];
   });
-  const [currentSessionId, setCurrentSessionId] = useState<string>('session-default');
+  const [currentSessionId, setCurrentSessionId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('aether_current_session_id');
+      return saved || 'session-default';
+    } catch {
+      return 'session-default';
+    }
+  });
+
+  // Derived state for the active message list (single source of truth)
+  const messages = useMemo(() => {
+    const active = chatSessions.find(s => s.id === currentSessionId);
+    return active?.messages || [];
+  }, [chatSessions, currentSessionId]);
+
+  const currentSessionIdRef = useRef(currentSessionId);
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
+  const setMessages = useCallback((updater: Message[] | ((prev: Message[]) => Message[])) => {
+    setChatSessions(prev => prev.map(s => {
+      if (s.id === currentSessionIdRef.current) {
+        const currentMsgs = s.messages || [];
+        const nextMsgs = typeof updater === 'function' ? (updater as any)(currentMsgs) : updater;
+        return { ...s, messages: nextMsgs };
+      }
+      return s;
+    }));
+  }, []);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState<string>('');
 
@@ -240,24 +311,129 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   const [newAutoTrigger, setNewAutoTrigger] = useState('manual_run');
 
   // Load message feed dynamically from current session
+  // Persist current session ID to local storage
   useEffect(() => {
-    const session = chatSessions.find(s => s.id === currentSessionId);
-    if (session) {
-      setMessages(session.messages);
-    }
+    localStorage.setItem('aether_current_session_id', currentSessionId);
+    window.dispatchEvent(new CustomEvent('aether_sync_chat', { detail: { sender: 'RightSidebar' } }));
   }, [currentSessionId]);
 
-  // Synchronize active messages updates to the active session object
+  // Listen to cross-component storage changes for seamless real-time syncing
   useEffect(() => {
-    setChatSessions(prev => 
-      prev.map(s => s.id === currentSessionId ? { ...s, messages } : s)
-    );
-  }, [messages, currentSessionId]);
+    const handleStorageChange = (e: any) => {
+      if (e && e.type === 'aether_sync_chat' && e.detail?.sender === 'RightSidebar') {
+        return;
+      }
+      if (!e || e.key === 'aether_chat_sessions' || e.key === 'aether_current_session_id' || !e.key) {
+        try {
+          const saved = localStorage.getItem('aether_chat_sessions');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && parsed.length > 0) {
+              setChatSessions(prev => {
+                if (!areSessionsEqual(prev, parsed)) {
+                  return parsed;
+                }
+                return prev;
+              });
+            }
+          }
+          const savedActiveId = localStorage.getItem('aether_current_session_id');
+          if (savedActiveId) {
+            setCurrentSessionId(prev => {
+              if (prev !== savedActiveId) {
+                return savedActiveId;
+              }
+              return prev;
+            });
+          }
+        } catch (err) {
+          console.warn("Storage sync failed:", err);
+        }
+      }
+    };
 
-  // Persist session variations automatically
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('aether_sync_chat', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('aether_sync_chat', handleStorageChange);
+    };
+  }, []);
+
+  // Update default welcome greeting dynamically once projects or memory synapses load
+  useEffect(() => {
+    if (projects && projects.length > 0) {
+      const greeting = getDynamicGreeting();
+      setChatSessions(prev => {
+        let changed = false;
+        const next = prev.map(s => {
+          if (s.id === 'session-default' && s.messages.length === 1 && (s.messages[0].content && (s.messages[0].content.startsWith('System online. I am Aether') || s.messages[0].content.includes('System online')))) {
+            if (s.messages[0].content !== greeting) {
+              changed = true;
+              return {
+                ...s,
+                messages: [
+                  {
+                    id: '1',
+                    role: 'agent',
+                    content: greeting
+                  }
+                ]
+              };
+            }
+          }
+          return s;
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [projects, cortexSynapses]);
+
+  // Load chat sessions from Firestore on mount
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'chatSessions'));
+        const fbSessions: any[] = [];
+        snap.forEach(d => fbSessions.push(d.data()));
+        if (fbSessions.length > 0) {
+          fbSessions.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setChatSessions(fbSessions);
+        } else {
+          // Empty in Firestore, seed with current local sessions
+          for (const s of chatSessions) {
+            await setDoc(doc(db, 'chatSessions', s.id), s);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load chat sessions from Firestore:", e);
+      } finally {
+        setIsSessionsLoaded(true);
+      }
+    };
+    loadSessions();
+  }, []);
+
+  // Persist session variations automatically to local storage and Firestore
   useEffect(() => {
     localStorage.setItem('aether_chat_sessions', JSON.stringify(chatSessions));
-  }, [chatSessions]);
+    window.dispatchEvent(new CustomEvent('aether_sync_chat', { detail: { sender: 'RightSidebar' } }));
+
+    if (!isSessionsLoaded) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        for (const s of chatSessions) {
+          await setDoc(doc(db, 'chatSessions', s.id), s);
+        }
+      } catch (e) {
+        console.error("Failed to sync chat sessions to Firestore:", e);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [chatSessions, isSessionsLoaded]);
 
   useEffect(() => {
     localStorage.setItem('aether_mcp_servers', JSON.stringify(mcpServers));
@@ -348,7 +524,36 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [voiceAudioEnabled, setVoiceAudioEnabled] = useState(true);
+  const [voiceAudioEnabled, setVoiceAudioEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('isAetherMuted') !== 'true';
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      const isMuted = localStorage.getItem('isAetherMuted') === 'true';
+      setVoiceAudioEnabled(!isMuted);
+      if (isMuted) {
+        try {
+          if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+          }
+        } catch (e) {}
+        setIsSpeechPlaying(false);
+      }
+    };
+    window.addEventListener('aether-mute-sync', handleSync);
+    return () => window.removeEventListener('aether-mute-sync', handleSync);
+  }, []);
+
+  const [isSpeechPlaying, setIsSpeechPlaying] = useState(false);
+
+  // Browser SpeechRecognition Integration states
+  const [speechTranscript, setSpeechTranscript] = useState('');
+  const [showConfirmPrompt, setShowConfirmPrompt] = useState(false);
+  const [editableTranscript, setEditableTranscript] = useState('');
+  const [confirmTitle, setConfirmTitle] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const latestTranscriptRef = useRef('');
 
   // Audio recording states (for high-fidelity voice execution)
   const [isRecording, setIsRecording] = useState(false);
@@ -398,11 +603,79 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       const utterance = new SpeechSynthesisUtterance(spokenText);
       utterance.rate = 1.05;
       utterance.pitch = 1.0;
+
+      utterance.onend = () => {
+        setIsSpeechPlaying(false);
+      };
+      utterance.onerror = () => {
+        setIsSpeechPlaying(false);
+      };
+
+      setIsSpeechPlaying(true);
       window.speechSynthesis?.speak(utterance);
     } catch (e) {
       console.error('Speech playback failed:', e);
+      setIsSpeechPlaying(false);
     }
   };
+
+  const stopVoiceReply = () => {
+    try {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    } catch (e) {
+      console.warn("SpeechSynthesis cancel failed:", e);
+    }
+    setIsSpeechPlaying(false);
+  };
+
+  // Global shortcut and interruption keys for RightSidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const matchesStop = (shortcutStr: string) => {
+        if (!shortcutStr) return false;
+        const parts = shortcutStr.toLowerCase().split('+');
+        const key = parts[parts.length - 1].trim();
+        const eventKey = e.key.toLowerCase();
+        
+        if (key === 'escape' && eventKey === 'escape') return true;
+        
+        const needsCtrl = parts.includes('ctrl') || parts.includes('control');
+        const needsAlt = parts.includes('alt');
+        const needsShift = parts.includes('shift');
+        const hasCtrl = e.ctrlKey;
+        const hasAlt = e.altKey;
+        const hasShift = e.shiftKey;
+        
+        if (needsCtrl !== hasCtrl || needsAlt !== hasAlt || needsShift !== hasShift) return false;
+        return eventKey === key;
+      };
+
+      if (matchesStop(stopShortcutKey || 'escape')) {
+        if (isSpeechPlaying || isRecording) {
+          e.preventDefault();
+          stopVoiceReply();
+          if (isRecording) stopRecording();
+          console.log("Aether interrupted via stop shortcut");
+        }
+      }
+
+      if (matchesStop(activationShortcutKey || 'alt+k')) {
+        if (isRightSidebarOpen) {
+          e.preventDefault();
+          if (isRecording) {
+            stopRecording();
+          } else {
+            startRecording();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRightSidebarOpen, isRecording, isSpeechPlaying, activationShortcutKey, stopShortcutKey]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
      const file = e.target.files?.[0];
@@ -664,8 +937,139 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
   // Send textual query: streams Q&A immediately from /api/gemini/stream with rich workspace constraints
   const handleSend = async (forcedText?: string) => {
+    stopVoiceReply();
     const textToSend = forcedText || inputValue;
     if (!textToSend.trim() && attachedFiles.length === 0) return;
+
+    const lower = textToSend.toLowerCase().trim();
+    const clean = lower.replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
+
+    // Dynamic active project switching based on spoken/typed name
+    let matchedProject = null;
+    for (const proj of projects) {
+      const projNameLower = proj.name.toLowerCase().trim();
+      if (
+        lower === projNameLower ||
+        lower.includes(`project ${projNameLower}`) ||
+        lower.includes(`go to ${projNameLower}`) ||
+        lower.includes(`open ${projNameLower}`) ||
+        lower.includes(`switch to ${projNameLower}`) ||
+        lower.includes(`take me to ${projNameLower}`) ||
+        (projNameLower.length > 3 && lower.includes(projNameLower) && (lower.includes("project") || lower.includes("navigate") || lower.includes("go") || lower.includes("open")))
+      ) {
+        matchedProject = proj;
+        break;
+      }
+    }
+
+    let targetPath = '';
+    let descName = '';
+
+    if (lower.includes("minimize sidebar") || lower.includes("collapse sidebar") || lower.includes("shrink sidebar") || lower.includes("minimize the sidebar") || lower.includes("collapse the sidebar")) {
+      useStore.getState().setSidebarMinimized(true);
+      setInputValue('');
+      const feedbackMessage = "I have minimized the navigation sidebar into a compact, space-saving icon-only rail.";
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedbackMessage };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(feedbackMessage);
+      return;
+    }
+    
+    if (lower.includes("maximize sidebar") || lower.includes("expand sidebar") || lower.includes("restore sidebar") || lower.includes("maximize the sidebar") || lower.includes("expand the sidebar")) {
+      useStore.getState().setSidebarMinimized(false);
+      setInputValue('');
+      const feedbackMessage = "I have maximized the navigation sidebar back to its full expanded layout.";
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedbackMessage };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(feedbackMessage);
+      return;
+    }
+
+    if (lower.includes("hide sidebar") || lower.includes("close sidebar") || lower.includes("hide the sidebar") || lower.includes("close the sidebar")) {
+      if (useStore.getState().isSidebarOpen) {
+        useStore.getState().toggleSidebar();
+      }
+      setInputValue('');
+      const feedbackMessage = "I have hidden the navigation sidebar completely. You can bring it back by asking me to show it or using the layout controls.";
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedbackMessage };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(feedbackMessage);
+      return;
+    }
+
+    if (lower.includes("show sidebar") || lower.includes("open sidebar") || lower.includes("show the sidebar") || lower.includes("open the sidebar")) {
+      if (!useStore.getState().isSidebarOpen) {
+        useStore.getState().toggleSidebar();
+      }
+      setInputValue('');
+      const feedbackMessage = "I have restored and displayed the navigation sidebar on your layout.";
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedbackMessage };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(feedbackMessage);
+      return;
+    }
+
+    if (matchedProject) {
+      setActiveProjectId(matchedProject.id);
+      targetPath = '/projects';
+      descName = `Project "${matchedProject.name}"`;
+    } else if (clean === "automations" || clean === "automation" || clean === "workflows" || clean === "workflow" || clean === "pipelines" || lower.includes("automation") || lower.includes("pipeline") || lower.includes("workflow")) {
+      targetPath = '/automations';
+      descName = 'Automations Studio';
+    } else if (clean === "dreams" || clean === "dream" || clean === "my dreams" || clean === "dream log" || lower.includes("dream")) {
+      targetPath = '/brain?tab=dreams';
+      descName = 'Aether Dream Log';
+    } else if (clean === "memory" || clean === "memory store" || clean === "synaptic rules" || lower.includes("memory") || lower.includes("synaptic") || lower.includes("cortex")) {
+      targetPath = '/brain?tab=memory';
+      descName = 'Synaptic Memory Cortex';
+    } else if (clean === "projects" || clean === "project" || lower.includes("take me to projects") || lower.includes("go to projects") || lower.includes("open projects") || lower.includes("show projects")) {
+      targetPath = '/projects';
+      descName = 'Projects Center';
+    } else if (clean === "assets" || clean === "asset" || lower.includes("take me to assets") || lower.includes("go to assets") || lower.includes("open assets") || lower.includes("show assets")) {
+      targetPath = '/assets';
+      descName = 'Digital Asset Repository';
+    } else if (clean === "notes" || clean === "note" || lower.includes("take me to notes") || lower.includes("go to notes") || lower.includes("open notes") || lower.includes("show notes")) {
+      targetPath = '/notes';
+      descName = 'Obsidian Developer Logbooks';
+    } else if (clean === "ideas" || clean === "idea" || lower.includes("take me to ideas") || lower.includes("go to ideas") || lower.includes("open ideas") || lower.includes("show ideas") || lower.includes("new ideas")) {
+      targetPath = '/ideas';
+      descName = 'Idea Expansion Center';
+    } else if (clean === "issues" || clean === "issue" || clean === "problems" || clean === "problem" || clean === "tasks" || clean === "task" || lower.includes("take me to issues") || lower.includes("go to issues") || lower.includes("open tasks") || lower.includes("problems") || lower.includes("backlog")) {
+      targetPath = '/issues';
+      descName = 'Backlog Issues board';
+    } else if (clean === "brain" || clean === "cortex" || clean === "map" || lower.includes("take me to brain") || lower.includes("go to brain") || lower.includes("open brain")) {
+      targetPath = '/brain';
+      descName = 'Memory Cortex Brain Map';
+    } else if (clean === "agents" || clean === "agent" || lower.includes("take me to agents") || lower.includes("go to agents") || lower.includes("open agents")) {
+      targetPath = '/agents';
+      descName = 'Agentic OS Sandbox';
+    } else if (clean === "roadmap" || lower.includes("take me to roadmap") || lower.includes("go to roadmap") || lower.includes("open roadmap")) {
+      targetPath = '/roadmap';
+      descName = 'Product Roadmap Timeline';
+    } else if (clean === "settings" || lower.includes("take me to settings") || lower.includes("go to settings") || lower.includes("open settings")) {
+      targetPath = '/settings';
+      descName = 'Aether Vocal Preferences';
+    } else if (clean === "dashboard" || clean === "home" || lower.includes("take me to dashboard") || lower.includes("go to dashboard") || lower.includes("open dashboard")) {
+      targetPath = '/';
+      descName = 'Cortex Control Panel';
+    }
+
+    if (targetPath) {
+      navigate(targetPath);
+      setInputValue('');
+      const feedbackMessage = `Opening your ${descName}. What would you like me to do next?`;
+      
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedbackMessage };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      
+      speakVoiceReply(feedbackMessage);
+      return;
+    }
 
     if (aetherDoubleConfirm) {
       const displayBrief = textToSend.length > 50 ? `${textToSend.slice(0, 50)}...` : textToSend;
@@ -798,115 +1202,89 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     }
   };
 
-  // Microphone capture and high-integrity voice command processing via /api/voice/process
+  // Native browser SpeechRecognition Integration to capture voice input live
   const startRecording = async () => {
+    stopVoiceReply();
     try {
       setErrorMsg('');
-      chunksRef.current = [];
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      setSpeechTranscript('');
+      latestTranscriptRef.current = '';
 
-      let mimeType = 'audio/webm';
-      if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        mimeType = 'audio/ogg';
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setErrorMsg('Web Speech API is not supported in this browser. Please use Chrome or Safari.');
+        return;
       }
 
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
+      // Pre-check microphone permissions
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        setErrorMsg('Microphone accessibility blocked. Please grant access in your browser settings.');
+        return;
+      }
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunksRef.current.push(e.data);
+      const recog = new SpeechRecognition();
+      recog.continuous = true;
+      recog.interimResults = true;
+      recog.lang = 'en-US';
+
+      let finalTranscript = '';
+
+      recog.onstart = () => {
+        setIsRecording(true);
+        setRecordingSeconds(0);
+      };
+
+      recog.onresult = (event: any) => {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        const fullTranscript = finalTranscript || interimTranscript;
+        latestTranscriptRef.current = fullTranscript;
+        setSpeechTranscript(fullTranscript);
+        setInputValue(fullTranscript);
+      };
+
+      recog.onerror = (err: any) => {
+        console.error('Speech recognition error:', err);
+        setErrorMsg('Speech recognition error: ' + (err.error || 'Check microphone authorization'));
+        setIsRecording(false);
+      };
+
+      recog.onend = () => {
+        setIsRecording(false);
+        const transcript = latestTranscriptRef.current.trim();
+        if (transcript) {
+          setEditableTranscript(transcript);
+          setConfirmTitle('');
+          setSelectedProjectId(activeProjectId || projects[0]?.id || '');
+          setShowConfirmPrompt(true);
         }
       };
 
-      recorder.onstop = async () => {
-        setIsProcessing(true);
-        try {
-          const audioBlob = new Blob(chunksRef.current, { type: mimeType });
-          const reader = new FileReader();
-          reader.readAsDataURL(audioBlob);
-          reader.onloadend = async () => {
-            const base64Data = (reader.result as string).split(',')[1];
-            
-            const response = await fetch('/api/voice/process', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                audioData: base64Data,
-                mimeType,
-                projectContexts: projects,
-                cortexSynapses: cortexSynapses || [],
-                notes: notes || [],
-                issues: issues,
-                phases: phases || [],
-                agents: agents || [],
-                aiContextRules: aiContextRules || ""
-              })
-            });
-
-            if (!response.ok) {
-              throw new Error(`Voice endpoint error: ${response.status}`);
-            }
-
-            const resData = await response.json();
-            
-            // Execute any matched system-level operations
-            const actionFeedback = dispatchCommandAction(resData.intent, resData.parsedData);
-
-            if (resData.intent && resData.intent !== 'chat_query' && resData.intent !== 'unknown') {
-              // Add to global action queues visualizer
-              addVoiceAction({
-                transcript: resData.transcript || 'Spoken Directive',
-                intent: resData.intent,
-                confidence: resData.confidence || 0.95,
-                parsedData: resData.parsedData || {},
-                explanation: resData.explanation
-              });
-            }
-
-            // Append conversational logs
-            setMessages(prev => [
-              ...prev,
-              {
-                id: `usr-voice-${Date.now()}`,
-                role: 'user',
-                content: resData.transcript || '[Vocal Recording]',
-                isVoice: true
-              },
-              {
-                id: `ath-voice-reply-${Date.now()}`,
-                role: 'agent',
-                content: resData.explanation,
-                actionFeedback
-              }
-            ]);
-
-            // Auto Synthesis speech feedback
-            speakVoiceReply(resData.explanation);
-            setIsProcessing(false);
-          };
-        } catch (err: any) {
-          console.error(err);
-          setErrorMsg('Failed decoding vocal recording: ' + err.message);
-          setIsProcessing(false);
-        }
-      };
-
-      recorder.start();
-      setIsRecording(true);
+      (window as any).activeAssistantRecog = recog;
+      recog.start();
     } catch (err: any) {
       console.error(err);
-      setErrorMsg('Microphone block: Please grant permission under Site Settings.');
+      setErrorMsg('Failed initiating Speech Recognition: ' + err.message);
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+    const recog = (window as any).activeAssistantRecog;
+    if (recog) {
+      try {
+        recog.stop();
+      } catch (e) {
+        console.error('Stop error:', e);
+      }
+      (window as any).activeAssistantRecog = null;
     }
     setIsRecording(false);
   };
@@ -1084,7 +1462,12 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setVoiceAudioEnabled(!voiceAudioEnabled)}
+                onClick={() => {
+                  const currentMute = localStorage.getItem('isAetherMuted') === 'true';
+                  const nextMute = !currentMute;
+                  localStorage.setItem('isAetherMuted', String(nextMute));
+                  window.dispatchEvent(new Event('aether-mute-sync'));
+                }}
                 className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-all outline-none ${
                   voiceAudioEnabled 
                     ? 'bg-indigo-950/40 transition-colors border-indigo-500/20 text-indigo-400' 
@@ -1120,17 +1503,20 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           </div>
 
           {/* Chat Feed */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#08080a] select-text">
+          <div 
+            onClick={() => { if (isSpeechPlaying) stopVoiceReply(); }}
+            className={`flex-1 overflow-y-auto p-6 space-y-6 bg-[#08080a] select-text ${isSpeechPlaying ? 'cursor-pointer' : ''}`}
+          >
             <div className="max-w-3xl mx-auto space-y-6">
               {messages.map((msg) => (
                 <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                   key={msg.id}
+                   initial={{ opacity: 0, y: 15 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {msg.role !== 'user' && (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#3b82f6] to-[#a855f7] flex items-center justify-center text-white font-semibold text-xs shrink-0 shadow-lg">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-500 to-amber-500 flex items-center justify-center text-black font-extrabold text-xs shrink-0 shadow-lg">
                       A
                     </div>
                   )}
@@ -1138,7 +1524,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                   <div className="flex flex-col max-w-[80%]">
                     <div className="text-[10px] text-zinc-600 font-mono mb-1 flex items-center gap-1.5">
                       {msg.role === 'user' ? 'Operator (Local)' : 'Aether Orchestrator'}
-                      {msg.isVoice && <span className="text-purple-400 text-[8px] uppercase tracking-widest font-mono border border-purple-500/10 px-1.5 rounded bg-purple-950/20 font-bold">Audio input</span>}
+                      {msg.isVoice && <span className="text-yellow-400 text-[8px] uppercase tracking-widest font-mono border border-yellow-500/10 px-1.5 rounded bg-yellow-950/20 font-bold">Audio input</span>}
                     </div>
 
                     <div className={`px-5 py-3.5 rounded-2xl shadow-xl leading-relaxed text-xs sm:text-sm ${
@@ -1187,6 +1573,19 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                   </div>
                 </div>
               )}
+
+              {isSpeechPlaying && (
+                <div 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stopVoiceReply();
+                  }}
+                  className="sticky bottom-2 mx-auto max-w-xs px-4 py-2 bg-yellow-500/15 hover:bg-yellow-500/25 text-yellow-500 border border-yellow-500/20 rounded-full text-center text-xs font-medium tracking-wide flex items-center justify-center gap-2 cursor-pointer shadow-lg backdrop-blur-md z-50 animate-bounce"
+                >
+                  <VolumeX size={13} className="animate-pulse" />
+                  <span>AI is speaking... Tap anywhere to interrupt</span>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
           </div>
@@ -1202,17 +1601,44 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="bg-[#18181b] border border-red-500/30 rounded-xl p-4 text-center flex flex-col items-center justify-center mb-4 gap-2 shadow-2xl"
+                    className="bg-[#18181b]/95 border border-red-500/30 rounded-xl p-4 text-center flex flex-col items-center justify-center mb-4 gap-2.5 shadow-2xl"
                   >
                     <div className="text-red-400 text-xs font-mono uppercase tracking-widest font-bold flex items-center gap-2 animate-pulse">
                       <span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Dictating vocal action script...
                     </div>
+                    
+                    {/* Beautiful fluid-motion glowing audio visualizer */}
+                    <div className="flex items-end justify-center gap-0.5 h-12 w-full max-w-xs overflow-hidden px-4 py-2 mt-1 bg-zinc-950/65 rounded-xl border border-zinc-900 shadow-[inset_0_2px_8px_rgba(0,0,0,0.8)]">
+                      {[10, 24, 18, 28, 14, 32, 22, 16, 26, 20, 24, 12, 18, 30, 22, 14].map((baseH, i) => (
+                        <motion.span
+                          key={`sidebar-voice-wave-${i}`}
+                          animate={{ height: [`4px`, `${baseH}px`, `4px`] }}
+                          transition={{
+                            duration: 0.6 + (i % 4) * 0.15,
+                            repeat: Infinity,
+                            ease: "easeInOut"
+                          }}
+                          className="w-1.5 rounded-t-full bg-gradient-to-t from-red-650 via-purple-505 to-indigo-400"
+                          style={{
+                            filter: 'drop-shadow(0 0 4px rgba(239,68,68,0.4))'
+                          }}
+                        />
+                      ))}
+                    </div>
+
                     <div className="text-3xl font-bold font-mono text-white">{formatSecs(recordingSeconds)}</div>
+
+                    {speechTranscript && (
+                      <div className="text-[11px] text-zinc-300 max-w-md line-clamp-3 px-3 py-1.5 bg-black/40 border border-zinc-800/50 rounded-xl font-mono leading-relaxed max-h-18 overflow-y-auto custom-scrollbar">
+                        "{speechTranscript}"
+                      </div>
+                    )}
+
                     <button
                       onClick={stopRecording}
-                      className="px-6 py-2 bg-red-600 hover:bg-red-750 text-white rounded-full font-bold text-xs flex items-center gap-1.5 transition-all text-sm shadow-md"
+                      className="px-6 py-2 bg-red-650 hover:bg-red-700 text-white rounded-full font-bold text-xs flex items-center gap-1.5 transition-all text-sm shadow-md cursor-pointer"
                     >
-                      Stop & Dispatch Memo
+                      Stop &amp; Review Memo
                     </button>
                   </motion.div>
                 )}
@@ -1234,7 +1660,10 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                   <input
                     type="text"
                     value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
+                    onChange={(e) => {
+                      setInputValue(e.target.value);
+                      if (isSpeechPlaying) stopVoiceReply();
+                    }}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                     placeholder="Ask Aether to coordinate tasks, audit security, or review integrations..."
                     className="w-full bg-transparent border-none py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-0 select-text"
@@ -1255,18 +1684,45 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                       )}
                     </button>
 
+                    {isSpeechPlaying && (
+                      <button 
+                        onClick={stopVoiceReply}
+                        className="p-2 rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 transition-all flex items-center gap-1.5 animate-pulse"
+                        title="Interrupt / Stop Aether Voice"
+                      >
+                        <StopCircle size={14} className="text-yellow-500 fill-yellow-500/20" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">Stop Voice</span>
+                      </button>
+                    )}
+
                     <button 
                       onClick={isRecording ? stopRecording : startRecording}
-                      className={`p-2 rounded-lg transition-all border ${
+                      className={`p-2 rounded-lg transition-all border relative overflow-hidden ${
                         isRecording 
-                          ? 'bg-red-950/30 text-red-400 border-red-500 px-3' 
+                          ? 'bg-red-950/40 text-red-400 border-red-500 px-3 shadow-[0_0_15px_rgba(239,68,68,0.25)]' 
                           : 'text-indigo-400 hover:bg-zinc-800 border-transparent hover:border-[#27272a]'
                       }`}
                       title="Vocal voice directive"
                     >
                       <div className="flex items-center gap-1.5">
-                        <Mic size={14} className={isRecording ? 'animate-pulse text-red-500' : ''} />
-                        <span className="text-[10px] font-bold uppercase tracking-widest">{isRecording ? 'Stop' : 'Spoken Memo'}</span>
+                        <Mic size={14} className={isRecording ? 'text-red-500' : ''} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{isRecording ? 'listening' : 'Spoken Memo'}</span>
+                        {isRecording && (
+                          <div className="flex gap-[1.5px] items-center h-3 shrink-0 ml-1">
+                            {[10, 16, 12, 18, 14, 8, 12, 6].map((baseH, i) => (
+                              <motion.span
+                                key={`sidebar-spec-${i}`}
+                                animate={{ height: [`3px`, `${baseH}px`, `3px`] }}
+                                transition={{
+                                  duration: 0.6 + i * 0.08,
+                                  repeat: Infinity,
+                                  ease: "easeInOut"
+                                }}
+                                className="w-[1.5px] bg-red-400 rounded-full"
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </button>
                   </div>
@@ -1590,8 +2046,8 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                       className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-[10px] text-zinc-300"
                     >
                       <option value="gemini-3.5-flash">gemini-3.5-flash (Orchestrator)</option>
-                      <option value="gemini-3.5-pro">gemini-3.5-pro (Executive)</option>
-                      <option value="gemini-2.5-flash">gemini-2.5-flash (Fast)</option>
+                      <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Executive)</option>
+                      <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast)</option>
                     </select>
                   </div>
 
@@ -1837,17 +2293,22 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
   // Render Normal RightSidebar Panel Layout
   return (
-    <aside className="absolute md:relative right-0 z-40 h-full w-80 lg:w-96 shrink-0 border-l border-zinc-800 bg-[#0c0c0e] flex flex-col overflow-hidden shadow-xl md:shadow-none font-sans">
+    <aside className="absolute md:relative right-0 z-40 h-full w-60 shrink-0 border-l border-zinc-800 bg-[#0c0c0e] flex flex-col overflow-hidden shadow-xl md:shadow-none font-sans">
       
       {/* Header */}
       <div className="h-12 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#0c0c0e] shrink-0">
         <h2 className="text-xs font-semibold text-zinc-100 flex items-center gap-2 uppercase tracking-wider">
-          <Bot size={14} className="text-blue-400" /> Aether AI Workspace
+          <Bot size={14} className="text-yellow-500" /> Aether AI Workspace
         </h2>
         
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setVoiceAudioEnabled(!voiceAudioEnabled)}
+            onClick={() => {
+              const currentMute = localStorage.getItem('isAetherMuted') === 'true';
+              const nextMute = !currentMute;
+              localStorage.setItem('isAetherMuted', String(nextMute));
+              window.dispatchEvent(new Event('aether-mute-sync'));
+            }}
             className={`p-1.5 rounded hover:bg-zinc-800 transition-colors ${voiceAudioEnabled ? 'text-[#a855f7]' : 'text-zinc-500'}`}
             title="Read Speech Output"
           >
@@ -1878,7 +2339,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       <div className="p-3 bg-[#121215]/60 border-b border-zinc-800/80 shrink-0 select-none">
         <div className="text-[9px] font-semibold text-zinc-500 uppercase tracking-widest mb-2 flex items-center justify-between">
           <span>Obsidian Brain Cache</span>
-          <span className="text-[8px] bg-indigo-950/40 text-indigo-400 px-1.5 rounded-sm border border-indigo-500/10 font-mono">Synced</span>
+          <span className="text-[8px] bg-yellow-500/10 text-yellow-500 px-1.5 rounded-sm border border-yellow-500/20 font-mono">Synced</span>
         </div>
         <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
           <div className="p-1.5 rounded bg-zinc-900/60 border border-zinc-800/80">
@@ -1890,14 +2351,31 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             <div className="text-[8px] text-zinc-500 mt-0.5 truncate uppercase">Docs</div>
           </div>
           <div className="p-1.5 rounded bg-zinc-900/60 border border-zinc-800/80">
-            <div className="text-zinc-400 font-bold font-mono">{projects?.reduce((acc, p) => acc + (p.dreamRecommendations?.length || 0), 0)}</div>
+            <div className="text-zinc-400 font-bold font-mono">{projects?.reduce((acc: number, p: any) => acc + (p.dreamRecommendations?.length || 0), 0)}</div>
             <div className="text-[8px] text-zinc-500 mt-0.5 truncate uppercase">Dreams</div>
+          </div>
+        </div>
+        <div className="mt-2.5 pt-2 border-t border-zinc-800/50">
+          <div className="flex justify-between items-center text-[8px] font-mono text-zinc-500 uppercase mb-1">
+            <span>Cognitive Capacity</span>
+            <span className="text-yellow-500 font-semibold">LVL {Math.max(1, Math.floor((cortexSynapses?.length || 0) / 2) + 1)} • {cortexSynapses?.length || 0} Synapses</span>
+          </div>
+          <div className="h-1 bg-zinc-900 rounded-full overflow-hidden">
+            <motion.div 
+              className="h-full bg-gradient-to-r from-yellow-500 to-amber-600 rounded-full"
+              initial={{ width: "10%" }}
+              animate={{ width: `${Math.min(100, Math.max(10, ((cortexSynapses?.length || 0) % 2 === 0 && (cortexSynapses?.length || 0) > 0 ? 100 : ((cortexSynapses?.length || 0) % 2) * 50)))}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            />
           </div>
         </div>
       </div>
 
       {/* Chat Conversation Feed */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 bg-[#09090b] select-text">
+      <div 
+        onClick={() => { if (isSpeechPlaying) stopVoiceReply(); }}
+        className={`flex-1 overflow-y-auto p-4 space-y-4 min-h-0 bg-[#09090b] select-text ${isSpeechPlaying ? 'cursor-pointer' : ''}`}
+      >
         {messages.map((msg) => (
           <motion.div
             key={msg.id}
@@ -1906,14 +2384,14 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             className={`flex flex-col gap-1 text-[11px] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
           >
             {msg.role === 'agent' && (
-              <div className="flex items-center gap-1.5 mb-0.5 text-[9px] font-semibold text-blue-400 uppercase tracking-widest pl-1">
+              <div className="flex items-center gap-1.5 mb-0.5 text-[9px] font-semibold text-yellow-500 uppercase tracking-widest pl-1">
                 <Cpu size={10} className="animate-pulse" /> Aether Orchestrator
               </div>
             )}
             <div
               className={`px-3 py-2 rounded-xl max-w-full leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-blue-650 text-blue-50 border border-blue-500/20 shadow-md'
+                  ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 shadow-[0_2px_12px_rgba(234,179,8,0.06)]'
                   : 'bg-[#121214] text-zinc-350 border border-zinc-800/80 shadow-sm'
               }`}
             >
@@ -1948,6 +2426,19 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             </div>
           </motion.div>
         )}
+
+        {isSpeechPlaying && (
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              stopVoiceReply();
+            }}
+            className="sticky bottom-2 mx-auto max-w-[180px] px-3 py-1.5 bg-yellow-500/15 hover:bg-yellow-500/25 text-yellow-500 border border-yellow-500/20 rounded-full text-center text-[10px] font-medium tracking-wide flex items-center justify-center gap-1.5 cursor-pointer shadow-md backdrop-blur-md z-50 animate-bounce"
+          >
+            <VolumeX size={11} className="animate-pulse" />
+            <span>Tap to interrupt</span>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -1958,17 +2449,41 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-[#18181b] border-t border-red-500/30 p-3 text-center space-y-1 select-none"
+            className="bg-[#18181b] border-t border-red-500/30 p-3 text-center space-y-2 select-none"
           >
             <div className="text-red-400 text-[10px] font-mono uppercase tracking-wider flex items-center justify-center gap-1.5 animate-pulse font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Recording Voice Command
             </div>
+            
+            {/* Beautiful fluid-motion miniature audio wave */}
+            <div className="flex items-end justify-center gap-0.5 h-6 w-full max-w-[120px] overflow-hidden px-2 mx-auto py-1 bg-zinc-950/45 rounded-lg border border-zinc-900/60 shadow-[inset_0_1px_4px_rgba(0,0,0,0.8)]">
+              {[8, 16, 12, 18, 10, 14, 8].map((baseH, i) => (
+                <motion.span
+                  key={`sidebar-mini-wave-${i}`}
+                  animate={{ height: [`3px`, `${baseH}px`, `3px`] }}
+                  transition={{
+                    duration: 0.5 + (i % 3) * 0.12,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                    }}
+                  className="w-0.5 rounded-t-full bg-red-500"
+                />
+              ))}
+            </div>
+
             <div className="text-xl font-bold font-mono text-zinc-100">{recordingSeconds}s</div>
+
+            {speechTranscript && (
+              <div className="text-[9.5px] text-zinc-300 max-w-full px-2 py-1 bg-black/40 border border-zinc-900 rounded font-mono leading-tight max-h-12 overflow-y-auto custom-scrollbar">
+                "{speechTranscript}"
+              </div>
+            )}
+
             <button
               onClick={stopRecording}
-              className="px-3.5 py-1 text-[10px] bg-red-650 hover:bg-red-700 font-semibold text-white rounded-full mx-auto"
+              className="px-3.5 py-1 text-[10px] bg-red-650 hover:bg-red-700 font-semibold text-white rounded-full mx-auto cursor-pointer"
             >
-              Stop & Process
+              Stop &amp; Review
             </button>
           </motion.div>
         )}
@@ -1991,7 +2506,10 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
               <input 
                 type="text" 
                 value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
+                onChange={e => {
+                  setInputValue(e.target.value);
+                  if (isSpeechPlaying) stopVoiceReply();
+                }}
                 onKeyDown={e => e.key === 'Enter' && handleSend()}
                 placeholder="Talk to Aether..."
                 className="w-full bg-transparent border-none py-1 pl-2.5 pr-2 text-xs text-zinc-150 placeholder:text-zinc-650 focus:outline-none focus:ring-0 select-text"
@@ -2008,9 +2526,19 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                 >
                   <Paperclip size={12} />
                   {attachedFiles.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-blue-500 text-[8px] flex items-center justify-center rounded-full text-white font-bold">{attachedFiles.length}</span>
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-yellow-500 text-[8px] flex items-center justify-center rounded-full text-black font-extrabold">{attachedFiles.length}</span>
                   )}
                 </button>
+
+                {isSpeechPlaying && (
+                  <button 
+                    onClick={stopVoiceReply}
+                    className="p-1.5 rounded transition-colors text-yellow-500 bg-yellow-500/10 animate-pulse"
+                    title="Stop Aether Voice Playback"
+                  >
+                    <StopCircle size={12} />
+                  </button>
+                )}
 
                 <button 
                   onClick={isRecording ? stopRecording : startRecording}
@@ -2024,7 +2552,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
              <button 
                onClick={() => handleSend()}
                disabled={isProcessing}
-               className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-950/20 transition-colors flex items-center gap-1 shadow-sm"
+               className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-yellow-400 hover:bg-yellow-500/10 hover:border-yellow-500/25 transition-colors flex items-center gap-1 shadow-sm"
              >
                <span className="text-[10px] font-semibold px-1">Send</span>
                <Send size={11} />
@@ -2037,6 +2565,206 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           <span className="text-zinc-600">↵ to Send</span>
         </div>
       </div>
+
+      {/* Voice Transcription Action Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirmPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-[#121214] border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-5 text-left flex flex-col gap-4 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-yellow-500/10 text-yellow-400 rounded-xl">
+                    <Mic size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider font-mono">Review Spoken Memo</h3>
+                    <p className="text-[10px] text-zinc-500">How would you like to save this transcription?</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowConfirmPrompt(false)}
+                  className="text-zinc-500 hover:text-zinc-300 p-1.5 hover:bg-zinc-800/50 rounded-xl transition-all cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Editable Transcript Field */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider font-mono">Transcribed Text</label>
+                <textarea
+                  value={editableTranscript}
+                  onChange={(e) => setEditableTranscript(e.target.value)}
+                  className="w-full h-24 bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-3 text-xs text-zinc-200 placeholder:text-zinc-700 focus:outline-none focus:border-indigo-500/60 font-mono resize-none leading-relaxed"
+                  placeholder="No transcribed speech detected..."
+                />
+              </div>
+
+              {/* Note / Task Title Customizer */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5 col-span-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider font-mono">Custom Title</label>
+                  <input
+                    type="text"
+                    value={confirmTitle}
+                    onChange={(e) => setConfirmTitle(e.target.value)}
+                    placeholder="Auto-generated title"
+                    className="w-full bg-zinc-950/80 border border-[#27272a] rounded-xl px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/60"
+                  />
+                </div>
+
+                <div className="space-y-1.5 col-span-1">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider font-mono">Project Context</label>
+                  <select
+                    value={selectedProjectId}
+                    onChange={(e) => setSelectedProjectId(e.target.value)}
+                    className="w-full bg-zinc-950/80 border border-[#27272a] rounded-xl px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500/60 cursor-pointer"
+                  >
+                    <option value="">-- No Project --</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Actions Grid */}
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const finalTitle = confirmTitle.trim() || `Voice Note - ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    const projId = selectedProjectId || activeProjectId || projects[0]?.id;
+                    if (!projId) {
+                      setErrorMsg("Please create/select a project first.");
+                      return;
+                    }
+                    addNote({
+                      projectId: projId,
+                      title: finalTitle,
+                      content: editableTranscript,
+                      tags: ['VoiceCapture']
+                    });
+                    
+                    // Create visual chat feedback
+                    setMessages(prev => [
+                      ...prev,
+                      {
+                        id: `usr-note-${Date.now()}`,
+                        role: 'user',
+                        content: `Save speech note: "${finalTitle}"`
+                      },
+                      {
+                        id: `ath-note-rep-${Date.now()}`,
+                        role: 'agent',
+                        content: `📝 **Success:** Dictated speech saved as Note: **"${finalTitle}"**.`
+                      }
+                    ]);
+                    
+                    setShowConfirmPrompt(false);
+                  }}
+                  className="p-3 bg-indigo-600/10 hover:bg-indigo-650/20 text-indigo-400 border border-indigo-500/15 rounded-xl text-center text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 group cursor-pointer"
+                >
+                  <FileText size={16} className="group-hover:scale-110 transition-transform" />
+                  <span>Save as Note</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const finalTitle = confirmTitle.trim() || `Voice Task - ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    const projId = selectedProjectId || activeProjectId || projects[0]?.id;
+                    if (!projId) {
+                      setErrorMsg("Please create/select a project first.");
+                      return;
+                    }
+                    addIssue({
+                      projectId: projId,
+                      title: finalTitle,
+                      description: editableTranscript,
+                      type: 'Task',
+                      priority: 'Medium',
+                      status: 'Todo'
+                    });
+
+                    // Create visual chat feedback
+                    setMessages(prev => [
+                      ...prev,
+                      {
+                        id: `usr-task-${Date.now()}`,
+                        role: 'user',
+                        content: `Save speech task: "${finalTitle}"`
+                      },
+                      {
+                        id: `ath-task-rep-${Date.now()}`,
+                        role: 'agent',
+                        content: `📋 **Success:** Dictated speech saved as Task: **"${finalTitle}"** added to project backlog.`
+                      }
+                    ]);
+
+                    setShowConfirmPrompt(false);
+                  }}
+                  className="p-3 bg-emerald-600/10 hover:bg-emerald-650/20 text-emerald-400 border border-emerald-500/15 rounded-xl text-center text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 group cursor-pointer"
+                >
+                  <CheckSquare size={16} className="group-hover:scale-110 transition-transform" />
+                  <span>Save as Task</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputValue(editableTranscript);
+                    setShowConfirmPrompt(false);
+                  }}
+                  className="p-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl text-center text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 col-span-1 cursor-pointer"
+                >
+                  <Edit3 size={12} />
+                  <span>Edit in Chat Box</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Instantly trigger handleSend!
+                    handleSend(editableTranscript);
+                    setShowConfirmPrompt(false);
+                  }}
+                  className="p-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/15 rounded-xl text-center text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 col-span-1 cursor-pointer"
+                >
+                  <Send size={12} />
+                  <span>Send direct Chat</span>
+                </button>
+              </div>
+
+              <div className="flex justify-between items-center text-[9px] text-zinc-500 mt-1 px-1 border-t border-zinc-900 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConfirmPrompt(false);
+                  }}
+                  className="hover:text-red-400 transition-colors cursor-pointer"
+                >
+                  Discard transcription
+                </button>
+                <span>Aether WebSpeech Node</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </aside>
   );

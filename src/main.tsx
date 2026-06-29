@@ -8,6 +8,10 @@ import { DataProvider } from './context/DataProvider.tsx';
 if (typeof window !== 'undefined') {
   const originalError = window.onerror;
   window.onerror = function (message, source, lineno, colno, error) {
+    if (message && message.toString() === 'Script error.') {
+      console.warn('Suppressed cross-origin Script error from iframe or extension context.');
+      return true;
+    }
     if (
       message && 
       (message.toString().includes('ResizeObserver') || 

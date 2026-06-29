@@ -43,10 +43,17 @@ import {
   Sparkle,
   Rocket,
   Activity,
+  GitCommit,
+  GitPullRequest,
+  Clock,
+  BookMarked,
+  Bot,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
+import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataProvider";
+import { ProjectStepper } from "../components/ProjectStepper";
 
 export function Projects() {
   const [githubReposList, setGithubReposList] = useState<any[]>([]);
@@ -77,22 +84,19 @@ export function Projects() {
   } = useData();
 
   const [showModal, setShowModal] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    githubRepos: "",
-    frameworks: "",
-    launchTarget: "",
-    apiConnections: "",
-    sprints: "",
-    status: "Active" as const,
-  });
 
   // WORKSPACE DETAILED VIEWS & AGENTS STATES
-  const [viewingWorkspaceId, setViewingWorkspaceId] = useState<string | null>(
-    null,
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewingWorkspaceId = searchParams.get("id");
+
+  const setViewingWorkspaceId = (id: string | null) => {
+    if (id) {
+      setSearchParams({ id });
+      setActiveProjectId(id);
+    } else {
+      setSearchParams({});
+    }
+  };
   const [workspaceTab, setWorkspaceTab] = useState<
     "goals" | "brainstorm" | "dream" | "stack" | "ship"
   >("goals");
@@ -111,13 +115,309 @@ export function Projects() {
   const [isTestRunnerRunning, setIsTestRunnerRunning] = useState(false);
   const [gitOperationTab, setGitOperationTab] = useState<"code" | "pipeline" | "agents">("code");
 
-  // Repository Creation State within Step 2
-  const [githubStepTab, setGithubStepTab] = useState<"link" | "create">("link");
-  const [repoCreationName, setRepoCreationName] = useState("");
-  const [repoCreationDesc, setRepoCreationDesc] = useState("");
-  const [repoIsPrivate, setRepoIsPrivate] = useState(false);
-  const [creatingRepo, setCreatingRepo] = useState(false);
-  const [repoCreatedSuccess, setRepoCreatedSuccess] = useState<string | null>(null);
+  // EDIT PROJECT STATES
+  const [editingProject, setEditingProject] = useState<any | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    description: "",
+    githubRepo: "",
+    status: "Active" as any,
+  });
+
+  // INLINE REPOSITORY SPECIFICS STATES (WORKSPACE MODE)
+  const [inlineGitTab, setInlineGitTab] = useState<'link' | 'create' | 'direct'>('link');
+  const [inlineDirectRepo, setInlineDirectRepo] = useState('');
+  const [inlineRepoName, setInlineRepoName] = useState('');
+  const [inlineRepoDesc, setInlineRepoDesc] = useState('');
+  const [inlineRepoPrivate, setInlineRepoPrivate] = useState(false);
+  const [isInlineCreating, setIsInlineCreating] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
+
+  // GIT INTERACTION & SCANNING STATES
+  const [workspaceCommits, setWorkspaceCommits] = useState<any[]>([]);
+  const [loadingCommits, setLoadingCommits] = useState(false);
+  const [commitsSummary, setCommitsSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  
+  const [scannedFileList, setScannedFileList] = useState<any[]>([]);
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [selectedFileToScan, setSelectedFileToScan] = useState<string>("");
+  const [scannedFileContent, setScannedFileContent] = useState<string>("");
+  const [loadingFileContent, setLoadingFileContent] = useState(false);
+  const [scannedFileAnalysis, setScannedFileAnalysis] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+
+  // Load workspace commits
+  const fetchWorkspaceCommits = async (repoName: string) => {
+    if (!repoName) return;
+    setLoadingCommits(true);
+    setCommitsSummary(null);
+    try {
+      const res = await fetch("/api/github/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: repoName, branch: activeBranch, token: githubToken || undefined }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setWorkspaceCommits(
+            data.map((c: any) => ({
+              id: c.sha.substring(0, 7),
+              msg: c.commit.message.split("\n")[0],
+              author: c.commit.author.name,
+              time: new Date(c.commit.author.date).toLocaleDateString() + ' ' + new Date(c.commit.author.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+              verified: c.commit.verification?.verified || false,
+            }))
+          );
+        } else {
+          setWorkspaceCommits([]);
+        }
+      } else {
+        setWorkspaceCommits([]);
+      }
+    } catch (e) {
+      console.error("Error fetching workspace commits:", e);
+      setWorkspaceCommits([]);
+    } finally {
+      setLoadingCommits(false);
+    }
+  };
+
+  // Load workspace repository file tree
+  const fetchWorkspaceTree = async (repoName: string) => {
+    if (!repoName) return;
+    setLoadingTree(true);
+    try {
+      const res = await fetch("/api/github/tree", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: repoName, token: githubToken || undefined }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.tree)) {
+          // Filter files (exclude non-file paths or huge folders like node_modules)
+          const files = data.tree
+            .filter((item: any) => item.type === "blob" && !item.path.includes("node_modules/") && !item.path.includes(".next/") && !item.path.includes("dist/"))
+            .map((item: any) => ({
+              path: item.path,
+              size: item.size,
+            }));
+          setScannedFileList(files);
+          if (files.length > 0) {
+            setSelectedFileToScan(files[0].path);
+          }
+        } else {
+          setScannedFileList([]);
+        }
+      } else {
+        setScannedFileList([]);
+      }
+    } catch (e) {
+      console.error("Error fetching workspace tree:", e);
+      setScannedFileList([]);
+    } finally {
+      setLoadingTree(false);
+    }
+  };
+
+  // Summarize commits with AI
+  const handleSummarizeCommits = async (repoName: string) => {
+    if (workspaceCommits.length === 0) return;
+    setSummaryLoading(true);
+    setCommitsSummary("");
+    try {
+      const prompt = `Act as an expert AI technical lead. Summarize these recent git commits from the repository "${repoName}": ${JSON.stringify(workspaceCommits.slice(0, 8))}. Highlight the core development progress, feature additions, or bug fixes, and provide a constructive suggestion for the next steps. Limit the output to 2-3 highly professional, clear sentences.`;
+      const response = await fetch("/api/gemini/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (!response.ok) throw new Error("Failed to stream commit summary");
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let summary = "";
+      while (reader) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                summary += data.text;
+                setCommitsSummary(summary);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error summarizing commits:", e);
+      setCommitsSummary("Error generating commit summary with Gemini.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  // Read code and generate Dreaming Ideas & Security Fixes
+  const handleScanCodeAndDream = async (repoName: string, filePath: string, projectObj: any) => {
+    if (!repoName || !filePath) return;
+    setAnalysisLoading(true);
+    setScannedFileAnalysis("");
+    setLoadingFileContent(true);
+    try {
+      // First, fetch file content
+      const fileRes = await fetch("/api/github/file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: repoName, path: filePath, token: githubToken || undefined }),
+      });
+      if (!fileRes.ok) throw new Error("Failed to fetch file content");
+      const fileData = await fileRes.json();
+      const content = fileData.content ? atob(fileData.content) : (fileData.body || "");
+      setScannedFileContent(content);
+      setLoadingFileContent(false);
+
+      // Second, send content to Gemini to scan for security, dreaming ideas, and AI ideas
+      const prompt = `Act as an elite full-stack developer and security auditor.
+Analyze this code from the file "${filePath}" in repository "${repoName}":
+\`\`\`
+${content.substring(0, 5000)}
+\`\`\`
+
+Analyze the code for:
+1. Potential security vulnerabilities, logical flaws, or unhandled exceptions.
+2. Immediate innovative feature improvements (Dreaming/AI ideas).
+
+Format your output in a beautiful, highly clean, professional way with clear bullet points.
+Then, suggest ONE concrete feature suggestion that we can add to the brainstorm lounge. Start that suggestion line with [IDEA-PROPOSAL]: followed by a short title and a 1-sentence description on a single line.`;
+
+      const response = await fetch("/api/gemini/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (!response.ok) throw new Error("Failed to stream code analysis");
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let analysis = "";
+      while (reader) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                analysis += data.text;
+                setScannedFileAnalysis(analysis);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Check for a suggested idea to automatically add to the brainstorm lounge!
+      if (analysis) {
+        const lines = analysis.split("\n");
+        const proposalLine = lines.find(l => l.includes("[IDEA-PROPOSAL]:"));
+        if (proposalLine) {
+          const rawText = proposalLine.split("[IDEA-PROPOSAL]:")[1].trim();
+          const splitIdx = rawText.indexOf(":");
+          let title = "Code-derived Improvement";
+          let desc = rawText;
+          if (splitIdx > 0) {
+            title = rawText.substring(0, splitIdx).trim();
+            desc = rawText.substring(splitIdx + 1).trim();
+          }
+          
+          // Automatically add to brainstormIdeas
+          const currentIdeas = [...(projectObj.brainstormIdeas || [])];
+          if (!currentIdeas.some((i: any) => i.text.toLowerCase() === title.toLowerCase())) {
+            const newIdea = {
+              id: `idea-scan-${Date.now()}`,
+              text: title,
+              details: `Derived from auditing ${filePath}:\n${desc}`,
+              status: "approved",
+              createdAt: Date.now()
+            };
+            updateProject(projectObj.id, {
+              brainstormIdeas: [newIdea, ...currentIdeas]
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error scanning code:", e);
+      setScannedFileAnalysis("Error scanning file content with Gemini.");
+    } finally {
+      setAnalysisLoading(false);
+      setLoadingFileContent(false);
+    }
+  };
+
+  // Fetch commits and tree for current active workspace when tab or project changes
+  useEffect(() => {
+    if (viewingWorkspaceId) {
+      const proj = projects.find(p => p.id === viewingWorkspaceId);
+      const repoName = proj?.githubRepos?.[0];
+      if (repoName) {
+        fetchWorkspaceCommits(repoName);
+        fetchWorkspaceTree(repoName);
+      } else {
+        setWorkspaceCommits([]);
+        setScannedFileList([]);
+      }
+    }
+  }, [viewingWorkspaceId, workspaceTab, activeBranch, projects]);
+
+  // Automatically trigger AI commit summarization once commits are loaded
+  useEffect(() => {
+    if (viewingWorkspaceId && workspaceCommits.length > 0 && !commitsSummary && !summaryLoading) {
+      const proj = projects.find(p => p.id === viewingWorkspaceId);
+      const repoName = proj?.githubRepos?.[0];
+      if (repoName) {
+        handleSummarizeCommits(repoName);
+      }
+    }
+  }, [viewingWorkspaceId, workspaceCommits, commitsSummary, summaryLoading]);
+
+  const handleOpenEditModal = (project: any) => {
+    setEditingProject(project);
+    setEditFormData({
+      name: project.name,
+      description: project.description || "",
+      githubRepo: project.githubRepos?.[0] || "",
+      status: project.status || "Active",
+    });
+  };
+
+  const handleUpdateProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProject) return;
+    
+    updateProject(editingProject.id, {
+      name: editFormData.name,
+      description: editFormData.description,
+      githubRepos: editFormData.githubRepo ? [editFormData.githubRepo] : [],
+      status: editFormData.status,
+    });
+    
+    setEditingProject(null);
+    alert(`✓ Project "${editFormData.name}" updated successfully!`);
+  };
+
+  const newGoalTextState = ""; // dummy to match
   const [newGoalText, setNewGoalText] = useState("");
   const [newStackTag, setNewStackTag] = useState("");
 
@@ -169,6 +469,47 @@ export function Projects() {
 
   // Drag and drop asset tracking state
   const [dragActive, setDragActive] = useState(false);
+
+  // Voice Status Sync states
+  const [showVoiceSyncModal, setShowVoiceSyncModal] = useState(false);
+  const [voiceSyncTranscript, setVoiceSyncTranscript] = useState("");
+  const [isSyncRecording, setIsSyncRecording] = useState(false);
+  const [syncRealtimeText, setSyncRealtimeText] = useState("");
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncStep, setSyncStep] = useState<"input" | "processing" | "review">("input");
+  const [syncProcessingLog, setSyncProcessingLog] = useState<string[]>([]);
+  const [syncReport, setSyncReport] = useState<any | null>(null);
+
+  // Prefetch GitHub repositories for the creation wizard and inline connect views
+  useEffect(() => {
+    const prefetchRepos = async () => {
+      const userToFetch = githubUser || "google";
+      const isOwnProfile = !!githubToken;
+      setLoadingRepos(true);
+      try {
+        const reposRes = await fetch("/api/github/repos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            githubToken
+              ? { token: githubToken, user: userToFetch, isOwnProfile }
+              : { user: userToFetch }
+          ),
+        });
+        const contentType = reposRes.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await reposRes.json();
+          if (Array.isArray(data)) {
+            setGithubReposList(data);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to prefetch github repos", e);
+      }
+      setLoadingRepos(false);
+    };
+    prefetchRepos();
+  }, [githubUser, githubToken]);
 
   // Auto-trigger dreaming session on entering tab
   useEffect(() => {
@@ -262,6 +603,241 @@ export function Projects() {
       recognitionRef.current.stop();
     }
     setIsRecording(false);
+  };
+
+  // Voice Status Sync Dictation handlers
+  const syncRecognitionRef = useRef<any>(null);
+
+  const startSyncRecording = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice Dictation is not supported in this browser environment. Please try Chrome or Safari.");
+      return;
+    }
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    rec.onresult = (event: any) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + " ";
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      if (interimTranscript) {
+        setSyncRealtimeText(interimTranscript);
+      }
+      if (finalTranscript) {
+        setSyncRealtimeText("");
+        setVoiceSyncTranscript((prev) => prev + finalTranscript);
+      }
+    };
+    rec.start();
+    syncRecognitionRef.current = rec;
+    setIsSyncRecording(true);
+  };
+
+  const stopSyncRecording = () => {
+    if (syncRecognitionRef.current) {
+      syncRecognitionRef.current.stop();
+    }
+    setIsSyncRecording(false);
+  };
+
+  const extractSyncJSON = (text: string) => {
+    try {
+      let jsonStr = text.trim();
+      if (jsonStr.includes("```json")) {
+        jsonStr = jsonStr.split("```json")[1].split("```")[0].trim();
+      } else if (jsonStr.includes("```")) {
+        jsonStr = jsonStr.split("```")[1].split("```")[0].trim();
+      }
+      return JSON.parse(jsonStr);
+    } catch (err) {
+      console.error("Failed to parse JSON:", err);
+      try {
+        const firstBrace = text.indexOf("{");
+        const lastBrace = text.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+        }
+      } catch (inner) {
+        console.error("Fallback JSON parse failed:", inner);
+      }
+      return null;
+    }
+  };
+
+  const handleProcessVoiceSync = async (projectObj: any) => {
+    if (!voiceSyncTranscript.trim()) return;
+    setSyncStep("processing");
+    setSyncLoading(true);
+    setSyncProcessingLog(["Initializing synaptic analyzer...", "Transcribing raw dictation signals..."]);
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 600));
+      setSyncProcessingLog(prev => [...prev, "Extracting completed tasks and achievements..."]);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setSyncProcessingLog(prev => [...prev, "Detecting active roadblocks & bugs..."]);
+
+      const prompt = `Act as an advanced generative workspace compiler.
+Analyze this raw voice status update transcribed for the project "${projectObj.name}":
+"${voiceSyncTranscript}"
+
+We need to compile and structure this raw vocal status into precise project items:
+1. "updatedDescription": A highly professional, 1-sentence description representing what has been done and what the current focus of the project is.
+2. "completedTasks": A list of items that the user says they have already finished or completed (e.g. "I've built the login screen").
+3. "newTasks": A list of active features, tasks, or action items the user says they want to do or still need to build.
+4. "newBugs": A list of active issues, bugs, or problems the user is currently encountering.
+5. "newIdeas": A list of innovative high-level brainstorming/AI ideas they mentioned or derived from their suggestions.
+6. "targetFinishDate": A string representing any target date, deadline, or finish time mentioned by the user (e.g. "by next Friday", "July 12th"), or null if none.
+
+Respond with a single valid JSON object. Do not include any other markdown text outside the JSON codeblock.
+Codeblock format:
+\`\`\`json
+{
+  "updatedDescription": "string or null",
+  "completedTasks": [{"title": "string", "details": "string"}],
+  "newTasks": [{"title": "string", "priority": "Critical"|"High"|"Medium"|"Low", "details": "string"}],
+  "newBugs": [{"title": "string", "priority": "Critical"|"High"|"Medium"|"Low", "details": "string"}],
+  "newIdeas": [{"text": "string", "details": "string"}],
+  "targetFinishDate": "string or null"
+}
+\`\`\``;
+
+      const response = await fetch("/api/gemini/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      
+      if (!response.ok) throw new Error("Aether AI processing failed");
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = "";
+      
+      setSyncProcessingLog(prev => [...prev, "Streaming synaptic response from Gemini..."]);
+      
+      while (reader) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                accumulatedText += data.text;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      setSyncProcessingLog(prev => [...prev, "Formatting structured JSON payload..."]);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      
+      const parsedReport = extractSyncJSON(accumulatedText);
+      if (parsedReport) {
+        setSyncReport(parsedReport);
+        setSyncStep("review");
+      } else {
+        throw new Error("Unable to parse structured JSON from Aether's response.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSyncProcessingLog(prev => [...prev, `❌ Error: ${err.message || "Failed synaptic processing"}`]);
+      alert(`Error processing update: ${err.message || "Unrecognized payload"}`);
+      setSyncStep("input");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleApplyVoiceSync = (projectObj: any) => {
+    if (!syncReport) return;
+    
+    // 1. Update project description if provided
+    if (syncReport.updatedDescription) {
+      updateProject(projectObj.id, {
+        description: syncReport.updatedDescription
+      });
+    }
+
+    // 2. Add completed tasks
+    if (Array.isArray(syncReport.completedTasks)) {
+      syncReport.completedTasks.forEach((t: any) => {
+        addIssue({
+          projectId: projectObj.id,
+          title: t.title || "Spoken Task Completed",
+          status: "Done",
+          priority: "Medium",
+          type: "Feature",
+          dueDate: "",
+          description: t.details || "Parsed via synaptic voice update."
+        });
+      });
+    }
+
+    // 3. Add new tasks
+    if (Array.isArray(syncReport.newTasks)) {
+      syncReport.newTasks.forEach((t: any) => {
+        addIssue({
+          projectId: projectObj.id,
+          title: t.title || "Spoken Action Item",
+          status: "Todo",
+          priority: t.priority || "Medium",
+          type: "Feature",
+          dueDate: syncReport.targetFinishDate || "",
+          description: t.details || "Parsed via synaptic voice update."
+        });
+      });
+    }
+
+    // 4. Add new bugs
+    if (Array.isArray(syncReport.newBugs)) {
+      syncReport.newBugs.forEach((b: any) => {
+        addIssue({
+          projectId: projectObj.id,
+          title: b.title || "Spoken road block",
+          status: "Todo",
+          priority: b.priority || "High",
+          type: "Bug",
+          dueDate: "",
+          description: b.details || "Parsed via synaptic voice update."
+        });
+      });
+    }
+
+    // 5. Add new brainstorm ideas
+    if (Array.isArray(syncReport.newIdeas)) {
+      const currentIdeas = [...(projectObj.brainstormIdeas || [])];
+      const newIdeasMapped = syncReport.newIdeas.map((i: any, idx: number) => ({
+        id: `idea-voice-${Date.now()}-${idx}`,
+        text: i.text || "Brainstorm Option",
+        details: i.details || "Derived from voice status sync.",
+        status: "approved",
+        createdAt: Date.now()
+      }));
+      updateProject(projectObj.id, {
+        brainstormIdeas: [...newIdeasMapped, ...currentIdeas]
+      });
+    }
+
+    setShowVoiceSyncModal(false);
+    setSyncReport(null);
+    setVoiceSyncTranscript("");
+    alert("✓ Synaptic Status Update Applied! Your workspace boards have been updated.");
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -607,14 +1183,7 @@ Description of fix or enhancement recommendation
   };
 
   const handleOpenModal = async () => {
-    setGithubStepTab("link");
-    setRepoCreationName("");
-    setRepoCreationDesc("");
-    setRepoCreatedSuccess(null);
-    setRepoIsPrivate(false);
-    
     setShowModal(true);
-    setCurrentStep(1);
     const userToFetch = githubUser || "google";
     const isOwnProfile = !!githubToken;
     setLoadingRepos(true);
@@ -639,102 +1208,6 @@ Description of fix or enhancement recommendation
       console.error("Failed to load repos", e);
     }
     setLoadingRepos(false);
-  };
-
-  const handleCreateRepoSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!repoCreationName.trim()) return;
-    setCreatingRepo(true);
-    setRepoCreatedSuccess(null);
-    try {
-      const res = await fetch("/api/github/create-repo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: repoCreationName,
-          description: repoCreationDesc,
-          isPrivate: repoIsPrivate,
-          token: githubToken,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to create remote repository on GitHub.");
-      }
-
-      const data = await res.json();
-      if (data.success) {
-        // Construct brand new item
-        const newRepoItem = {
-          id: `new-repo-${Date.now()}`,
-          name: repoCreationName,
-          full_name: data.fullName,
-          description: repoCreationDesc || "Created by AgenticOS Devspace",
-          private: repoIsPrivate,
-          owner: { login: data.owner || githubUser || "github-user" },
-        };
-        // Prepend to list
-        setGithubReposList((prev) => [newRepoItem, ...prev]);
-        setFormData({ ...formData, githubRepos: data.fullName });
-        setRepoCreatedSuccess(`Repository "${data.fullName}" successfully created!`);
-        // Switch back to link tab
-        setTimeout(() => {
-          setGithubStepTab("link");
-        }, 1200);
-      }
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-    setCreatingRepo(false);
-  };
-
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name) return;
-    addProject({
-      name: formData.name,
-      description: formData.description,
-      frameworks: formData.frameworks
-        ? formData.frameworks
-            .split(",")
-            .map((f) => f.trim())
-            .filter((f) => f)
-        : undefined,
-      githubRepos: formData.githubRepos
-        ? formData.githubRepos
-            .split(",")
-            .map((f) => f.trim())
-            .filter((f) => f)
-        : undefined,
-      apiConnections: formData.apiConnections
-        ? formData.apiConnections
-            .split(",")
-            .map((f) => ({ name: f.trim() }))
-            .filter((f) => f.name)
-        : undefined,
-      sprints: formData.sprints
-        ? formData.sprints
-            .split(",")
-            .map((s) => ({
-              id: s.trim().toLowerCase().replace(/\s+/g, "-"),
-              name: s.trim(),
-            }))
-            .filter((s) => s.name)
-        : undefined,
-      launchTarget: formData.launchTarget || undefined,
-      status: formData.status,
-    });
-    setShowModal(false);
-    setFormData({
-      name: "",
-      description: "",
-      githubRepos: "",
-      frameworks: "",
-      launchTarget: "",
-      apiConnections: "",
-      sprints: "",
-      status: "Active",
-    });
   };
 
   const handlePushGitCode = (proj: any) => {
@@ -816,10 +1289,7 @@ Description of fix or enhancement recommendation
     }
 
     return (
-      <motion.div 
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      <div 
         className="flex-1 flex flex-col relative pb-8"
       >
         {/* BACK HEADER */}
@@ -861,8 +1331,30 @@ Description of fix or enhancement recommendation
               </a>
             )}
             <button
-              onClick={() => deleteProject(project.id)}
-              className="text-xs bg-red-950/20 hover:bg-red-950/60 text-red-400 border border-red-500/10 hover:border-red-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+              onClick={() => {
+                setVoiceSyncTranscript("");
+                setSyncStep("input");
+                setSyncReport(null);
+                setShowVoiceSyncModal(true);
+              }}
+              className="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg border border-amber-500/20 shadow-md shadow-amber-500/10 transition-colors flex items-center gap-1.5 font-bold cursor-pointer"
+            >
+              <Mic size={12} /> Sync Voice Update
+            </button>
+            <button
+              onClick={() => handleOpenEditModal(project)}
+              className="text-xs bg-zinc-850 hover:bg-zinc-750 text-zinc-300 hover:text-white border border-zinc-700/60 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
+            >
+              <Code2 size={12} /> Edit Settings
+            </button>
+            <button
+              onClick={() => {
+                if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
+                  deleteProject(project.id);
+                  setViewingWorkspaceId(null);
+                }
+              }}
+              className="text-xs bg-red-950/20 hover:bg-red-950/60 text-red-400 border border-red-500/10 hover:border-red-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
             >
               <Trash size={12} /> Delete Space
             </button>
@@ -3054,48 +3546,12 @@ Description of fix or enhancement recommendation
               {/* RIGHT CONTAINER (1 COL) - REPOSITORY SPECIFICS */}
               <div className="space-y-6">
                 <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg space-y-4">
-                  <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest">
-                    Linked Repository Specifics
-                  </h3>
-
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
-                      <span className="text-[11px] text-zinc-400">Active Repository</span>
-                      <span className="text-xs font-bold font-mono text-zinc-300 flex items-center gap-1.5 truncate max-w-[65%]">
-                        <Github size={13} className="text-zinc-500 shrink-0" />
-                        {project.githubRepos?.[0] ? project.githubRepos[0].split("/").pop() : "Local Sandbox Node"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
-                      <span className="text-[11px] text-zinc-400">Remote Ingress State</span>
-                      <span className="text-[9px] font-bold text-emerald-400 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded">
-                        CONNECTED & ACTIVE
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
-                      <span className="text-[11px] text-zinc-400">Hosting Server Ingress</span>
-                      <span className="text-[10px] font-mono font-bold text-blue-400">
-                        http://0.0.0.0:3000
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-zinc-400">Total Project Commits</span>
-                      <span className="text-xs font-bold text-zinc-200 font-mono">
-                        {Math.floor(Math.random() * 20) + 12} Synthesized Commits
-                      </span>
-                    </div>
-                  </div>
-
-                  {project.githubRepos?.[0] && (
-                    <div className="p-3 bg-zinc-900 border border-zinc-850 rounded-lg text-center">
-                      <p className="text-[10px] text-zinc-500 leading-snug">
-                        Need to sync or sync a different repository? Manage bindings anytime.
-                      </p>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest flex items-center gap-2">
+                      <Github size={14} className="text-blue-400" /> Linked Repository
+                    </h3>
+                    {project.githubRepos?.[0] && (
                       <button
-                        type="button"
                         onClick={() => {
                           const customRepo = prompt("Enter Github repository full name to map (e.g. user/my-custom-repo):");
                           if (customRepo) {
@@ -3103,10 +3559,440 @@ Description of fix or enhancement recommendation
                             alert(`Repository bound to ${customRepo}!`);
                           }
                         }}
-                        className="mt-2 text-[10px] text-blue-400 hover:text-blue-300 font-bold hover:underline inline-block"
+                        className="text-[10px] text-blue-400 hover:text-blue-300 hover:underline font-semibold"
                       >
-                        Change Linked Repository Address
+                        Change Bind
                       </button>
+                    )}
+                  </div>
+
+                  {!project.githubRepos?.[0] ? (
+                    <div className="space-y-4 pt-2">
+                      <div className="p-3 bg-blue-950/15 border border-blue-500/20 rounded-lg text-[10px] text-zinc-400 leading-relaxed">
+                        ⚡ This workspace is currently <strong className="text-zinc-200">Local-Only</strong>. Easily link it to a GitHub repository to unlock autonomous agent code generation, recent commit telemetry, and live pipeline builds.
+                      </div>
+
+                      {/* Connection Sub-tabs */}
+                      <div className="flex bg-zinc-950 p-0.5 rounded border border-zinc-850">
+                        <button
+                          type="button"
+                          onClick={() => setInlineGitTab('link')}
+                          className={`flex-1 text-center py-1 rounded text-[9px] uppercase tracking-wider font-bold transition-all ${
+                            inlineGitTab === 'link'
+                              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                              : "text-zinc-500 hover:text-zinc-350"
+                          }`}
+                        >
+                          🔗 Synced
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInlineGitTab('create');
+                            setInlineRepoName(project.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'));
+                            setInlineRepoDesc(`DevSpace repo for ${project.name}`);
+                          }}
+                          className={`flex-1 text-center py-1 rounded text-[9px] uppercase tracking-wider font-bold transition-all ${
+                            inlineGitTab === 'create'
+                              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                              : "text-zinc-500 hover:text-zinc-350"
+                          }`}
+                        >
+                          ✨ Create
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInlineGitTab('direct')}
+                          className={`flex-1 text-center py-1 rounded text-[9px] uppercase tracking-wider font-bold transition-all ${
+                            inlineGitTab === 'direct'
+                              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                              : "text-zinc-500 hover:text-zinc-350"
+                          }`}
+                        >
+                          ✍️ Input
+                        </button>
+                      </div>
+
+                      {inlineError && (
+                        <div className="text-[10px] text-red-400 bg-red-950/20 border border-red-900/30 p-2 rounded">
+                          {inlineError}
+                        </div>
+                      )}
+
+                      {/* Link Synced Repos */}
+                      {inlineGitTab === 'link' && (
+                        <div className="space-y-2">
+                          <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
+                            Choose from Synced Repositories
+                          </label>
+                          {loadingRepos ? (
+                            <div className="flex items-center justify-center py-4 text-zinc-500 text-[10px] gap-2 border border-zinc-850 rounded bg-zinc-900/30">
+                              <Loader2 size={12} className="animate-spin text-blue-500" />
+                              Scanning GitHub account...
+                            </div>
+                          ) : githubReposList.length === 0 ? (
+                            <div className="text-center py-4 border border-dashed border-zinc-850 rounded text-[10px] text-zinc-500">
+                              No synced repos found.
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setLoadingRepos(true);
+                                  const userToFetch = githubUser || "google";
+                                  const isOwnProfile = !!githubToken;
+                                  try {
+                                    const reposRes = await fetch("/api/github/repos", {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify(
+                                        githubToken
+                                          ? { token: githubToken, user: userToFetch, isOwnProfile }
+                                          : { user: userToFetch }
+                                      ),
+                                    });
+                                    if (reposRes.ok) {
+                                      const data = await reposRes.json();
+                                      if (Array.isArray(data)) setGithubReposList(data);
+                                    }
+                                  } catch (e) {
+                                    console.error(e);
+                                  }
+                                  setLoadingRepos(false);
+                                }}
+                                className="block mx-auto mt-1.5 text-blue-400 hover:underline font-semibold"
+                              >
+                                Try Syncing Repos
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar">
+                              {githubReposList.slice(0, 5).map((r) => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => {
+                                    updateProject(project.id, { githubRepos: [r.full_name] });
+                                    alert(`✓ Connected workspace to ${r.full_name}`);
+                                  }}
+                                  className="w-full text-left p-2 border border-zinc-850 bg-zinc-900/60 hover:bg-zinc-800 rounded transition-all text-[11px] flex items-center justify-between group"
+                                >
+                                  <div className="truncate pr-2">
+                                    <span className="font-semibold text-zinc-200 group-hover:text-blue-400 transition-colors font-mono block truncate">
+                                      {r.full_name}
+                                    </span>
+                                    {r.description && (
+                                      <span className="text-[9px] text-zinc-500 block truncate mt-0.5">
+                                        {r.description}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[9px] text-blue-500 font-bold shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    Link →
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Create New Remote Repo */}
+                      {inlineGitTab === 'create' && (
+                        <div className="space-y-3 p-3 bg-[#161619] border border-zinc-850 rounded-lg">
+                          <div>
+                            <label className="block text-[9px] text-zinc-400 uppercase tracking-wider mb-1 font-semibold">
+                              New Repository Name
+                            </label>
+                            <input
+                              type="text"
+                              value={inlineRepoName}
+                              onChange={(e) => setInlineRepoName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
+                              placeholder="repo-name"
+                              className="w-full bg-zinc-950 border border-zinc-850 text-[11px] text-zinc-250 rounded px-2 py-1 outline-none focus:border-blue-500 transition-all font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] text-zinc-400 uppercase tracking-wider mb-1 font-semibold">
+                              Description
+                            </label>
+                            <textarea
+                              rows={1}
+                              value={inlineRepoDesc}
+                              onChange={(e) => setInlineRepoDesc(e.target.value)}
+                              placeholder="Brief repository summary..."
+                              className="w-full bg-zinc-950 border border-zinc-850 text-[11px] text-zinc-250 rounded px-2 py-1 outline-none focus:border-blue-500 transition-all resize-none h-10"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-zinc-450">Visibility Target</span>
+                            <div className="flex bg-zinc-950 p-0.5 rounded border border-zinc-850">
+                              <button
+                                type="button"
+                                onClick={() => setInlineRepoPrivate(false)}
+                                className={`px-2 py-0.5 text-[9px] font-bold rounded ${
+                                  !inlineRepoPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-350"
+                                }`}
+                              >
+                                Public
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInlineRepoPrivate(true)}
+                                className={`px-2 py-0.5 text-[9px] font-bold rounded ${
+                                  inlineRepoPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-350"
+                                }`}
+                              >
+                                Private
+                              </button>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isInlineCreating || !inlineRepoName}
+                            onClick={async () => {
+                              if (!inlineRepoName) return;
+                              setIsInlineCreating(true);
+                              setInlineError(null);
+                              try {
+                                const res = await fetch("/api/github/create-repo", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    name: inlineRepoName,
+                                    description: inlineRepoDesc,
+                                    isPrivate: inlineRepoPrivate,
+                                    token: githubToken,
+                                  }),
+                                });
+                                const responseData = await res.json();
+                                if (res.ok && responseData.fullName) {
+                                  updateProject(project.id, { githubRepos: [responseData.fullName] });
+                                  setGithubReposList((prev) => [
+                                    {
+                                      id: Date.now(),
+                                      full_name: responseData.fullName,
+                                      description: inlineRepoDesc,
+                                      private: inlineRepoPrivate,
+                                    },
+                                    ...prev,
+                                  ]);
+                                  alert(`✓ Created and linked remote repository: ${responseData.fullName}`);
+                                } else {
+                                  setInlineError(responseData.error || "Failed to create remote repository. Check token.");
+                                }
+                              } catch (err: any) {
+                                setInlineError(err.message || "An unexpected error occurred.");
+                              }
+                              setIsInlineCreating(false);
+                            }}
+                            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded text-[10px] font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                          >
+                            {isInlineCreating ? (
+                              <>
+                                <Loader2 size={11} className="animate-spin" /> Creating...
+                              </>
+                            ) : (
+                              <>
+                                <Plus size={11} /> Create & Link Repo
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Direct Custom Input */}
+                      {inlineGitTab === 'direct' && (
+                        <div className="space-y-2">
+                          <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
+                            Enter Repository (format: owner/repo)
+                          </label>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={inlineDirectRepo}
+                              onChange={(e) => setInlineDirectRepo(e.target.value)}
+                              placeholder="e.g. facebook/react"
+                              className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-250 outline-none focus:border-blue-500 font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!inlineDirectRepo.includes('/')) {
+                                  alert('Please enter repository name in format: owner/repo');
+                                  return;
+                                }
+                                updateProject(project.id, { githubRepos: [inlineDirectRepo] });
+                                alert(`✓ Repository bound to ${inlineDirectRepo}`);
+                              }}
+                              className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-bold transition-all shrink-0"
+                            >
+                              Link
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-1">
+                      <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
+                        <span className="text-[11px] text-zinc-400">Connected Repos</span>
+                        <span className="text-xs font-bold font-mono text-zinc-300 truncate max-w-[65%]">
+                          {project.githubRepos?.[0]}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
+                        <span className="text-[11px] text-zinc-400">Connection State</span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+                          CONNECTED & ACTIVE
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to unlink the repository "${project.githubRepos?.[0]}" from this workspace?`)) {
+                            updateProject(project.id, { githubRepos: [] });
+                          }
+                        }}
+                        className="w-full mt-2 bg-zinc-900 hover:bg-zinc-800 hover:text-red-400 border border-zinc-800 text-[10px] font-semibold text-zinc-400 py-1.5 rounded transition-all flex items-center justify-center gap-1"
+                      >
+                        <X size={10} /> Unlink Repository
+                      </button>
+                    </div>
+                  )}
+
+                  {project.githubRepos?.[0] ? (
+                    <div className="space-y-4 pt-2">
+                      {/* Recent Commits Log */}
+                      <div className="border-t border-zinc-800/80 pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                            <GitCommit size={12} className="text-zinc-500" /> Recent Commit History
+                          </span>
+                          <button
+                            onClick={() => fetchWorkspaceCommits(project.githubRepos[0])}
+                            disabled={loadingCommits}
+                            className="text-[9px] text-zinc-500 hover:text-white transition-colors"
+                          >
+                            {loadingCommits ? "Syncing..." : "Refresh"}
+                          </button>
+                        </div>
+
+                        {loadingCommits ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 size={14} className="animate-spin text-blue-400" />
+                          </div>
+                        ) : workspaceCommits.length === 0 ? (
+                          <div className="text-[10px] text-zinc-500 italic py-2">No commits found or public access restricted.</div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                            {workspaceCommits.slice(0, 5).map((c) => (
+                              <div key={c.id} className="p-2 bg-[#09090b] border border-zinc-850 rounded flex flex-col gap-1 hover:border-zinc-700 transition-colors">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-medium text-zinc-200 line-clamp-1 flex-1 pr-2">{c.msg}</span>
+                                  <span className="text-[9px] font-mono text-zinc-500 bg-zinc-900 px-1 py-0.2 border border-zinc-800 rounded">{c.id}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-[9px] text-zinc-500">
+                                  <span className="truncate">By {c.author}</span>
+                                  <span>{c.time.split(" ")[0]}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Summarize Commits Section */}
+                      {workspaceCommits.length > 0 && (
+                        <div className="border-t border-zinc-800/80 pt-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                              <Bot size={12} className="text-blue-400" /> AI Tech Lead Context Summary
+                            </span>
+                            <button
+                              onClick={() => handleSummarizeCommits(project.githubRepos[0])}
+                              disabled={summaryLoading}
+                              className="text-[9px] uppercase tracking-wider bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded font-semibold transition-all"
+                            >
+                              {summaryLoading ? "Summarizing..." : "Analyze Commits"}
+                            </button>
+                          </div>
+
+                          {commitsSummary !== null && (
+                            <div className="p-2.5 bg-blue-950/10 border border-blue-500/10 rounded-lg text-[11px] text-zinc-300 leading-relaxed font-mono">
+                              {summaryLoading && !commitsSummary ? (
+                                <span className="animate-pulse">Thinking and reading repository commits...</span>
+                              ) : (
+                                commitsSummary
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* AI Code Auditor & Dreamer */}
+                      <div className="border-t border-zinc-800/80 pt-3 space-y-3">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                          <Bot size={12} className="text-purple-400" /> AI Code Reader & Dreamer
+                        </span>
+                        
+                        <p className="text-[10px] text-zinc-500 leading-normal">
+                          Index the repository file tree, select a source file to analyze, and let Gemini audit security issues and propose immediate new product features.
+                        </p>
+
+                        {loadingTree ? (
+                          <div className="flex items-center justify-center py-2">
+                            <Loader2 size={14} className="animate-spin text-purple-400" />
+                          </div>
+                        ) : scannedFileList.length === 0 ? (
+                          <button
+                            onClick={() => fetchWorkspaceTree(project.githubRepos[0])}
+                            className="w-full text-center py-2 border border-dashed border-zinc-800 hover:border-zinc-700 text-[10px] text-zinc-400 rounded-lg hover:text-white transition-colors cursor-pointer"
+                          >
+                            🔍 Index Repository File Tree
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex gap-1.5">
+                              <select
+                                value={selectedFileToScan}
+                                onChange={(e) => setSelectedFileToScan(e.target.value)}
+                                className="flex-1 bg-zinc-900 border border-zinc-800 text-[10px] text-zinc-300 rounded px-2 py-1.5 outline-none cursor-pointer"
+                              >
+                                {scannedFileList.map((f) => (
+                                  <option key={f.path} value={f.path}>
+                                    {f.path.split("/").pop()} ({f.path})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => handleScanCodeAndDream(project.githubRepos[0], selectedFileToScan, project)}
+                                disabled={analysisLoading || !selectedFileToScan}
+                                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-[10px] px-3 py-1.5 rounded transition-all cursor-pointer shadow shadow-purple-500/15"
+                              >
+                                {analysisLoading ? "Auditing..." : "Audit & Dream"}
+                              </button>
+                            </div>
+
+                            {scannedFileAnalysis && (
+                              <div className="p-3 bg-purple-950/10 border border-purple-500/10 rounded-lg max-h-[220px] overflow-y-auto text-[10px] text-zinc-300 space-y-1.5 leading-relaxed scrollbar-thin scrollbar-thumb-zinc-800">
+                                <div className="text-purple-400 font-bold uppercase tracking-wider text-[9px] mb-1.5 flex items-center gap-1">
+                                  <ShieldCheck size={10} /> Audit Analysis Output:
+                                </div>
+                                <div className="whitespace-pre-line font-sans text-zinc-300">
+                                  {scannedFileAnalysis}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-zinc-900/60 border border-zinc-850 rounded-lg text-center">
+                      <p className="text-[10px] text-zinc-500 leading-snug">
+                        Local Workspace Space is active. Link a GitHub repository to unlock live commits tracking, AI lead summarization, and file-level security audits.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -3138,7 +4024,306 @@ Description of fix or enhancement recommendation
             </div>
           )}
         </div>
-      </motion.div>
+
+        {showVoiceSyncModal && project && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-[#121214] border border-zinc-800 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+              {/* Header */}
+              <div className="flex justify-between items-center p-5 border-b border-zinc-800/60 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 animate-pulse">
+                    <Mic size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-zinc-100">🎙️ Synaptic Status Sync Intake</h2>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">Continuous speech intake & workspace update compiler</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    stopSyncRecording();
+                    setShowVoiceSyncModal(false);
+                  }}
+                  className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-zinc-850"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Content body depending on syncStep */}
+              <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-5">
+                {syncStep === "input" && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    <div className="bg-[#18181b] border border-zinc-855 p-4 rounded-xl">
+                      <h3 className="text-xs font-bold text-zinc-200 mb-1 flex items-center gap-1.5">
+                        💡 How to talk to Aether
+                      </h3>
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        Just start recording and dictate everything on your mind in a single stream. For example:
+                        <br />
+                        <span className="italic text-amber-400/80 block mt-1">
+                          "This is Hospice OS, we're 50% done. I've already integrated the databases and built the landing page. Next, I want to build the medication tracker page, set up security rules, and fix a bug where empty inputs crash the router. Let's target finishing by next Friday."
+                        </span>
+                      </p>
+                    </div>
+
+                    {/* Dictation triggers */}
+                    <div className="flex flex-col items-center justify-center py-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-950/20 gap-3">
+                      {isSyncRecording ? (
+                        <button
+                          type="button"
+                          onClick={stopSyncRecording}
+                          className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg shadow-red-600/20 animate-pulse transition-transform active:scale-95 cursor-pointer animate-in fade-in"
+                        >
+                          <StopCircle size={28} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startSyncRecording}
+                          className="w-16 h-16 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 flex items-center justify-center shadow-lg shadow-amber-500/20 transition-transform active:scale-95 cursor-pointer animate-in fade-in"
+                        >
+                          <Mic size={28} />
+                        </button>
+                      )}
+                      <span className="text-[11px] font-mono tracking-wider text-zinc-500 uppercase">
+                        {isSyncRecording ? "Dictating Stream Live... Click to Stop" : "Click to Start Spoken Dictation"}
+                      </span>
+
+                      {/* Real-time interim visual text */}
+                      {syncRealtimeText && (
+                        <div className="px-4 text-center mt-2">
+                          <p className="text-xs text-amber-400/80 italic font-mono">
+                            " {syncRealtimeText} "
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Accumulated Transcript editable box */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                        Compiled Vocal Transcript (Editable)
+                      </label>
+                      <textarea
+                        value={voiceSyncTranscript}
+                        onChange={(e) => setVoiceSyncTranscript(e.target.value)}
+                        placeholder="Your voice transcription will compile here. You can also manually type or edit here..."
+                        className="w-full h-32 bg-zinc-950/40 border border-zinc-850 rounded-xl p-3 text-xs text-zinc-200 focus:border-amber-500 transition-colors outline-none resize-none placeholder:text-zinc-700"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {syncStep === "processing" && (
+                  <div className="flex flex-col items-center justify-center py-12 space-y-6 animate-in fade-in duration-200">
+                    {/* Spinning Cortex Accent */}
+                    <div className="relative w-20 h-20">
+                      <div className="absolute inset-0 rounded-full border-4 border-amber-500/10 border-t-amber-500 animate-spin" />
+                      <div className="absolute inset-2 rounded-full border-4 border-cyan-500/10 border-b-cyan-400 animate-spin [animation-duration:1.5s]" />
+                      <div className="absolute inset-4 rounded-full bg-zinc-900 flex items-center justify-center">
+                        <Brain size={24} className="text-amber-500 animate-pulse" />
+                      </div>
+                    </div>
+
+                    <div className="text-center">
+                      <h3 className="text-sm font-semibold text-zinc-200">Aether Synaptic Compiler Active</h3>
+                      <p className="text-xs text-zinc-500 mt-1">Extracting tasks, boards, and roadmaps from dictation...</p>
+                    </div>
+
+                    {/* Processing logs box */}
+                    <div className="w-full bg-zinc-950/60 border border-zinc-850 rounded-xl p-4 font-mono text-[10px] text-zinc-400 h-40 overflow-y-auto space-y-1.5 custom-scrollbar">
+                      {syncProcessingLog.map((log, i) => (
+                        <div key={i} className="flex items-start gap-1.5">
+                          <span className="text-amber-500/70 select-none">›</span>
+                          <p className="leading-normal">{log}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {syncStep === "review" && syncReport && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    <div className="bg-emerald-500/5 border border-emerald-500/10 p-3.5 rounded-xl flex items-start gap-2.5">
+                      <CheckCircle2 size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-xs font-bold text-zinc-200">Aether Decoding Report Successful</h4>
+                        <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                          Review the generated additions before injecting them into the project workspaces.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Decoded items grids */}
+                    <div className="space-y-3.5">
+                      {/* 1. Mapped description */}
+                      {syncReport.updatedDescription && (
+                        <div className="bg-[#161619] border border-zinc-850 rounded-xl p-3">
+                          <span className="text-[10px] text-amber-500 font-mono uppercase tracking-wider block mb-1">
+                            📋 Refined Blueprint Description
+                          </span>
+                          <p className="text-xs text-zinc-200 italic">
+                            "{syncReport.updatedDescription}"
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 2. Target delivery */}
+                      {syncReport.targetFinishDate && (
+                        <div className="bg-[#161619] border border-zinc-850 rounded-xl p-3 flex items-center justify-between">
+                          <span className="text-[10px] text-cyan-400 font-mono uppercase tracking-wider flex items-center gap-1">
+                            <Clock size={11} /> Roadmap Finish Target
+                          </span>
+                          <span className="text-xs font-bold text-cyan-300 px-2 py-0.5 bg-cyan-950/40 border border-cyan-800/30 rounded">
+                            {syncReport.targetFinishDate}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 3. Completed Tasks (Done Board) */}
+                      {Array.isArray(syncReport.completedTasks) && syncReport.completedTasks.length > 0 && (
+                        <div className="bg-[#161619] border border-zinc-850 rounded-xl p-3.5 space-y-1.5">
+                          <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider block">
+                            ✓ Completed Tasks Added (Done Column)
+                          </span>
+                          <div className="space-y-1">
+                            {syncReport.completedTasks.map((t: any, i: number) => (
+                              <div key={i} className="text-xs bg-emerald-950/20 border border-emerald-900/10 p-2 rounded flex flex-col gap-0.5">
+                                <span className="font-bold text-emerald-300 flex items-center gap-1">
+                                  <Check size={11} /> {t.title}
+                                </span>
+                                {t.details && <span className="text-[10px] text-zinc-500 pl-4">{t.details}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 4. Todo Tasks (Todo Column) */}
+                      {Array.isArray(syncReport.newTasks) && syncReport.newTasks.length > 0 && (
+                        <div className="bg-[#161619] border border-zinc-850 rounded-xl p-3.5 space-y-1.5">
+                          <span className="text-[10px] text-blue-400 font-mono uppercase tracking-wider block">
+                            🚀 Active Backlog / Todo Tasks Mapped
+                          </span>
+                          <div className="space-y-1">
+                            {syncReport.newTasks.map((t: any, i: number) => (
+                              <div key={i} className="text-xs bg-blue-950/20 border border-blue-900/10 p-2 rounded flex flex-col gap-0.5">
+                                <span className="font-bold text-blue-300 flex items-center justify-between">
+                                  <span>• {t.title}</span>
+                                  <span className="text-[9px] bg-blue-900/40 px-1 py-0.2 rounded font-mono uppercase">
+                                    {t.priority || "Medium"}
+                                  </span>
+                                </span>
+                                {t.details && <span className="text-[10px] text-zinc-500 pl-3">{t.details}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 5. Active Roadblock Bugs */}
+                      {Array.isArray(syncReport.newBugs) && syncReport.newBugs.length > 0 && (
+                        <div className="bg-[#161619] border border-zinc-850 rounded-xl p-3.5 space-y-1.5">
+                          <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider block">
+                            ⚠️ Active Roadblock Bugs / Issues Registered
+                          </span>
+                          <div className="space-y-1">
+                            {syncReport.newBugs.map((b: any, i: number) => (
+                              <div key={i} className="text-xs bg-red-950/20 border border-red-900/10 p-2 rounded flex flex-col gap-0.5">
+                                <span className="font-bold text-red-300 flex items-center justify-between">
+                                  <span>🐞 {b.title}</span>
+                                  <span className="text-[9px] bg-red-900/40 px-1 py-0.2 rounded font-mono uppercase">
+                                    {b.priority || "High"}
+                                  </span>
+                                </span>
+                                {b.details && <span className="text-[10px] text-zinc-500 pl-4">{b.details}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 6. AI Brainstorm Suggestions */}
+                      {Array.isArray(syncReport.newIdeas) && syncReport.newIdeas.length > 0 && (
+                        <div className="bg-[#161619] border border-zinc-850 rounded-xl p-3.5 space-y-1.5">
+                          <span className="text-[10px] text-purple-400 font-mono uppercase tracking-wider block">
+                            💡 Brainstorm ideas generated & appended
+                          </span>
+                          <div className="space-y-1">
+                            {syncReport.newIdeas.map((id: any, i: number) => (
+                              <div key={i} className="text-xs bg-purple-950/20 border border-purple-900/10 p-2 rounded flex flex-col gap-0.5">
+                                <span className="font-bold text-purple-300 flex items-center gap-1">
+                                  <Sparkles size={11} /> {id.text}
+                                </span>
+                                {id.details && <span className="text-[10px] text-zinc-500 pl-4">{id.details}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer actions */}
+              <div className="p-4 bg-zinc-950/80 border-t border-zinc-800/60 flex items-center justify-end gap-2.5 shrink-0">
+                {syncStep === "input" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopSyncRecording();
+                        setShowVoiceSyncModal(false);
+                      }}
+                      className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!voiceSyncTranscript.trim()}
+                      onClick={() => handleProcessVoiceSync(project)}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold rounded-lg transition-colors border border-amber-500/20 shadow-md shadow-amber-500/10 flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                    >
+                      <Sparkles size={13} /> Compile with Aether
+                    </button>
+                  </>
+                )}
+
+                {syncStep === "processing" && (
+                  <div className="text-xs text-zinc-500 font-mono animate-pulse">
+                    Synaptic linkages connecting...
+                  </div>
+                )}
+
+                {syncStep === "review" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSyncStep("input");
+                        setSyncReport(null);
+                      }}
+                      className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-100 transition-colors"
+                    >
+                      ← Back to Dictation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyVoiceSync(project)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors border border-emerald-500/20 shadow-md shadow-emerald-500/10 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Check size={13} /> Apply Changes to Workspace
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -3198,33 +4383,45 @@ Description of fix or enhancement recommendation
               }
 
               return (
-                <motion.div
+                <div
                   key={project.id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  whileHover={{ y: -4, scale: 1.015 }}
-                  transition={{ duration: 0.3, ease: "easeOut", delay: Math.min(idx * 0.05, 0.35) }}
                   onClick={() => {
                     setActiveProjectId(project.id);
+                    setSearchParams({ id: project.id });
                     if (project.githubRepos && project.githubRepos.length > 0) {
                       setGithubRepo(project.githubRepos[0]);
                     }
                   }}
-                  className={`group border transition-all rounded-xl p-4 flex flex-col h-48 relative cursor-pointer ${
+                  className={`group border transition-colors duration-200 rounded-xl p-4 flex flex-col h-48 relative cursor-pointer ${
                     isActive
                       ? "border-blue-500 bg-blue-950/15 shadow-lg shadow-blue-500/10"
                       : "border-zinc-800 bg-[#121214] hover:bg-[#18181b] hover:border-zinc-700"
                   }`}
                 >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteProject(project.id);
-                    }}
-                    className="absolute top-3 right-3 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Trash size={14} />
-                  </button>
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity z-10">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenEditModal(project);
+                      }}
+                      className="text-zinc-500 hover:text-blue-400 p-1.5 rounded hover:bg-zinc-800/80 transition-all"
+                      title="Edit / Rename Project"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
+                          deleteProject(project.id);
+                        }
+                      }}
+                      className="text-zinc-500 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800/80 transition-all"
+                      title="Delete Space"
+                    >
+                      <Trash size={13} />
+                    </button>
+                  </div>
                   <div className="flex items-start justify-between mb-2">
                     <div
                       className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${
@@ -3306,743 +4503,125 @@ Description of fix or enhancement recommendation
                       )}
                     </div>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {showModal && (
+      {editingProject && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#121214] border border-zinc-800 rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+          <div className="bg-[#121214] border border-zinc-800 rounded-xl w-full max-w-md shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
             {/* Header */}
             <div className="flex justify-between items-center p-5 border-b border-zinc-800/60 shrink-0">
               <div>
                 <span className="text-[10px] uppercase tracking-widest text-blue-500 font-bold">
-                  Step {currentStep} of 5
+                  Workspace Settings
                 </span>
                 <h2 className="text-base font-semibold text-zinc-100 mt-0.5">
-                  {currentStep === 1 && "Create Project Blueprint"}
-                  {currentStep === 2 && "Link GitHub Repository"}
-                  {currentStep === 3 && "Select Tech Stack Preset"}
-                  {currentStep === 4 && "Configure API Connections"}
-                  {currentStep === 5 && "Define Delivery Cadence"}
+                  Edit "{editingProject.name}"
                 </h2>
               </div>
               <button
-                onClick={() => setShowModal(false)}
-                className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-zinc-850"
+                onClick={() => setEditingProject(null)}
+                className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-[#1e1e24] cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Progress Bar */}
-            <div className="h-1 bg-zinc-900 w-full shrink-0 flex">
-              <div
-                className="h-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${(currentStep / 5) * 100}%` }}
-              />
-            </div>
-
-            <form
-              onSubmit={handleCreate}
-              className="flex flex-col flex-1 min-h-0 overflow-hidden"
-            >
-              <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
-                {/* STEP 1: IDENTITY & BLUEPRINT PRESETS */}
-                {currentStep === 1 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div>
-                      <label className="block text-[11px] font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">
-                        Choose a Core Concept Preset (Optional)
-                      </label>
-                      <div className="grid grid-cols-2 gap-2 mb-4">
-                        {[
-                          {
-                            name: "SaaS Booster",
-                            desc: "Comprehensive SaaS billing, authentication, and database stack.",
-                            icon: Globe,
-                            pName: "SaaS Platform",
-                            pDesc:
-                              "Modern multi-tenant web application featuring sub-billing, analytics, and responsive admin dashboards.",
-                          },
-                          {
-                            name: "AI Companion",
-                            desc: "Intelligent assistant leveraging custom prompt engineering controls.",
-                            icon: Sparkles,
-                            pName: "AI Companion App",
-                            pDesc:
-                              "Advanced conversational generative assistant integrated with custom agentic models and workspace rule parameters.",
-                          },
-                          {
-                            name: "E-Commerce",
-                            desc: "Instant checkout-ready webstore powered by Stripe gateway.",
-                            icon: Database,
-                            pName: "E-Commerce Storefront",
-                            pDesc:
-                              "Ultra-fast digital storefront with interactive cart models, secure stripe integrations, and local catalog search.",
-                          },
-                          {
-                            name: "Dev Portfolio",
-                            desc: "Premium designer portfolio highlighting case studies and blogs.",
-                            icon: Code2,
-                            pName: "Developer Portfolio",
-                            pDesc:
-                              "Highly interactive Personal dev workspace detailing project case logs, system documentation, and custom layouts.",
-                          },
-                        ].map((preset) => (
-                          <button
-                            key={preset.name}
-                            type="button"
-                            onClick={() =>
-                              setFormData({
-                                ...formData,
-                                name: preset.pName,
-                                description: preset.pDesc,
-                              })
-                            }
-                            className={`text-left p-2.5 rounded-lg border text-xs transition-all flex flex-col justify-between h-24 ${
-                              formData.name === preset.pName
-                                ? "border-blue-500 bg-blue-950/15 text-blue-350"
-                                : "border-zinc-800 bg-[#161619] hover:bg-zinc-800 text-zinc-300"
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5 font-semibold text-[11px] text-zinc-150">
-                              <preset.icon
-                                size={13}
-                                className="text-blue-450"
-                              />
-                              {preset.name}
-                            </div>
-                            <p className="text-[10px] text-zinc-400 line-clamp-2 mt-1 leading-relaxed">
-                              {preset.desc}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="border-t border-zinc-800/50 pt-4">
-                      <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
-                        Project Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        autoFocus
-                        required
-                        value={formData.name}
-                        onChange={(e) =>
-                          setFormData({ ...formData, name: e.target.value })
-                        }
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
-                        placeholder="e.g. Space Station Sync"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
-                        Description
-                      </label>
-                      <textarea
-                        value={formData.description}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            description: e.target.value,
-                          })
-                        }
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors resize-none h-20"
-                        placeholder="Brief summary of project goals..."
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 2: GITHUB CONNECTION */}
-                {currentStep === 2 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      Link a GitHub repository to enable live codebase analysis, autonomous agent tracking, and automated build pipelines.
-                    </p>
-
-                    {/* Step 2 Sub-Tabs */}
-                    <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-850">
-                      <button
-                        type="button"
-                        onClick={() => setGithubStepTab("link")}
-                        className={`flex-1 text-center py-1.5 rounded-md text-xs font-semibold transition-all ${
-                          githubStepTab === "link"
-                            ? "bg-zinc-800 text-zinc-100 shadow-sm"
-                            : "text-zinc-400 hover:text-zinc-200"
-                        }`}
-                      >
-                        🔗 Link Existing & AI Match
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGithubStepTab("create")}
-                        className={`flex-1 text-center py-1.5 rounded-md text-xs font-semibold transition-all ${
-                          githubStepTab === "create"
-                            ? "bg-zinc-800 text-zinc-100 shadow-sm"
-                            : "text-zinc-400 hover:text-zinc-200"
-                        }`}
-                      >
-                        ✨ Create New Repository
-                      </button>
-                    </div>
-
-                    {githubStepTab === "link" ? (
-                      <div className="space-y-3">
-                        {/* AI Match Recommendation Box */}
-                        {(() => {
-                          const recommendedRepo = getRecommendedRepo(formData.name, githubReposList);
-                          if (!recommendedRepo) return null;
-                          return (
-                            <div className="p-3 bg-blue-950/20 border-2 border-blue-500/30 rounded-xl relative overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[9px] text-blue-400 font-bold tracking-widest uppercase flex items-center gap-1">
-                                  <Sparkle size={10} className="text-cyan-400 animate-pulse" /> AI-Recommended Match
-                                </span>
-                                <span className="text-[8px] bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded font-mono border border-blue-500/20 uppercase">
-                                  Semantic Align: 92%
-                                </span>
-                              </div>
-                              <p className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
-                                <Github size={12} className="text-zinc-400" /> {recommendedRepo.full_name}
-                              </p>
-                              <p className="text-[10px] text-zinc-400 mt-1 line-clamp-1 italic">
-                                "{recommendedRepo.description || "No description found."}"
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setFormData({ ...formData, githubRepos: recommendedRepo.full_name })}
-                                className={`mt-2.5 w-full text-center text-[9px] uppercase tracking-wider font-bold py-1.5 px-3 rounded transition-all ${
-                                  formData.githubRepos === recommendedRepo.full_name
-                                    ? "bg-emerald-950/40 text-emerald-400 border border-emerald-500/40"
-                                    : "bg-blue-600 hover:bg-blue-500 text-white"
-                                }`}
-                              >
-                                {formData.githubRepos === recommendedRepo.full_name ? "✓ Recommended Repo Selected" : "Link This Recommended Repository"}
-                              </button>
-                            </div>
-                          );
-                        })()}
-
-                        <div className="space-y-2">
-                          <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
-                            Select Public/Private Repository
-                          </label>
-
-                          {loadingRepos ? (
-                            <div className="flex flex-col items-center justify-center py-8 text-zinc-500 text-xs gap-2 border border-zinc-800 rounded-lg bg-zinc-900/50">
-                              <Loader2 size={18} className="animate-spin text-blue-500" />
-                              Scanning user's credentials & repositories...
-                            </div>
-                          ) : (
-                            <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-1">
-                              <label
-                                className={`flex items-center gap-3 p-2.5 rounded-lg border text-xs cursor-pointer transition-all active:scale-[0.98] duration-200 ${
-                                  !formData.githubRepos
-                                    ? "border-blue-500 bg-blue-950/15 text-blue-350"
-                                    : "border-zinc-800 bg-[#161619] hover:bg-zinc-800 text-zinc-300"
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  name="gitRepo"
-                                  checked={!formData.githubRepos}
-                                  onChange={() => setFormData({ ...formData, githubRepos: "" })}
-                                  className="sr-only"
-                                />
-                                <div
-                                  className={`w-3 h-3 rounded-full border flex items-center justify-center mr-1 ${
-                                    !formData.githubRepos ? "border-blue-500 bg-blue-500" : "border-zinc-650"
-                                  }`}
-                                >
-                                  {!formData.githubRepos && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                                </div>
-                                <div className="flex-grow min-w-0">
-                                  <div className="font-semibold text-zinc-150">Keep Local Only</div>
-                                  <p className="text-[10px] text-zinc-450 mt-0.5">Setup project purely as an offline workspace.</p>
-                                </div>
-                              </label>
-
-                              {githubReposList.length === 0 ? (
-                                <div className="text-center py-6 text-zinc-500 text-xs border border-dashed border-zinc-800 rounded-lg">
-                                  No repositories synced or fetched on account.
-                                  <button
-                                    type="button"
-                                    onClick={() => setFormData({ ...formData, githubRepos: "google/genai-js" })}
-                                    className="block mx-auto mt-2 text-[10px] text-blue-500 hover:underline"
-                                  >
-                                    Link pre-initialized: google/genai-js
-                                  </button>
-                                </div>
-                              ) : (
-                                githubReposList.map((r) => {
-                                  const isChosen = formData.githubRepos === r.full_name;
-                                  return (
-                                    <label
-                                      key={r.id}
-                                      className={`flex items-center gap-3 p-2.5 rounded-lg border text-xs cursor-pointer transition-all active:scale-[0.98] duration-200 ${
-                                        isChosen
-                                          ? "border-blue-500 bg-blue-950/15 text-blue-350"
-                                          : "border-zinc-850 bg-[#161619] hover:bg-zinc-800 text-zinc-300"
-                                      }`}
-                                    >
-                                      <input
-                                        type="radio"
-                                        name="gitRepo"
-                                        checked={isChosen}
-                                        onChange={() => setFormData({ ...formData, githubRepos: r.full_name })}
-                                        className="sr-only"
-                                      />
-                                      <div
-                                        className={`w-3 h-3 rounded-full border flex items-center justify-center mr-1 ${
-                                          isChosen ? "border-blue-500 bg-blue-500" : "border-zinc-650"
-                                        }`}
-                                      >
-                                        {isChosen && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                                      </div>
-                                      <div className="flex-grow min-w-0">
-                                        <div className="font-semibold text-zinc-150 truncate flex items-center gap-1.5">
-                                          <Github size={12} className="text-zinc-400 shrink-0" />
-                                          {r.full_name}
-                                        </div>
-                                        <p className="text-[10px] text-zinc-500 truncate mt-0.5">
-                                          {r.description || "No description provided."}
-                                        </p>
-                                      </div>
-                                    </label>
-                                  );
-                                })
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Tab 2: Create brand new repo in the step */
-                      <div className="p-4 bg-zinc-900/60 rounded-xl border border-zinc-850 space-y-3.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                        <h3 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
-                          <Plus size={14} className="text-blue-400" /> Create Remote GitHub Repository
-                        </h3>
-
-                        {repoCreatedSuccess && (
-                          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-2.5 rounded-lg text-[11px] font-mono select-none">
-                            {repoCreatedSuccess}
-                          </div>
-                        )}
-
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wider mb-1">
-                              Repository Name
-                            </label>
-                            <input
-                              type="text"
-                              value={repoCreationName}
-                              onChange={(e) => setRepoCreationName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
-                              placeholder="e.g. full-scale-os"
-                              className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded px-3 py-2 outline-none focus:border-blue-500 transition-all font-mono"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-medium text-zinc-400 uppercase tracking-wider mb-1">
-                              Description
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={repoCreationDesc}
-                              onChange={(e) => setRepoCreationDesc(e.target.value)}
-                              placeholder="Describe your repository purpose..."
-                              className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded px-3 py-1.5 outline-none focus:border-blue-500 transition-all resize-none height-[48px]"
-                            />
-                          </div>
-
-                          <div className="flex items-center justify-between border-t border-zinc-850 pt-2.5">
-                            <span className="text-[11px] font-medium text-zinc-400">Visibility Target</span>
-                            <div className="flex bg-zinc-950 p-0.5 rounded border border-zinc-800">
-                              <button
-                                type="button"
-                                onClick={() => setRepoIsPrivate(false)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded ${
-                                  !repoIsPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
-                                }`}
-                              >
-                                Public
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setRepoIsPrivate(true)}
-                                className={`px-2.5 py-1 text-[10px] font-bold rounded ${
-                                  repoIsPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
-                                }`}
-                              >
-                                Private
-                              </button>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            disabled={creatingRepo || !repoCreationName}
-                            onClick={handleCreateRepoSubmit}
-                            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {creatingRepo ? (
-                              <>
-                                <Loader2 size={13} className="animate-spin" /> Creating repository...
-                              </>
-                            ) : (
-                              <>
-                                <Sparkle size={13} /> Create & Instantly Link Repository
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* STEP 3: TECH STACK PRESETS */}
-                {currentStep === 3 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      Choose your primary runtime environment framework. This
-                      directs standard template structures.
-                    </p>
-
-                    <div className="grid grid-cols-1 gap-2">
-                      {[
-                        {
-                          id: "React, Next.js, Tailwind",
-                          title: "React / Next.js Stack (SaaS standard)",
-                          details:
-                            "Vercel optimized core, leverages Tailwind layout systems and server/client state splits.",
-                        },
-                        {
-                          id: "Vue, Nuxt, Tailwind",
-                          title: "Vue3 / Nuxt Engine (Creative web frameworks)",
-                          details:
-                            "Beautiful composition api structures combined with high-performance routing.",
-                        },
-                        {
-                          id: "Node.js, Express, MongoDB",
-                          title: "Express / NodeJS API Backend Service",
-                          details:
-                            "Serverless standard API routing, environment handling and database adapters.",
-                        },
-                        {
-                          id: "Python, Django",
-                          title: "Python / Django Data Core",
-                          details:
-                            "Best for ML agent tasks, fast api routing, Python environment integrations.",
-                        },
-                        {
-                          id: "Vanilla JS, HTML, CSS",
-                          title: "Vanilla JS Sandbox (Lightweight prototypes)",
-                          details:
-                            "Pristine simple HTML standard setups without complex compilation packages.",
-                        },
-                      ].map((framework) => {
-                        const isSelected = formData.frameworks === framework.id;
-                        return (
-                          <button
-                            key={framework.id}
-                            type="button"
-                            onClick={() =>
-                              setFormData({
-                                ...formData,
-                                frameworks: framework.id,
-                              })
-                            }
-                            className={`text-left p-3 rounded-lg border text-xs transition-all flex items-start gap-3 w-full ${
-                              isSelected
-                                ? "border-blue-500 bg-blue-950/15"
-                                : "border-zinc-800 bg-[#161619] hover:bg-zinc-800"
-                            }`}
-                          >
-                            <div
-                              className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                                isSelected
-                                  ? "border-blue-500 bg-blue-500 text-white"
-                                  : "border-zinc-600 bg-zinc-900"
-                              }`}
-                            >
-                              {isSelected && <Check size={10} />}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-zinc-150">
-                                {framework.title}
-                              </div>
-                              <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
-                                {framework.details}
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 4: API CONNECTIONS */}
-                {currentStep === 4 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      Choose third-party API providers that your workspace
-                      intends to integrate. You can select multiple!
-                    </p>
-
-                    <div className="grid grid-cols-1 gap-2">
-                      {[
-                        {
-                          id: "Stripe",
-                          name: "Stripe Payment Gateway",
-                          desc: "For handling subscriptions, webhooks, and invoice generation metrics.",
-                          icon: Shield,
-                        },
-                        {
-                          id: "Supabase",
-                          name: "Supabase DB & Auth",
-                          desc: "Cloud PostgreSQL backend setup with built-in login schemas and storage rules.",
-                          icon: Database,
-                        },
-                        {
-                          id: "Firebase",
-                          name: "Firebase Client Backend",
-                          desc: "NoSQL Firestore data engines and standard simple client auth triggers.",
-                          icon: Server,
-                        },
-                        {
-                          id: "OpenAI",
-                          name: "OpenAI / LLM Connectors",
-                          desc: "For prompting visual or chatbot templates with advanced custom models.",
-                          icon: Sparkles,
-                        },
-                        {
-                          id: "Google Cloud",
-                          name: "Google Cloud Services (GCP)",
-                          desc: "For serverless container instances and structured storage infrastructure.",
-                          icon: Globe,
-                        },
-                      ].map((api) => {
-                        const currentSelected = formData.apiConnections
-                          ? formData.apiConnections
-                              .split(",")
-                              .map((s) => s.trim())
-                          : [];
-                        const isSelected = currentSelected.includes(api.id);
-
-                        const handleToggle = () => {
-                          let updated;
-                          if (isSelected) {
-                            updated = currentSelected.filter(
-                              (x) => x !== api.id,
-                            );
-                          } else {
-                            updated = [...currentSelected, api.id];
-                          }
-                          setFormData({
-                            ...formData,
-                            apiConnections: updated.join(", "),
-                          });
-                        };
-
-                        return (
-                          <button
-                            key={api.id}
-                            type="button"
-                            onClick={handleToggle}
-                            className={`text-left p-3 rounded-lg border text-xs transition-colors flex items-start gap-3 w-full ${
-                              isSelected
-                                ? "border-blue-500 bg-blue-950/15"
-                                : "border-zinc-800 bg-[#161619] hover:bg-zinc-800"
-                            }`}
-                          >
-                            <div
-                              className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                                isSelected
-                                  ? "border-blue-500 bg-blue-500 text-white"
-                                  : "border-zinc-600 bg-zinc-900"
-                              }`}
-                            >
-                              {isSelected && <Check size={10} />}
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-semibold text-zinc-150 flex items-center justify-between">
-                                {api.name}
-                                <api.icon size={13} className="text-zinc-500" />
-                              </div>
-                              <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
-                                {api.desc}
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 5: DELIVERIES & GOALS */}
-                {currentStep === 5 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <p className="text-xs text-zinc-400 leading-relaxed">
-                      Assign sprint iterations and deployment launch targets to
-                      conclude the questionnaire.
-                    </p>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[11px] font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">
-                          Sprint Cadence Preset
-                        </label>
-                        <select
-                          value={formData.sprints}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              sprints: e.target.value,
-                            })
-                          }
-                          className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
-                        >
-                          <option value="">Ungrouped / Single Sprint</option>
-                          <option value="Sprint 1, Sprint 2, Polish">
-                            Short MVP (3 Sprints)
-                          </option>
-                          <option value="Sprint 1, Sprint 2, Sprint 3, Beta, Launch">
-                            Medium Standard (5 Sprints)
-                          </option>
-                          <option value="Week 1, Week 2, Week 3, Week 4">
-                            Weekly Iteration Cycles
-                          </option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">
-                          Primary Target Hosting Environment
-                        </label>
-                        <select
-                          value={formData.launchTarget}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              launchTarget: e.target.value,
-                            })
-                          }
-                          className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
-                        >
-                          <option value="">None specified</option>
-                          <option value="Vercel">Vercel (Hosting)</option>
-                          <option value="Google Cloud Run">
-                            Google Cloud Run (Containers)
-                          </option>
-                          <option value="Firebase Hosting">
-                            Firebase Hosting (Storage)
-                          </option>
-                          <option value="AWS">
-                            AWS Server Models (EC2 / ECS)
-                          </option>
-                          <option value="Cloudflare Pages">
-                            Cloudflare Pages (Static Edge)
-                          </option>
-                          <option value="Netlify">Netlify Core</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">
-                          Baseline Project Status
-                        </label>
-                        <select
-                          value={formData.status}
-                          onChange={(e: any) =>
-                            setFormData({ ...formData, status: e.target.value })
-                          }
-                          className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
-                        >
-                          <option value="Active">Active Design</option>
-                          <option value="Planning">Planning phase</option>
-                          <option value="Paused">Paused</option>
-                          <option value="Completed">Completed</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer Controls */}
-              <div className="p-4 bg-[#09090b]/60 flex items-center justify-between border-t border-zinc-800/80 shrink-0 rounded-b-xl">
-                <button
-                  type="button"
-                  disabled={currentStep === 1}
-                  onClick={() => setCurrentStep((prev) => prev - 1)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold select-none transition-colors ${
-                    currentStep === 1
-                      ? "text-zinc-650 cursor-not-allowed opacity-50"
-                      : "text-zinc-300 hover:text-white hover:bg-zinc-800"
-                  }`}
-                >
-                  <ChevronLeft size={14} /> Back
-                </button>
-
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((stepIndex) => (
-                    <div
-                      key={stepIndex}
-                      className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-                        currentStep === stepIndex
-                          ? "bg-blue-500 w-3"
-                          : "bg-zinc-700"
-                      }`}
-                    />
-                  ))}
+            <form onSubmit={handleUpdateProject} className="flex flex-col flex-1 min-h-0">
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                <div>
+                  <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                    Project Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    required
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
+                    placeholder="e.g. My Awesome App"
+                  />
                 </div>
 
-                {currentStep < 5 ? (
-                  <button
-                    type="button"
-                    disabled={currentStep === 1 && !formData.name}
-                    onClick={() => {
-                      if (currentStep === 1) {
-                        const normalizedRepoName = formData.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-                        setRepoCreationName(normalizedRepoName);
-                        setRepoCreationDesc(formData.description || 'DevSpace repository for ' + formData.name);
-                      }
-                      setCurrentStep((prev) => prev + 1);
-                    }}
-                    className={`flex items-center gap-1.5 px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded text-xs font-semibold transition-colors ${
-                      currentStep === 1 && !formData.name
-                        ? "opacity-50 cursor-not-allowed"
-                        : ""
-                    }`}
+                <div>
+                  <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                    Description
+                  </label>
+                  <textarea
+                    value={editFormData.description}
+                    onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors resize-none h-24"
+                    placeholder="Brief summary of project goals..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                    Linked GitHub Repository
+                  </label>
+                  <input
+                    value={editFormData.githubRepo}
+                    onChange={(e) => setEditFormData({ ...editFormData, githubRepo: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors font-mono"
+                    placeholder="e.g. user/repo-name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                    Project Status
+                  </label>
+                  <select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as any })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
                   >
-                    Next <ChevronRight size={14} />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!formData.name}
-                    className={`px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors shadow-lg shadow-blue-500/10 border border-blue-500/20 ${
-                      !formData.name ? "opacity-50 cursor-not-allowed" : ""
-                    }`}
-                  >
-                    Create Project
-                  </button>
-                )}
+                    <option value="Active">Active</option>
+                    <option value="Planning">Planning</option>
+                    <option value="Paused">Paused</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-zinc-950/80 border-t border-zinc-800/60 flex items-center justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEditingProject(null)}
+                  className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors border border-blue-500/20 shadow-md shadow-blue-500/10 cursor-pointer"
+                >
+                  Save Changes
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <ProjectStepper
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSubmit={(newProjData) => {
+          addProject(newProjData);
+          setShowModal(false);
+        }}
+        githubToken={githubToken}
+        githubUser={githubUser}
+        githubReposList={githubReposList}
+        setGithubReposList={setGithubReposList}
+        loadingRepos={loadingRepos}
+        onFetchRepos={handleOpenModal}
+      />
     </div>
   );
 }

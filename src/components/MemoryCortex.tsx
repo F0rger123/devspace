@@ -303,37 +303,258 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         return 18;
       }));
 
+    // 0. Inject beautiful custom SVG definitions (gradients and filters) for cinematic look
+    const defs = svg.append('defs');
+
+    // Create a powerful neon glow filter with dual bloom layers (tight core + atmospheric halo)
+    const glowFilter = defs.append('filter')
+      .attr('id', 'neon-glow-filter')
+      .attr('x', '-100%')
+      .attr('y', '-100%')
+      .attr('width', '300%')
+      .attr('height', '300%');
+    glowFilter.append('feGaussianBlur')
+      .attr('stdDeviation', '3.5')
+      .attr('result', 'glow1');
+    glowFilter.append('feGaussianBlur')
+      .attr('stdDeviation', '12')
+      .attr('result', 'glow2');
+    const feMerge = glowFilter.append('feMerge');
+    feMerge.append('feMergeNode').attr('in', 'glow2');
+    feMerge.append('feMergeNode').attr('in', 'glow1');
+    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    // Feint glow filter
+    const feintGlow = defs.append('filter')
+      .attr('id', 'feint-glow-filter')
+      .attr('x', '-50%')
+      .attr('y', '-50%')
+      .attr('width', '200%')
+      .attr('height', '200%');
+    feintGlow.append('feGaussianBlur')
+      .attr('stdDeviation', '3')
+      .attr('result', 'blur');
+    const feintMerge = feintGlow.append('feMerge');
+    feintMerge.append('feMergeNode').attr('in', 'blur');
+    feintMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    // Node radial gradients for gorgeous volumetric liquid feel!
+    // Core gold/yellow gradient
+    const coreGrad = defs.append('radialGradient')
+      .attr('id', 'grad-core')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    coreGrad.append('stop').attr('offset', '0%').attr('stop-color', '#ffffff').attr('stop-opacity', '1');
+    coreGrad.append('stop').attr('offset', '35%').attr('stop-color', '#fef206').attr('stop-opacity', '0.95');
+    coreGrad.append('stop').attr('offset', '70%').attr('stop-color', '#f59e0b').attr('stop-opacity', '0.6');
+    coreGrad.append('stop').attr('offset', '100%').attr('stop-color', '#78350f').attr('stop-opacity', '0.15');
+
+    // Satellite blue gradient (themed as Amber Gold Soft)
+    const satelliteBlueGrad = defs.append('radialGradient')
+      .attr('id', 'grad-satellite-blue')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    satelliteBlueGrad.append('stop').attr('offset', '0%').attr('stop-color', '#ffffff').attr('stop-opacity', '1');
+    satelliteBlueGrad.append('stop').attr('offset', '35%').attr('stop-color', '#fbbf24').attr('stop-opacity', '0.9');
+    satelliteBlueGrad.append('stop').attr('offset', '70%').attr('stop-color', '#d97706').attr('stop-opacity', '0.55');
+    satelliteBlueGrad.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', '0.12');
+
+    // Satellite amber gradient (themed as Sun Yellow Bright)
+    const satelliteAmberGrad = defs.append('radialGradient')
+      .attr('id', 'grad-satellite-amber')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    satelliteAmberGrad.append('stop').attr('offset', '0%').attr('stop-color', '#fffdf0').attr('stop-opacity', '1');
+    satelliteAmberGrad.append('stop').attr('offset', '35%').attr('stop-color', '#facc15').attr('stop-opacity', '0.9');
+    satelliteAmberGrad.append('stop').attr('offset', '70%').attr('stop-color', '#eab308').attr('stop-opacity', '0.55');
+    satelliteAmberGrad.append('stop').attr('offset', '100%').attr('stop-color', '#713f12').attr('stop-opacity', '0.12');
+
+    // Satellite green gradient (themed as Ivory Cream Glow)
+    const satelliteGreenGrad = defs.append('radialGradient')
+      .attr('id', 'grad-satellite-green')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    satelliteGreenGrad.append('stop').attr('offset', '0%').attr('stop-color', '#ffffff').attr('stop-opacity', '1');
+    satelliteGreenGrad.append('stop').attr('offset', '35%').attr('stop-color', '#fef08a').attr('stop-opacity', '0.9');
+    satelliteGreenGrad.append('stop').attr('offset', '70%').attr('stop-color', '#eab308').attr('stop-opacity', '0.55');
+    satelliteGreenGrad.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', '0.12');
+
+    // Satellite rose gradient (themed as Bronze Starbeam)
+    const satelliteRoseGrad = defs.append('radialGradient')
+      .attr('id', 'grad-satellite-rose')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    satelliteRoseGrad.append('stop').attr('offset', '0%').attr('stop-color', '#ffffff').attr('stop-opacity', '1');
+    satelliteRoseGrad.append('stop').attr('offset', '35%').attr('stop-color', '#fcd34d').attr('stop-opacity', '0.9');
+    satelliteRoseGrad.append('stop').attr('offset', '70%').attr('stop-color', '#d97706').attr('stop-opacity', '0.55');
+    satelliteRoseGrad.append('stop').attr('offset', '100%').attr('stop-color', '#451b03').attr('stop-opacity', '0.12');
+
+    // Satellite pink gradient (themed as Supernova Flare)
+    const satellitePinkGrad = defs.append('radialGradient')
+      .attr('id', 'grad-satellite-pink')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    satellitePinkGrad.append('stop').attr('offset', '0%').attr('stop-color', '#fffbeb').attr('stop-opacity', '1');
+    satellitePinkGrad.append('stop').attr('offset', '35%').attr('stop-color', '#fbbf24').attr('stop-opacity', '0.9');
+    satellitePinkGrad.append('stop').attr('offset', '70%').attr('stop-color', '#f97316').attr('stop-opacity', '0.55');
+    satellitePinkGrad.append('stop').attr('offset', '100%').attr('stop-color', '#431407').attr('stop-opacity', '0.12');
+
+    // Satellite cyan gradient (themed as Icy Silver Comet)
+    const satelliteCyanGrad = defs.append('radialGradient')
+      .attr('id', 'grad-satellite-cyan')
+      .attr('cx', '40%').attr('cy', '40%').attr('r', '60%');
+    satelliteCyanGrad.append('stop').attr('offset', '0%').attr('stop-color', '#ffffff').attr('stop-opacity', '1');
+    satelliteCyanGrad.append('stop').attr('offset', '35%').attr('stop-color', '#f3f4f6').attr('stop-opacity', '0.9');
+    satelliteCyanGrad.append('stop').attr('offset', '70%').attr('stop-color', '#9ca3af').attr('stop-opacity', '0.55');
+    satelliteCyanGrad.append('stop').attr('offset', '100%').attr('stop-color', '#1f2937').attr('stop-opacity', '0.12');
+
     // Add flowing style markers inside the SVG
     svg.select('style').remove();
     svg.append('style').text(`
       @keyframes dynamic-flow-path {
-         0% { stroke-dashoffset: 16; }
+         0% { stroke-dashoffset: 40; }
          100% { stroke-dashoffset: 0; }
       }
-      .flowing-link {
-         animation: dynamic-flow-path 0.8s linear infinite !important;
+      @keyframes star-twinkle {
+         0%, 100% { opacity: 0.15; transform: scale(0.85); }
+         50% { opacity: 0.95; transform: scale(1.3); }
+      }
+      @keyframes slow-rotate {
+         0% { transform: rotate(0deg); }
+         100% { transform: rotate(360deg); }
+      }
+      @keyframes slow-reverse-rotate {
+         0% { transform: rotate(360deg); }
+         100% { transform: rotate(0deg); }
+      }
+      @keyframes nebula-float-0 {
+         0% { transform: translate(0px, 0px) scale(1); }
+         100% { transform: translate(35px, -20px) scale(1.08); }
+      }
+      @keyframes nebula-float-1 {
+         0% { transform: translate(0px, 0px) scale(1.05); }
+         100% { transform: translate(-30px, 25px) scale(0.95); }
+      }
+      @keyframes orbit-pulse {
+         0%, 100% { opacity: 0.15; }
+         50% { opacity: 0.35; }
+      }
+      .flowing-laser-link {
+         animation: dynamic-flow-path 0.75s linear infinite !important;
+      }
+      .star {
+         transform-origin: center;
+      }
+      .nebula-cloud {
+         mix-blend-mode: screen;
+         transform-origin: center;
+      }
+      .orbit-ring {
+         transform-origin: center;
+         animation: orbit-pulse 5s ease-in-out infinite alternate;
       }
     `);
 
-    // Draw linking pathways
-    const link = zoomGroup.append('g')
-      .selectAll('line')
+    // 0.5 Render deep space background effects
+    const backdropsGroup = zoomGroup.append('g').attr('class', 'cosmic-backdrop').style('pointer-events', 'none');
+ 
+    // Create 120 twinkling stellar stars randomized across the 2.5D space coordinate map
+    const starsCount = 125;
+    for (let i = 0; i < starsCount; i++) {
+      const cx = (Math.random() * 2.2 - 0.6) * dimensions.width;
+      const cy = (Math.random() * 2.2 - 0.6) * dimensions.height;
+      const r = Math.random() * 1.5 + 0.35;
+      const twinkleDur = 2.4 + Math.random() * 4.2;
+      const twinkleDelay = Math.random() * 3.5;
+      
+      backdropsGroup.append('circle')
+        .attr('cx', cx)
+        .attr('cy', cy)
+        .attr('r', r)
+        .attr('fill', i % 5 === 0 ? '#fbbf24' : i % 5 === 1 ? '#ffffff' : i % 5 === 2 ? '#fef08a' : '#ffffff')
+        .attr('fill-opacity', 0.2 + Math.random() * 0.75)
+        .attr('class', 'star')
+        .style('transform-origin', `${cx}px ${cy}px`)
+        .style('animation', `star-twinkle ${twinkleDur}s infinite ease-in-out ${twinkleDelay}s`);
+    }
+ 
+    // Create custom blurry nebula clouds with float motions themed yellow and amber
+    const nebulas = [
+      { x: dimensions.width * 0.25, y: dimensions.height * 0.3, r: 280, color: '#eab308', opacity: 0.10 },
+      { x: dimensions.width * 0.75, y: dimensions.height * 0.45, r: 340, color: '#ca8a04', opacity: 0.08 },
+      { x: dimensions.width * 0.45, y: dimensions.height * 0.8, r: 240, color: '#facc15', opacity: 0.06 }
+    ];
+ 
+    nebulas.forEach((neb, idx) => {
+      const nebGrad = defs.append('radialGradient')
+        .attr('id', `nebula-grad-${idx}`)
+        .attr('cx', '50%').attr('cy', '50%').attr('r', '50%');
+      nebGrad.append('stop').attr('offset', '0%').attr('stop-color', neb.color).attr('stop-opacity', neb.opacity);
+      nebGrad.append('stop').attr('offset', '100%').attr('stop-color', '#000000').attr('stop-opacity', '0');
+ 
+      backdropsGroup.append('circle')
+        .attr('cx', neb.x)
+        .attr('cy', neb.y)
+        .attr('r', neb.r)
+        .attr('fill', `url(#nebula-grad-${idx})`)
+        .attr('class', 'nebula-cloud')
+        .style('animation', `nebula-float-${idx % 2} ${24 + idx * 8}s ease-in-out infinite alternate`);
+    });
+ 
+    // Cosmic orbit tracks center tracking around the central core node dynamically
+    const orbitGroup = zoomGroup.append('g').attr('class', 'orbit-tracks-container').style('pointer-events', 'none');
+    const orbitTracks = [
+      { r: 90, stroke: 'rgba(234, 179, 8, 0.22)', dash: '4, 10' },
+      { r: 180, stroke: 'rgba(251, 191, 36, 0.15)', dash: '6, 14' },
+      { r: 280, stroke: 'rgba(254, 240, 138, 0.10)', dash: '2, 6' },
+      { r: 380, stroke: 'rgba(255, 255, 255, 0.06)', dash: '8, 16' }
+    ];
+ 
+    const orbitRings = orbitTracks.map(o => {
+      return orbitGroup.append('circle')
+        .attr('fill', 'none')
+        .attr('stroke', o.stroke)
+        .attr('stroke-width', 0.85)
+        .attr('stroke-dasharray', o.dash)
+        .attr('class', 'orbit-ring')
+        .attr('r', o.r);
+    });
+ 
+    const linkGroup = zoomGroup.append('g').attr('class', 'links-group');
+ 
+    // 1. Cozy underlying fat glow lines
+    const glowLink = linkGroup
+      .selectAll('line.glow-link')
       .data(links)
       .join('line')
+      .attr('class', 'glow-link')
       .attr('stroke', d => {
          const src = d.source as SynapseNode;
          const tgt = d.target as SynapseNode;
-         if (src.type === 'core') return '#a855f7';
-         if (tgt.type === 'file') return '#60a5fa';
-         return '#27272a';
+         if (src.type === 'core') return '#fbbf24';
+         if (tgt.type === 'file') return '#ffffff';
+         return '#eab308';
       })
       .attr('stroke-width', d => {
          const src = d.source as SynapseNode;
-         return src.type === 'core' ? 2 : 1.5;
+         return src.type === 'core' ? 8 : 5;
       })
-      .attr('stroke-dasharray', '4,4')
-      .attr('class', 'flowing-link')
-      .attr('stroke-opacity', 0.6);
+      .attr('stroke-opacity', 0.22)
+      .attr('filter', 'url(#neon-glow-filter)');
+ 
+    // 2. Clear flowing laser foreground lines
+    const link = linkGroup
+      .selectAll('line.laser-link')
+      .data(links)
+      .join('line')
+      .attr('class', 'laser-link flowing-laser-link')
+      .attr('stroke', d => {
+         const src = d.source as SynapseNode;
+         const tgt = d.target as SynapseNode;
+         if (src.type === 'core') return '#fffbeb';
+         if (tgt.type === 'file') return '#ffffff';
+         return '#facc15';
+      })
+      .attr('stroke-width', d => {
+         const src = d.source as SynapseNode;
+         return src.type === 'core' ? 2.8 : 1.4;
+      })
+      .attr('stroke-opacity', 0.92)
+      .attr('stroke-dasharray', '6, 12');
 
     // Draw nodes wrappers
     const node = zoomGroup.append('g')
@@ -451,32 +672,76 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         });
       });
 
-    // Outer glow styling for highlighted state support
+    // Intense ambient glow auras
+    node.filter(d => d.type === 'core' || d.type === 'satellite')
+      .append('circle')
+      .attr('r', d => d.type === 'core' ? 38 : 25)
+      .attr('fill', 'none')
+      .attr('stroke', d => d.color)
+      .attr('stroke-width', d => d.type === 'core' ? 3.5 : 1.8)
+      .attr('stroke-opacity', 0.35)
+      .attr('filter', 'url(#neon-glow-filter)');
+
+    // Inner dashboard rotating dotted ring of Core
+    node.filter(d => d.type === 'core')
+      .append('circle')
+      .attr('r', 34)
+      .attr('fill', 'none')
+      .attr('stroke', '#ffffff')
+      .attr('stroke-width', 0.9)
+      .attr('stroke-opacity', 0.5)
+      .attr('stroke-dasharray', '3, 4')
+      .style('animation', 'slow-rotate 12s linear infinite')
+      .style('transform-origin', 'center');
+
+    // Outer dashboard rotating dotted ring of Core
+    node.filter(d => d.type === 'core')
+      .append('circle')
+      .attr('r', 46)
+      .attr('fill', 'none')
+      .attr('stroke', '#fbbf24')
+      .attr('stroke-width', 1.1)
+      .attr('stroke-opacity', 0.38)
+      .attr('stroke-dasharray', '14, 20')
+      .style('animation', 'slow-reverse-rotate 22s linear infinite')
+      .style('transform-origin', 'center');
+
+    // Wave ring pulse animation
     const pulseGlow = node.filter(d => d.type === 'core')
       .append('circle')
-      .attr('r', 38)
+      .attr('r', 44)
       .attr('fill', 'transparent')
-      .attr('stroke', '#a855f7')
+      .attr('stroke', '#fef08a')
       .attr('stroke-width', 2)
-      .attr('stroke-opacity', 0.5)
+      .attr('stroke-opacity', 0.6)
       .attr('class', 'animate-ping')
       .style('transform-origin', 'center');
 
-    // Render node representations (circles with neon glows)
+    // Render node representations (circles with custom physical gradients)
     node.append('circle')
       .attr('r', d => {
-        let baseR = d.type === 'core' ? 30 : d.type === 'satellite' ? 18 : 8;
+        let baseR = d.type === 'core' ? 24 : d.type === 'satellite' ? 14 : 7.5;
         if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
            return baseR * 1.35;
         }
         return baseR;
       })
-      .attr('fill', d => d.color)
-      .attr('fill-opacity', d => {
-        if (d.type === 'core') return 0.35;
-        if (d.type === 'satellite') return 0.25;
-        return 0.8;
+      .attr('fill', d => {
+        if (d.type === 'core') return 'url(#grad-core)';
+        if (d.type === 'satellite') {
+           if (d.color === '#a855f7' || d.color === '#8b5cf6') return 'url(#grad-core)';
+           if (d.color === '#3b82f6') return 'url(#grad-satellite-blue)';
+           if (d.color === '#f59e0b') return 'url(#grad-satellite-amber)';
+           if (d.color === '#10b981') return 'url(#grad-satellite-green)';
+           if (d.color === '#f43f5e') return 'url(#grad-satellite-rose)';
+           if (d.color === '#ec4899' || d.color === '#f472b6') return 'url(#grad-satellite-pink)';
+           if (d.color === '#06b6d4') return 'url(#grad-satellite-cyan)';
+        }
+        // File nodes look like glowing baby star cores
+        if (d.type === 'file') return '#ffffff';
+        return d.color;
       })
+      .attr('fill-opacity', d => d.type === 'file' ? 1 : 0.85)
       .attr('stroke', d => {
          if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
             return '#f59e0b';
@@ -487,16 +752,17 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
          if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
             return 3;
          }
-         return 1.5;
+         return d.type === 'core' ? 3 : d.type === 'satellite' ? 2 : 1.2;
       })
-      .attr('stroke-opacity', 0.9)
-      .attr('filter', d => d.type !== 'file' ? 'drop-shadow(0 0 6px currentColor)' : 'none');
+      .attr('stroke-opacity', 0.95)
+      .attr('filter', 'url(#feint-glow-filter)');
 
-    // Node icon/decorator indicators inside satellites or centers
+    // Node indicators inside satellites
     node.filter(d => d.type === 'core')
       .append('circle')
-      .attr('r', 6)
-      .attr('fill', '#c084fc');
+      .attr('r', 5.5)
+      .attr('fill', '#ffffff')
+      .attr('filter', 'url(#feint-glow-filter)');
 
     node.filter(d => d.type === 'satellite')
       .append('circle')
@@ -507,13 +773,18 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
     const textLabel = node.append('text')
       .text(d => d.name)
       .attr('x', d => {
-        if (d.type === 'core') return 36;
+        if (d.type === 'core') return 34;
         if (d.type === 'satellite') return 24;
         return 16;
       })
       .attr('y', 4)
       .attr('font-size', d => d.type === 'core' ? '12px' : d.type === 'satellite' ? '11px' : '10px')
-      .attr('fill', '#e4e4e7')
+      .attr('fill', d => {
+        if (d.type === 'core') return '#ffffff';
+        if (d.type === 'satellite') return '#fef08a';
+        return '#e4e4e7';
+      })
+      .attr('font-weight', d => d.type === 'core' ? 'bold' : '500')
       .attr('font-family', 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
       .style('pointer-events', 'none')
       .style('opacity', d => {
@@ -522,21 +793,22 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
          }
          return 0;
       })
-      .style('text-shadow', '0 1px 3px rgba(0,0,0,0.9)');
+      .style('text-shadow', '0 1px 8px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)');
 
     // Toggle label visibility & node scale on mouse actions smoothly
     node.on('mouseenter', function(event: any, d: any) {
-      d3.select(this).select('text').transition().duration(200).style('opacity', 1);
+      d3.select(this).select('text').transition().duration(250).style('opacity', 1);
       d3.select(this).select('circle')
-        .transition().duration(200)
+        .transition().duration(250)
         .attr('r', (nodeDatum: any) => {
-          let baseSize = nodeDatum.type === 'core' ? 38 : nodeDatum.type === 'satellite' ? 24 : 12;
+          let baseSize = nodeDatum.type === 'core' ? 30 : nodeDatum.type === 'satellite' ? 18 : 11;
           if (searchQuery && nodeDatum.name.toLowerCase().includes(searchQuery.toLowerCase())) {
              return baseSize * 1.35;
           }
           return baseSize;
         })
-        .attr('stroke-width', 3);
+        .attr('stroke-width', (nodeDatum: any) => nodeDatum.type === 'core' ? 4 : 2.8)
+        .attr('stroke-opacity', 1);
     })
     .on('mouseleave', function(event: any, d: any) {
       const isMatched = searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -544,15 +816,24 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       d3.select(this).select('circle')
         .transition().duration(200)
         .attr('r', (nodeDatum: any) => {
-          let baseSize = nodeDatum.type === 'core' ? 30 : nodeDatum.type === 'satellite' ? 18 : 8;
+          let baseSize = nodeDatum.type === 'core' ? 24 : nodeDatum.type === 'satellite' ? 14 : 7.5;
           if (isMatched) return baseSize * 1.35;
           return baseSize;
         })
-        .attr('stroke-width', isMatched ? 3 : 1.5);
+        .attr('stroke-width', (datum: any) => {
+           if (isMatched) return 3;
+           return datum.type === 'core' ? 3 : datum.type === 'satellite' ? 2 : 1.2;
+        });
     });
 
     // Dynamically update link/node positioning on simulation tick
     simulation.on('tick', () => {
+      glowLink
+        .attr('x1', (d: any) => d.source.x)
+        .attr('y1', (d: any) => d.source.y)
+        .attr('x2', (d: any) => d.target.x)
+        .attr('y2', (d: any) => d.target.y);
+
       link
         .attr('x1', (d: any) => d.source.x)
         .attr('y1', (d: any) => d.source.y)
@@ -560,6 +841,14 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         .attr('y2', (d: any) => d.target.y);
 
       node.attr('transform', (d: any) => `translate(${d.x}, ${d.y})`);
+
+      // Track Concentric Orbit Rings surrounding core node dynamically
+      const coreNode = nodes.find(n => n.id === 'core');
+      if (coreNode && coreNode.x !== undefined && coreNode.y !== undefined) {
+         orbitRings.forEach(ring => {
+            ring.attr('cx', coreNode.x!).attr('cy', coreNode.y!);
+         });
+      }
     });
 
     return () => {
@@ -568,22 +857,27 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
   }, [dimensions, searchQuery, projects, customMemories]);
 
   return (
-    <div className="absolute inset-0 flex flex-col xl:flex-row p-6 gap-6 overflow-hidden bg-[#0a0a0c]/85 animate-in fade-in duration-300 font-sans z-20">
+    <div className="absolute inset-0 flex flex-col xl:flex-row p-6 gap-6 overflow-hidden bg-[#07070a]/90 animate-in fade-in duration-300 font-sans z-20">
       
       {/* 1. OBSIDIAN-STYLE INTERACTIVE VISUAL SYNAPSE BRAIN */}
-      <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#121214]/65 rounded-xl p-4 overflow-hidden min-h-0 relative group">
-        <div className="flex items-center justify-between mb-2 shrink-0 z-10">
+      <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#0e0e11]/80 rounded-2xl p-5 overflow-hidden min-h-0 relative group shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+        <div className="flex items-center justify-between mb-3 shrink-0 z-10">
           <div className="flex items-center gap-2">
-            <Network size={14} className="text-purple-400 animate-pulse" />
+            <Network size={14} className="text-yellow-400 animate-pulse" />
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">Obsidian Synaptic Cortex</span>
           </div>
           <span className="text-[9px] text-zinc-500 font-mono">Hover nodes for labels / Click satellites to query</span>
         </div>
         
         {/* Interactive Node Graph Area - EXPANDED TO BE PHYSICALLY BIGGER FOR OBSIDIAN VIEW */}
-        <div ref={containerRef} className="flex-1 relative bg-[#09090b]/45 rounded-lg border border-zinc-800/60 overflow-hidden min-h-[580px]">
-          {/* Grid background lines */}
-          <div className="absolute inset-0 bg-[radial-gradient(#27272a_2px,transparent_2px)] [background-size:24px_24px] opacity-40" />
+        <div ref={containerRef} className="flex-1 relative bg-gradient-to-br from-[#020205] via-[#121002] to-[#010103] rounded-xl border border-zinc-800/80 overflow-hidden min-h-[580px] shadow-[inset_0_4px_40px_rgba(0,0,0,0.95)]">
+          {/* Constellation star grid lines */}
+          <div className="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:32px_32px] opacity-[0.09]" />
+          <div className="absolute inset-0 bg-[radial-gradient(#eab308_1px,transparent_1px)] [background-size:64px_64px] opacity-[0.08]" />
+          
+          {/* Ambient nebulous atmospheric sweeps */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(234,179,8,0.05)_0%,transparent_65%)] pointer-events-none" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_70%,rgba(234,179,8,0.04)_0%,transparent_60%)] pointer-events-none" />
           
           {/* Obsidian Search Box */}
           <div className="absolute top-4 left-4 z-30 flex items-center bg-zinc-950/90 hover:bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden backdrop-blur-md shadow-lg">
@@ -643,7 +937,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
             <p className="text-zinc-300"><strong className="text-zinc-100 font-semibold font-mono">🌌 AI Core Synapse:</strong> This is your workspace's high-level memory pool. It maps real-time user-focused code directives directly into upcoming code refinement prompts.</p>
           )}
           {selectedHighlightMemory === "Persona Config" && (
-            <p className="text-zinc-300"><strong className="text-blue-300 font-semibold font-mono">👤 Persona Config:</strong> Guides the core tone, behavior rules, and visual aesthetics of development agents (e.g., Scrum Master, Principal Architect).</p>
+            <p className="text-zinc-300"><strong className="text-yellow-400 font-semibold font-mono">👤 Persona Config:</strong> Guides the core tone, behavior rules, and visual aesthetics of development agents (e.g., Scrum Master, Principal Architect).</p>
           )}
           {selectedHighlightMemory === "Preferred Stack" && (
             <p className="text-zinc-300"><strong className="text-amber-400 font-semibold font-mono">🛠 Preferred Stack:</strong> Locks in framework defaults (React, TS, Tailwind CSS) to enforce architectural consistency across simple or complex views.</p>
@@ -668,12 +962,12 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
               if (matchedCortex) {
                 return (
                   <div className="text-zinc-300">
-                    <p><strong className="text-purple-400 font-semibold font-mono">🧠 {matchedCortex.name}:</strong> {cleanTextToPlainEnglish(matchedCortex.desc)}</p>
+                    <p><strong className="text-yellow-400 font-semibold font-mono">🧠 {matchedCortex.name}:</strong> {cleanTextToPlainEnglish(matchedCortex.desc)}</p>
                   </div>
                 );
               }
               if (matchedProj) {
-                return <p className="text-zinc-300"><strong className="text-violet-400 font-semibold font-mono">📁 {matchedProj.name} Workspace:</strong> {cleanTextToPlainEnglish(matchedProj.description)}</p>;
+                return <p className="text-zinc-300"><strong className="text-yellow-405 font-semibold font-mono">📁 {matchedProj.name} Workspace:</strong> {cleanTextToPlainEnglish(matchedProj.description)}</p>;
               }
               return <p className="text-zinc-500 italic font-mono select-none">No specific cortex overlay selected. Click on a satellite synapse to view cognitive context details.</p>;
             })()
@@ -686,7 +980,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <MemoryStick size={15} className="text-blue-400" />
+              <MemoryStick size={15} className="text-yellow-500" />
               <span className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Memory Rules Context</span>
             </div>
             <button
@@ -714,7 +1008,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                 ];
                 setAiContextRules(sortedLines.join('\n'));
               }}
-              className="text-[9px] bg-blue-950/40 hover:bg-blue-900/60 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 font-mono transition-all cursor-pointer flex items-center gap-1 self-start mt-0.5"
+              className="text-[9px] bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded border border-yellow-500/35 font-mono transition-all cursor-pointer flex items-center gap-1 self-start mt-0.5"
               title="Automatically organize & sort rules alphabetically"
               type="button"
             >
@@ -730,14 +1024,14 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         <textarea
           value={aiContextRules}
           onChange={(e) => setAiContextRules(e.target.value)}
-          className="flex-1 w-full bg-[#09090b]/85 border border-zinc-800 rounded-lg p-3 text-[12px] text-emerald-400 font-mono outline-none focus:border-blue-500/50 resize-none leading-relaxed custom-scrollbar animate-fade-in"
+          className="flex-1 w-full bg-[#09090b]/85 border border-zinc-800 rounded-lg p-3 text-[12px] text-emerald-400 font-mono outline-none focus:border-yellow-500/40 resize-none leading-relaxed custom-scrollbar animate-fade-in"
           placeholder={`Developer Persona & Tech Stack:\n- Developer prefers strict type-safety across all TSX components.\n- Always target Tailwind v4 inline utility styling...`}
         />
 
         {/* Dynamic Synaptic Node Creator Form */}
         <div className="my-3 pt-3.5 border-t border-zinc-800/65 shrink-0">
-          <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-             <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0"></span>
+          <h4 className="text-[10px] font-bold text-yellow-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+             <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0"></span>
              Create Custom Synaptic Node
           </h4>
           <div className="space-y-2">
@@ -746,7 +1040,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                 value={newMemoryName}
                 onChange={(e) => setNewMemoryName(e.target.value)}
                 placeholder="Memory Name (e.g., Auth Rules)"
-                className="w-full bg-[#09090b]/80 border border-zinc-800 rounded px-2.5 py-1.5 text-[11px] outline-none focus:border-purple-500/50 text-zinc-100 font-mono"
+                className="w-full bg-[#09090b]/80 border border-zinc-800 rounded px-2.5 py-1.5 text-[11px] outline-none focus:border-yellow-500/50 text-zinc-100 font-mono"
              />
              <div className="flex gap-2">
                 <input 
@@ -754,11 +1048,11 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                    value={newMemoryDesc}
                    onChange={(e) => setNewMemoryDesc(e.target.value)}
                    placeholder="Synaptic directive description..."
-                   className="flex-1 bg-[#09090b]/80 border border-zinc-800 rounded px-2.5 py-1.5 text-[11px] outline-none focus:border-purple-500/50 text-zinc-200 font-sans"
+                   className="flex-1 bg-[#09090b]/80 border border-zinc-800 rounded px-2.5 py-1.5 text-[11px] outline-none focus:border-yellow-500/50 text-zinc-200 font-sans"
                 />
                 <button
                    onClick={handleAddMemory}
-                   className="px-3.5 bg-purple-650 hover:bg-purple-600 text-white rounded text-[11px] font-semibold transition active:scale-95 flex items-center gap-1.5 shrink-0"
+                   className="px-3.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded text-[11px] font-bold transition active:scale-95 flex items-center gap-1.5 shrink-0"
                    type="button"
                 >
                    <Plus size={12} /> Spawn
@@ -794,7 +1088,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                   }}
                   className={`text-[10px] font-semibold px-2 py-1 rounded border transition-all ${
                     isAdded 
-                      ? 'bg-blue-500/10 border-blue-500/35 text-blue-400 hover:bg-blue-500/20' 
+                      ? 'bg-yellow-500/10 border-yellow-500/25 text-yellow-400 hover:bg-yellow-500/20' 
                       : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
                   }`}
                   type="button"
@@ -815,7 +1109,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         {/* Dynamic C-Synaptic Cortex Synapses list */}
         {cortexSynapses.length > 0 && (
           <div className="mt-4 pt-3 border-t border-zinc-800/60 shrink-0 flex-1 flex flex-col min-h-0 overflow-hidden">
-             <h4 className="text-[10px] font-bold text-[#a855f7] uppercase tracking-wider mb-2 flex items-center justify-between">
+             <h4 className="text-[10px] font-bold text-yellow-500 uppercase tracking-wider mb-2 flex items-center justify-between">
                 <span>Active C-Synapses (Click to Open)</span>
                 <span className="font-mono text-[8px] tracking-normal lowercase opacity-70">{cortexSynapses.length} registered</span>
              </h4>
@@ -824,12 +1118,12 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                    <button
                       key={s.id}
                       onClick={() => setSelectedDetailSynapse(s)}
-                      className="w-full text-left p-2 rounded bg-zinc-950/50 hover:bg-zinc-900 border border-zinc-900 hover:border-purple-500/20 transition-all text-[11px] group block"
+                      className="w-full text-left p-2 rounded bg-zinc-950/50 hover:bg-zinc-900 border border-zinc-900 hover:border-yellow-500/20 transition-all text-[11px] group block"
                       type="button"
                    >
-                      <div className="flex items-center justify-between font-mono font-medium text-zinc-300 group-hover:text-purple-300">
+                      <div className="flex items-center justify-between font-mono font-medium text-zinc-300 group-hover:text-yellow-405">
                          <span className="truncate max-w-[170px]">&gt; {s.name}</span>
-                         <span className="text-[8px] bg-purple-950/40 text-purple-400 py-0.5 px-1.5 rounded uppercase tracking-wider scale-90">{s.projectName || 'global'}</span>
+                         <span className="text-[8px] bg-yellow-950/40 text-yellow-505 py-0.5 px-1.5 rounded uppercase tracking-wider scale-90">{s.projectName || 'global'}</span>
                       </div>
                       <div className="text-[10px] text-zinc-500 line-clamp-1 mt-0.5">{s.desc}</div>
                    </button>
@@ -850,22 +1144,42 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         <div className="bg-[#09090b]/60 rounded-xl p-6 border border-zinc-800 shrink-0 flex flex-col items-center justify-center relative overflow-hidden mb-4">
           <div className="relative w-20 h-20 flex items-center justify-center z-10">
             {/* Pulses radiating from center */}
-            <AnimatePresence>
-              {(memoryVoiceActive || memoryAssistantSpeaking) && (
+            <AnimatePresence mode="popLayout">
+              {memoryVoiceActive || memoryAssistantSpeaking ? (
                 <>
                   <motion.div 
+                    key="active-p1"
                     initial={{ scale: 1, opacity: 0.6 }}
                     animate={{ scale: 2, opacity: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ repeat: Infinity, duration: 1.5, ease: "easeOut" }}
-                    className={`absolute inset-0 rounded-full ${memoryVoiceActive ? 'bg-red-500/20' : 'bg-[#a855f7]/20'}`}
+                    className={`absolute inset-0 rounded-full ${memoryVoiceActive ? 'bg-red-500/20' : 'bg-yellow-500/20'}`}
                   />
                   <motion.div 
+                    key="active-p2"
                     initial={{ scale: 1, opacity: 0.4 }}
                     animate={{ scale: 2.8, opacity: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ repeat: Infinity, duration: 2, ease: "easeOut", delay: 0.5 }}
-                    className={`absolute inset-0 rounded-full ${memoryVoiceActive ? 'bg-red-500/10' : 'bg-[#a855f7]/10'}`}
+                    className={`absolute inset-0 rounded-full ${memoryVoiceActive ? 'bg-red-500/10' : 'bg-yellow-500/10'}`}
+                  />
+                </>
+              ) : (
+                /* Always on Standby Radiator pulses - subtle, calm, and constant */
+                <>
+                  <motion.div 
+                    key="standby-p1"
+                    initial={{ scale: 1, opacity: 0.18 }}
+                    animate={{ scale: 1.6, opacity: 0 }}
+                    transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut" }}
+                    className="absolute inset-0 rounded-full bg-emerald-500/15"
+                  />
+                  <motion.div 
+                    key="standby-p2"
+                    initial={{ scale: 1, opacity: 0.1 }}
+                    animate={{ scale: 2.2, opacity: 0 }}
+                    transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut", delay: 1 }}
+                    className="absolute inset-0 rounded-full bg-emerald-500/5"
                   />
                 </>
               )}
@@ -878,7 +1192,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                 memoryVoiceActive 
                   ? 'bg-red-650 border-red-500 text-white animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
                   : memoryAssistantSpeaking 
-                  ? 'bg-purple-650 border-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]'
+                  ? 'bg-yellow-500 border-yellow-400 text-black shadow-[0_0_15px_rgba(234,179,8,0.4)] font-bold'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
               }`}
               type="button"
@@ -899,7 +1213,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
             {memoryVoiceActive ? (
               <span className="text-red-400 animate-pulse">Speak memory preference...</span>
             ) : memoryAssistantSpeaking ? (
-              <span className="text-purple-400 animate-pulse">Cortex speaking...</span>
+              <span className="text-yellow-400 animate-pulse">Cortex speaking...</span>
             ) : (
               "Click to dictate guidelines"
             )}
@@ -918,7 +1232,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                 <div className={`p-2.5 rounded-lg max-w-[85%] leading-relaxed ${
                   log.sender === 'user' 
                     ? 'bg-zinc-800 text-zinc-300 rounded-tr-none' 
-                    : 'bg-[#18181b] border border-zinc-800 text-purple-300 rounded-tl-none'
+                    : 'bg-[#18181b] border border-zinc-800 text-yellow-300 rounded-tl-none'
                 }`}>
                   {log.text}
                 </div>
@@ -941,14 +1255,14 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                 initial={{ scale: 0.95, y: 15 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.95, y: 15 }}
-                className="w-full max-w-2xl bg-[#0e0e11] border border-purple-500/30 rounded-2xl shadow-[0_0_50px_rgba(168,85,247,0.15)] overflow-hidden flex flex-col font-sans"
+                className="w-full max-w-2xl bg-[#0e0e11] border border-yellow-500/30 rounded-2xl shadow-[0_0_50px_rgba(234,179,8,0.10)] overflow-hidden flex flex-col font-sans"
              >
                 {/* Modal Header */}
-                <div className="p-4 bg-gradient-to-r from-purple-950/40 via-zinc-900 to-zinc-900 border-b border-zinc-800 flex items-center justify-between">
+                <div className="p-4 bg-gradient-to-r from-yellow-950/30 via-zinc-900 to-zinc-900 border-b border-zinc-800 flex items-center justify-between">
                    <div className="flex items-center gap-2">
-                      <span className="p-1.5 bg-purple-500/10 border border-purple-500/30 text-purple-400 rounded-lg">
-                         <Network size={16} />
-                      </span>
+                       <span className="p-1.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-405 rounded-lg">
+                          <Network size={16} />
+                       </span>
                       <div>
                          <h3 className="text-xs font-bold text-zinc-100 font-mono tracking-wide uppercase">C-Synapse Inspection</h3>
                          <p className="text-[9px] text-zinc-500 font-mono">ID: {selectedDetailSynapse.id}</p>
@@ -968,7 +1282,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                    {/* Name and Tag */}
                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                         <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-500/20 px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
+                         <span className="text-[9px] bg-yellow-950 text-yellow-300 border border-yellow-500/20 px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
                             {selectedDetailSynapse.type === 'dream_synapse' ? 'AI Dream Synopsis' : 'Cognitive Rule'}
                          </span>
                          {selectedDetailSynapse.projectName && (
@@ -1029,7 +1343,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                             alert('This rule is already present in your active rule context!');
                          }
                       }}
-                      className="text-xs font-semibold px-4 py-2 bg-gradient-to-r from-purple-650 to-indigo-650 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg shadow transition active:scale-95"
+                      className="text-xs font-bold px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black rounded-lg shadow transition active:scale-95"
                       type="button"
                    >
                       Promote to Rules Context

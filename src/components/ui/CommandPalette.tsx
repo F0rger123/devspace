@@ -136,16 +136,16 @@ export function CommandPalette() {
                          }
                          setCommandPaletteOpen(false);
                        }}
-                       className="w-full flex items-center px-3 py-2 rounded-[8px] hover:bg-blue-500/10 hover:text-blue-400 text-zinc-300 transition-colors group cursor-pointer text-left"
+                       className="w-full flex items-center px-3 py-2 rounded-[8px] hover:bg-yellow-500/10 hover:text-yellow-400 text-zinc-300 transition-colors group cursor-pointer text-left"
                      >
-                       <cmd.icon size={14} className="mr-3 text-zinc-500 group-hover:text-blue-400" />
+                       <cmd.icon size={14} className="mr-3 text-zinc-500 group-hover:text-yellow-400" />
                        <span className="text-xs font-medium">{cmd.name}</span>
                        {cmd.shortcut && (
                          <div className="ml-auto flex gap-1 items-center">
-                           <span className="text-[10px] text-zinc-500 group-hover:text-blue-400/70 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <span className="text-[10px] text-zinc-500 group-hover:text-yellow-400/70 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
                              <ArrowRight size={12}/>
                            </span>
-                           <kbd className="bg-[#09090b] group-hover:bg-blue-500/20 px-1.5 py-0.5 rounded text-[9px] uppercase font-mono border border-zinc-800 group-hover:border-blue-500/30 text-zinc-400 group-hover:text-blue-400">
+                           <kbd className="bg-[#09090b] group-hover:bg-yellow-500/15 px-1.5 py-0.5 rounded text-[9px] uppercase font-mono border border-zinc-800 group-hover:border-yellow-500/25 text-zinc-400 group-hover:text-yellow-400">
                              {cmd.shortcut}
                            </kbd>
                          </div>

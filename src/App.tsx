@@ -14,6 +14,7 @@ import { Assets } from './pages/Assets';
 import { IdeaExpansion } from './pages/IdeaExpansion';
 import { AgenticOS } from './pages/AgenticOS';
 import { WhatsAppCompanion } from './pages/WhatsAppCompanion';
+import { Automations } from './pages/Automations';
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/docs" element={<WorkspaceDocs />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
+          <Route path="/automations" element={<Automations />} />
           {/* Fallback for undefined routes */}
           <Route path="*" element={
             <div className="h-full flex items-center justify-center text-zinc-500 flex-col gap-4">

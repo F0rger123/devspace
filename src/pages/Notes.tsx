@@ -1,14 +1,24 @@
 import { useState } from 'react';
 import { useData } from '../context/DataProvider';
-import { FileText, Plus, Search, Tag, Image as ImageIcon, Trash, Save, Edit3, X, Sparkles, Loader2, Eye, Columns } from 'lucide-react';
+import { FileText, Plus, Search, Tag, Image as ImageIcon, Trash, Save, Edit3, X, Sparkles, Loader2, Eye, Columns, BrainCircuit, Check, CheckSquare, AlertCircle, RefreshCw, Lightbulb, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { analyzeAndCategorizeNote, CategorizationResult } from '../lib/categorize';
+import { NoteAnalysisPanel } from '../components/ui/NoteAnalysisPanel';
 
 export function Notes() {
-  const { notes, addNote, updateNote, deleteNote, activeProjectId, projects } = useData();
+  const { notes, addNote, updateNote, deleteNote, activeProjectId, projects, addIssue } = useData();
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Categorization & Semantic States
+  const [analysisResult, setAnalysisResult] = useState<CategorizationResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeRightPanel, setActiveRightPanel] = useState<'preview' | 'analysis'>('preview');
+  const [importedItems, setImportedItems] = useState<Record<string, boolean>>({});
+  const [activeEntityTab, setActiveEntityTab] = useState<'issues' | 'ideas' | 'tasks'>('tasks');
+  const [hasUnsyncedAnalysis, setHasUnsyncedAnalysis] = useState(false);
   
   // To handle form state
   const [title, setTitle] = useState('');
@@ -75,16 +85,46 @@ export function Notes() {
     setTitle('');
     setContent('');
     setTags('');
+    setAnalysisResult(null);
+    setActiveRightPanel('preview');
+    setImportedItems({});
   };
 
   const handleSelect = (id: string) => {
     setSelectedNoteId(id);
     setIsEditing(false);
+    setAnalysisResult(null);
+    setActiveRightPanel('preview');
+    setImportedItems({});
     const n = projectNotes.find(note => note.id === id);
     if (n) {
       setTitle(n.title);
       setContent(n.content);
       setTags(n.tags?.join(', ') || '');
+    }
+  };
+
+  const handleCategorize = async () => {
+    if (!content.trim() && !title.trim()) return;
+    setIsAnalyzing(true);
+    setActiveRightPanel('analysis');
+    setAnalysisResult(null);
+    setImportedItems({});
+    try {
+      const result = await analyzeAndCategorizeNote(title || 'Untitled Note', content || '');
+      setAnalysisResult(result);
+      if (result.category === 'Issues') {
+        setActiveEntityTab('issues');
+      } else if (result.category === 'Tasks') {
+        setActiveEntityTab('tasks');
+      } else {
+        setActiveEntityTab('ideas');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Aether neural connection timed out or is busy. Check console for details.');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -239,8 +279,17 @@ export function Notes() {
                       </button>
                     )}
                     <div className="w-px h-4 bg-zinc-800 mx-1"></div>
-                    {isEditing ? (
+                     {isEditing ? (
                       <div className="flex items-center gap-2">
+                        <button 
+                          onClick={handleCategorize} 
+                          disabled={isAnalyzing || (!content.trim() && !title.trim())}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-950/45 hover:bg-blue-900/60 disabled:opacity-40 text-blue-200 border border-blue-500/30 rounded text-xs font-medium transition-all"
+                          title="Parse raw text into predefined Issues, Ideas, or Tasks automatically using Aether Semantic analysis"
+                        >
+                          {isAnalyzing ? <Loader2 size={13} className="animate-spin" /> : <BrainCircuit size={13} className="text-blue-400" />}
+                          {analysisResult ? 'Re-Analyze Note' : 'Semantic Categorize'}
+                        </button>
                         <button 
                           onClick={handleAiImprove} 
                           disabled={aiLoading || !content.trim()}
@@ -255,14 +304,22 @@ export function Notes() {
                         </button>
                       </div>
                     ) : (
-                      <>
+                      <div className="flex items-center">
+                        <button 
+                          onClick={handleCategorize} 
+                          disabled={isAnalyzing || (!selectedNote?.content.trim() && !selectedNote?.title.trim())}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/40 hover:bg-blue-800/50 text-blue-200 rounded text-xs font-medium transition-colors border border-blue-500/30 mr-2"
+                        >
+                          {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} className="text-blue-400" />}
+                          {analysisResult ? 'Show Analysis' : 'Analyze Note'}
+                        </button>
                         <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-xs font-medium transition-colors border border-zinc-700">
                           <Edit3 size={14} /> Edit
                         </button>
-                        <button onClick={handleDelete} className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors bg-zinc-900 border border-zinc-800 rounded ml-1">
+                        <button onClick={handleDelete} className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors bg-zinc-900 border border-zinc-800 rounded ml-2">
                           <Trash size={14} />
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -291,34 +348,145 @@ export function Notes() {
                         />
                       </div>
 
-                      {/* Right: Markdown live preview */}
+                      {/* Right: Markdown live preview / Semantic Insights */}
                       {showSplit && (
-                        <div className="flex-1 pl-4 overflow-y-auto custom-scrollbar min-h-[300px] border-t md:border-t-0 border-zinc-850 mt-4 md:mt-0 pt-4 md:pt-0">
-                          <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-3">Live Presentation Match</div>
-                          <div className="prose prose-invert prose-xs max-w-none prose-headings:text-zinc-300 prose-p:text-zinc-400 prose-code:text-emerald-400 prose-pre:bg-[#0c0c0e]/50 prose-pre:border prose-pre:border-zinc-800/20">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {content || '*Start writing to preview styles.*'}
-                            </ReactMarkdown>
+                        <div className="flex-1 pl-4 flex flex-col min-h-[300px] border-t md:border-t-0 border-zinc-850 mt-4 md:mt-0 pt-4 md:pt-0 max-h-full overflow-hidden">
+                          {/* Tabs Header */}
+                          <div className="flex items-center justify-between border-b border-zinc-850 pb-2 mb-3 shrink-0">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setActiveRightPanel('preview')}
+                                className={`text-[10px] uppercase font-black tracking-widest px-2.5 py-1 rounded text-xs transition-all ${
+                                  activeRightPanel === 'preview' 
+                                    ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' 
+                                    : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+                                }`}
+                              >
+                                Live Presentation
+                              </button>
+                              <button
+                                onClick={() => setActiveRightPanel('analysis')}
+                                className={`text-[10px] uppercase font-black tracking-widest px-2.5 py-1 rounded text-xs transition-all flex items-center gap-1 border ${
+                                  activeRightPanel === 'analysis' 
+                                    ? 'text-purple-400 bg-purple-500/10 border-purple-500/20' 
+                                    : 'text-zinc-500 hover:text-zinc-350 border-transparent'
+                                }`}
+                              >
+                                <span>Aether Insights</span>
+                                {(analysisResult || isAnalyzing) && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Tab Content */}
+                          <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 flex flex-col">
+                            {activeRightPanel === 'preview' ? (
+                              <div className="prose prose-invert prose-xs max-w-none prose-headings:text-zinc-300 prose-p:text-zinc-400 prose-code:text-emerald-400 prose-pre:bg-[#0c0c0e]/50 prose-pre:border prose-pre:border-zinc-800/20">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {content || '*Start writing to preview styles.*'}
+                                </ReactMarkdown>
+                              </div>
+                            ) : (
+                              <NoteAnalysisPanel
+                                analysisResult={analysisResult}
+                                isAnalyzing={isAnalyzing}
+                                currentTitle={title}
+                                currentTagsRaw={tags}
+                                onApplyTitle={(newTitle) => setTitle(newTitle)}
+                                onApplyTags={(newTags) => {
+                                  const currentTagsArray = tags.split(',').map(t => t.trim()).filter(t => t);
+                                  const mergedSet = new Set([...currentTagsArray, ...newTags]);
+                                  setTags(Array.from(mergedSet).join(', '));
+                                }}
+                                onAddIssueToBacklog={(item) => {
+                                  if (!activeProjectId) return;
+                                  addIssue({
+                                    projectId: activeProjectId,
+                                    title: item.title,
+                                    description: item.description,
+                                    type: item.type,
+                                    status: 'Todo',
+                                    priority: item.priority
+                                  });
+                                }}
+                              />
+                            )}
                           </div>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="p-6">
-                      {selectedNote?.tags && selectedNote.tags.length > 0 && (
-                        <div className="flex gap-2 mb-6">
-                          {selectedNote.tags.map((t, idx) => (
-                             <span key={idx} className="text-[10px] rounded-md bg-zinc-900 border border-zinc-800 text-blue-400 px-2 py-1 flex items-center gap-1 font-medium">
-                               <Tag size={10} className="opacity-70"/> {t}
-                             </span>
-                          ))}
+                    <div className="flex-1 flex flex-col md:flex-row min-h-0 divide-y md:divide-y-0 md:divide-x divide-zinc-800 p-6 gap-6 overflow-y-auto">
+                      {/* Left: Rendered Markdown */}
+                      <div className="flex-1 overflow-y-auto max-h-full">
+                        {selectedNote?.tags && selectedNote.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-6">
+                            {selectedNote.tags.map((t, idx) => (
+                               <span key={idx} className="text-[10px] rounded-md bg-zinc-900 border border-zinc-800 text-blue-400 px-2 py-1 flex items-center gap-1 font-medium">
+                                 <Tag size={10} className="opacity-70"/> {t}
+                               </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="prose prose-invert prose-sm max-w-none prose-headings:text-zinc-200 prose-p:text-zinc-400 prose-a:text-blue-400 prose-code:text-emerald-400 prose-pre:bg-[#0c0c0e] prose-pre:border prose-pre:border-zinc-800/50">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {selectedNote?.content || '*No content.*'}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
+
+                      {/* Right: Analysis Panel (Only if analyzing or result exists) */}
+                      {(analysisResult || isAnalyzing) && (
+                        <div className="flex-1 pl-4 flex flex-col max-h-full overflow-hidden min-h-[300px] border-t md:border-t-0 border-zinc-850 mt-4 md:mt-0 pt-4 md:pt-0">
+                          <div className="flex items-center justify-between border-b border-zinc-850 pb-2 mb-3 shrink-0">
+                            <span className="text-[10px] uppercase font-black text-zinc-405 tracking-widest flex items-center gap-1.5">
+                              <BrainCircuit size={13} className="text-blue-400" /> Aether Cognitive Hub
+                            </span>
+                            <button 
+                              onClick={() => {
+                                setAnalysisResult(null);
+                                setImportedItems({});
+                              }}
+                              className="text-zinc-500 hover:text-zinc-350 transition-colors p-1"
+                              title="Close Insights"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                          
+                          <NoteAnalysisPanel
+                            analysisResult={analysisResult}
+                            isAnalyzing={isAnalyzing}
+                            currentTitle={selectedNote?.title || ''}
+                            currentTagsRaw={selectedNote?.tags?.join(', ') || ''}
+                            onApplyTitle={(newTitle) => {
+                              if (selectedNoteId) {
+                                updateNote(selectedNoteId, { title: newTitle });
+                              }
+                            }}
+                            onApplyTags={(newTags) => {
+                              if (selectedNoteId) {
+                                const currentTagsArray = selectedNote?.tags || [];
+                                const mergedSet = new Set([...currentTagsArray, ...newTags]);
+                                updateNote(selectedNoteId, { tags: Array.from(mergedSet) });
+                              }
+                            }}
+                            onAddIssueToBacklog={(item) => {
+                              if (!activeProjectId) return;
+                              addIssue({
+                                projectId: activeProjectId,
+                                title: item.title,
+                                description: item.description,
+                                type: item.type,
+                                status: 'Todo',
+                                priority: item.priority
+                              });
+                            }}
+                          />
                         </div>
                       )}
-                      <div className="prose prose-invert prose-sm max-w-none prose-headings:text-zinc-200 prose-p:text-zinc-400 prose-a:text-blue-400 prose-code:text-emerald-400 prose-pre:bg-[#0c0c0e] prose-pre:border prose-pre:border-zinc-800/50">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {selectedNote?.content || '*No content.*'}
-                        </ReactMarkdown>
-                      </div>
                     </div>
                   )}
                 </div>

@@ -1,15 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Global Systematic Color Mapping to Yellow/Amber/Gold Accent Structure */
+  --color-blue-50: #fffbeb;
+  --color-blue-100: #fef3c7;
+  --color-blue-200: #fde68a;
+  --color-blue-300: #fcd34d;
+  --color-blue-400: #fbbf24;
+  --color-blue-500: #f59e0b;
+  --color-blue-600: #d97706;
+  --color-blue-700: #b45309;
+  --color-blue-800: #92400e;
+  --color-blue-900: #78350f;
+  --color-blue-950: #451a03;
+
+  --color-indigo-50: #fffbeb;
+  --color-indigo-100: #fef3c7;
+  --color-indigo-200: #fde68a;
+  --color-indigo-300: #fcd34d;
+  --color-indigo-400: #fbbf24;
+  --color-indigo-500: #f59e0b;
+  --color-indigo-600: #d97706;
+  --color-indigo-700: #b45309;
+  --color-indigo-800: #92400e;
+  --color-indigo-900: #78350f;
+  --color-indigo-950: #451a03;
+
+  --color-purple-50: #fffbeb;
+  --color-purple-100: #fef3c7;
+  --color-purple-200: #fde68a;
+  --color-purple-300: #fcd34d;
+  --color-purple-400: #fbbf24;
+  --color-purple-500: #f59e0b;
+  --color-purple-600: #d97706;
+  --color-purple-700: #b45309;
+  --color-purple-800: #92400e;
+  --color-purple-900: #78350f;
+  --color-purple-950: #451a03;
+
+  /* Unify all emerald variables to amber and gold colors */
+  --color-emerald-50: #fffbeb;
+  --color-emerald-100: #fef3c7;
+  --color-emerald-200: #fde68a;
+  --color-emerald-300: #fcd34d;
+  --color-emerald-400: #fbbf24;
+  --color-emerald-500: #f59e0b;
+  --color-emerald-600: #d97706;
+  --color-emerald-700: #b45309;
+  --color-emerald-800: #92400e;
+  --color-emerald-900: #78350f;
+  --color-emerald-950: #451a03;
+
+  /* Remap all slate variables to clean space charcoals & true blacks, removing all navy-blue tint */
+  --color-slate-50: #fbfbfa;
+  --color-slate-100: #f4f4f5;
+  --color-slate-200: #e4e4e7;
+  --color-slate-300: #d4d4d8;
+  --color-slate-400: #a1a1aa;
+  --color-slate-500: #71717a;
+  --color-slate-600: #52525b;
+  --color-slate-700: #3f3f46;
+  --color-slate-800: #27272a;
+  --color-slate-850: #1c1c1f;
+  --color-slate-900: #121214;
+  --color-slate-950: #050507;
 }
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
   }
 
   .dark {
@@ -18,8 +84,60 @@
   }
 }
 
+@keyframes starry-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.95); }
+  50% { opacity: 0.95; transform: scale(1.05); }
+}
+
+@keyframes nebula-drift {
+  0% { transform: translate(0px, 0px) rotate(0deg) scale(1.0); }
+  33% { transform: translate(80px, -60px) rotate(120deg) scale(1.25); }
+  66% { transform: translate(-60px, 90px) rotate(240deg) scale(0.85); }
+  100% { transform: translate(0px, 0px) rotate(360deg) scale(1.0); }
+}
+
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.9); }
+  50% { opacity: 0.75; transform: scale(1.15); }
+}
+
+@keyframes background-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-space-nebula {
+  animation: nebula-drift 28s infinite ease-in-out;
+}
+
+.animate-space-star {
+  animation: star-twinkle 6s infinite ease-in-out;
+}
+
+.starry-background {
+  background: 
+    radial-gradient(ellipse at center, rgba(18, 14, 2, 0.45) 0%, rgba(3, 3, 5, 0.99) 100%),
+    radial-gradient(1.5px 1.5px at 20px 30px, #ffffff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 40px 70px, #eab308, rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 90px 110px, #ffffff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 150px 170px, #eab308, rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 160% 160%, 250px 250px, 300px 300px, 200px 200px, 350px 350px;
+  animation: background-pan 30s infinite ease-in-out;
+}
+
+html, body, #root {
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #030305;
+}
+
 html {
-  @apply bg-[#0a0a0a] text-zinc-200;
+  @apply text-zinc-200;
   color-scheme: dark;
 }
 
@@ -46,3 +164,41 @@ html {
     scrollbar-width: none;
   }
 }
+
+@keyframes ember-rise-up {
+  0% {
+    transform: translateY(105vh) translateX(0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(50vh) translateX(25px) scale(1);
+    opacity: 0.45;
+  }
+  80% {
+    opacity: 0.15;
+  }
+  100% {
+    transform: translateY(-10vh) translateX(-20px) scale(0.4);
+    opacity: 0;
+  }
+}
+
+.animate-ember-1 {
+  animation: ember-rise-up 18s infinite linear;
+}
+.animate-ember-2 {
+  animation: ember-rise-up 24s infinite linear;
+}
+.animate-ember-3 {
+  animation: ember-rise-up 28s infinite linear;
+}
+.animate-ember-4 {
+  animation: ember-rise-up 15s infinite linear;
+}
+.animate-ember-5 {
+  animation: ember-rise-up 21s infinite linear;
+}
+

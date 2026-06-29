@@ -26,6 +26,8 @@ import {
   FileUp,
   Sparkles,
   Loader2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useMemo, useEffect } from "react";
@@ -69,6 +71,15 @@ const getPriorityBadge = (priority: string) => {
   }
 };
 
+function getDescendantIds(issueId: string, allIssues: any[]): string[] {
+  const children = allIssues.filter((i) => i.parentId === issueId);
+  let descendants = children.map((c) => c.id);
+  for (const child of children) {
+    descendants = [...descendants, ...getDescendantIds(child.id, allIssues)];
+  }
+  return descendants;
+}
+
 export function Issues() {
   const {
     projects,
@@ -83,6 +94,7 @@ export function Issues() {
   } = useData();
   const [searchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [showModal, setShowModal] = useState(false);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(
@@ -91,6 +103,7 @@ export function Issues() {
   const [activeIssueId, setActiveIssueId] = useState<string | null>(
     searchParams.get("issueId") || null,
   );
+  const [newSubTaskTitle, setNewSubTaskTitle] = useState("");
 
   const [showAICommander, setShowAICommander] = useState(false);
   const [aiCommanderInput, setAiCommanderInput] = useState("");
@@ -458,6 +471,7 @@ Example:
     labels: "",
     bugEnvironment: "",
     crashLogs: "",
+    parentId: "",
   });
 
   const urlSearch = searchParams.get("search") || "";
@@ -534,6 +548,37 @@ Example:
     filterPhase,
   ]);
 
+  const roots = useMemo(() => {
+    return activeIssues.filter(
+      (i) => !i.parentId || !activeIssues.some((p) => p.id === i.parentId)
+    );
+  }, [activeIssues]);
+
+  const visibleIssuesWithDepth = useMemo(() => {
+    const list: { issue: any; depth: number }[] = [];
+
+    function traverse(issueId: string, depth: number) {
+      const issue = activeIssues.find((i) => i.id === issueId);
+      if (!issue) return;
+
+      list.push({ issue, depth });
+
+      const isExpanded = expandedIds[issue.id] !== false;
+      if (isExpanded) {
+        const children = activeIssues.filter((i) => i.parentId === issue.id);
+        children.forEach((child) => {
+          traverse(child.id, depth + 1);
+        });
+      }
+    }
+
+    roots.forEach((root) => {
+      traverse(root.id, 0);
+    });
+
+    return list;
+  }, [activeIssues, roots, expandedIds]);
+
   const activePhases = useMemo(() => {
     return phases.filter((p) => p.projectId === activeProjectId);
   }, [phases, activeProjectId]);
@@ -604,6 +649,7 @@ Example:
             .map((l) => l.trim())
             .filter((l) => l)
         : undefined,
+      parentId: formData.parentId || undefined,
     });
     setShowModal(false);
     setFormData({
@@ -622,6 +668,7 @@ Example:
       labels: "",
       bugEnvironment: "",
       crashLogs: "",
+      parentId: "",
     });
   };
 
@@ -1119,147 +1166,195 @@ Example:
                 )}
               </div>
               <div className="flex-1 overflow-y-auto">
-                {activeIssues.map((issue, i) => (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    key={issue.id}
-                    onClick={() => setActiveIssueId(issue.id)}
-                    className={`flex items-center px-4 py-2.5 border-b border-zinc-800/80 hover:bg-[#18181b] transition-colors group cursor-pointer ${selectedIssueIds.has(issue.id) ? "bg-[#18181b]" : ""} ${activeIssueId === issue.id ? "bg-[#1c1c1f] border-l-2 border-l-blue-500 pl-[14px]" : ""}`}
-                  >
-                    <button
-                      onClick={(e) => toggleSelect(issue.id, e)}
-                      className="mr-4 group/box shrink-0"
+                {visibleIssuesWithDepth.map(({ issue, depth }, i) => {
+                  const children = activeIssues.filter((c) => c.parentId === issue.id);
+                  const hasChildren = children.length > 0;
+                  const isExpanded = expandedIds[issue.id] !== false;
+
+                  const basePaddingLeft = activeIssueId === issue.id ? 14 : 16;
+                  const pl = basePaddingLeft + depth * 20;
+
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.03 }}
+                      key={issue.id}
+                      onClick={() => setActiveIssueId(issue.id)}
+                      className={`relative flex items-center py-2.5 border-b border-zinc-800/80 hover:bg-[#18181b] transition-all group cursor-pointer ${selectedIssueIds.has(issue.id) ? "bg-[#18181b]" : ""} ${activeIssueId === issue.id ? "bg-[#1c1c1f] border-l-2 border-l-blue-500 pl-[14px]" : ""}`}
+                      style={{ paddingLeft: `${pl}px`, paddingRight: "16px" }}
                     >
-                      {selectedIssueIds.has(issue.id) ? (
-                        <CheckSquare size={14} className="text-blue-500" />
-                      ) : (
-                        <Square
-                          size={14}
-                          className="text-zinc-600 group-hover/box:text-zinc-400 transition-colors"
+                      {/* Visual tree guide lines */}
+                      {depth > 0 && Array.from({ length: depth }).map((_, dIdx) => (
+                        <div
+                          key={dIdx}
+                          className="absolute top-0 bottom-0 border-l border-zinc-800/40"
+                          style={{ left: `${16 + dIdx * 20 + 8}px` }}
                         />
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateIssue(issue.id, {
-                          status: issue.status === "Done" ? "Todo" : "Done",
-                        });
-                      }}
-                      className="shrink-0 mr-4 cursor-pointer"
-                    >
-                      {issue.status === "Done" ? (
-                        <CheckCircle2 size={14} className="text-emerald-500" />
-                      ) : issue.status === "In Progress" ? (
-                        <Circle
-                          size={14}
-                          className="text-blue-400 fill-blue-400/20"
-                        />
-                      ) : (
-                        <Circle
-                          size={14}
-                          className="text-zinc-600 hover:text-zinc-400 transition-colors"
-                        />
-                      )}
-                    </button>
-                    <div className="w-16 text-[10px] font-mono text-zinc-500 group-hover:text-blue-400/70 transition-colors shrink-0">
-                      #{issue.id.slice(0, 5)}
-                    </div>
-                    <div className="flex-1 min-w-0 pr-4 flex items-center gap-2">
-                      <span
-                        className={`text-xs font-medium truncate flex items-center gap-1.5 ${issue.status === "Done" ? "text-zinc-500 line-through" : "text-zinc-200"}`}
+                      ))}
+
+                      {/* Expand/Collapse Chevron */}
+                      <div className="w-5 h-5 flex items-center justify-center shrink-0 mr-1">
+                        {hasChildren ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedIds((prev) => ({
+                                ...prev,
+                                [issue.id]: !isExpanded,
+                              }));
+                            }}
+                            className="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown size={11} />
+                            ) : (
+                              <ChevronRight size={11} />
+                            )}
+                          </button>
+                        ) : depth > 0 ? (
+                          <div className="w-1.5 h-1.5 rounded-full bg-zinc-700/50" />
+                        ) : null}
+                      </div>
+
+                      <button
+                        onClick={(e) => toggleSelect(issue.id, e)}
+                        className="mr-3 group/box shrink-0"
                       >
-                        {issue.type === "Bug" && (
-                          <BugIcon
-                            size={12}
-                            className="text-rose-400 shrink-0"
+                        {selectedIssueIds.has(issue.id) ? (
+                          <CheckSquare size={14} className="text-blue-500" />
+                        ) : (
+                          <Square
+                            size={14}
+                            className="text-zinc-600 group-hover/box:text-zinc-400 transition-colors"
                           />
                         )}
-                        {issue.type === "Feature" && (
-                          <Zap size={12} className="text-blue-400 shrink-0" />
-                        )}
-                        {issue.title}
-                      </span>
-                      {issue.phaseId && (
-                        <span className="shrink-0 text-[10px] bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-zinc-400">
-                          {phases.find((p) => p.id === issue.phaseId)?.name ||
-                            "Unknown Phase"}
-                        </span>
-                      )}
-                      {issue.sprintId && (
-                        <span className="shrink-0 text-[10px] bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-zinc-300 flex items-center gap-1 truncate max-w-[100px]">
-                          <Disc size={10} />{" "}
-                          {activeSprints.find((s) => s.id === issue.sprintId)
-                            ?.name || "Unknown Sprint"}
-                        </span>
-                      )}
-                      {issue.assignee && (
-                        <span
-                          className="shrink-0 text-[10px] bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-zinc-500 flex items-center gap-1"
-                          title="Assignee"
-                        >
-                          <User size={10} /> {issue.assignee}
-                        </span>
-                      )}
-                      {issue.storyPoints !== undefined && (
-                        <span
-                          className="shrink-0 text-[10px] text-amber-500/80 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
-                          title="Estimate"
-                        >
-                          <Hash size={10} /> {issue.storyPoints}
-                        </span>
-                      )}
-                      {issue.dueDate && (
-                        <span
-                          className="shrink-0 text-[10px] text-pink-500/80 bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
-                          title="Due Date"
-                        >
-                          <CalendarIcon size={10} /> {issue.dueDate}
-                        </span>
-                      )}
-                      {issue.recurrenceRule && (
-                        <span
-                          className="shrink-0 text-[10px] text-indigo-400/80 bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
-                          title="Recurring"
-                        >
-                          <Columns size={10} /> {issue.recurrenceRule}
-                        </span>
-                      )}
-                      {issue.dependencyIds &&
-                        issue.dependencyIds.length > 0 && (
-                          <span
-                            className="shrink-0 text-[10px] text-rose-500/80 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
-                            title="Blocked By"
-                          >
-                            <LinkIcon size={10} /> {issue.dependencyIds.length}
-                          </span>
-                        )}
-                      {issue.labels?.map((lbl) => (
-                        <span
-                          key={lbl}
-                          className="shrink-0 text-[9px] text-blue-400/80 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded-full"
-                        >
-                          {lbl}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-4 w-32 shrink-0 justify-end">
-                      {getPriorityBadge(issue.priority)}
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          deleteIssue(issue.id);
+                          updateIssue(issue.id, {
+                            status: issue.status === "Done" ? "Todo" : "Done",
+                          });
                         }}
-                        className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="shrink-0 mr-3 cursor-pointer"
                       >
-                        <Trash size={14} />
+                        {issue.status === "Done" ? (
+                          <CheckCircle2 size={14} className="text-emerald-500" />
+                        ) : issue.status === "In Progress" ? (
+                          <Circle
+                            size={14}
+                            className="text-blue-400 fill-blue-400/20"
+                          />
+                        ) : (
+                          <Circle
+                            size={14}
+                            className="text-zinc-600 hover:text-zinc-400 transition-colors"
+                          />
+                        )}
                       </button>
-                    </div>
-                  </motion.div>
-                ))}
+                      <div className="w-16 text-[10px] font-mono text-zinc-500 group-hover:text-blue-400/70 transition-colors shrink-0">
+                        #{issue.id.slice(0, 5)}
+                      </div>
+                      <div className="flex-1 min-w-0 pr-4 flex items-center gap-2">
+                        <span
+                          className={`text-xs font-medium truncate flex items-center gap-1.5 ${issue.status === "Done" ? "text-zinc-500 line-through" : "text-zinc-200"}`}
+                        >
+                          {issue.type === "Bug" && (
+                            <BugIcon
+                              size={12}
+                              className="text-rose-400 shrink-0"
+                            />
+                          )}
+                          {issue.type === "Feature" && (
+                            <Zap size={12} className="text-blue-400 shrink-0" />
+                          )}
+                          {issue.title}
+                        </span>
+                        {hasChildren && (
+                          <span className="shrink-0 text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1 py-0.5 rounded">
+                            {children.filter(c => c.status === "Done").length}/{children.length} sub-tasks
+                          </span>
+                        )}
+                        {issue.phaseId && (
+                          <span className="shrink-0 text-[10px] bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-zinc-400">
+                            {phases.find((p) => p.id === issue.phaseId)?.name ||
+                              "Unknown Phase"}
+                          </span>
+                        )}
+                        {issue.sprintId && (
+                          <span className="shrink-0 text-[10px] bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-zinc-300 flex items-center gap-1 truncate max-w-[100px]">
+                            <Disc size={10} />{" "}
+                            {activeSprints.find((s) => s.id === issue.sprintId)
+                              ?.name || "Unknown Sprint"}
+                          </span>
+                        )}
+                        {issue.assignee && (
+                          <span
+                            className="shrink-0 text-[10px] bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded text-zinc-500 flex items-center gap-1"
+                            title="Assignee"
+                          >
+                            <User size={10} /> {issue.assignee}
+                          </span>
+                        )}
+                        {issue.storyPoints !== undefined && (
+                          <span
+                            className="shrink-0 text-[10px] text-amber-500/80 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
+                            title="Estimate"
+                          >
+                            <Hash size={10} /> {issue.storyPoints}
+                          </span>
+                        )}
+                        {issue.dueDate && (
+                          <span
+                            className="shrink-0 text-[10px] text-pink-500/80 bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
+                            title="Due Date"
+                          >
+                            <CalendarIcon size={10} /> {issue.dueDate}
+                          </span>
+                        )}
+                        {issue.recurrenceRule && (
+                          <span
+                            className="shrink-0 text-[10px] text-indigo-400/80 bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
+                            title="Recurring"
+                          >
+                            <Columns size={10} /> {issue.recurrenceRule}
+                          </span>
+                        )}
+                        {issue.dependencyIds &&
+                          issue.dependencyIds.length > 0 && (
+                            <span
+                              className="shrink-0 text-[10px] text-rose-500/80 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
+                              title="Blocked By"
+                            >
+                              <LinkIcon size={10} /> {issue.dependencyIds.length}
+                            </span>
+                          )}
+                        {issue.labels?.map((lbl) => (
+                          <span
+                            key={lbl}
+                            className="shrink-0 text-[9px] text-blue-400/80 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded-full"
+                          >
+                            {lbl}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-4 w-32 shrink-0 justify-end">
+                        {getPriorityBadge(issue.priority)}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteIssue(issue.id);
+                          }}
+                          className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -1306,19 +1401,22 @@ Example:
                     </span>
                   </div>
                   <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
-                    {colIssues.map((issue) => (
-                      <div
-                        key={issue.id}
-                        draggable
-                        onDragStart={(e) => {
-                          e.stopPropagation();
-                          e.dataTransfer.setData("text/plain", issue.id);
-                          // Setting ghost image offset
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onClick={() => setActiveIssueId(issue.id)}
-                        className={`bg-[#09090b] border border-zinc-800/80 rounded-lg p-3 hover:border-zinc-700 transition-colors cursor-grab active:cursor-grabbing group shadow-sm flex flex-col ${activeIssueId === issue.id ? "border-blue-500/50 hover:border-blue-500/70" : ""}`}
-                      >
+                    {colIssues.map((issue) => {
+                      const cardChildren = activeIssues.filter((i) => i.parentId === issue.id);
+                      const cardParent = issue.parentId ? activeIssues.find((i) => i.id === issue.parentId) : null;
+                      return (
+                        <div
+                          key={issue.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData("text/plain", issue.id);
+                            // Setting ghost image offset
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onClick={() => setActiveIssueId(issue.id)}
+                          className={`bg-[#09090b] border border-zinc-800/80 rounded-lg p-3 hover:border-zinc-700 transition-colors cursor-grab active:cursor-grabbing group shadow-sm flex flex-col ${activeIssueId === issue.id ? "border-blue-500/50 hover:border-blue-500/70" : ""}`}
+                        >
                         <div className="flex items-start justify-between mb-2">
                           <div className="text-[10px] font-mono text-zinc-500 group-hover:text-blue-400/70 transition-colors">
                             #{issue.id.slice(0, 5)}
@@ -1361,8 +1459,26 @@ Example:
                         issue.assignee ||
                         issue.storyPoints ||
                         issue.recurrenceRule ||
-                        issue.dueDate ? (
+                        issue.dueDate ||
+                        cardChildren.length > 0 ||
+                        cardParent ? (
                           <div className="flex flex-wrap items-center gap-1.5 mt-2 mb-1">
+                            {cardChildren.length > 0 && (
+                              <span
+                                className="flex items-center gap-1 text-[9px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded-full"
+                                title="Sub-tasks progress"
+                              >
+                                <ChevronRight size={9} /> {cardChildren.filter(c => c.status === "Done").length}/{cardChildren.length} sub-tasks
+                              </span>
+                            )}
+                            {cardParent && (
+                              <span
+                                className="flex items-center gap-1 text-[9px] text-zinc-400 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded-full"
+                                title={`Sub-task of ${cardParent.title}`}
+                              >
+                                <ChevronRight size={9} className="rotate-180 text-zinc-500" /> Sub-task
+                              </span>
+                            )}
                             {issue.assignee && (
                               <span
                                 className="flex items-center gap-1 text-[9px] text-zinc-400 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded-full"
@@ -1436,7 +1552,8 @@ Example:
                           </div>
                         )}
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                   {activeProjectId && (
                     <div className="p-2 pt-0 mt-auto">
@@ -1458,6 +1575,7 @@ Example:
                             labels: "",
                             bugEnvironment: "",
                             crashLogs: "",
+                            parentId: "",
                           });
                           setShowModal(true);
                         }}
@@ -1715,6 +1833,26 @@ Example:
                     </select>
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                    Parent Task (Optional)
+                  </label>
+                  <select
+                    value={formData.parentId || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, parentId: e.target.value })
+                    }
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
+                  >
+                    <option value="">None (Top-level Task)</option>
+                    {activeIssues.map((iss) => (
+                      <option key={iss.id} value={iss.id}>
+                        {iss.title} (#{iss.id.slice(0, 5)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="p-4 bg-[#09090b]/50 flex justify-end gap-3 border-t border-zinc-800/80 shrink-0 rounded-b-xl">
@@ -1956,6 +2094,34 @@ Example:
                   </select>
                 </div>
 
+                <div className="flex items-center text-xs">
+                  <div className="w-24 text-zinc-500 shrink-0 flex items-center gap-1.5">
+                    <ChevronRight size={14} /> Parent Task
+                  </div>
+                  <select
+                    value={activeIssue.parentId || ""}
+                    onChange={(e) =>
+                      updateIssue(activeIssue.id, {
+                        parentId: e.target.value || undefined,
+                      })
+                    }
+                    className="flex-1 bg-transparent border-none text-zinc-200 outline-none py-1 px-0 hover:bg-zinc-800/50 cursor-pointer rounded"
+                  >
+                    <option value="">None (Top-level)</option>
+                    {activeIssues
+                      .filter(
+                        (iss) =>
+                          iss.id !== activeIssue.id &&
+                          !getDescendantIds(activeIssue.id, issues).includes(iss.id)
+                      )
+                      .map((iss) => (
+                        <option key={iss.id} value={iss.id}>
+                          {iss.title} (#{iss.id.slice(0, 5)})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
                 <div className="flex items-start text-xs pt-1">
                   <div className="w-24 text-zinc-500 shrink-0 flex items-center gap-1.5 pt-1.5">
                     <LinkIcon size={14} /> Blocked By
@@ -2108,6 +2274,102 @@ Example:
                   </div>
                 </div>
               )}
+
+              {/* Sub-tasks Section */}
+              <div className="pt-4 border-t border-zinc-800/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-medium text-zinc-400">
+                    <ChevronRight size={14} className="text-zinc-500" /> Sub-tasks
+                  </div>
+                  <span className="text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800/60 px-1.5 py-0.5 rounded font-mono font-medium">
+                    {issues.filter((i) => i.parentId === activeIssue.id).filter((i) => i.status === "Done").length}/
+                    {issues.filter((i) => i.parentId === activeIssue.id).length} Done
+                  </span>
+                </div>
+
+                {/* Sub-tasks List */}
+                <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                  {issues
+                    .filter((i) => i.parentId === activeIssue.id)
+                    .map((subTask) => (
+                      <div
+                        key={subTask.id}
+                        className="flex items-center justify-between p-2 rounded bg-[#09090b] border border-zinc-800/60 hover:border-zinc-700/60 transition-colors group/sub"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateIssue(subTask.id, {
+                                status: subTask.status === "Done" ? "Todo" : "Done",
+                              })
+                            }
+                            className="shrink-0 cursor-pointer"
+                          >
+                            {subTask.status === "Done" ? (
+                              <CheckCircle2 size={13} className="text-emerald-500" />
+                            ) : (
+                              <Circle size={13} className="text-zinc-600 hover:text-zinc-400 transition-colors" />
+                            )}
+                          </button>
+                          <span
+                            onClick={() => setActiveIssueId(subTask.id)}
+                            className={`text-xs truncate cursor-pointer hover:text-blue-400 transition-colors ${subTask.status === "Done" ? "text-zinc-500 line-through" : "text-zinc-300"}`}
+                          >
+                            {subTask.title}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteIssue(subTask.id)}
+                          className="text-zinc-655 hover:text-rose-400 p-1 opacity-0 group-hover/sub:opacity-100 transition-opacity"
+                        >
+                          <Trash size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  {issues.filter((i) => i.parentId === activeIssue.id).length === 0 && (
+                    <div className="text-[11px] text-zinc-600 italic py-1">
+                      No sub-tasks defined.
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline Rapid Sub-task Add Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!newSubTaskTitle.trim() || !activeProjectId) return;
+                    addIssue({
+                      projectId: activeProjectId,
+                      title: newSubTaskTitle.trim(),
+                      parentId: activeIssue.id,
+                      type: "Task",
+                      status: "Todo",
+                      priority: "Medium",
+                    });
+                    setNewSubTaskTitle("");
+                  }}
+                  className="flex items-center gap-2 bg-[#09090b] border border-zinc-800 rounded px-2 py-1"
+                >
+                  <Plus size={12} className="text-zinc-500" />
+                  <input
+                    type="text"
+                    placeholder="Add a sub-task..."
+                    value={newSubTaskTitle}
+                    onChange={(e) => setNewSubTaskTitle(e.target.value)}
+                    className="flex-1 bg-transparent border-none outline-none text-xs text-zinc-200 placeholder-zinc-600 p-0 focus:ring-0 focus:outline-none"
+                  />
+                  {newSubTaskTitle.trim() && (
+                    <button
+                      type="submit"
+                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded font-medium transition-colors"
+                    >
+                      Add
+                    </button>
+                  )}
+                </form>
+              </div>
 
               {activeIssue.description && (
                 <div className="pt-2">

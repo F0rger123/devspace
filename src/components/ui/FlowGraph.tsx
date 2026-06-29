@@ -70,17 +70,17 @@ const CustomNode = ({ data }: NodeProps) => {
     color = 'border-emerald-500/50 text-emerald-100 bg-emerald-500/10';
     glowStyle = 'hover:ring-2 hover:ring-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.4)]';
   } else if (type === 'doc') {
-    icon = <File size={12} className="text-blue-400" />;
-    color = 'border-blue-500/50 text-blue-100 bg-blue-500/10';
-    glowStyle = 'hover:ring-2 hover:ring-blue-400 hover:shadow-[0_0_15px_rgba(59,130,246,0.4)]';
+    icon = <File size={12} className="text-yellow-400" />;
+    color = 'border-yellow-500/50 text-yellow-100 bg-yellow-500/10';
+    glowStyle = 'hover:ring-2 hover:ring-yellow-400 hover:shadow-[0_0_15px_rgba(234,179,8,0.45)]';
   } else if (type === 'phase') {
     icon = <Sparkles size={12} className="text-amber-400" />;
     color = 'border-amber-500/50 text-amber-100 bg-amber-500/10';
     glowStyle = 'hover:ring-2 hover:ring-amber-400 hover:shadow-[0_0_15px_rgba(245,158,11,0.4)]';
   } else if (type === 'dir') {
-    icon = <Folder size={12} className="text-blue-400" />;
-    color = 'border-blue-500/30 text-blue-100 bg-[#18181b]';
-    glowStyle = 'hover:ring-2 hover:ring-sky-400 hover:shadow-[0_0_15px_rgba(14,165,233,0.3)]';
+    icon = <Folder size={12} className="text-yellow-500" />;
+    color = 'border-yellow-500/20 text-yellow-101 bg-[#18181b]';
+    glowStyle = 'hover:ring-2 hover:ring-yellow-400 hover:shadow-[0_0_15px_rgba(234,179,8,0.35)]';
   } else if (type === 'issue') {
     icon = <AlertCircle size={12} className="text-red-400" />;
     color = 'border-red-500/50 text-red-100 bg-red-500/10';
@@ -144,7 +144,7 @@ export function FlowGraph({
          target: l.target.id || l.target,
          type: 'smoothstep',
          animated: true,
-         style: { stroke: '#52525b', strokeWidth: 1.5 }
+         style: { stroke: '#a855f7', strokeWidth: 2, opacity: 0.85, filter: 'drop-shadow(0 0 5px rgba(168, 85, 247, 0.45))' }
        }));
        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
          rfNodes,
@@ -179,7 +179,7 @@ export function FlowGraph({
       target: l.target.id || l.target,
       type: 'smoothstep',
       animated: true,
-      style: { stroke: '#52525b', strokeWidth: 1.5 }
+      style: { stroke: '#a855f7', strokeWidth: 2, opacity: 0.85, filter: 'drop-shadow(0 0 5px rgba(168, 85, 247, 0.45))' }
     }));
 
     // Filter for large graphs to avoid dagre crash or huge slow down
@@ -205,8 +205,8 @@ export function FlowGraph({
            ...node,
            position: saved[node.id]
          };
-      }
-      return node;
+       }
+       return node;
     });
 
     setNodes(finalNodes);
@@ -214,7 +214,7 @@ export function FlowGraph({
   }, [initialNodes, initialLinks, direction, spacing, setNodes, setEdges]);
 
   return (
-    <div className="w-full h-full relative" style={{ background: '#121214' }}>
+    <div className="w-full h-full relative bg-[#07070a]/90">
       <ReactFlow
         nodes={nodes}
         edges={edges}

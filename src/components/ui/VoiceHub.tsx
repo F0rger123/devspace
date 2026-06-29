@@ -51,7 +51,9 @@ export function VoiceHub() {
     updateProject,
     phases,
     agents,
-    aiContextRules
+    aiContextRules,
+    aetherPersonalityRules,
+    setAetherPersonalityRules
   } = useData();
 
   // Unified AI Assistant & Terminal States
@@ -141,6 +143,9 @@ export function VoiceHub() {
   
   // Local Synthesizer / TTS replying audio state (100% Free & instant Web speech)
   const [ttsEnabled, setTtsEnabled] = useState(true);
+
+  // Deep conversation helper
+  const [pendingNote, setPendingNote] = useState<string | null>(null);
 
   // Chat interface console
   const [typedMessage, setTypedMessage] = useState('');
@@ -353,8 +358,12 @@ export function VoiceHub() {
             aiContextRules: aiContextRulesRef.current
           })
         });
-      } catch (err) {
-        console.error("Error syncing project state config cache:", err);
+      } catch (err: any) {
+        if (err?.message?.includes('Failed to fetch') || err?.message?.includes('Load failed')) {
+          console.debug("Network temporarily unavailable: sync-cache status offline");
+        } else {
+          console.error("Error syncing project state config cache:", err);
+        }
       }
     };
     syncWorkspaceCache();
@@ -386,8 +395,12 @@ export function VoiceHub() {
             setActiveLayoutTabRef.current('queue');
           }
         }
-      } catch (e) {
-        console.error("Failed checking telegram queue inbox:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('Failed to fetch') || e?.message?.includes('Load failed')) {
+          console.debug("Network temporarily unavailable: telegram queues status offline");
+        } else {
+          console.error("Failed checking telegram queue inbox:", e);
+        }
       }
     };
 
@@ -418,8 +431,12 @@ export function VoiceHub() {
             setActiveLayoutTabRef.current('queue');
           }
         }
-      } catch (e) {
-        console.error("Failed checking whatsapp queue inbox:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('Failed to fetch') || e?.message?.includes('Load failed')) {
+          console.debug("Network temporarily unavailable: whatsapp queues status offline");
+        } else {
+          console.error("Failed checking whatsapp queue inbox:", e);
+        }
       }
     };
 
@@ -448,8 +465,12 @@ export function VoiceHub() {
             setBotToken(data.tokenRaw);
           }
         }
-      } catch (e) {
-        console.error("Error getting live bot metrics:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('Failed to fetch') || e?.message?.includes('Load failed')) {
+          console.debug("Network temporarily unavailable: telegram gateway metrics offline");
+        } else {
+          console.error("Error getting live bot metrics:", e);
+        }
       }
     };
 
@@ -470,8 +491,12 @@ export function VoiceHub() {
             setWhatsappChatHistory(data.chatHistory);
           }
         }
-      } catch (e) {
-        console.error("Error getting live WhatsApp details:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('Failed to fetch') || e?.message?.includes('Load failed')) {
+          console.debug("Network temporarily unavailable: whatsapp gateway config offline");
+        } else {
+          console.error("Error getting live WhatsApp details:", e);
+        }
       }
     };
 
@@ -639,7 +664,12 @@ export function VoiceHub() {
             mimeType: audioBlob.type,
             projectContexts: contextPayload,
             cortexSynapses: cortexSynapses || [],
-            notes: notes || []
+            notes: notes || [],
+            history: chatHistory.map(itm => ({
+              role: itm.sender === 'user' ? 'user' : 'model',
+              text: itm.text
+            })),
+            pendingNote: pendingNote
           })
         });
 
@@ -656,6 +686,12 @@ export function VoiceHub() {
           { sender: 'aether', text: data.explanation || "Analyzed voice input.", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
         ]);
 
+        if (data.shouldWriteDown === 'ask') {
+          setPendingNote(data.noteContent || "");
+        } else {
+          setPendingNote(null);
+        }
+
         if (data.intent && data.intent !== 'chat_query' && data.intent !== 'unknown') {
           addVoiceAction({
             transcript: data.transcript,
@@ -665,6 +701,10 @@ export function VoiceHub() {
             explanation: data.explanation
           });
           showToast(`💡 Proposed work item compiled: '${data.intent.toUpperCase()}'`);
+        }
+
+        if (data.aetherPersonalityRules) {
+          setAetherPersonalityRules(data.aetherPersonalityRules);
         }
 
         // Voice speech synthesizer reply 
@@ -706,7 +746,12 @@ export function VoiceHub() {
           textCommand: plainText,
           projectContexts: contexts,
           cortexSynapses: cortexSynapses || [],
-          notes: notes || []
+          notes: notes || [],
+          history: chatHistory.map(itm => ({
+            role: itm.sender === 'user' ? 'user' : 'model',
+            text: itm.text
+          })),
+          pendingNote: pendingNote
         })
       });
 
@@ -721,6 +766,12 @@ export function VoiceHub() {
         { sender: 'aether', text: resData.explanation, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
       ]);
 
+      if (resData.shouldWriteDown === 'ask') {
+        setPendingNote(resData.noteContent || "");
+      } else {
+        setPendingNote(null);
+      }
+
       if (resData.intent && resData.intent !== 'chat_query' && resData.intent !== 'unknown') {
         addVoiceAction({
           transcript: resData.transcript || plainText,
@@ -730,6 +781,10 @@ export function VoiceHub() {
           explanation: resData.explanation
         });
         showToast(`💡 Proposed action item compiled inside review queue.`);
+      }
+
+      if (resData.aetherPersonalityRules) {
+        setAetherPersonalityRules(resData.aetherPersonalityRules);
       }
 
       // Voice response
@@ -1170,15 +1225,15 @@ export function VoiceHub() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 relative z-10 border-b border-slate-800/60 pb-5">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="p-2.5 bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 text-indigo-400 rounded-xl border border-indigo-500/15">
-              <Bot size={22} className={isRecording ? 'animate-bounce' : 'animate-pulse text-indigo-400'} />
+            <div className="p-2.5 bg-gradient-to-tr from-yellow-500/20 to-amber-500/20 text-yellow-400 rounded-xl border border-yellow-500/15">
+              <Bot size={22} className={isRecording ? 'animate-bounce' : 'animate-pulse text-yellow-400'} />
             </div>
-            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${botConfig.active ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'}`} />
+            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${botConfig.active ? 'bg-amber-500 animate-ping' : 'bg-amber-500'}`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold tracking-tight text-white font-sans">Aether Workspace Portal</h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 bg-indigo-500/10 text-indigo-300 rounded border border-indigo-500/20">
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-yellow-500/10 text-yellow-300 rounded border border-yellow-500/20">
                 v2.0 Gateway
               </span>
             </div>
@@ -1270,34 +1325,57 @@ export function VoiceHub() {
                 </div>
 
                 {/* Real Physical Web Audio Waves Visualizer */}
-                <div className="h-20 bg-slate-900/60 border border-slate-900 rounded-xl my-4 px-4 flex items-center justify-center gap-1 overflow-hidden relative">
+                <div className="h-20 bg-slate-950/70 border border-slate-900/80 rounded-xl my-4 px-4 flex items-center justify-center gap-1.5 overflow-hidden relative shadow-[inset_0_2px_12px_rgba(0,0,0,0.9)]">
                   {isRecording ? (
-                    frequencyBuffer.map((height, idx) => (
-                      <div
-                        key={`real-freq-${idx}`}
-                        className="w-1 bg-gradient-to-t from-indigo-500 via-indigo-400 to-purple-400 rounded-full transition-all duration-75"
-                        style={{ height: `${height}px` }}
-                      />
-                    ))
+                    <>
+                      {/* Left side mirrored wing */}
+                      {[...frequencyBuffer].reverse().slice(0, 12).map((height, idx) => (
+                        <div
+                          key={`real-freq-l-${idx}`}
+                          className="w-1.5 bg-gradient-to-t from-yellow-600 via-amber-500 to-yellow-350 rounded-full transition-all duration-75"
+                          style={{ 
+                            height: `${height}px`,
+                            filter: `drop-shadow(0 0 4px ${height > 20 ? 'rgba(245,158,11,0.7)' : 'rgba(234,179,8,0.4)'})`
+                          }}
+                        />
+                      ))}
+                      {/* Active core pulse orb */}
+                      <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 mx-2 shadow-[0_0_15px_rgba(245,158,11,0.9)] animate-ping absolute" />
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-400 mx-2 shadow-[0_0_8px_rgba(217,119,6,0.8)] z-10" />
+                      {/* Right side mirrored wing */}
+                      {frequencyBuffer.slice(0, 12).map((height, idx) => (
+                        <div
+                          key={`real-freq-r-${idx}`}
+                          className="w-1.5 bg-gradient-to-t from-yellow-600 via-amber-500 to-yellow-350 rounded-full transition-all duration-75"
+                          style={{ 
+                            height: `${height}px`,
+                            filter: `drop-shadow(0 0 4px ${height > 20 ? 'rgba(245,158,11,0.7)' : 'rgba(234,179,8,0.4)'})`
+                          }}
+                        />
+                      ))}
+                    </>
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <div className="flex gap-1 mb-1 items-end h-8">
-                        {Array.from({ length: 16 }).map((_, i) => (
+                        {Array.from({ length: 24 }).map((_, i) => (
                           <div 
                             key={`wave-idle-${i}`} 
-                            className="w-1 bg-slate-800 rounded-full" 
-                            style={{ height: `${4 + Math.sin(i * 0.5) * 8}px` }} 
+                            className="w-1 bg-slate-800/60 rounded-full animate-pulse" 
+                            style={{ 
+                              height: `${4 + Math.sin(i * 0.3) * 10}px`,
+                              animationDelay: `${i * 50}ms`
+                            }} 
                           />
                         ))}
                       </div>
-                      <span className="text-[10px] tracking-wide text-slate-500 font-sans">MIC IDLE • PRESS RECORD TO DISPATCH</span>
+                      <span className="text-[9px] tracking-widest text-amber-500/60 font-mono font-bold">AETHER SPECTRUM COGNITIVE SYNC IDLE</span>
                     </div>
                   )}
 
                   {isProcessing && (
                     <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center gap-2 backdrop-blur-[1px]">
-                      <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-[10px] font-mono text-indigo-300">Cognitive AI Analyzing Audio memo...</span>
+                      <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-[10px] font-mono text-yellow-300">Cognitive AI Analyzing Audio memo...</span>
                     </div>
                   )}
                 </div>
@@ -1308,7 +1386,7 @@ export function VoiceHub() {
                     <button
                       onClick={startRecordingStream}
                       disabled={isProcessing}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/10 border border-indigo-500/20 cursor-pointer"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 disabled:opacity-50 text-black rounded-xl text-xs font-bold transition-all shadow-lg shadow-yellow-500/10 border border-yellow-500/20 cursor-pointer"
                     >
                       <Mic size={14} />
                       Start Voice Memo Record
@@ -1390,7 +1468,7 @@ export function VoiceHub() {
               {/* Chat Command logs Feed panel */}
               <div className="lg:col-span-7 bg-slate-950 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between min-h-[300px]">
                 <div className="flex items-center justify-between border-b border-slate-900 pb-3 mb-3">
-                  <span className="text-xs font-mono text-indigo-400 tracking-wider font-semibold uppercase">Aether Console Feed</span>
+                  <span className="text-xs font-mono text-yellow-500 tracking-wider font-semibold uppercase">Aether Console Feed</span>
                   <span className="text-[10px] text-slate-500 font-mono">Conversational thread with central AI</span>
                 </div>
 
@@ -1400,13 +1478,13 @@ export function VoiceHub() {
                     <div key={`chat-bubble-${idx}`} className={`flex flex-col ${chat.sender === 'user' ? 'items-end' : 'items-start'}`}>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[10px] text-slate-500 font-mono">{chat.time}</span>
-                        <span className={`text-[10px] font-bold uppercase tracking-wider ${chat.sender === 'user' ? 'text-indigo-400' : 'text-purple-400'}`}>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${chat.sender === 'user' ? 'text-yellow-400' : 'text-amber-400'}`}>
                           {chat.sender === 'user' ? 'You' : 'Aether AI'}
                         </span>
                       </div>
                       <div className={`p-3 rounded-xl text-xs max-w-[85%] leading-relaxed ${
                         chat.sender === 'user' 
-                          ? 'bg-indigo-600/15 border border-indigo-500/20 text-indigo-200' 
+                          ? 'bg-yellow-500/10 border border-yellow-500/15 text-yellow-105' 
                           : 'bg-slate-900/90 border border-slate-800/80 text-slate-300'
                       }`}>
                         {chat.text}
@@ -1414,10 +1492,10 @@ export function VoiceHub() {
                     </div>
                   ))}
                   {isProcessing && chatHistory[chatHistory.length-1]?.sender === 'user' && (
-                    <div className="flex items-center gap-2 text-[10px] font-mono text-purple-400 pl-1">
-                      <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <div className="flex items-center gap-2 text-[10px] font-mono text-yellow-400 pl-1">
+                      <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                       <span>Aether is thinking...</span>
                     </div>
                   )}
@@ -1431,12 +1509,12 @@ export function VoiceHub() {
                     onChange={(e) => setTypedMessage(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && submitTextCommand()}
                     placeholder="Type work commands e.g. 'what projects do we have?'..."
-                    className="flex-1 bg-slate-900 border border-slate-850 hover:border-slate-700 focus:border-indigo-500/70 focus:outline-none rounded-xl px-3.5 py-2.5 text-xs text-white tracking-wide transition-colors font-sans"
+                    className="flex-1 bg-slate-900 border border-slate-850 hover:border-slate-700 focus:border-yellow-500/70 focus:outline-none rounded-xl px-3.5 py-2.5 text-xs text-white tracking-wide transition-colors font-sans"
                   />
                   <button
                     onClick={submitTextCommand}
                     disabled={!typedMessage.trim() || isProcessing}
-                    className="p-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl transition-all"
+                    className="p-3 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 disabled:opacity-50 text-black font-extrabold rounded-xl transition-all cursor-pointer"
                   >
                     <Send size={14} />
                   </button>
@@ -1534,7 +1612,7 @@ export function VoiceHub() {
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Sparkles size={13} className="text-emerald-400" /> WhatsApp Companion Link
+                <Sparkles size={13} className="text-emerald-400" /> Mobile Companion Link
               </button>
             </div>
 
@@ -1672,7 +1750,7 @@ export function VoiceHub() {
                     <div className="flex items-center justify-between mb-3 border-b border-slate-900 pb-3">
                       <div className="flex items-center gap-2">
                         <Sparkles size={18} className="text-emerald-400" />
-                        <h3 className="text-sm font-bold text-white font-sans">Direct WhatsApp Link Console</h3>
+                        <h3 className="text-sm font-bold text-white font-sans">Mobile Companion Link Console</h3>
                       </div>
                       <span className="text-[10px] uppercase font-mono font-bold bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
                         Sandbox Simulator
@@ -1680,7 +1758,7 @@ export function VoiceHub() {
                     </div>
 
                     <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                      Authorizing Aether's companion device via the sandbox simulation setup. Since Aether executes in an offline preview, this connects directly with our **WhatsApp Companion Web Client**, allowing you to execute tasks on your phone browser or another tab.
+                      Authorizing Aether's companion device via the sandbox simulation setup. Since Aether executes in an offline preview, this connects directly with our **Mobile Companion Web Client**, allowing you to execute tasks on your phone browser or another tab.
                     </p>
 
                     {/* Unlinked Setup Flow */}
@@ -1748,8 +1826,8 @@ export function VoiceHub() {
                           <div className="flex-1 space-y-2">
                             <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold tracking-wider block">Option A: Scan QR Code</span>
                             <ol className="text-[11px] text-slate-350 space-y-1.5 font-sans leading-relaxed list-decimal pl-4">
-                              <li>Open your phone's default <strong className="text-white">System Camera App</strong> (not the scan feature inside official WhatsApp).</li>
-                              <li>Scan the QR code to open the browser-based <strong className="text-emerald-400">Aether WhatsApp Companion</strong>.</li>
+                              <li>Open your phone's default <strong className="text-white">System Camera App</strong>.</li>
+                              <li>Scan the QR code to open the browser-based <strong className="text-emerald-400">Ether Companion</strong>.</li>
                               <li>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                   <span>Or click to test in a new tab:</span>

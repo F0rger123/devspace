@@ -1,8 +1,10 @@
-import { Bot, Network, Workflow, Zap, MemoryStick, Database, Sparkles, Loader2, GitPullRequest, X, FileText, ChevronRight, ChevronDown, Folder, File, LayoutGrid, ListTree, FolderGit2, Mic, Volume2, Cpu } from 'lucide-react';
+import { Bot, Network, Workflow, Zap, MemoryStick, Database, Sparkles, Loader2, GitPullRequest, X, FileText, ChevronRight, ChevronDown, Folder, File, LayoutGrid, ListTree, FolderGit2, Mic, Volume2, Cpu, Clock, Trash2, Play, Check, AlertTriangle, Filter, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { FlowGraph } from '../components/ui/FlowGraph';
 import { MemoryCortex } from '../components/MemoryCortex';
+import { DreamLogView } from '../components/DreamLogView';
 import { useData } from '../context/DataProvider';
 
 const FileTreeItem = ({ item, level = 0, onNodeClick, activePath }: { item: any; level?: number; onNodeClick: (node: any) => void, activePath: string | null }) => {
@@ -28,7 +30,7 @@ const FileTreeItem = ({ item, level = 0, onNodeClick, activePath }: { item: any;
            <span className="w-[14px] shrink-0"></span>
         )}
         {isDir ? (
-           <Folder size={14} className="text-blue-400 shrink-0" />
+           <Folder size={14} className="text-yellow-500/90 shrink-0 filter drop-shadow-[0_0_2px_rgba(234,179,8,0.25)]" />
         ) : (
            <File size={14} className="text-zinc-500 shrink-0" />
         )}
@@ -46,14 +48,29 @@ const FileTreeItem = ({ item, level = 0, onNodeClick, activePath }: { item: any;
 };
 
 export function Brain() {
-  const { projects, issues, phases, aiContextRules, setAiContextRules, githubRepo, githubToken, activeProjectId, cortexSynapses, setCortexSynapses } = useData();
+  const { projects, issues, phases, aiContextRules, setAiContextRules, githubRepo, githubToken, activeProjectId, cortexSynapses, setCortexSynapses, startProjectDreaming, addIssue, updateProject } = useData();
+  const location = useLocation();
   const [nodes, setNodes] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
   const [fileTree, setFileTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [repo, setRepo] = useState(() => githubRepo || 'google/genai-js');
   const [viewMode, setViewMode] = useState<'both' | 'graph'>('both');
-  const [graphType, setGraphType] = useState<'github' | 'project' | 'memory'>('project');
+  const [graphType, setGraphType] = useState<'github' | 'project' | 'memory' | 'dreams'>(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab && ['github', 'project', 'memory', 'dreams'].includes(tab)) {
+      return tab as any;
+    }
+    return 'project';
+  });
+
+  useEffect(() => {
+    const tab = new URLSearchParams(location.search).get('tab');
+    if (tab && ['github', 'project', 'memory', 'dreams'].includes(tab)) {
+      setGraphType(tab as any);
+    }
+  }, [location.search]);
+
   const [graphDirection, setGraphDirection] = useState<'TB' | 'LR'>('TB');
   const [graphSpacing, setGraphSpacing] = useState<'compact' | 'normal' | 'relaxed'>('normal');
   
@@ -351,17 +368,17 @@ export function Brain() {
 
   return (
     <div className="flex-1 flex flex-col pb-8 min-h-full">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Project Brain <Bot size={18} className="text-blue-400" />
+            Project Brain <Bot size={18} className="text-yellow-500 drop-shadow-[0_0_6px_rgba(234,179,8,0.35)]" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Visualizing semantic relationships, architecture, and memory.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex bg-[#121214] rounded-md p-1 border border-zinc-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap bg-[#121214] rounded-md p-1 border border-zinc-800 gap-1">
              <button 
                 onClick={() => setGraphType('project')}
                 className={`py-1.5 px-3 text-xs rounded-sm transition-colors ${graphType === 'project' ? 'bg-zinc-800 text-zinc-100 flex items-center gap-1.5' : 'text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5'}`}
@@ -380,8 +397,14 @@ export function Brain() {
              >
                 <MemoryStick size={14} /> Assistant Memory Store
              </button>
+             <button 
+                onClick={() => setGraphType('dreams')}
+                className={`py-1.5 px-3 text-xs rounded-sm transition-colors ${graphType === 'dreams' ? 'bg-zinc-800 text-yellow-400 font-semibold flex items-center gap-1.5' : 'text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5'}`}
+             >
+                <Sparkles size={14} className="text-yellow-500" /> Dream Log
+             </button>
           </div>
-          {graphType !== 'memory' && (
+          {graphType !== 'memory' && graphType !== 'dreams' && (
             <>
                <div className="h-4 w-px bg-zinc-800 mx-1 shrink-0"></div>
                <div className="flex bg-[#121214] rounded-md p-1 border border-zinc-800 gap-1 shrink-0">
@@ -390,7 +413,7 @@ export function Brain() {
                      className="py-1 px-1.5 text-[10px] bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded border border-zinc-750 font-mono transition flex items-center gap-1 shrink-0"
                      title="Toggle Layout (TB vs LR)"
                   >
-                     <Workflow size={11} className={graphDirection === 'LR' ? 'rotate-90 text-amber-400' : 'text-blue-400'} />
+                     <Workflow size={11} className={graphDirection === 'LR' ? 'rotate-90 text-yellow-500' : 'text-yellow-400'} />
                      <span>{graphDirection === 'TB' ? 'Vertical' : 'Horizontal'}</span>
                   </button>
                   <button 
@@ -446,9 +469,9 @@ export function Brain() {
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden">
         {viewMode === 'both' && graphType === 'github' && (
-          <div className="w-64 border border-zinc-800 bg-[#121214] rounded-xl flex flex-col flex-shrink-0 overflow-hidden relative">
+          <div className="w-full lg:w-64 h-48 lg:h-auto border border-zinc-800 bg-[#121214] rounded-xl flex flex-col flex-shrink-0 overflow-hidden relative">
             <div className="flex items-center gap-2 p-3 border-b border-zinc-800 bg-[#09090b]">
               <ListTree size={14} className="text-zinc-400" />
               <h3 className="text-xs font-semibold text-zinc-200">Explorer</h3>
@@ -474,12 +497,22 @@ export function Brain() {
 
         {/* SW SYNAPSTICS ROUTE MARKER */}
         <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl relative overflow-hidden flex items-center justify-center">
-          {graphType === 'memory' ? (
+          {graphType === 'dreams' ? (
+             <DreamLogView 
+                projects={projects as any}
+                issues={issues}
+                addIssue={addIssue}
+                updateProject={updateProject}
+                startProjectDreaming={startProjectDreaming}
+                cortexSynapses={cortexSynapses}
+                setCortexSynapses={setCortexSynapses}
+             />
+          ) : graphType === 'memory' ? (
              <MemoryCortex 
                 aiContextRules={aiContextRules}
                 setAiContextRules={setAiContextRules}
                 repo={repo}
-                projects={projects}
+                projects={projects as any}
                 selectedHighlightMemory={selectedHighlightMemory}
                 setSelectedHighlightMemory={setSelectedHighlightMemory}
                 memoryVoiceActive={memoryVoiceActive}
@@ -495,7 +528,7 @@ export function Brain() {
                 <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#121214] rounded-xl p-4 overflow-hidden min-h-0">
                    <div className="flex items-center justify-between mb-3 shrink-0">
                       <div className="flex items-center gap-2">
-                         <MemoryStick size={16} className="text-blue-400" />
+                         <MemoryStick size={16} className="text-yellow-400" />
                          <span className="text-xs font-semibold text-zinc-200">Active Persona & Context Blocks</span>
                       </div>
                       <span className="text-[10px] text-[10px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded flex items-center gap-1.5 font-mono">
@@ -506,7 +539,7 @@ export function Brain() {
                    <textarea
                       value={aiContextRules}
                       onChange={(e) => setAiContextRules(e.target.value)}
-                      className="flex-1 w-full bg-[#09090b]/80 border border-zinc-800 rounded-lg p-4 text-[12px] text-emerald-400 font-mono outline-none focus:border-blue-500/50 resize-none leading-relaxed custom-scrollbar"
+                      className="flex-1 w-full bg-[#09090b]/80 border border-zinc-800 rounded-lg p-4 text-[12px] text-emerald-400 font-mono outline-none focus:border-yellow-500/40 resize-none leading-relaxed custom-scrollbar"
                       placeholder={`<role>\nYou are a Senior AI Assistant.\n</role>\n\n<tech-stack>\n- Tailwind CSS\n- React with TypeScript\n</tech-stack>\n\nTell the assistant what to remember about you, your tech stack preferences, and coding guidelines...`}
                    />
                    <div className="mt-3 text-[10px] text-zinc-500 shrink-0 leading-relaxed">
@@ -518,7 +551,7 @@ export function Brain() {
                 <div className="w-full md:w-80 shrink-0 flex flex-col gap-4 overflow-y-auto">
                    {/* Quick Tags */}
                    <div className="border border-zinc-800 bg-[#121214] rounded-xl p-4">
-                      <h4 className="text-xs font-semibold text-zinc-200 mb-3 flex items-center gap-1.5"><Sparkles size={14} className="text-blue-400" /> Quick Memory Inlays</h4>
+                      <h4 className="text-xs font-semibold text-zinc-200 mb-3 flex items-center gap-1.5"><Sparkles size={14} className="text-yellow-400" /> Quick Memory Inlays</h4>
                       <div className="flex flex-wrap gap-1.5">
                          {[
                             { label: "Prefer TypeScript", rule: "Developer prefers strict static TypeScript type-safety across all files." },
@@ -543,7 +576,7 @@ export function Brain() {
                                    }}
                                    className={`text-[10px] font-medium px-2 py-1 rounded border transition-all ${
                                       isAdded 
-                                        ? 'bg-blue-500/15 border-blue-500/30 text-blue-400 hover:bg-blue-500/25' 
+                                        ? 'bg-yellow-500/15 border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/25' 
                                         : 'bg-zinc-800/50 border-zinc-700/80 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'
                                    }`}
                                 >

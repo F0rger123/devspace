@@ -1,30 +1,42 @@
 {
   "entities": {
-    "users": {
-      "title": "User",
-      "description": "Registered developer profile details in Agentic OS",
+    "Project": {
+      "title": "Project",
+      "description": "A workspace project or repository being tracked inside the Cortex Control Panel",
       "type": "object",
       "properties": {
-        "uid": {
-          "type": "string",
-          "description": "The firebase unique authentication identifier of the developer"
-        },
-        "email": {
-          "type": "string",
-          "description": "The verified primary email address of the developer"
-        },
-        "displayName": {
-          "type": "string",
-          "description": "The user's customizable visual handle or display name"
-        }
+        "id": { "type": "string", "description": "Unique identifier for the project" },
+        "name": { "type": "string", "description": "Display name of the project" },
+        "description": { "type": "string", "description": "Detailed description of the project" },
+        "status": { "type": "string", "enum": ["Active", "Paused", "Completed", "Planning"], "description": "Current state of the project" },
+        "createdAt": { "type": "number", "description": "Unix epoch timestamp when the project was created" }
       },
-      "required": ["uid", "email"]
+      "required": ["id", "name", "description", "status", "createdAt"]
+    },
+    "Issue": {
+      "title": "Issue",
+      "description": "An operational task, bug, or feature tracking item inside a project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the issue" },
+        "projectId": { "type": "string", "description": "The associated project ID" },
+        "title": { "type": "string", "description": "Brief summary of the issue" },
+        "type": { "type": "string", "enum": ["Task", "Bug", "Feature"], "description": "Category of the issue" },
+        "status": { "type": "string", "enum": ["Todo", "In Progress", "Done"], "description": "Work status of the issue" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"], "description": "Priority tier of the issue" },
+        "createdAt": { "type": "number", "description": "Unix epoch timestamp when the issue was logged" }
+      },
+      "required": ["id", "projectId", "title", "type", "status", "priority", "createdAt"]
     }
   },
   "firestore": {
-    "users/{userId}": {
-      "schema": "users",
-      "description": "Developer user profiles store in the database cluster"
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of projects defined in the workspace"
+    },
+    "/issues/{issueId}": {
+      "schema": "Issue",
+      "description": "Collection of issues or tasks tracked in the workspace"
     }
   }
 }

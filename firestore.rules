@@ -1,22 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global safety net: default deny-all
+    
+    // Catch-all default deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Primitive Security Helpers
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
 
     function incoming() {
@@ -27,25 +28,56 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Validation helper matching the users schema in firebase-blueprint.json
-    function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email'])
-        && data.keys().size() <= 3
-        && data.uid is string
-        && data.uid.size() <= 128
-        && data.uid == request.auth.uid
-        && data.email is string
-        && data.email.size() <= 200;
+    // Validation for Projects
+    function isValidProject(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.description is string && data.description.size() <= 2000
+        && data.status in ['Active', 'Paused', 'Completed', 'Planning']
+        && data.createdAt is number;
     }
 
-    // Core rule block for users profiles collection
-    match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming())
-        && incoming().uid == existing().uid
-        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']);
-      allow delete: if false;
+    // Validation for Issues
+    function isValidIssue(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.projectId is string && data.projectId.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.type in ['Task', 'Bug', 'Feature']
+        && data.status in ['Todo', 'In Progress', 'Done']
+        && data.priority in ['Low', 'Medium', 'High', 'Critical']
+        && data.createdAt is number;
+    }
+
+    // Rules for projects
+    match /projects/{projectId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() 
+        && isValidId(projectId) 
+        && isValidProject(incoming())
+        && incoming().id == projectId;
+      allow update: if isVerifiedUser() 
+        && isValidId(projectId)
+        && isValidProject(incoming())
+        && incoming().id == projectId
+        && incoming().createdAt == existing().createdAt; // createdAt is immutable
+      allow delete: if isVerifiedUser() && isValidId(projectId);
+    }
+
+    // Rules for issues
+    match /issues/{issueId} {
+      allow read: if isVerifiedUser();
+      allow create: if isVerifiedUser() 
+        && isValidId(issueId) 
+        && isValidIssue(incoming())
+        && incoming().id == issueId
+        && exists(/databases/$(database)/documents/projects/$(incoming().projectId)); // project must exist!
+      allow update: if isVerifiedUser() 
+        && isValidId(issueId)
+        && isValidIssue(incoming())
+        && incoming().id == issueId
+        && incoming().projectId == existing().projectId // projectId is immutable
+        && incoming().createdAt == existing().createdAt; // createdAt is immutable
+      allow delete: if isVerifiedUser() && isValidId(issueId);
     }
   }
 }

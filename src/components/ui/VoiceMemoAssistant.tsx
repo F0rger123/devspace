@@ -1,76 +1,5451 @@
-import React from 'react';
-import { Mic, Sparkles, X, Bot } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Mic, 
+  MicOff,
+  Sparkles, 
+  X, 
+  Bot, 
+  Send, 
+  Keyboard, 
+  Loader2, 
+  CheckCircle2, 
+  Layers, 
+  FileText, 
+  CheckSquare, 
+  Lightbulb, 
+  Play, 
+  Volume2, 
+  VolumeX, 
+  Square, 
+  Trash2,
+  BrainCircuit,
+  MessageSquare,
+  Zap,
+  Globe,
+  Plus,
+  Minimize2,
+  Maximize2
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
+import { useData } from '../../context/DataProvider';
+import { WakeCanvasVisualizer } from './WakeCanvasVisualizer';
+
+function extractExplanationFromPartialJson(partialJson: string): string {
+  // Try to find completed explanation block
+  const match = partialJson.match(/"explanation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+  if (match) {
+    try {
+      return match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    } catch (e) {
+      return match[1];
+    }
+  }
+  // Try to find open explanation block streaming to the end of string
+  const openMatch = partialJson.match(/"explanation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)$/);
+  if (openMatch) {
+    try {
+      return openMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    } catch (e) {
+      return openMatch[1];
+    }
+  }
+  // Fallback: in case the JSON is nested or fields are different
+  try {
+    const parsed = JSON.parse(partialJson + '}');
+    if (parsed.explanation) return parsed.explanation;
+  } catch (e) {}
+  return "";
+}
+
+function extractTranscriptFromPartialJson(partialJson: string): string {
+  const match = partialJson.match(/"transcript"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+  if (match) {
+    try {
+      return match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    } catch (e) {
+      return match[1];
+    }
+  }
+  const openMatch = partialJson.match(/"transcript"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)$/);
+  if (openMatch) {
+    try {
+      return openMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+    } catch (e) {
+      return openMatch[1];
+    }
+  }
+  return "";
+}
+
+function extractIntentFromPartialJson(partialJson: string): string {
+  const match = partialJson.match(/"intent"\s*:\s*"([^"\\]*)"/);
+  if (match) {
+    return match[1];
+  }
+  return "";
+}
+
+function areSessionsEqual(a: any[] | null | undefined, b: any[] | null | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const sa = a[i];
+    const sb = b[i];
+    if (!sa || !sb) return sa === sb;
+    if (sa.id !== sb.id) return false;
+    if (sa.title !== sb.title) return false;
+    const ma = sa.messages || [];
+    const mb = sb.messages || [];
+    if (ma.length !== mb.length) return false;
+    for (let j = 0; j < ma.length; j++) {
+      const msgA = ma[j];
+      const msgB = mb[j];
+      if (!msgA || !msgB) return msgA === msgB;
+      if (msgA.id !== msgB.id) return false;
+      if (msgA.role !== msgB.role) return false;
+      if (msgA.content !== msgB.content) return false;
+    }
+  }
+  return true;
+}
+
+function areConvoHistoriesEqual(a: any[] | null | undefined, b: any[] | null | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ha = a[i];
+    const hb = b[i];
+    if (!ha || !hb) return ha === hb;
+    if (ha.role !== hb.role) return false;
+    if (ha.text !== hb.text) return false;
+  }
+  return true;
+}
 
 export function VoiceMemoAssistant() {
-  const { isRightSidebarOpen, toggleRightSidebar } = useStore();
+  const { 
+    isRightSidebarOpen, 
+    toggleRightSidebar 
+  } = useStore();
+  
+  const {
+    projects,
+    addProject,
+    updateProject,
+    issues,
+    addIssue,
+    updateIssue,
+    deleteIssue,
+    notes,
+    addNote,
+    cortexSynapses,
+    setCortexSynapses,
+    activeProjectId,
+    setActiveProjectId,
+    addVoiceAction,
+    setAgents,
+    startProjectDreaming,
+    voiceTriggers,
+    wakeWord,
+    isWakeWordEnabled,
+    setIsWakeWordEnabled,
+    vocalDiagnostics,
+    addVocalDiagnostic,
+    trainedWakeWordModel,
+    selectedVoiceName,
+    speechPitch,
+    speechRate,
+    activationShortcutKey,
+    setActivationShortcutKey,
+    activationShortcutMouse,
+    setActivationShortcutMouse,
+    stopShortcutKey,
+    setStopShortcutKey,
+    stopShortcutMouse,
+    setStopShortcutMouse,
+    micShortcutKey,
+    micShortcutMouse,
+    clearShortcutKey,
+    clearShortcutMouse,
+    muteVoiceShortcutKey,
+    muteVoiceShortcutMouse,
+    navProjectsShortcutKey,
+    navProjectsShortcutMouse,
+    navNotesShortcutKey,
+    navNotesShortcutMouse,
+    navRoadmapShortcutKey,
+    navRoadmapShortcutMouse,
+    isAssistantMinimized,
+    setIsAssistantMinimized,
+    isAssistantOpen,
+    setIsAssistantOpen
+  } = useData();
+
   const location = useLocation();
+  const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
 
-  if (isRightSidebarOpen || isAssistantRoute) return null;
+  // Floating Hub Toggle Expanded State
+  const [isHubOpen, setIsHubOpen] = useState(false);
+  
+  useEffect(() => {
+    if (isAssistantOpen !== isHubOpen) {
+      setIsAssistantOpen(isHubOpen);
+    }
+  }, [isHubOpen, isAssistantOpen, setIsAssistantOpen]);
+  const [isUltraCompact, setIsUltraCompact] = useState(false);
+  const [hudTab, setHudTab] = useState<'speak' | 'notepad'>('speak');
+  const [isWakeWordListening, setIsWakeWordListening] = useState(false);
+  const [isMicPermissionBlocked, setIsMicPermissionBlocked] = useState(false);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+  const [isAetherMuted, setIsAetherMuted] = useState<boolean>(() => localStorage.getItem('isAetherMuted') === 'true');
+  const [showMutePopover, setShowMutePopover] = useState(false);
+
+  const isMicPermissionBlockedRef = useRef(isMicPermissionBlocked);
+  const isUserSpeakingRef = useRef(isUserSpeaking);
+
+  useEffect(() => { isMicPermissionBlockedRef.current = isMicPermissionBlocked; }, [isMicPermissionBlocked]);
+  useEffect(() => { isUserSpeakingRef.current = isUserSpeaking; }, [isUserSpeaking]);
+
+  const isAetherMutedRef = useRef(isAetherMuted);
+  useEffect(() => { isAetherMutedRef.current = isAetherMuted; }, [isAetherMuted]);
+
+  // Sync isAetherMuted state with other components
+  useEffect(() => {
+    const handleSync = () => {
+      const muted = localStorage.getItem('isAetherMuted') === 'true';
+      if (isAetherMutedRef.current !== muted) {
+        setIsAetherMuted(muted);
+        setVoicePlayback(!muted);
+        if (muted) {
+          try {
+            if (window.speechSynthesis) {
+              window.speechSynthesis.cancel();
+            }
+          } catch (e) {}
+          setIsSpeechActive(false);
+          if (backgroundRecogRef.current) {
+            try {
+              backgroundRecogRef.current.onend = null;
+              backgroundRecogRef.current.stop();
+            } catch (err) {}
+            backgroundRecogRef.current = null;
+            setIsWakeWordListening(false);
+          }
+        } else {
+          setTimeout(() => {
+            startBackgroundWakeWord();
+          }, 100);
+        }
+      }
+    };
+    window.addEventListener('aether-mute-sync', handleSync);
+    return () => window.removeEventListener('aether-mute-sync', handleSync);
+  }, []);
+
+  const toggleAetherMutedState = (mute: boolean) => {
+    setIsAetherMuted(mute);
+    localStorage.setItem('isAetherMuted', String(mute));
+    window.dispatchEvent(new Event('aether-mute-sync'));
+    addVocalDiagnostic(mute ? "MUTED: Aether voice listening suspended." : "UNMUTED: Aether background voice listening resumed.");
+    if (mute) {
+      if (backgroundRecogRef.current) {
+        try {
+          backgroundRecogRef.current.onend = null;
+          backgroundRecogRef.current.stop();
+        } catch (err) {}
+        backgroundRecogRef.current = null;
+        setIsWakeWordListening(false);
+      }
+    } else {
+      setTimeout(() => {
+        startBackgroundWakeWord();
+      }, 100);
+    }
+  };
+
+  // Input states
+  const [typedCommand, setTypedCommand] = useState('');
+  const [scratchpadText, setScratchpadText] = useState(() => {
+    try {
+      return localStorage.getItem('aether_scratchpad_text') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('');
+
+  // Deep back-and-forth conversation memory state
+  const [convoHistory, setConvoHistory] = useState<{ role: 'user' | 'model'; text: string }[]>(() => {
+    try {
+      const activeSessionId = localStorage.getItem('aether_current_session_id') || 'session-default';
+      const savedSessions = localStorage.getItem('aether_chat_sessions');
+      if (activeSessionId && savedSessions) {
+        const sessions = JSON.parse(savedSessions);
+        const activeSess = sessions.find((s: any) => s.id === activeSessionId);
+        if (activeSess && activeSess.messages) {
+          return activeSess.messages.map((m: any) => ({
+            role: m.role === 'assistant' || m.role === 'agent' ? 'model' as const : 'user' as const,
+            text: m.content
+          }));
+        }
+      }
+      const saved = localStorage.getItem('aether_convo_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [pendingNote, setPendingNote] = useState<string | null>(null);
+  const [sessionItems, setSessionItems] = useState<{ id: string; type: 'note' | 'task' | 'brainstorm' | 'synapse'; title: string; content: string; saved: boolean; isSuggested?: boolean }[]>(() => {
+    try {
+      const saved = localStorage.getItem('aether_session_items');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Audio recording refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const timerRef = useRef<any | null>(null);
+
+  // Audio spectrum refs for animation
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const [frequencyBuffer, setFrequencyBuffer] = useState<number[]>(Array(16).fill(4));
+
+  // Background Wake Word Detection States and Refs
+  const backgroundRecogRef = useRef<any>(null);
+  const speakActiveRef = useRef<boolean>(false);
+  const isWakeWordTriggeringRef = useRef<boolean>(false);
+  const activeSpeechTextRef = useRef<string>('');
+  const [isVoiceDetectedInBg, setIsVoiceDetectedInBg] = useState(false);
+
+  // Play synthetic audio chime helpers with throttling to prevent doubling/overlapping
+  const lastActivationChimeTimeRef = useRef<number>(0);
+  const lastDeactivationChimeTimeRef = useRef<number>(0);
+
+
+
+  const playActivationChime = () => {
+    try {
+      const now = Date.now();
+      if (now - lastActivationChimeTimeRef.current < 1500) {
+        console.log("Throttling activation chime play to prevent doubling.");
+        return;
+      }
+      lastActivationChimeTimeRef.current = now;
+
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // Elegant D5 chime note
+      gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.38);
+      
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.40);
+    } catch (e) {
+      console.warn("Could not play activation chime", e);
+    }
+  };
+
+  const playDeactivationChime = () => {
+    try {
+      const now = Date.now();
+      if (now - lastDeactivationChimeTimeRef.current < 1500) {
+        return;
+      }
+      lastDeactivationChimeTimeRef.current = now;
+
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(392.00, ctx.currentTime); // G4 note
+      gain1.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+      
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.32);
+    } catch (e) {
+      console.warn("Could not play deactivation chime", e);
+    }
+  };
+
+  // Hands-free continuous interaction states
+  const [isConversing, setIsConversing] = useState(true); // Default to on for seamless hands-free conversational loops
+  const [isListeningForSpeech, setIsListeningForSpeech] = useState(false);
+  const [speechTransitText, setSpeechTransitText] = useState('');
+  const [isSpeechActive, setIsSpeechActive] = useState(false);
+  const [isPowerSaving, setIsPowerSaving] = useState(true);
+
+  // Power-saving state controller: enters power-saving standby mode after 4 seconds of silence
+  useEffect(() => {
+    const isAnyActive = 
+      isRecording || 
+      isProcessing || 
+      isUserSpeaking || 
+      isSpeechActive || 
+      isVoiceDetectedInBg || 
+      (speechTransitText && speechTransitText.trim().length > 0);
+
+    if (isAnyActive) {
+      setIsPowerSaving(false);
+    } else {
+      const timer = setTimeout(() => {
+        setIsPowerSaving(true);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isRecording, isProcessing, isUserSpeaking, isSpeechActive, isVoiceDetectedInBg, speechTransitText]);
+
+  const [wakeWordTriggerTime, setWakeWordTriggerTime] = useState<number>(0);
+  const [proposedAction, setProposedAction] = useState<{
+    id: string;
+    intent: string;
+    parsedData: any;
+    explanation: string;
+    transcript: string;
+    actionDisplay: string;
+  } | null>(null);
+  const [pendingProjectClarification, setPendingProjectClarification] = useState<any | null>(null);
+  const activeRecogRef = useRef<any>(null);
+  const silenceTimerRef = useRef<any>(null);
+
+  // Result display feedback
+  const [aetherFeedback, setAetherFeedback] = useState<{
+    transcript?: string;
+    explanation?: string;
+    intent?: string;
+    triggeredAction?: string;
+    error?: string;
+  } | null>(null);
+
+  // TTS Feedback controls
+  const [voicePlayback, setVoicePlayback] = useState(true);
+  
+  // Synchronized state refs to prevent stale closure bugs in browser speech recognition callbacks
+  const isHubOpenRef = useRef(isHubOpen);
+  const isConversingRef = useRef(isConversing);
+  const isListeningForSpeechRef = useRef(isListeningForSpeech);
+  const isRecordingRef = useRef(isRecording);
+  const isProcessingRef = useRef(isProcessing);
+
+  // Explicit state flag to allow Aether's audio processing stream and speech synthesis to run concurrently
+  const [isConcurrentStreamEnabled, setIsConcurrentStreamEnabled] = useState(true);
+  const isConcurrentStreamEnabledRef = useRef(isConcurrentStreamEnabled);
+
+  const activeStreamAbortControllerRef = useRef<AbortController | null>(null);
+  const isStreamAbortedRef = useRef<boolean>(false);
+  const isPollingUpdateRef = useRef<boolean>(false);
+
+  useEffect(() => { isHubOpenRef.current = isHubOpen; }, [isHubOpen]);
+  useEffect(() => { isConversingRef.current = isConversing; }, [isConversing]);
+  useEffect(() => { isListeningForSpeechRef.current = isListeningForSpeech; }, [isListeningForSpeech]);
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+  useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
+  useEffect(() => { isConcurrentStreamEnabledRef.current = isConcurrentStreamEnabled; }, [isConcurrentStreamEnabled]);
+  
+  // High-Quality natural synthesis voices pre-fetching state
+  const [voices, setVoices] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const loadSyncVoices = () => {
+        const availableVoices = window.speechSynthesis.getVoices();
+        setVoices(availableVoices);
+      };
+      loadSyncVoices();
+      window.speechSynthesis.onvoiceschanged = loadSyncVoices;
+    }
+  }, []);
+
+  const getGreeting = () => {
+    const todayStr = new Date().toDateString();
+    const lastGreeting = localStorage.getItem('aether_last_greeting_date');
+    
+    if (lastGreeting !== todayStr) {
+      localStorage.setItem('aether_last_greeting_date', todayStr);
+      
+      const hours = new Date().getHours();
+      let timeOfDay = "evening";
+      if (hours >= 5 && hours < 12) {
+        timeOfDay = "morning";
+      } else if (hours >= 12 && hours < 17) {
+        timeOfDay = "afternoon";
+      }
+      
+      return `Good ${timeOfDay}! Welcome back to your Cortex Command Panel. How can I help you navigate the system, brainstorm ideas, or review your workspace today?`;
+    }
+    
+    const greetings = [
+      "Aether active in cooperative workspace. What core notes, tasks, or synapse ideas are we formulating today?",
+      "Vocal nodes online and listening. Tell me what we should build or analyze.",
+      "Aether visualization deck initialized. Speak or write your ideas down on the scratchnote."
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  };
+
+  // Spatial Shortcut Bind: Hold or Tap SPACEBAR to interrupt Aether or toggle mic listen mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isHubOpen) return;
+      // Do not interrupt while typing in textareas or inputs
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (speakActiveRef.current || isSpeechActive) {
+          handleIntelligentInterrupt();
+        } else if (isListeningForSpeech) {
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+          }
+          if (activeRecogRef.current) {
+            try {
+              activeRecogRef.current.onend = null;
+              activeRecogRef.current.stop();
+            } catch (err) {}
+            setIsListeningForSpeech(false);
+          }
+          if (speechTransitText.trim()) {
+            submitDirectConversationalText(speechTransitText);
+          }
+        } else {
+          setIsConversing(true);
+          startContinuousConversationalListen();
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isHubOpen, isSpeechActive, isListeningForSpeech, isConversing, speechTransitText]);
+
+  // Gestural and focus wakeup to bypass strict browser speech-auth auto-locks
+  useEffect(() => {
+    const handleGestureWakeup = () => {
+      if (isHubOpen) {
+        if (isConversing && !isListeningForSpeech) {
+          setIsMicPermissionBlocked(false);
+          startContinuousConversationalListen();
+        }
+      } else {
+        if (isWakeWordEnabled && !isAetherMuted) {
+          setIsMicPermissionBlocked(false);
+          if (!backgroundRecogRef.current) {
+            startBackgroundWakeWord();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('click', handleGestureWakeup);
+    window.addEventListener('focus', handleGestureWakeup);
+    window.addEventListener('mousedown', handleGestureWakeup);
+    window.addEventListener('touchstart', handleGestureWakeup);
+    window.addEventListener('pointerdown', handleGestureWakeup);
+    window.addEventListener('keydown', handleGestureWakeup);
+    return () => {
+      window.removeEventListener('click', handleGestureWakeup);
+      window.removeEventListener('focus', handleGestureWakeup);
+      window.removeEventListener('mousedown', handleGestureWakeup);
+      window.removeEventListener('touchstart', handleGestureWakeup);
+      window.removeEventListener('pointerdown', handleGestureWakeup);
+      window.removeEventListener('keydown', handleGestureWakeup);
+    };
+  }, [isWakeWordEnabled, isHubOpen, isWakeWordListening, isConversing, isListeningForSpeech]);
+
+  // Auto clean audio on unmount
+  useEffect(() => {
+    return () => {
+      cleanupAudioRecording();
+    };
+  }, []);
+
+  // Keep convoHistory ref up-to-date for polling
+  const convoHistoryRef = useRef(convoHistory);
+  useEffect(() => {
+    convoHistoryRef.current = convoHistory;
+  }, [convoHistory]);
+
+  // Save conversation history to local storage and sync to server when it changes
+  useEffect(() => {
+    localStorage.setItem('aether_convo_history', JSON.stringify(convoHistory));
+    
+    // Sync to backend central database / Server-Side Mobile Gateway Chat History
+    if (!isPollingUpdateRef.current && convoHistory.length > 0) {
+      fetch('/api/whatsapp/sync-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: convoHistory })
+      }).catch(err => console.warn("Failed to sync conversation history to server:", err));
+    }
+
+    try {
+      const activeSessionId = localStorage.getItem('aether_current_session_id') || 'session-default';
+      const savedSessions = localStorage.getItem('aether_chat_sessions');
+      if (savedSessions) {
+        const sessions = JSON.parse(savedSessions);
+        let modified = false;
+        const updatedSessions = sessions.map((sess: any) => {
+          if (sess.id === activeSessionId) {
+            // Compare contents rather than full objects to avoid ID mismatch loops
+            const currentContents = (sess.messages || []).map((m: any) => ({
+              role: m.role === 'assistant' || m.role === 'agent' ? 'model' as const : 'user' as const,
+              text: m.content
+            }));
+            
+            const convoContents = convoHistory;
+            
+            if (convoHistory.length === 0 && currentContents.length > 0) {
+              // Safeguard: ignore initial empty convoHistory on mount if the session already has messages
+              return sess;
+            }
+            
+            if (!areConvoHistoriesEqual(currentContents, convoContents)) {
+              // Reconstruct mapped messages while preserving original IDs where possible
+              const mappedMessages = convoHistory.map((item, idx) => {
+                const existing = sess.messages?.[idx];
+                const itemRole = item.role === 'model' ? 'agent' : 'user';
+                if (existing && (existing.role === itemRole || (existing.role === 'assistant' && itemRole === 'agent')) && existing.content === item.text) {
+                  return existing;
+                }
+                return {
+                  id: existing?.id || `msg-voice-${idx}-${Date.now()}`,
+                  role: item.role === 'model' ? 'agent' : 'user',
+                  content: item.text,
+                  timestamp: existing?.timestamp || Date.now()
+                };
+              });
+              
+              modified = true;
+              return { ...sess, messages: mappedMessages };
+            }
+          }
+          return sess;
+        });
+        
+        if (modified) {
+          localStorage.setItem('aether_chat_sessions', JSON.stringify(updatedSessions));
+          // Dispatch events to notify other components on the page
+          window.dispatchEvent(new Event('storage'));
+          window.dispatchEvent(new CustomEvent('aether_sync_chat', { detail: { sender: 'VoiceMemoAssistant' } }));
+        }
+      }
+    } catch (e) {
+      console.warn("Could not sync conversation with sidebar:", e);
+    }
+  }, [convoHistory]);
+
+  // Poll for central chat history updates from backend to seamlessly resume conversation on mobile/PC
+  useEffect(() => {
+    let active = true;
+    const pollHistory = async () => {
+      try {
+        const res = await fetch('/api/whatsapp/config');
+        if (res.ok && active) {
+          const data = await res.json();
+          if (data.chatHistory) {
+            const mapped = data.chatHistory.map((m: any) => ({
+              role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
+              text: m.text
+            }));
+            
+            if (!areConvoHistoriesEqual(convoHistoryRef.current, mapped)) {
+              isPollingUpdateRef.current = true;
+              setConvoHistory(mapped);
+              setTimeout(() => {
+                isPollingUpdateRef.current = false;
+              }, 100);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed polling voice history from server:", err);
+      }
+    };
+
+    pollHistory();
+    const interval = setInterval(pollHistory, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Keep convoHistory in sync with any text updates typed in the sidebar
+  useEffect(() => {
+    const syncFromSidebar = () => {
+      try {
+        const activeSessionId = localStorage.getItem('aether_current_session_id');
+        const savedSessions = localStorage.getItem('aether_chat_sessions');
+        if (activeSessionId && savedSessions) {
+          const sessions = JSON.parse(savedSessions);
+          const activeSess = sessions.find((s: any) => s.id === activeSessionId);
+          if (activeSess && activeSess.messages) {
+            const mapped = activeSess.messages.map((m: any) => ({
+              role: m.role === 'assistant' || m.role === 'agent' ? 'model' as const : 'user' as const,
+              text: m.content
+            }));
+            
+            setConvoHistory(prev => {
+              if (!areConvoHistoriesEqual(prev, mapped)) {
+                return mapped;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Error syncing from sidebar to convoHistory:", e);
+      }
+    };
+
+    // Initial load sync
+    syncFromSidebar();
+
+    // Set up active event bindings
+    const handleSync = (e: any) => {
+      if (e && e.type === 'aether_sync_chat' && e.detail?.sender === 'VoiceMemoAssistant') {
+        return;
+      }
+      syncFromSidebar();
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('aether_sync_chat', handleSync);
+    
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('aether_sync_chat', handleSync);
+    };
+  }, []);
+
+  // Persist workspace scratchpad Text to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_scratchpad_text', scratchpadText);
+    } catch (e) {
+      console.warn("Could not save scratchpadText:", e);
+    }
+  }, [scratchpadText]);
+
+  // Persist staging active session items (Active Ideas) to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_session_items', JSON.stringify(sessionItems));
+    } catch (e) {
+      console.warn("Could not save sessionItems:", e);
+    }
+  }, [sessionItems]);
+
+  // Persist current active hudTab
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_hud_tab', hudTab);
+    } catch (e) {
+      console.warn("Could not save hudTab:", e);
+    }
+  }, [hudTab]);
+
+  // Timer counter effect
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setRecordingSeconds(0);
+    }
+  }, [isRecording]);
+
+  const cleanupAudioRecording = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+  };
+
+  const startBackgroundWakeWord = () => {
+    if (!isWakeWordEnabled || isHubOpen || isAetherMutedRef.current) {
+      setIsWakeWordListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setIsWakeWordListening(false);
+      return;
+    }
+
+    if (backgroundRecogRef.current) {
+      try {
+        backgroundRecogRef.current.onend = null;
+        backgroundRecogRef.current.onerror = null;
+        backgroundRecogRef.current.stop();
+      } catch (e) {}
+      backgroundRecogRef.current = null;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsWakeWordListening(true);
+        setIsMicPermissionBlocked(false);
+        setIsVoiceDetectedInBg(false);
+        const activeWord = wakeWord.toLowerCase().trim();
+        if (trainedWakeWordModel) {
+          addVocalDiagnostic(`ENGINE: Background wake word listening initialized. Model calibrated (Pitch Range: ${trainedWakeWordModel.pitchHz}Hz). Listening for "${activeWord}"`);
+        } else {
+          addVocalDiagnostic(`ENGINE: Background wake word listening started (Uncalibrated). Listening for "${activeWord}"`);
+        }
+      };
+
+      recognition.onsoundstart = () => {
+        setIsVoiceDetectedInBg(true);
+      };
+      recognition.onspeechstart = () => {
+        setIsVoiceDetectedInBg(true);
+      };
+      recognition.onspeechend = () => {
+        setIsVoiceDetectedInBg(false);
+      };
+      recognition.onsoundend = () => {
+        setIsVoiceDetectedInBg(false);
+      };
+
+      recognition.onresult = (event: any) => {
+        if (speakActiveRef.current) return;
+
+        let fullTranscriptOfRecognition = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          fullTranscriptOfRecognition += event.results[i][0].transcript;
+        }
+        const transcript = fullTranscriptOfRecognition.toLowerCase().trim();
+        const cleanWakeWord = wakeWord.toLowerCase().trim();
+
+        if (transcript.trim()) {
+          setIsVoiceDetectedInBg(true);
+          if ((window as any)._bgVoiceTimer) {
+            clearTimeout((window as any)._bgVoiceTimer);
+          }
+          (window as any)._bgVoiceTimer = setTimeout(() => {
+            setIsVoiceDetectedInBg(false);
+          }, 1500);
+
+          const logMsg = `SPEECH: Interim capture "${transcript}"`;
+          addVocalDiagnostic(logMsg);
+        }
+
+        // High-fidelity proximate phonetics fallback matching loop
+        const isWakeWordMatched = 
+          transcript.includes(cleanWakeWord) || 
+          transcript.includes('hey aether') || 
+          transcript.includes('aether') || 
+          transcript.includes('hey ether') || 
+          transcript.includes('ether') || 
+          transcript.includes('hey heather') || 
+          transcript.includes('heather') || 
+          transcript.includes('k either') ||
+          transcript.includes('k ether') ||
+          transcript.includes('k aether') ||
+          transcript.includes('k ather') ||
+          transcript.includes('k-either') ||
+          transcript.includes('k-ether') ||
+          transcript.includes('k-aether') ||
+          transcript.includes('kay either') ||
+          transcript.includes('kay ether') ||
+          transcript.includes('kay aether') ||
+          transcript.includes('kay ather') ||
+          transcript.includes('okay ether') ||
+          transcript.includes('okay either') ||
+          transcript.includes('ok ether') ||
+          transcript.includes('ok either') ||
+          transcript.includes('hey either') ||
+          transcript.includes('hey other') ||
+          transcript.includes('hey author') ||
+          transcript.includes('hey aster') ||
+          transcript.includes('hey actor') ||
+          transcript.includes('eighty') ||
+          transcript.includes('hi aether') ||
+          transcript.includes('okay aether') ||
+          transcript.includes('ok aether') ||
+          transcript.includes('hello aether') ||
+          transcript.includes('wake up aether') ||
+          transcript.includes('wake up ether') ||
+          transcript.includes('activate aether') ||
+          transcript.includes('hey ever') ||
+          transcript.includes('eva') ||
+          transcript.includes('hey eva') ||
+          transcript.includes('heather wake') ||
+          transcript.includes('ather') ||
+          transcript.includes('hey ather');
+
+        if (isWakeWordMatched) {
+          if (isWakeWordTriggeringRef.current) return;
+          isWakeWordTriggeringRef.current = true;
+          setTimeout(() => {
+            isWakeWordTriggeringRef.current = false;
+          }, 2500);
+
+          addVocalDiagnostic(`SUCCESS: Wake word matched target "${cleanWakeWord}". Met confidence coefficients! Triggering Aether...`);
+          recognition.onend = null;
+          recognition.onerror = null;
+          try { recognition.stop(); } catch (e) {}
+          setIsWakeWordListening(false);
+          setIsMicPermissionBlocked(false);
+          setIsVoiceDetectedInBg(false);
+          
+          playActivationChime();
+          setWakeWordTriggerTime(Date.now());
+
+          setIsHubOpen(true);
+          setIsAssistantMinimized(false);
+          setIsUltraCompact(false);
+          setHudTab('speak');
+          setIsConversing(true);
+
+          const chosenGreeting = getGreeting();
+
+          setConvoHistory([
+            { role: 'model', text: chosenGreeting }
+          ]);
+          setAetherFeedback({
+            explanation: chosenGreeting
+          });
+
+          triggerBrowserSpeechSynthesis(chosenGreeting);
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        if (e.error !== 'no-speech' && e.error !== 'aborted') {
+          console.warn("Background SpeechRecognition error state:", e.error);
+          addVocalDiagnostic(`WARNING: Speech recognition engine reported: "${e.error}"`);
+        }
+        if (e.error === 'not-allowed') {
+          addVocalDiagnostic(`CRITICAL: Microphone access blocked. Please grant permissions or clear busy devices to activate background wake words.`);
+          setIsWakeWordListening(false);
+          setIsMicPermissionBlocked(true);
+        }
+      };
+
+      recognition.onend = () => {
+        backgroundRecogRef.current = null;
+
+        // Keep isWakeWordListening as true in standard silence cycling so UI doesn't flicker/flap
+        const isOnSettingsPage = location.pathname === '/settings';
+        
+        // If microphone permission is blocked (e.g. lack of user gesture), do NOT auto-retry to prevent rate limit.
+        // Instead, wait for a user gesture click/interaction to re-enable.
+        const willRestart = isWakeWordEnabled && !isHubOpen && !isOnSettingsPage && !isAetherMutedRef.current && !isMicPermissionBlockedRef.current;
+        
+        // Safely recreate and spin up a pristine instance to maintain alive state
+        setTimeout(() => {
+          if (isWakeWordEnabled && !isHubOpen && !isOnSettingsPage && !isAetherMutedRef.current && !isMicPermissionBlockedRef.current) {
+            startBackgroundWakeWord();
+          } else {
+            setIsWakeWordListening(false);
+          }
+        }, 300); // 300ms delay to cleanly recycle mic resources
+      };
+
+      backgroundRecogRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn("Failed starting background wake word recognition:", err);
+      addVocalDiagnostic(`CRITICAL: System error spawning SpeechRecognition node.`);
+      setIsWakeWordListening(false);
+    }
+  };
+
+  const startContinuousConversationalListen = () => {
+    if (!isHubOpenRef.current) return;
+    if (isAetherMutedRef.current) {
+      setIsListeningForSpeech(false);
+      return;
+    }
+    
+    // Prevent starting speech recognition if it is already active & listening to protect the browser hardware layer
+    if (activeRecogRef.current && isListeningForSpeechRef.current) {
+      console.log("Speech recognition is already running and listening. No need to restart.");
+      return;
+    }
+    
+    // Stop any existing active recognition first
+    if (activeRecogRef.current) {
+      try {
+        activeRecogRef.current.onend = null;
+        activeRecogRef.current.stop();
+      } catch (e) {}
+      activeRecogRef.current = null;
+    }
+    
+    // Stop background wake word during active hub sessions to prevent hardware locks
+    if (backgroundRecogRef.current) {
+      try {
+        backgroundRecogRef.current.onend = null;
+        backgroundRecogRef.current.stop();
+      } catch (e) {}
+      backgroundRecogRef.current = null;
+      setIsWakeWordListening(false);
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("SpeechRecognition is not fully supported in your browser client.");
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      let finalTranscriptOfRound = '';
+
+      recognition.onstart = () => {
+        setIsListeningForSpeech(true);
+        setSpeechTransitText('');
+        setIsUserSpeaking(false);
+      };
+
+      recognition.onsoundstart = () => {
+        const isStreaming = activeStreamAbortControllerRef.current !== null;
+        const isSpeaking = speakActiveRef.current;
+        if (!isSpeaking && !isStreaming && !isProcessing) {
+          setIsUserSpeaking(true);
+        }
+      };
+
+      recognition.onspeechstart = () => {
+        const isStreaming = activeStreamAbortControllerRef.current !== null;
+        const isSpeaking = speakActiveRef.current;
+        if (!isSpeaking && !isStreaming && !isProcessing) {
+          setIsUserSpeaking(true);
+        }
+      };
+
+      recognition.onspeechend = () => {
+        setTimeout(() => {
+          setIsUserSpeaking(false);
+        }, 1200);
+      };
+
+      recognition.onsoundend = () => {
+        setTimeout(() => {
+          setIsUserSpeaking(false);
+        }, 1200);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscriptOfRound += event.results[i][0].transcript + ' ';
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        const fullCurrentText = (finalTranscriptOfRound + interimTranscript).trim();
+
+        // Intelligent Voice Barge-In / User Interrupting AI Speak or active stream
+        const isStreaming = activeStreamAbortControllerRef.current !== null;
+        const isSpeaking = speakActiveRef.current;
+        const isAetherProducingSpeech = isSpeaking || isStreaming || isProcessing;
+
+        if (isAetherProducingSpeech) {
+          if (fullCurrentText.length > 0) {
+            const aiText = activeSpeechTextRef.current || "";
+            const cleanTranscript = fullCurrentText.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").trim();
+            
+            // If AI is actually speaking, filter out self-transcription echoes.
+            // If AI is not speaking yet (just streaming/processing), any voice input is from the user!
+            let isUserInterrupting = false;
+            
+            if (isSpeaking) {
+              const cleanAi = aiText.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").trim();
+              const aiWords = new Set(cleanAi.split(/\s+/));
+              const transcriptWords = cleanTranscript.split(/\s+/);
+
+              let newWordsCount = 0;
+              for (const word of transcriptWords) {
+                if (word && !aiWords.has(word)) {
+                  newWordsCount++;
+                }
+              }
+
+              const intenseCuts = ["stop", "wait", "no", "cancel", "hold on", "hold", "aether", "ether", "heather", "shut up", "go away", "hey", "close"];
+              const hasIntenseCut = intenseCuts.some(cut => {
+                if (cleanTranscript.includes(cut)) {
+                  // If the AI itself is speaking this word, don't trigger self-interruption!
+                  if (cleanAi.includes(cut)) {
+                    return false;
+                  }
+                  return true;
+                }
+                return false;
+              });
+
+              // Refined threshold: require at least 5 new words or a clear intense cut command to prevent minor room echo triggers
+              if (newWordsCount >= 5 || hasIntenseCut) {
+                isUserInterrupting = true;
+              }
+            } else {
+              // AI is streaming/processing silently, any captured speech of length >= 1 is the user
+              if (cleanTranscript.length >= 1) {
+                isUserInterrupting = true;
+              }
+            }
+
+            if (isUserInterrupting) {
+              addVocalDiagnostic(`INTERRUPT: Voice barge-in detected ("${fullCurrentText}"). Cancelling AI speech & resetting stream.`);
+              setIsUserSpeaking(false);
+              handleIntelligentInterrupt();
+              return;
+            } else {
+              // Skip self-transcription echo
+              return;
+            }
+          } else {
+            return;
+          }
+        }
+
+        // Track user speaking in active conversation
+        if (fullCurrentText.length > 0) {
+          setIsUserSpeaking(true);
+          if ((window as any)._userSpeakingTimer) {
+            clearTimeout((window as any)._userSpeakingTimer);
+          }
+          (window as any)._userSpeakingTimer = setTimeout(() => {
+            setIsUserSpeaking(false);
+          }, 2500);
+        }
+
+        setSpeechTransitText(fullCurrentText);
+
+        // Feed silence timer to stop and commit
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+
+        if (fullCurrentText.length > 0) {
+          silenceTimerRef.current = setTimeout(() => {
+            recognition.onend = null; // turn off reconnect loop on explicit commit
+            try { recognition.stop(); } catch (e) {}
+            setIsListeningForSpeech(false);
+            setIsUserSpeaking(false);
+            submitDirectConversationalText(fullCurrentText);
+          }, 1000); // 1000ms of quiet auto-dispatches for snappier transitions without premature cuts
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        setIsUserSpeaking(false);
+        if (e.error !== 'no-speech' && e.error !== 'aborted') {
+          console.warn("Conversational loop recognition error:", e);
+          addVocalDiagnostic(`WARNING: Speech recognition error state: "${e.error}"`);
+        }
+        if (e.error === 'not-allowed') {
+          setIsMicPermissionBlocked(true);
+          addVocalDiagnostic("CRITICAL: Microphone access blocked. Please unlock microphone feed.");
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListeningForSpeech(false);
+        setIsUserSpeaking(false);
+        // Automatic restart loop while modal window is active & we are conversing
+        setTimeout(() => {
+          if (isHubOpenRef.current && isConversingRef.current && !isListeningForSpeechRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 150);
+      };
+
+      activeRecogRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn("Failed starting conversational listener loop:", err);
+    }
+  };
+
+  const requestAetherStream = async (payload: any) => {
+    setIsProcessing(true);
+    setAetherFeedback(null);
+    setProcessingStatus("Contacting Aether stream gateway...");
+
+    const processedSentences = new Set<string>();
+
+    const controller = new AbortController();
+    activeStreamAbortControllerRef.current = controller;
+    isStreamAbortedRef.current = false;
+
+    try {
+      const response = await fetch('/api/voice/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          stream: true
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) throw new Error(`Engine returned error code: ${response.status}`);
+      if (!response.body) throw new Error("No response body available for stream");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamDoc = "";
+
+      // Initialize real-time visualization block for streaming
+      setAetherFeedback({
+        transcript: payload.textCommand || "[Decoding incoming audio...]",
+        explanation: "Aether is formulating response...",
+        intent: "chat_query"
+      });
+
+      // Clear any previous speech synthesis first
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setIsSpeechActive(false);
+      speakActiveRef.current = false;
+
+      // Function to speak a chunk of text
+      const speakChunk = (textToSpeak: string) => {
+        if (!voicePlayback) return;
+        try {
+          if (!window.speechSynthesis) return;
+          
+          // Remove markdown symbols/stars
+          const cleanText = textToSpeak.replace(/[*#`_\-]/g, '').trim();
+          if (!cleanText) return;
+
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          utterance.rate = speechRate || 1.05;
+          utterance.pitch = speechPitch || 1.0;
+
+          const availableVoices = window.speechSynthesis.getVoices().length > 0 
+            ? window.speechSynthesis.getVoices()
+            : voices;
+          
+          const getBestVoice = () => {
+            if (selectedVoiceName) {
+              const matched = availableVoices.find(v => v.name === selectedVoiceName);
+              if (matched) return matched;
+            }
+            const priorities = [
+              (v: any) => v.name.includes('Google US English') || v.name.includes('Google UK English Female') || v.name.includes('Google US English Male'),
+              (v: any) => v.name.includes('Google') && v.lang.startsWith('en'),
+              (v: any) => v.name.toLowerCase().includes('natural') && v.lang.startsWith('en'),
+              (v: any) => v.name.toLowerCase().includes('online') && v.lang.startsWith('en'),
+              (v: any) => v.name.toLowerCase().includes('enhanced') && v.lang.startsWith('en'),
+              (v: any) => v.name.includes('Samantha') || v.name.includes('Daniel') || v.name.includes('Aria') || v.name.includes('Guy'),
+              (v: any) => v.lang.startsWith('en-US'),
+              (v: any) => v.lang.startsWith('en'),
+            ];
+            for (const priority of priorities) {
+              const found = availableVoices.find(priority);
+              if (found) return found;
+            }
+            return availableVoices.find(v => v.lang.startsWith('en')) || null;
+          };
+
+          const bestVoice = getBestVoice();
+          if (bestVoice) {
+            utterance.voice = bestVoice;
+          }
+
+          utterance.onstart = () => {
+            setIsSpeechActive(true);
+            speakActiveRef.current = true;
+          };
+
+          utterance.onend = () => {
+            setTimeout(() => {
+              if (window.speechSynthesis && !window.speechSynthesis.speaking) {
+                setIsSpeechActive(false);
+                speakActiveRef.current = false;
+                addVocalDiagnostic("CONVO_MIC: Streaming SpeechSynthesis completed.");
+                
+                if (isHubOpenRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+                  if (isConversingRef.current || isConcurrentStreamEnabledRef.current) {
+                    setTimeout(() => {
+                      startContinuousConversationalListen();
+                    }, 300);
+                  }
+                } else {
+                  startBackgroundWakeWord();
+                }
+              }
+            }, 100);
+          };
+
+          (window as any)._activeSpeechUtterance = utterance;
+          window.speechSynthesis.speak(utterance);
+        } catch (e) {
+          console.warn("Speech Synthesis streaming chunk failure:", e);
+        }
+      };
+
+      while (true) {
+        if (isStreamAbortedRef.current) {
+          addVocalDiagnostic("CONVO_MIC: Active stream loop aborted due to interrupt.");
+          break;
+        }
+        const { value, done } = await reader.read();
+        if (done || isStreamAbortedRef.current) break;
+
+        const chunkText = decoder.decode(value);
+        const lines = chunkText.split('\n');
+
+        for (const line of lines) {
+          if (isStreamAbortedRef.current) break;
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.chunk) {
+                streamDoc += data.chunk;
+
+                // Extract partial explanation from streaming JSON
+                const partialExplanation = extractExplanationFromPartialJson(streamDoc);
+                const partialTranscript = extractTranscriptFromPartialJson(streamDoc);
+
+                if (partialExplanation) {
+                  setAetherFeedback(prev => ({
+                    ...prev,
+                    transcript: partialTranscript || prev?.transcript || payload.textCommand || "[Decoded]",
+                    explanation: partialExplanation
+                  }));
+
+                  // Voice Streaming Optimization: speak finished sentences immediately
+                  if (voicePlayback) {
+                    // Match ends of sentences: periods, questions, exclamations, or newlines
+                    const sentences = partialExplanation.match(/[^.!?\n]+[.!?\n]+/g);
+                    if (sentences) {
+                      for (const sentence of sentences) {
+                        const trimmed = sentence.trim();
+                        if (trimmed && !processedSentences.has(trimmed)) {
+                          processedSentences.add(trimmed);
+                          speakChunk(trimmed);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              // Ignore partial parsing errors
+            }
+          }
+        }
+      }
+
+      if (isStreamAbortedRef.current) {
+        addVocalDiagnostic("CONVO_MIC: Active stream was aborted. Skipping post-processing.");
+        return;
+      }
+
+      // Once the stream completes, parse the full JSON response to handle all secondary side-effects (intents, saving rules, etc.)
+      try {
+        const parsedDoc = JSON.parse(streamDoc.trim());
+        
+        // If there's any leftover text in the sentence buffer that hasn't been spoken yet, speak it!
+        if (voicePlayback && parsedDoc.explanation) {
+          const trimmedFull = parsedDoc.explanation.trim();
+          const sentences = trimmedFull.match(/[^.!?\n]+[.!?\n]+/g) || [];
+          let spokenAcc = "";
+          for (const s of sentences) {
+            const t = s.trim();
+            if (processedSentences.has(t)) {
+              spokenAcc += s;
+            }
+          }
+          const remainder = trimmedFull.substring(spokenAcc.length).trim();
+          if (remainder && !processedSentences.has(remainder)) {
+            processedSentences.add(remainder);
+            speakChunk(remainder);
+          }
+        }
+
+        handleProcessedResponse(parsedDoc, true);
+      } catch (parseErr) {
+        console.warn("Could not parse fully completed stream JSON:", parseErr, streamDoc);
+        const partialExplanation = extractExplanationFromPartialJson(streamDoc);
+        const partialTranscript = extractTranscriptFromPartialJson(streamDoc) || payload.textCommand || "";
+        const partialIntent = extractIntentFromPartialJson(streamDoc) || "chat_query";
+
+        handleProcessedResponse({
+          transcript: partialTranscript,
+          explanation: partialExplanation || "Stream parsing finished.",
+          intent: partialIntent,
+          shouldWriteDown: "no",
+          noteContent: "",
+          parsedData: {}
+        }, true);
+      }
+
+    } catch (err: any) {
+      if (err.name === 'AbortError' || isStreamAbortedRef.current) {
+        addVocalDiagnostic("CONVO_MIC: Fetch request aborted successfully.");
+        return;
+      }
+      console.error(err);
+      setAetherFeedback({ error: err.message || "Failed conversational streaming processing" });
+      
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isSpeechActive) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const submitDirectConversationalText = async (command: string) => {
+    if (!command.trim() || isProcessing) return;
+    
+    // Intercept when we have a pending proposed action
+    if (proposedAction) {
+      const cleanCmd = command.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
+      
+      const confirmPhrases = ["yes", "yeah", "yep", "sure", "ok", "okay", "confirm", "accept", "accepts", "do it", "approve"];
+      const declinePhrases = ["no", "nope", "nay", "decline", "deny", "refuse", "cancel", "discard", "dont", "don't"];
+
+      const isConfirm = confirmPhrases.some(p => cleanCmd === p || cleanCmd.startsWith(p + " ") || cleanCmd.endsWith(" " + p));
+      const isDecline = declinePhrases.some(p => cleanCmd === p || cleanCmd.startsWith(p + " ") || cleanCmd.endsWith(" " + p));
+
+      if (isConfirm) {
+        executeProposedAction(proposedAction);
+        return;
+      } else if (isDecline) {
+        discardProposedAction(proposedAction);
+        return;
+      }
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus("Aether parsing continuous voice feed...");
+    setAetherFeedback(null);
+
+    if (checkVoiceTriggers(command)) {
+      setIsProcessing(false);
+      return;
+    }
+
+    try {
+      const contextPayload = projects.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description
+      }));
+
+      await requestAetherStream({
+        textCommand: command,
+        projectContexts: contextPayload,
+        cortexSynapses: cortexSynapses || [],
+        notes: notes || [],
+        history: convoHistory,
+        pendingNote: pendingNote,
+        activeProjectId,
+        currentPath: location.pathname
+      });
+    } catch (err: any) {
+      console.error(err);
+      setAetherFeedback({ error: err.message || "Failed conversational processing" });
+      
+      // Safety auto-resume on error
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isSpeechActive) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleIntelligentInterrupt = async () => {
+    isStreamAbortedRef.current = true;
+    
+    // Asynchronously abort any active Gemini stream
+    if (activeStreamAbortControllerRef.current) {
+      try {
+        addVocalDiagnostic("CONVO_MIC: Terminating active Gemini streaming synthesis via AbortController...");
+        activeStreamAbortControllerRef.current.abort();
+      } catch (e) {
+        console.warn("Error aborting stream controller:", e);
+      }
+      activeStreamAbortControllerRef.current = null;
+    }
+
+    // Cancel any current browser Speech Synthesis vocalizations
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        addVocalDiagnostic("CONVO_MIC: Local SpeechSynthesis cancelled successfully.");
+      } catch (e) {
+        console.warn("Error cancelling speech synthesis:", e);
+      }
+    }
+    
+    setIsSpeechActive(false);
+    speakActiveRef.current = false;
+    
+    // Use an elegant async delay before restarting the continuous conversational loop
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    if (isHubOpenRef.current && isConversingRef.current && !isListeningForSpeechRef.current) {
+      startContinuousConversationalListen();
+    }
+  };
+
+  const matchesKeyboardShortcut = (e: KeyboardEvent, shortcutStr: string) => {
+    if (!shortcutStr) return false;
+    const parts = shortcutStr.toLowerCase().split('+');
+    const key = parts[parts.length - 1].trim();
+    
+    const needsCtrl = parts.includes('ctrl') || parts.includes('control');
+    const needsAlt = parts.includes('alt');
+    const needsShift = parts.includes('shift');
+    const needsMeta = parts.includes('meta') || parts.includes('cmd') || parts.includes('win');
+    
+    const hasCtrl = e.ctrlKey;
+    const hasAlt = e.altKey;
+    const hasShift = e.shiftKey;
+    const hasMeta = e.metaKey;
+    
+    if (needsCtrl !== hasCtrl) return false;
+    if (needsAlt !== hasAlt) return false;
+    if (needsShift !== hasShift) return false;
+    if (needsMeta !== hasMeta) return false;
+    
+    const eventKey = e.key.toLowerCase();
+    const eventCode = e.code.toLowerCase();
+    
+    return eventKey === key || eventCode === key;
+  };
+
+  const matchesMouseShortcut = (e: MouseEvent, shortcutStr: string) => {
+    if (!shortcutStr || shortcutStr === 'none') return false;
+    const cleanStr = shortcutStr.toLowerCase();
+    
+    // Support modifier key constraints for mouse clicks
+    const needsCtrl = cleanStr.includes('ctrl');
+    const needsAlt = cleanStr.includes('alt');
+    const needsShift = cleanStr.includes('shift');
+    const needsMeta = cleanStr.includes('meta');
+    
+    if (needsCtrl !== e.ctrlKey) return false;
+    if (needsAlt !== e.altKey) return false;
+    if (needsShift !== e.shiftKey) return false;
+    if (needsMeta !== e.metaKey) return false;
+    
+    if (cleanStr.includes('middle') || cleanStr.includes('button-1')) {
+      return e.button === 1;
+    }
+    if (cleanStr.includes('right') || cleanStr.includes('button-2')) {
+      return e.button === 2;
+    }
+    if (cleanStr.includes('back') || cleanStr.includes('button-3')) {
+      return e.button === 3;
+    }
+    if (cleanStr.includes('forward') || cleanStr.includes('button-4')) {
+      return e.button === 4;
+    }
+    if (cleanStr.includes('left') || cleanStr.includes('button-0')) {
+      return e.button === 0;
+    }
+    return false;
+  };
+
+  const handleOpenAssistant = (shouldMinimize = false) => {
+    setIsHubOpen(true);
+    setIsAssistantMinimized(shouldMinimize);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    
+    setHudTab('speak');
+    setIsConversing(true);
+    const chosenGreeting = getGreeting();
+    setConvoHistory([
+      { role: 'model', text: chosenGreeting }
+    ]);
+    setAetherFeedback({
+      explanation: chosenGreeting
+    });
+    setIsMicPermissionBlocked(false);
+    setTimeout(() => {
+      triggerBrowserSpeechSynthesis(chosenGreeting);
+    }, 120);
+  };
+
+  const handleCloseAssistant = () => {
+    playDeactivationChime();
+    setIsHubOpen(false);
+    setIsAssistantMinimized(false);
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    setIsSpeechActive(false);
+    speakActiveRef.current = false;
+    
+    if (activeRecogRef.current) {
+      try {
+        activeRecogRef.current.onend = null;
+        activeRecogRef.current.stop();
+      } catch (e) {}
+      activeRecogRef.current = null;
+    }
+    setIsListeningForSpeech(false);
+  };
+
+  const handleToggleMicListen = () => {
+    if (isListeningForSpeech) {
+      if (activeRecogRef.current) {
+        try {
+          activeRecogRef.current.onend = null;
+          activeRecogRef.current.stop();
+        } catch (e) {}
+        activeRecogRef.current = null;
+      }
+      setIsListeningForSpeech(false);
+      addVocalDiagnostic("ACTION: Stopped speech session via shortcut command.");
+    } else {
+      if (!isHubOpen) {
+        handleOpenAssistant(false);
+      }
+      setTimeout(() => {
+        startContinuousConversationalListen();
+      }, 200);
+    }
+  };
+
+  const handleClearConvo = () => {
+    setConvoHistory([]);
+    setAetherFeedback(null);
+    addVocalDiagnostic("ACTION: Cleared conversation history via shortcut command.");
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  };
+
+  const handleToggleMute = () => {
+    const nextMuteState = !isAetherMuted;
+    toggleAetherMutedState(nextMuteState);
+  };
+
+  const handleNavProjects = () => {
+    navigate('/projects');
+    addVocalDiagnostic("ACTION: Directed user to Projects Workspace via shortcut command.");
+  };
+
+  const handleNavNotes = () => {
+    navigate('/notes');
+    addVocalDiagnostic("ACTION: Directed user to Notes Archival via shortcut command.");
+  };
+
+  const handleNavRoadmap = () => {
+    navigate('/roadmap');
+    addVocalDiagnostic("ACTION: Directed user to Roadmap via shortcut command.");
+  };
+
+  // Assignable Keyboard and Mouse Shortcut Listeners
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is writing in any inputs, textareas or editables
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      
+      // 1. Activation keyboard key check
+      if (matchesKeyboardShortcut(e, activationShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Activation key "${activationShortcutKey}" pressed.`);
+        if (isHubOpen) {
+          if (isAssistantMinimized) {
+            setIsAssistantMinimized(false);
+            addVocalDiagnostic(`ACTION: Restored conversation panel from sidebar.`);
+          } else {
+            // Already maximized: toggle minimize side panel
+            setIsAssistantMinimized(true);
+            addVocalDiagnostic(`ACTION: Docked conversation panel to sidebar.`);
+          }
+        } else {
+          handleOpenAssistant(false);
+        }
+      }
+      
+      // 2. Stop/Minimize keyboard key check
+      if (matchesKeyboardShortcut(e, stopShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Deactivation key "${stopShortcutKey}" pressed.`);
+        if (isHubOpen) {
+          setIsAssistantMinimized(true);
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+          setIsSpeechActive(false);
+          speakActiveRef.current = false;
+          
+          if (activeRecogRef.current) {
+            try {
+              activeRecogRef.current.onend = null;
+              activeRecogRef.current.stop();
+            } catch (err) {}
+            activeRecogRef.current = null;
+          }
+          setIsListeningForSpeech(false);
+          addVocalDiagnostic(`ACTION: Stopped speech session and docked assistant to sidebar.`);
+        }
+      }
+
+      // 3. Mic listen keyboard key check
+      if (matchesKeyboardShortcut(e, micShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Mic toggle key "${micShortcutKey}" pressed.`);
+        handleToggleMicListen();
+      }
+
+      // 4. Clear chat history keyboard key check
+      if (matchesKeyboardShortcut(e, clearShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Clear history key "${clearShortcutKey}" pressed.`);
+        handleClearConvo();
+      }
+
+      // 5. Toggle audio mute keyboard key check
+      if (matchesKeyboardShortcut(e, muteVoiceShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Voice mute toggle key "${muteVoiceShortcutKey}" pressed.`);
+        handleToggleMute();
+      }
+
+      // 6. Navigate to projects keyboard key check
+      if (matchesKeyboardShortcut(e, navProjectsShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Navigate projects key "${navProjectsShortcutKey}" pressed.`);
+        handleNavProjects();
+      }
+
+      // 7. Navigate to notes keyboard key check
+      if (matchesKeyboardShortcut(e, navNotesShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Navigate notes key "${navNotesShortcutKey}" pressed.`);
+        handleNavNotes();
+      }
+
+      // 8. Navigate to roadmap keyboard key check
+      if (matchesKeyboardShortcut(e, navRoadmapShortcutKey)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Navigate roadmap key "${navRoadmapShortcutKey}" pressed.`);
+        handleNavRoadmap();
+      }
+    };
+
+    const handleGlobalMouseDown = (e: MouseEvent) => {
+      // 1. Activation Mouse Trigger
+      if (matchesMouseShortcut(e, activationShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Activation mouse button "${activationShortcutMouse}" clicked.`);
+        if (isHubOpen) {
+          if (isAssistantMinimized) {
+            setIsAssistantMinimized(false);
+            addVocalDiagnostic(`ACTION: Restored conversation panel via mouse command.`);
+          }
+        } else {
+          handleOpenAssistant(false);
+        }
+      }
+
+      // 2. Stop/Minimize Mouse Trigger
+      if (matchesMouseShortcut(e, stopShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Deactivation mouse button "${stopShortcutMouse}" clicked.`);
+        if (isHubOpen) {
+          setIsAssistantMinimized(true);
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+          setIsSpeechActive(false);
+          speakActiveRef.current = false;
+          
+          if (activeRecogRef.current) {
+            try {
+              activeRecogRef.current.onend = null;
+              activeRecogRef.current.stop();
+            } catch (err) {}
+            activeRecogRef.current = null;
+          }
+          setIsListeningForSpeech(false);
+          addVocalDiagnostic(`ACTION: Stopped speech session and docked assistant via mouse command.`);
+        }
+      }
+
+      // 3. Mic listen mouse trigger
+      if (matchesMouseShortcut(e, micShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Mic toggle mouse button "${micShortcutMouse}" clicked.`);
+        handleToggleMicListen();
+      }
+
+      // 4. Clear chat mouse trigger
+      if (matchesMouseShortcut(e, clearShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Clear chat mouse button "${clearShortcutMouse}" clicked.`);
+        handleClearConvo();
+      }
+
+      // 5. Toggle mute voice mouse trigger
+      if (matchesMouseShortcut(e, muteVoiceShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Voice mute mouse button "${muteVoiceShortcutMouse}" clicked.`);
+        handleToggleMute();
+      }
+
+      // 6. Navigate to projects mouse trigger
+      if (matchesMouseShortcut(e, navProjectsShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Navigate projects mouse button "${navProjectsShortcutMouse}" clicked.`);
+        handleNavProjects();
+      }
+
+      // 7. Navigate to notes mouse trigger
+      if (matchesMouseShortcut(e, navNotesShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Navigate notes mouse button "${navNotesShortcutMouse}" clicked.`);
+        handleNavNotes();
+      }
+
+      // 8. Navigate to roadmap mouse trigger
+      if (matchesMouseShortcut(e, navRoadmapShortcutMouse)) {
+        e.preventDefault();
+        addVocalDiagnostic(`SHORTCUT TRIGGERED: Navigate roadmap mouse button "${navRoadmapShortcutMouse}" clicked.`);
+        handleNavRoadmap();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    window.addEventListener('mousedown', handleGlobalMouseDown, true); // Catch before standard page navigate triggers
+    
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      window.removeEventListener('mousedown', handleGlobalMouseDown, true);
+    };
+  }, [
+    isHubOpen,
+    isAssistantMinimized,
+    activationShortcutKey,
+    activationShortcutMouse,
+    stopShortcutKey,
+    stopShortcutMouse,
+    micShortcutKey,
+    micShortcutMouse,
+    clearShortcutKey,
+    clearShortcutMouse,
+    muteVoiceShortcutKey,
+    muteVoiceShortcutMouse,
+    navProjectsShortcutKey,
+    navProjectsShortcutMouse,
+    navNotesShortcutKey,
+    navNotesShortcutMouse,
+    navRoadmapShortcutKey,
+    navRoadmapShortcutMouse
+  ]);
+
+  // Manage Background Wake Word Listener lifecycle
+  useEffect(() => {
+    // If we are on the settings page, we let the Settings page's WakeWordEngine handle mic detection
+    // to avoid device locks and microphone collisions!
+    const isOnSettingsPage = location.pathname === '/settings';
+
+    let timeoutId: any = null;
+    if (isWakeWordEnabled && !isHubOpen && !isOnSettingsPage && !isAetherMuted) {
+      timeoutId = setTimeout(() => {
+        if (!backgroundRecogRef.current && isWakeWordEnabled && !isHubOpen && !isOnSettingsPage && !isAetherMuted) {
+          startBackgroundWakeWord();
+        }
+      }, 400); // Safe delay to allow previous mic sessions to completely release
+    } else {
+      setIsWakeWordListening(false);
+      if (backgroundRecogRef.current) {
+        try {
+          backgroundRecogRef.current.onend = null;
+          backgroundRecogRef.current.onerror = null;
+          backgroundRecogRef.current.stop();
+        } catch (e) {}
+        backgroundRecogRef.current = null;
+      }
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      setIsWakeWordListening(false);
+      if (backgroundRecogRef.current) {
+        try {
+          backgroundRecogRef.current.onend = null;
+          backgroundRecogRef.current.onerror = null;
+          backgroundRecogRef.current.stop();
+        } catch (e) {}
+        backgroundRecogRef.current = null;
+      }
+    };
+  }, [isWakeWordEnabled, isHubOpen, wakeWord, location.pathname]);
+
+  // Listen for custom wake word events dispatched from other panels (e.g. Settings diagnostics)
+  useEffect(() => {
+    const handleCustomWakeWord = () => {
+      if (!isHubOpen) {
+        if (isWakeWordTriggeringRef.current) return;
+        isWakeWordTriggeringRef.current = true;
+        setTimeout(() => {
+          isWakeWordTriggeringRef.current = false;
+        }, 2500);
+
+        addVocalDiagnostic("EVENT: Wake-word intercepted from custom event. Activating Aether...");
+        playActivationChime();
+        setWakeWordTriggerTime(Date.now());
+        setIsHubOpen(true);
+        setIsAssistantMinimized(false);
+        setIsUltraCompact(false);
+        setHudTab('speak');
+        setIsConversing(true);
+
+        const chosenGreeting = getGreeting();
+        setConvoHistory([
+          { role: 'model', text: chosenGreeting }
+        ]);
+        setAetherFeedback({
+          explanation: chosenGreeting
+        });
+        setIsMicPermissionBlocked(false);
+        setTimeout(() => {
+          triggerBrowserSpeechSynthesis(chosenGreeting);
+        }, 120);
+      }
+    };
+
+    window.addEventListener('aether-wake-word-detected', handleCustomWakeWord);
+    return () => {
+      window.removeEventListener('aether-wake-word-detected', handleCustomWakeWord);
+    };
+  }, [isHubOpen]);
+
+  // Explicit event listeners allowing the audio processing stream to accept user interrupts concurrently
+  useEffect(() => {
+    const handleVocalInterruptEvent = (e: Event) => {
+      addVocalDiagnostic("EVENT: Received explicit window vocal/audio interrupt event. Cancelling AI speech output.");
+      handleIntelligentInterrupt();
+    };
+
+    const handleUserInputStartEvent = (e: Event) => {
+      addVocalDiagnostic("EVENT: Received explicit window user input event. Ensuring speech recognition handles interrupt concurrently.");
+      if (isSpeechActive) {
+        handleIntelligentInterrupt();
+      }
+    };
+
+    window.addEventListener('aether-vocal-interrupt', handleVocalInterruptEvent);
+    window.addEventListener('aether-audio-interrupt', handleVocalInterruptEvent);
+    window.addEventListener('aether-user-input-start', handleUserInputStartEvent);
+
+    return () => {
+      window.removeEventListener('aether-vocal-interrupt', handleVocalInterruptEvent);
+      window.removeEventListener('aether-audio-interrupt', handleVocalInterruptEvent);
+      window.removeEventListener('aether-user-input-start', handleUserInputStartEvent);
+    };
+  }, [isSpeechActive]);
+
+  // Manage Hands-Free Conversation Mode lifecycle
+  useEffect(() => {
+    if (isHubOpen) {
+      // Warm up micro-permissions in the active document window context to avoid secure origin isolation
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((stream) => {
+          stream.getTracks().forEach(track => track.stop());
+          addVocalDiagnostic("SUCCESS: Warm-up mic feed captured & released. Permission granted!");
+          if (isConversing) {
+            startContinuousConversationalListen();
+          }
+        })
+        .catch((err) => {
+          addVocalDiagnostic(`WARNING: Warm-up mic feed query failed with code: ${err.message}. Proceeding standalone.`);
+          if (isConversing) {
+            startContinuousConversationalListen();
+          }
+        });
+    } else {
+      if (activeRecogRef.current) {
+        try {
+          activeRecogRef.current.onend = null;
+          activeRecogRef.current.stop();
+        } catch (e) {}
+        activeRecogRef.current = null;
+      }
+      setIsListeningForSpeech(false);
+      setSpeechTransitText('');
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+    }
+
+    return () => {
+      if (activeRecogRef.current) {
+        try {
+          activeRecogRef.current.onend = null;
+          activeRecogRef.current.stop();
+        } catch (e) {}
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+    };
+  }, [isHubOpen, isConversing]);
+
+  const startVoiceCapture = async () => {
+    try {
+      setAetherFeedback(null);
+      chunksRef.current = [];
+      setRecordingSeconds(0);
+      setProcessingStatus('');
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/ogg';
+      if (!MediaRecorder.isTypeSupported('audio/ogg')) mimeType = '';
+
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        await processAndSynthesizeAudio();
+      };
+
+      // Interactive spectrum analyzer context
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioContextClass();
+        audioCtxRef.current = ctx;
+
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 64;
+        analyserRef.current = analyser;
+
+        const srcNode = ctx.createMediaStreamSource(stream);
+        srcNode.connect(analyser);
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        const renderFrame = () => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const heights = Array.from(dataArray).slice(0, 16).map(val => 
+            Math.max(4, Math.round((val / 255) * 36))
+          );
+          setFrequencyBuffer(heights);
+          animationFrameRef.current = requestAnimationFrame(renderFrame);
+        };
+        renderFrame();
+      } catch (err) {
+        console.error("Visualizer initialization skipped or not supported:", err);
+      }
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+    } catch (err: any) {
+      console.error(err);
+      setAetherFeedback({
+        error: err.message || "Microphone access blocked. Please provide recording permissions."
+      });
+    }
+  };
+
+  const stopVoiceCapture = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  const processAndSynthesizeAudio = async () => {
+    if (chunksRef.current.length === 0) {
+      setAetherFeedback({ error: "Empty recording buffer. Please speak louder into your microphone." });
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus("Digitizing voice signature...");
+    
+    try {
+      const audioBlob = new Blob(chunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' });
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        try {
+          const base64Data = (reader.result as string).split(',')[1];
+          setProcessingStatus("Synaptic engine decoding intent...");
+
+          const contextPayload = projects.map(p => ({
+            id: p.id,
+            name: p.name,
+            description: p.description
+          }));
+
+          await requestAetherStream({
+            audioData: base64Data,
+            mimeType: audioBlob.type,
+            projectContexts: contextPayload,
+            cortexSynapses: cortexSynapses || [],
+            notes: notes || [],
+            history: convoHistory,
+            pendingNote: pendingNote,
+            activeProjectId,
+            currentPath: location.pathname
+          });
+        } catch (innerErr: any) {
+          console.error(innerErr);
+          setAetherFeedback({ error: innerErr.message || "Failed decoding audio packet." });
+        } finally {
+          setIsProcessing(false);
+          cleanupAudioRecording();
+        }
+      };
+    } catch (err: any) {
+      console.error(err);
+      setAetherFeedback({ error: "Audio reading failed." });
+      setIsProcessing(false);
+      cleanupAudioRecording();
+    }
+  };
+
+  const checkVoiceTriggers = (inputText: string): boolean => {
+    if (!inputText) return false;
+    const cleanInput = inputText.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
+    
+    // Custom Sidebar / Minimize Command
+    const sidebarCommandPhrases = [
+      'sidebar', 'ether sidebar', 'aether sidebar', 'go to sidebar', 'minimize', 'minimize to sidebar', 'move to sidebar', 'dock to sidebar', 'dock'
+    ];
+    if (sidebarCommandPhrases.some(phrase => cleanInput.includes(phrase))) {
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "I have moved to the sidebar.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🖥️ Switched to Sidebar Mode"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      return true;
+    }
+
+    // Custom Full Screen / Maximize Command
+    const fullscreenCommandPhrases = [
+      'full screen', 'ether full screen', 'aether full screen', 'go to full screen', 'maximize', 'maximize to full screen', 'full screen mode', 'expand'
+    ];
+    if (fullscreenCommandPhrases.some(phrase => cleanInput.includes(phrase))) {
+      setIsAssistantMinimized(false);
+      const feedbackMsg = "Expanding to full screen.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🖥️ Switched to Full Screen Mode"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      return true;
+    }
+
+    // 1. Direct/General projects section navigation (bypass clarification)
+    const generalProjectsPhrases = [
+      'take me to projects', 'go to projects', 'open projects', 'show projects', 'projects page', 'view projects', 'projects', 'navigate to projects',
+      'take me to my projects', 'open my projects', 'show my projects', 'navigate to my projects', 'go to my projects', 'my projects',
+      'workspace projects', 'open workspace projects'
+    ];
+    if (generalProjectsPhrases.some(phrase => cleanInput.includes(phrase)) || cleanInput === 'projects' || cleanInput === 'project') {
+      setPendingProjectClarification(null); // Clear any pending clarification
+      setActiveProjectId(null); // Reset active project to general context
+      navigate('/projects');
+      setIsAssistantMinimized(true); // Minimize on navigation
+      const feedbackMsg = "Opening your Projects Center. Which project do you want me to open, or what do you want me to do?";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Projects Center"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General notes section navigation
+    const generalNotesPhrases = [
+      'take me to notes', 'go to notes', 'open notes', 'show notes', 'notes page', 'view notes', 'notes', 'navigate to notes',
+      'take me to my notes', 'open my notes', 'show my notes', 'navigate to my notes', 'go to my notes', 'my notes',
+      'workspace notes', 'open workspace notes', 'notebook', 'open notebook', 'go to notebook'
+    ];
+    if (generalNotesPhrases.includes(cleanInput) || cleanInput === 'notes' || cleanInput === 'note') {
+      setPendingProjectClarification(null); // Clear any pending clarification
+      navigate('/notes');
+      setIsAssistantMinimized(true); // Minimize on navigation
+      const feedbackMsg = "Opening your Notes workspace. Hey, do you want me to write some notes for you?";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Notes Workspace"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Workspace Docs section navigation
+    const generalDocsPhrases = [
+      'take me to workspace docks', 'take me to my workspace docks', 'workspace docks', 'my workspace docks',
+      'take me to workspace docs', 'take me to my workspace docs', 'workspace docs', 'my workspace docs',
+      'go to workspace docs', 'open workspace docs', 'show workspace docs',
+      'take me to docs', 'go to docs', 'open docs', 'show docs', 'docs',
+      'documentation', 'workspace documentation'
+    ];
+    if (generalDocsPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/docs');
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "Opening your Workspace Docs Center.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Workspace Docs"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      return true;
+    }
+
+    // Direct/General Analogous / Agents section navigation
+    const generalAgentsPhrases = [
+      'take me to analogous', 'take me to my analogous', 'analogous', 'my analogous',
+      'take me to agents', 'take me to my agents', 'agents', 'my agents',
+      'go to agents', 'open agents', 'show agents', 'agentic os', 'agents sandbox', 'agent sandbox',
+      'take me to analogy', 'analogy'
+    ];
+    if (generalAgentsPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/agents');
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "Opening your Agentic OS Sandbox.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Agentic Sandbox"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      return true;
+    }
+
+    // Direct/General Project Brain section navigation
+    const generalBrainPhrases = [
+      'take me to project brain', 'take me to my project brain', 'project brain', 'my project brain',
+      'take me to brain', 'take me to my brain', 'brain', 'my brain',
+      'go to brain', 'open brain', 'show brain', 'brain map', 'cortex', 'open cortex', 'go to cortex',
+      'take me to my mind', 'take me to mind', 'go to my mind', 'go to mind', 'my mind', 'open mind', 'show mind', 'open my mind', 'show my mind'
+    ];
+    if (generalBrainPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/brain');
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "Opening your Memory Cortex Brain Map.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Brain Map"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      return true;
+    }
+
+    // Direct/General Idea Planner section navigation
+    const generalIdeasPhrases = [
+      'take me to ideas', 'go to ideas', 'open ideas', 'show ideas', 'ideas page', 'view ideas', 'ideas', 'navigate to ideas',
+      'take me to my ideas', 'open my ideas', 'show my ideas', 'navigate to my ideas', 'go to my ideas', 'my ideas',
+      'take me to my idea planner', 'take me to idea planner', 'idea planner', 'my idea planner', 'go to idea planner',
+      'open idea planner', 'show idea planner', 'navigate to idea planner', 'ideas planner', 'open ideas planner'
+    ];
+    if (generalIdeasPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/ideas');
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "Opening your Idea Planner Workspace. Let's expand some fresh concepts!";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Idea Planner"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Assets section navigation
+    const generalAssetsPhrases = [
+      'take me to assets', 'go to assets', 'open assets', 'show assets', 'assets page', 'view assets', 'assets', 'navigate to assets',
+      'take me to my assets', 'open my assets', 'show my assets', 'navigate to my assets', 'go to my assets', 'my assets',
+      'files', 'open files', 'go to files', 'take me to files', 'my files'
+    ];
+    if (generalAssetsPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/assets');
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "Opening your Project Assets Center.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Assets Center"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Roadmap section navigation
+    const generalRoadmapPhrases = [
+      'take me to roadmap', 'take me to my roadmap', 'roadmap', 'my roadmap',
+      'go to roadmap', 'open roadmap', 'show roadmap', 'milestones', 'timeline'
+    ];
+    if (generalRoadmapPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/roadmap');
+      setIsAssistantMinimized(true);
+      const feedbackMsg = "Opening your Product Roadmap Timeline.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'navigation_trigger',
+        triggeredAction: "🧭 Activated Roadmap Timeline"
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMsg }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMsg);
+      }
+      return true;
+    }
+
+    // 2. Specific project matching (e.g. "take me to my project Aether")
+    const projectPrefixes = [
+      'take me to my project', 'take me to project', 'go to my project', 'go to project',
+      'open my project', 'open project', 'show my project', 'show project',
+      'navigate to my project', 'navigate to project',
+      'take me to my', 'take me to', 'go to my', 'go to',
+      'open my', 'open', 'show my', 'show',
+      'navigate to my', 'navigate to'
+    ];
+    
+    let specifiedProjectName = '';
+    const cleanInputNoPunc = cleanInput.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "").trim();
+
+    for (const prefix of projectPrefixes) {
+      if (cleanInputNoPunc.startsWith(prefix + ' ')) {
+        specifiedProjectName = cleanInputNoPunc.substring(prefix.length + 1).trim();
+        break;
+      }
+    }
+    
+    if (!specifiedProjectName && projects && projects.length > 0) {
+      const matchDirect = projects.find(p => p.name.toLowerCase().trim() === cleanInputNoPunc);
+      if (matchDirect) {
+        specifiedProjectName = cleanInputNoPunc;
+      }
+    }
+    
+    if (specifiedProjectName && projects && projects.length > 0) {
+      // Find exact or substring match in projects
+      const matchedProj = projects.find(p => {
+        const pName = p.name.toLowerCase().trim();
+        return pName === specifiedProjectName || pName.includes(specifiedProjectName) || specifiedProjectName.includes(pName);
+      });
+      
+      if (matchedProj) {
+        setPendingProjectClarification(null); // Clear any pending clarification
+        setActiveProjectId(matchedProj.id);
+        navigate(`/projects?id=${matchedProj.id}`);
+        setIsAssistantMinimized(true); // Minimize on navigation
+        const feedbackMsg = `Opening your project "${matchedProj.name}" for you.`;
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: feedbackMsg,
+          intent: 'navigation_trigger',
+          triggeredAction: `🧭 Activated Project: ${matchedProj.name}`
+        });
+        if (voicePlayback) {
+          triggerBrowserSpeechSynthesis(feedbackMsg);
+        }
+        return true;
+      }
+    }
+
+    // Handle Yes/No for pending project clarification
+    if (pendingProjectClarification) {
+      if (cleanInput === 'yes' || cleanInput === 'yeah' || cleanInput === 'correct' || cleanInput === 'sure' || cleanInput === 'yep' || cleanInput === 'ok' || cleanInput === 'okay' || cleanInput.includes('yes') || cleanInput.includes('yeah') || cleanInput.includes('sure')) {
+        const proj = pendingProjectClarification;
+        setPendingProjectClarification(null);
+        setActiveProjectId(proj.id);
+        navigate(`/projects?id=${proj.id}`);
+        setIsAssistantMinimized(true); // Minimize and move to the sidebar on navigation
+        
+        const feedbackMsg = `Perfect! I have opened the project "${proj.name}" for you. What do you want me to do?`;
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: feedbackMsg,
+          intent: 'navigation_trigger',
+          triggeredAction: `🧭 Activated Project: ${proj.name}`
+        });
+
+        setConvoHistory(prev => [
+          ...prev,
+          { role: 'user' as const, text: inputText },
+          { role: 'model' as const, text: feedbackMsg }
+        ].slice(-10));
+
+        if (voicePlayback) {
+          triggerBrowserSpeechSynthesis(feedbackMsg);
+        }
+
+        setTimeout(() => {
+          if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 1500);
+
+        return true;
+      } else if (cleanInput === 'no' || cleanInput === 'nope' || cleanInput === 'incorrect' || cleanInput.includes('no') || cleanInput.includes('nope')) {
+        setPendingProjectClarification(null);
+        const feedbackMsg = "No problem. Let me know which project or page you'd like to open instead.";
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: feedbackMsg,
+          intent: 'navigation_trigger',
+          triggeredAction: "❌ Cancelled Clarification"
+        });
+
+        setConvoHistory(prev => [
+          ...prev,
+          { role: 'user' as const, text: inputText },
+          { role: 'model' as const, text: feedbackMsg }
+        ].slice(-10));
+
+        if (voicePlayback) {
+          triggerBrowserSpeechSynthesis(feedbackMsg);
+        }
+
+        setTimeout(() => {
+          if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 1500);
+
+        return true;
+      }
+    }
+
+    const isProjectRequest = [
+      'take me to this project', 'take me to that project', 'take me to the project',
+      'open up a project', 'open a project', 'open the project', 'open project', 'go to project', 'go to the project',
+      'take me to project', 'take me to my project'
+    ].some(phrase => {
+      if (phrase.endsWith('project')) {
+        if (cleanInput.includes(phrase + 's')) {
+          return false;
+        }
+      }
+      return cleanInput === phrase || cleanInput.includes(phrase);
+    });
+
+    if (isProjectRequest) {
+      if (projects && projects.length > 0) {
+        // Find the active project if set, otherwise first project
+        const targetProj = projects.find(p => p.id === activeProjectId) || projects[0];
+        setPendingProjectClarification(targetProj);
+        setIsAssistantMinimized(false); // Do not minimize!
+        
+        const feedbackMsg = `Did you mean "${targetProj.name}"?`;
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: feedbackMsg,
+          intent: 'navigation_clarification',
+          triggeredAction: `📋 Clarifying Project: "${targetProj.name}"`
+        });
+
+        setConvoHistory(prev => [
+          ...prev,
+          { role: 'user' as const, text: inputText },
+          { role: 'model' as const, text: feedbackMsg }
+        ].slice(-10));
+
+        if (voicePlayback) {
+          triggerBrowserSpeechSynthesis(feedbackMsg);
+        }
+
+        setTimeout(() => {
+          if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 1500);
+
+        return true;
+      } else {
+        const feedbackMsg = "You don't have any projects created yet. Would you like me to help you create one?";
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: feedbackMsg,
+          intent: 'navigation_trigger',
+          triggeredAction: "⚠️ No projects found"
+        });
+
+        setConvoHistory(prev => [
+          ...prev,
+          { role: 'user' as const, text: inputText },
+          { role: 'model' as const, text: feedbackMsg }
+        ].slice(-10));
+
+        if (voicePlayback) {
+          triggerBrowserSpeechSynthesis(feedbackMsg);
+        }
+
+        setTimeout(() => {
+          if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 1500);
+
+        return true;
+      }
+    }
+
+    // Bypass local navigation/shortcut interception if there is a task action present in the command.
+    // This allows Gemini to parse and run the compound action (e.g. navigation + task creation).
+    const hasTaskAction = /\b(create|add|make|new|build|register|fix|fixed|resolve|resolved|complete|completed|done|update|change|set|remove|delete|brainstorm|synapse)\b/i.test(cleanInput);
+    if (hasTaskAction) {
+      return false;
+    }
+    
+    // Vocal close triggers
+    const closePhrases = [
+      'close the window', 'close window', 'close popup', 'close assistant', 
+      'close conversation', 'stop talking', 'go away', 'shut down', 'exit'
+    ];
+    if (closePhrases.some(p => cleanInput === p || cleanInput.includes(p))) {
+      const closingMsg = "Closing the conversation window. Talk to you soon!";
+      triggerBrowserSpeechSynthesis(closingMsg);
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: closingMsg,
+        intent: 'close_trigger',
+        triggeredAction: '⚡ Closed Conversation Area'
+      });
+      setTimeout(() => {
+        handleCloseAssistant();
+      }, 950);
+      return true;
+    }
+
+    // Sidebar docking / Move to the side triggers
+    const sidebarPhrases = [
+      'move to the side', 'move to side', 'put into sidebar', 'put it into sidebar', 
+      'put it into a sidebar', 'dock to the side', 'dock sidebar', 'minimize to sidebar', 
+      'dock to side', 'dock to right', 'move components to right', 'move page to right'
+    ];
+    if (sidebarPhrases.some(p => cleanInput === p || cleanInput.includes(p))) {
+      setIsAssistantMinimized(true);
+      const sidebarMsg = "Alright, putting myself into the sidebar so you can continue working without interruptions.";
+      triggerBrowserSpeechSynthesis(sidebarMsg);
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: sidebarMsg,
+        intent: 'minimize_trigger',
+        triggeredAction: '⚡ Docked Aether to Sidebar'
+      });
+      return true;
+    }
+
+    // Restoration / Full screen triggers
+    const restorePhrases = [
+      'restore', 'restore window', 'maximize', 'restore screen', 'full screen', 
+      'put into center', 'center the window', 'center window', 'open full screen', 'unminimize'
+    ];
+    if (restorePhrases.some(p => cleanInput === p || cleanInput.includes(p))) {
+      setIsAssistantMinimized(false);
+      const restoreMsg = "Restoring central full workspace view.";
+      triggerBrowserSpeechSynthesis(restoreMsg);
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: restoreMsg,
+        intent: 'maximize_trigger',
+        triggeredAction: '⚡ Maximized Aether Workspace'
+      });
+      return true;
+    }
+    
+    // Core semantic navigation routes map
+    const navMappings = [
+      { phrases: ['brain', 'map', 'cortex', 'open brain', 'go to brain', 'show brain', 'navigate to brain'], path: '/brain', name: 'Memory Cortex Brain Map' },
+      { phrases: ['project', 'projects', 'go to projects', 'show projects', 'open projects', 'repositories'], path: '/projects', name: 'Projects Center' },
+      { phrases: ['issue', 'issues', 'task', 'tasks', 'backlog', 'go to issues', 'show issues', 'open tasks', 'assets', 'asset', 'go to assets'], path: '/issues', name: 'Backlog Issues board' },
+      { phrases: ['note', 'notes', 'notebook', 'documents', 'go to notes', 'show notes', 'open notes', 'logs'], path: '/notes', name: 'Obsidian Developer Logbooks' },
+      { phrases: ['roadmap', 'milestones', 'go to roadmap', 'show roadmap', 'open roadmap'], path: '/roadmap', name: 'Product Roadmap Timeline' },
+      { phrases: ['settings', 'options', 'vocal registry', 'go to settings', 'open settings', 'show settings'], path: '/settings', name: 'Aether Vocal Preferences' },
+      { phrases: ['home', 'dashboard', 'overview', 'main page', 'go to dashboard', 'show dashboard'], path: '/', name: 'Cortex Control Panel' },
+      { phrases: ['asset', 'assets', 'go to assets', 'show assets', 'open assets'], path: '/assets', name: 'Digital Asset Repository' },
+      { phrases: ['idea', 'ideas', 'go to ideas', 'show ideas', 'open ideas'], path: '/ideas', name: 'Idea Expansion Center' },
+      { phrases: ['agent', 'agents', 'go to agents', 'show agents', 'open agents'], path: '/agents', name: 'Agentic OS Sandbox' },
+    ];
+
+    // Flexible substring/keyword matching for "take me to" or general routing commands
+    const checkNavigationKeywords = (text: string): { path: string, name: string } | null => {
+      const lower = text.toLowerCase().trim();
+      const clean = lower.replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
+      
+      // 1. General projects commands: If they say "open my projects", "open projects", "go to projects", etc.,
+      // navigate to the projects dashboard and clear the active project context.
+      const generalProjectsPhrases = [
+        'open my projects', 'open projects', 'go to projects', 'show projects', 'navigate to projects',
+        'projects panel', 'projects dashboard', 'projects center', 'my projects'
+      ];
+      if (generalProjectsPhrases.some(p => lower.includes(p)) || clean === 'projects' || clean === 'project') {
+        setActiveProjectId(null);
+        return { path: '/projects', name: 'Projects Center' };
+      }
+
+      // 2. Dynamic active project switching based on fuzzy spoken name (only if explicitly targeted)
+      const words = clean.split(/\s+/);
+      for (const proj of projects) {
+        const projNameLower = proj.name.toLowerCase().trim();
+        const projWords = projNameLower.replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "").split(/\s+/);
+        
+        if (
+          lower === projNameLower ||
+          lower.includes(`project ${projNameLower}`) ||
+          lower.includes(`go to ${projNameLower}`) ||
+          lower.includes(`open ${projNameLower}`) ||
+          lower.includes(`switch to ${projNameLower}`) ||
+          lower.includes(`take me to ${projNameLower}`) ||
+          (projNameLower.length > 3 && lower.includes(projNameLower) && (lower.includes("project") || lower.includes("navigate") || lower.includes("go") || lower.includes("open")))
+        ) {
+          setActiveProjectId(proj.id);
+          return { path: '/projects', name: `Project "${proj.name}"` };
+        }
+        
+        // Fuzzy word overlap match
+        const hasOverlap = projWords.some(pw => pw.length >= 3 && words.some(w => w.includes(pw) || pw.includes(w)));
+        if (hasOverlap && (clean.includes("project") || clean.includes("open") || clean.includes("go") || clean.includes("take") || clean.includes("navigate") || clean.includes("switch"))) {
+          setActiveProjectId(proj.id);
+          return { path: '/projects', name: `Project "${proj.name}"` };
+        }
+      }
+
+      // Check dream matching
+      if (clean === "dreams" || clean === "dream" || clean === "my dreams" || clean === "dream log" || lower.includes("dream")) {
+        return { path: '/brain?tab=dreams', name: 'Aether Dream Log' };
+      }
+
+      // Check memory matching
+      if (clean === "memory" || clean === "memory store" || clean === "synaptic rules" || lower.includes("memory") || lower.includes("synaptic") || lower.includes("cortex")) {
+        return { path: '/brain?tab=memory', name: 'Synaptic Memory Cortex' };
+      }
+
+      // 3. Flexible general section matching (highly forgiving of mic inputs/prepositions)
+      if (lower.includes("project") || lower.includes("product") || lower.includes("repo") || lower.includes("folder")) {
+        return { path: '/projects', name: 'Projects Center' };
+      }
+      if (lower.includes("asset") || lower.includes("digital asset") || lower.includes("image") || lower.includes("illustration")) {
+        return { path: '/assets', name: 'Digital Asset Repository' };
+      }
+      if (lower.includes("note") || lower.includes("document") || lower.includes("doc") || lower.includes("log") || lower.includes("diary")) {
+        return { path: '/notes', name: 'Obsidian Developer Logbooks' };
+      }
+      if (lower.includes("issue") || lower.includes("task") || lower.includes("backlog") || lower.includes("todo") || lower.includes("to-do") || lower.includes("problem") || lower.includes("bug")) {
+        return { path: '/issues', name: 'Backlog Issues board' };
+      }
+      if (lower.includes("idea") || lower.includes("brainstorm") || lower.includes("concept") || lower.includes("new ideas")) {
+        return { path: '/ideas', name: 'Idea Expansion Center' };
+      }
+      if (lower.includes("brain") || lower.includes("cortex") || lower.includes("mind") || lower.includes("map")) {
+        return { path: '/brain', name: 'Memory Cortex Brain Map' };
+      }
+      if (lower.includes("agent") || lower.includes("sandbox") || lower.includes("agentic")) {
+        return { path: '/agents', name: 'Agentic OS Sandbox' };
+      }
+      if (lower.includes("roadmap") || lower.includes("timeline") || lower.includes("milestone")) {
+        return { path: '/roadmap', name: 'Product Roadmap Timeline' };
+      }
+      if (lower.includes("setting") || lower.includes("preference") || lower.includes("option")) {
+        return { path: '/settings', name: 'Aether Vocal Preferences' };
+      }
+      if (lower.includes("dashboard") || lower.includes("home") || lower.includes("overview")) {
+        return { path: '/', name: 'Cortex Control Panel' };
+      }
+
+      return null;
+    };
+
+    // Check custom voice triggers first
+    let matchedPath: string | null = null;
+    let descName = '';
+
+    const kwMatch = checkNavigationKeywords(cleanInput);
+    if (kwMatch) {
+      matchedPath = kwMatch.path;
+      descName = kwMatch.name;
+    } else {
+      const directMatch = navMappings.find(m => 
+        m.phrases.some(p => cleanInput === p || cleanInput.includes(p))
+      );
+
+      if (directMatch) {
+        matchedPath = directMatch.path;
+        descName = directMatch.name;
+      } else {
+        const dbMatch = voiceTriggers?.find(t => {
+          const cleanPhrase = t.phrase.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
+          return cleanInput === cleanPhrase || cleanInput.includes(cleanPhrase);
+        });
+        if (dbMatch) {
+          matchedPath = dbMatch.path;
+          descName = dbMatch.phrase;
+        }
+      }
+    }
+
+    if (matchedPath) {
+      navigate(matchedPath);
+      setIsAssistantMinimized(true); // Minimize and move to the sidebar on navigation
+      
+      const followUpPhrases = [
+        "I've taken you here. What would you like us to work on?",
+        "We're here! Let me know what you want to do next.",
+        "Here is your workspace. What's on your mind?",
+        "I've navigated to this section. What should we do now?"
+      ];
+      const randomPrompt = followUpPhrases[Math.floor(Math.random() * followUpPhrases.length)];
+      const feedbackMessage = `Opening your ${descName}. ${randomPrompt}`;
+      
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMessage,
+        intent: 'navigation_trigger',
+        triggeredAction: `🧭 Activated Vocal Synapse Link to: ${matchedPath}`
+      });
+
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedbackMessage }
+      ].slice(-10));
+
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedbackMessage);
+      }
+
+      // Keep assistant open and recycle microphone to continue conversing!
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 250);
+
+      return true;
+    }
+    return false;
+  };
+
+  const handleSendTextCommand = async () => {
+    if (!typedCommand.trim() || isProcessing) return;
+    const command = typedCommand.trim();
+    setTypedCommand('');
+    
+    // Intercept with proposedAction if any
+    if (proposedAction) {
+      const cleanCmd = command.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
+      const confirmPhrases = ["yes", "yeah", "yep", "sure", "ok", "okay", "confirm", "accept", "accepts", "do it", "approve"];
+      const declinePhrases = ["no", "nope", "nay", "decline", "deny", "refuse", "cancel", "discard", "dont", "don't"];
+
+      const isConfirm = confirmPhrases.some(p => cleanCmd === p || cleanCmd.startsWith(p + " ") || cleanCmd.endsWith(" " + p));
+      const isDecline = declinePhrases.some(p => cleanCmd === p || cleanCmd.startsWith(p + " ") || cleanCmd.endsWith(" " + p));
+
+      if (isConfirm) {
+        executeProposedAction(proposedAction);
+        return;
+      } else if (isDecline) {
+        discardProposedAction(proposedAction);
+        return;
+      }
+    }
+    
+    if (checkVoiceTriggers(command)) {
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus("Processing text command pipeline...");
+    setAetherFeedback(null);
+
+    try {
+      const contextPayload = projects.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description
+      }));
+
+      await requestAetherStream({
+        textCommand: command,
+        projectContexts: contextPayload,
+        cortexSynapses: cortexSynapses || [],
+        notes: notes || [],
+        history: convoHistory,
+        pendingNote: pendingNote,
+        activeProjectId,
+        currentPath: location.pathname
+      });
+    } catch (err: any) {
+      console.error(err);
+      setAetherFeedback({ error: err.message || "Engine network communication failed." });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const executeProposedAction = (action: any) => {
+    const { intent, parsedData, explanation } = action;
+    let actionTriggeredDisplay = "Consulted Central Workspace Map Interface.";
+    setIsAssistantMinimized(false);
+
+    switch (intent) {
+      case 'create_project': {
+        const name = parsedData.name || 'New Project';
+        const description = parsedData.description || 'Drafted via vocal command.';
+        const frameworks = parsedData.frameworks || ['React'];
+        const customStack = parsedData.customStack || ['Tailwind', 'Vite'];
+
+        const newId = addProject({
+          name,
+          description,
+          frameworks,
+          customStack,
+          status: 'Planning',
+          brainstormIdeas: [],
+          seenRecommendedIdeas: [],
+          dreamRecommendations: []
+        });
+
+        setActiveProjectId(newId);
+        actionTriggeredDisplay = `📁 Created & activated Project "${name}" [Planning]`;
+        navigate(`/projects?id=${newId}`);
+        break;
+      }
+
+      case 'create_issue': {
+        let pId = parsedData.projectId;
+        if (!pId && parsedData.projectNameMentioned) {
+          const matched = projects.find(p => p.name.toLowerCase().includes(parsedData.projectNameMentioned.toLowerCase()));
+          if (matched) pId = matched.id;
+        }
+        const finalProjId = pId || activeProjectId || (projects.length > 0 ? projects[0].id : "");
+
+        if (finalProjId) {
+          const projRef = projects.find(p => p.id === finalProjId);
+          const title = parsedData.title || 'Vocal Backlog task';
+          addIssue({
+            projectId: finalProjId,
+            title,
+            description: parsedData.description || 'Captured through instant vocal action.',
+            type: parsedData.type || 'Task',
+            priority: parsedData.priority || 'Medium',
+            status: 'Todo'
+          });
+          actionTriggeredDisplay = `✓ Logged new backing task "${title}" into Project "${projRef?.name || 'Workspace'}"`;
+          navigate('/issues');
+        } else {
+          actionTriggeredDisplay = `⚠️ Spoken task parsed, but no active projects found to hold it.`;
+        }
+        break;
+      }
+
+      case 'add_note': {
+        let pId = parsedData.projectId || activeProjectId || (projects.length > 0 ? projects[0].id : "");
+        if (pId) {
+          const projRef = projects.find(p => p.id === pId);
+          const noteTitle = parsedData.title || `Vocal Dispatch Note - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+          addNote({
+            projectId: pId,
+            title: noteTitle,
+            content: parsedData.content || "Doc transcribed via AI interface.",
+            tags: parsedData.tags || ["Vocal"]
+          });
+          actionTriggeredDisplay = `📝 Transcribed Note "${noteTitle}" linked to "${projRef?.name || 'Workspace'}"`;
+          navigate('/notes');
+        } else {
+          actionTriggeredDisplay = `⚠️ Note transcribed, but missing destination project context.`;
+        }
+        break;
+      }
+
+      case 'add_brainstorm_idea': {
+        let pId = parsedData.projectId || activeProjectId || (projects.length > 0 ? projects[0].id : "");
+        if (pId) {
+          const projRef = projects.find(p => p.id === pId);
+          if (projRef) {
+            const text = parsedData.text || 'Developer brainstorm feedback';
+            updateProject(pId, {
+              brainstormIdeas: [
+                ...(projRef.brainstormIdeas || []),
+                {
+                  id: crypto.randomUUID(),
+                  text,
+                  details: parsedData.details || "Transcribed on the go.",
+                  status: 'pending',
+                  createdAt: Date.now()
+                }
+              ]
+            });
+            actionTriggeredDisplay = `💡 Added Brainstorm Idea "${text}" inside project "${projRef.name}"`;
+            navigate('/ideas');
+          }
+        }
+        break;
+      }
+
+      case 'add_cortex_synapse': {
+        const synapseName = parsedData.name || parsedData.title || `Standard - ${Date.now()}`;
+        const newSyn = {
+          id: `synapse-${crypto.randomUUID()}`,
+          name: synapseName,
+          desc: parsedData.desc || parsedData.description || 'Cognitive constraint formulated.',
+          type: 'custom_synapse' as const,
+          createdAt: Date.now()
+        };
+        setCortexSynapses(prev => [...(prev || []), newSyn]);
+        actionTriggeredDisplay = `🧠 Anchored Cognitive Memory Synapse: "${synapseName}"`;
+        navigate('/brain');
+        break;
+      }
+
+      case 'update_issue_status': {
+        const issueTitleMentioned = parsedData.issueTitleMentioned || parsedData.title || '';
+        const newStatus = parsedData.newStatus || 'Done';
+        const targetIssue = issues.find(iss => 
+          iss.title.toLowerCase().includes(issueTitleMentioned.toLowerCase()) ||
+          issueTitleMentioned.toLowerCase().includes(iss.title.toLowerCase())
+        );
+
+        if (targetIssue) {
+          updateIssue(targetIssue.id, { status: newStatus });
+          actionTriggeredDisplay = `✓ Updated task "${targetIssue.title}" status to "${newStatus}"`;
+        } else {
+          actionTriggeredDisplay = `⚠️ Spoken task "${issueTitleMentioned}" not found to update.`;
+        }
+        break;
+      }
+
+      case 'delete_issue': {
+        const issueTitleMentioned = parsedData.issueTitleMentioned || parsedData.title || '';
+        const targetIssue = issues.find(iss => 
+          iss.title.toLowerCase().includes(issueTitleMentioned.toLowerCase()) ||
+          issueTitleMentioned.toLowerCase().includes(iss.title.toLowerCase())
+        );
+
+        if (targetIssue) {
+          deleteIssue(targetIssue.id);
+          actionTriggeredDisplay = `✓ Deleted task "${targetIssue.title}" successfully.`;
+        } else {
+          actionTriggeredDisplay = `⚠️ Spoken task "${issueTitleMentioned}" not found to delete.`;
+        }
+        break;
+      }
+
+      case 'approve_dream_recommendation': {
+        const mentionTitle = parsedData.title || parsedData.text || parsedData.issueTitleMentioned || '';
+        let matchedRec: any = null;
+        let matchedProj: any = null;
+
+        for (const proj of projects) {
+          const recs = proj.dreamRecommendations || [];
+          const found = recs.find((r: any) => 
+            r.title.toLowerCase().includes(mentionTitle.toLowerCase()) || 
+            mentionTitle.toLowerCase().includes(r.title.toLowerCase())
+          );
+          if (found) {
+            matchedRec = found;
+            matchedProj = proj;
+            break;
+          }
+        }
+
+        if (!matchedRec && mentionTitle === '') {
+          for (const proj of projects) {
+            const recs = proj.dreamRecommendations || [];
+            const found = recs.find((r: any) => r.status === 'active');
+            if (found) {
+              matchedRec = found;
+              matchedProj = proj;
+              break;
+            }
+          }
+        }
+
+        if (matchedRec && matchedProj) {
+          const ideaId = `idea-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          const newIdeaItem = {
+            id: ideaId,
+            text: matchedRec.title,
+            details: `${matchedRec.description}\n\nCode Proposal:\n${matchedRec.snippet}`,
+            status: "approved" as const,
+            createdAt: Date.now(),
+          };
+
+          const updatedIdeas = [
+            ...(matchedProj.brainstormIdeas || []),
+            newIdeaItem,
+          ];
+
+          const uniqueIdeas = [];
+          const seen = new Set();
+          for (const x of updatedIdeas) {
+            const key = x.text.trim().toLowerCase();
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueIdeas.push(x);
+            }
+          }
+
+          const updatedRecs = (matchedProj.dreamRecommendations || []).map((d: any) => {
+            if (d.id === matchedRec.id) {
+              return { ...d, status: 'approved' as const };
+            }
+            return d;
+          });
+
+          updateProject(matchedProj.id, {
+            brainstormIdeas: uniqueIdeas,
+            dreamRecommendations: updatedRecs
+          });
+
+          actionTriggeredDisplay = `✓ Approved optimization suggestion: "${matchedRec.title}" for Project "${matchedProj.name}"`;
+        } else {
+          actionTriggeredDisplay = `⚠️ No active code optimization proposals matching details found to approve.`;
+        }
+        break;
+      }
+
+      case 'navigate_to': {
+        const path = parsedData.path || '/';
+        const projName = parsedData.projectNameMentioned || '';
+        if (projName && projects.length > 0) {
+          const matchedProj = projects.find(p => {
+            const pName = p.name.toLowerCase().trim();
+            return pName === projName.toLowerCase().trim() || pName.includes(projName.toLowerCase().trim()) || projName.toLowerCase().trim().includes(pName);
+          });
+          if (matchedProj) {
+            setActiveProjectId(matchedProj.id);
+          }
+        }
+        actionTriggeredDisplay = `🧭 Navigated to workspace section: ${path}`;
+        navigate(path);
+        break;
+      }
+
+      case 'start_dreaming': {
+        const projName = parsedData.projectNameMentioned || '';
+        let targetProj = projects.find(p => p.id === activeProjectId) || (projects.length > 0 ? projects[0] : null);
+        if (projName && projects.length > 0) {
+          const matched = projects.find(p => {
+            const pName = p.name.toLowerCase().trim();
+            return pName === projName.toLowerCase().trim() || pName.includes(projName.toLowerCase().trim()) || projName.toLowerCase().trim().includes(pName);
+          });
+          if (matched) targetProj = matched;
+        }
+
+        if (targetProj) {
+          setActiveProjectId(targetProj.id);
+          const focusArea = parsedData.focus || 'general';
+          startProjectDreaming(targetProj.id, focusArea);
+          actionTriggeredDisplay = `✨ Initiated deep autonomous optimization dream on Project "${targetProj.name}" (Focus: ${focusArea})`;
+          navigate(`/projects?id=${targetProj.id}`);
+        } else {
+          actionTriggeredDisplay = `⚠️ start_dreaming invoked, but no target project was identified.`;
+        }
+        break;
+      }
+
+      case 'create_agent': {
+        const agentName = parsedData.name || 'AI Developer Pro';
+        const agentRole = parsedData.role || 'Code Engineer';
+        const zone = parsedData.officeZone || 'dev_bay';
+        const sector = parsedData.projectTaskSector || 'feature';
+        const engine = parsedData.modelEngine || 'gemini-3.5-flash';
+        const goals = parsedData.goals || ['Implement active backlog items', 'Conduct build checks'];
+
+        const newAgent = {
+          id: `agent-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: agentName,
+          role: agentRole,
+          projectId: activeProjectId || 'all',
+          watchTargets: ['issues', 'notes'],
+          goals: goals,
+          schedule: 'Hourly',
+          commandList: 'Check backlog, compile layout, optimize widgets.',
+          status: 'Idle' as const,
+          avatarColor: ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'][Math.floor(Math.random() * 5)],
+          createdAt: Date.now(),
+          officeZone: zone as any,
+          projectTaskSector: sector as any,
+          modelEngine: engine as any
+        };
+
+        setAgents(prev => [...(prev || []), newAgent]);
+        actionTriggeredDisplay = `🤖 Spawned and deployed specialized AI Developer Agent: "${agentName}" (${agentRole})`;
+        navigate('/agents');
+        break;
+      }
+    }
+
+    setAetherFeedback({
+      transcript: action.transcript,
+      explanation: `Action processed. ${actionTriggeredDisplay}`,
+      intent: action.intent,
+      triggeredAction: actionTriggeredDisplay
+    });
+
+    setConvoHistory(prev => [
+      ...prev,
+      { role: 'model' as const, text: `Proposal approved. Executed: ${actionTriggeredDisplay}` }
+    ].slice(-10));
+
+    triggerBrowserSpeechSynthesis(`Proposal approved. ${actionTriggeredDisplay}`);
+    setProposedAction(null);
+  };
+
+  const discardProposedAction = (action: any) => {
+    setAetherFeedback({
+      transcript: action.transcript,
+      explanation: "Proposed action was discarded safely.",
+      intent: 'chat_query',
+      triggeredAction: "❌ Proposed Action Discarded/Denied"
+    });
+
+    setConvoHistory(prev => [
+      ...prev,
+      { role: 'model' as const, text: "Understood. The proposed action has been cancelled." }
+    ].slice(-10));
+
+    triggerBrowserSpeechSynthesis("Understood. Proposed action cancelled.");
+    setProposedAction(null);
+  };
+
+  const handleProcessedResponse = (data: any, isFromStream = false) => {
+    const { transcript, intent, explanation, parsedData, shouldWriteDown, noteContent } = data;
+    
+    // Intercept with Voice Triggers matches
+    if (transcript && checkVoiceTriggers(transcript)) {
+      return;
+    }
+
+    const userSpeak = String(transcript || "[Voice dispatch]");
+
+    // Verify if we should route to validation/proposal first
+    const modifyingIntents = [
+      'create_project', 
+      'create_issue', 
+      'add_note', 
+      'add_brainstorm_idea', 
+      'add_cortex_synapse',
+      'update_issue_status',
+      'delete_issue',
+      'approve_dream_recommendation',
+      'navigate_to',
+      'start_dreaming',
+      'create_agent'
+    ];
+    if (intent && modifyingIntents.includes(intent) && parsedData) {
+      let displayTitle = "";
+      let targetPath = "";
+      if (intent === 'create_project') {
+        displayTitle = `Create Project: "${parsedData.name || 'New Project'}"`;
+        targetPath = '/projects';
+      } else if (intent === 'create_issue') {
+        displayTitle = `Create Operational Task: "${parsedData.title || 'Task Summary'}"`;
+        targetPath = '/issues';
+      } else if (intent === 'add_note') {
+        displayTitle = `Add Workspace Note: "${parsedData.title || 'Vocal Note'}"`;
+        targetPath = '/notes';
+      } else if (intent === 'add_brainstorm_idea') {
+        displayTitle = `Add Brainstorm Concept: "${parsedData.text || 'Idea Headline'}"`;
+        targetPath = '/ideas';
+      } else if (intent === 'add_cortex_synapse') {
+        displayTitle = `Enforce Cognitive Memory Synapse: "${parsedData.name || 'Synaptic Rule'}"`;
+        targetPath = '/brain';
+      } else if (intent === 'update_issue_status') {
+        displayTitle = `Update Task "${parsedData.issueTitleMentioned || 'Task status'}" to ${parsedData.newStatus || 'Done'}`;
+        targetPath = '/issues';
+      } else if (intent === 'delete_issue') {
+        displayTitle = `Delete Task "${parsedData.issueTitleMentioned || 'Task summary'}"`;
+        targetPath = '/issues';
+      } else if (intent === 'approve_dream_recommendation') {
+        displayTitle = `Approve Dream Recommendation: "${parsedData.title || 'Dream Optimization'}"`;
+        targetPath = '/projects';
+      } else if (intent === 'navigate_to') {
+        displayTitle = `Navigate to Workspace Section: "${parsedData.path || '/'}"`;
+        targetPath = parsedData.path || '/';
+      } else if (intent === 'start_dreaming') {
+        displayTitle = `Initiate Project Autonomous Dream: "${parsedData.projectNameMentioned || 'Active Project'}"`;
+        targetPath = '/projects';
+      } else if (intent === 'create_agent') {
+        displayTitle = `Deploy Specialized AI Developer Agent: "${parsedData.name || 'AI Developer Pro'}"`;
+        targetPath = '/agents';
+      }
+
+      // Intercept project creation with confirmation prompt before executing
+      if (intent === 'create_project') {
+        setIsHubOpen(true);
+        setIsAssistantMinimized(false);
+        setHudTab('speak');
+        setIsConversing(true);
+
+        const proposedName = parsedData.name || 'New Project';
+        const proposalMsg = `You want me to create a project named "${proposedName}", correct?`;
+
+        setProposedAction({
+          id: crypto.randomUUID(),
+          intent: intent || 'create_project',
+          parsedData,
+          explanation: explanation || proposalMsg,
+          actionDisplay: displayTitle,
+          transcript: transcript || ''
+        });
+
+        setConvoHistory(prev => [
+          ...prev,
+          { role: 'user' as const, text: userSpeak },
+          { role: 'model' as const, text: proposalMsg }
+        ].slice(-10));
+
+        setAetherFeedback({
+          transcript,
+          explanation: proposalMsg,
+          intent,
+          triggeredAction: `📋 Action Proposed: Create Project "${proposedName}"`
+        });
+
+        if (voicePlayback) {
+          triggerBrowserSpeechSynthesis(proposalMsg);
+        }
+
+        setTimeout(() => {
+          if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 1200);
+
+        return;
+      }
+
+      // Execute action immediately!
+      executeProposedAction({
+        intent,
+        parsedData,
+        explanation
+      });
+
+      // Navigate so they see it being done!
+      if (targetPath) {
+        navigate(targetPath);
+        setIsAssistantMinimized(true); // Minimize and move to the sidebar on navigation
+      }
+
+      const creationFollowUpPhrases = [
+        "What's our next step with this?",
+        "All set! What would you like us to work on next?",
+        "I've updated that for you. What's on your mind now?",
+        "Done. What should we tackle next?"
+      ];
+      const randomPrompt = creationFollowUpPhrases[Math.floor(Math.random() * creationFollowUpPhrases.length)];
+      const baseMessage = explanation || `Done. I have created that item for you and navigated to the relevant page.`;
+      const voiceMessage = `${baseMessage} ${randomPrompt}`;
+      
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: userSpeak },
+        { role: 'model' as const, text: voiceMessage }
+      ].slice(-10));
+
+      setAetherFeedback({
+        transcript,
+        explanation: voiceMessage,
+        intent,
+        triggeredAction: `⚡ Instantly Executed & Navigated: "${displayTitle}"`
+      });
+
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(voiceMessage);
+      }
+
+      // Automatically stage new interactive suggestion item on the right
+      const typeMap: Record<string, 'note' | 'task' | 'brainstorm' | 'synapse'> = {
+        'create_project': 'note',
+        'create_issue': 'task',
+        'add_note': 'note',
+        'add_brainstorm_idea': 'brainstorm',
+        'add_cortex_synapse': 'synapse'
+      };
+      const extractedType = typeMap[intent] || 'note';
+      const extTitle = parsedData.title || parsedData.name || parsedData.text || "Suggested Action Card";
+      const extContent = parsedData.content || parsedData.description || parsedData.details || parsedData.desc || "";
+
+      setSessionItems(prev => {
+        const possesses = prev.some(i => i.title.toLowerCase() === extTitle.toLowerCase());
+        if (possesses) return prev;
+        return [
+          ...prev,
+          {
+            id: Math.random().toString(36).substring(7),
+            type: extractedType,
+            title: extTitle,
+            content: extContent || "Drafting transcription details...",
+            saved: true,
+            isSuggested: false
+          }
+        ];
+      });
+
+      // Keep assistant open and recycle microphone to continue conversing!
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 250);
+
+      return;
+    }
+
+    // Standard non-modifying informational Q&A turn
+    const modelSpeak = String(explanation || "Processed successfully.");
+    setConvoHistory(prev => [
+      ...prev,
+      { role: 'user' as const, text: userSpeak },
+      { role: 'model' as const, text: modelSpeak }
+    ].slice(-10));
+
+    if (shouldWriteDown === 'ask') {
+      setPendingNote(noteContent || "");
+    } else {
+      setPendingNote(null);
+    }
+
+    if (shouldWriteDown === 'ask' && noteContent) {
+      setSessionItems(prev => {
+        const possessesNote = prev.some(i => i.content === noteContent);
+        if (possessesNote) return prev;
+        return [
+          ...prev,
+          {
+            id: Math.random().toString(36).substring(7),
+            type: 'note',
+            title: `Aether Suggested Note - ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+            content: noteContent,
+            saved: false,
+            isSuggested: true
+          }
+        ];
+      });
+    }
+
+    setAetherFeedback({
+      transcript,
+      explanation,
+      intent,
+      triggeredAction: "Consulted Central Workspace Map Interface."
+    });
+
+    if (voicePlayback && explanation) {
+      if (!isFromStream) {
+        triggerBrowserSpeechSynthesis(explanation);
+      } else {
+        // If from stream and no active speech is speaking/active, recycle the mic
+        setTimeout(() => {
+          if (!speakActiveRef.current && !window.speechSynthesis?.speaking && isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            startContinuousConversationalListen();
+          }
+        }, 500);
+      }
+    } else {
+      // If voice playback is disabled or there is no explanation to speak, immediately recycle the mic
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 300);
+    }
+  };
+
+  const handleUpdateSessionItem = (id: string, updates: Partial<{ id: string; type: 'note' | 'task' | 'brainstorm' | 'synapse'; title: string; content: string; saved: boolean; isSuggested?: boolean }>) => {
+    setSessionItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const handleRemoveSessionItem = (id: string) => {
+    setSessionItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleAddManualItem = (type: 'note' | 'task' | 'brainstorm' | 'synapse') => {
+    const templates = {
+      note: { title: 'New Dev Note Log', content: '# Log Summary\nEnter markdown notes here...' },
+      task: { title: 'New Operational Task', content: 'Describe action items and requirements...' },
+      brainstorm: { title: 'New Brainstorm Concept', content: 'What is this crazy brilliant idea...' },
+      synapse: { title: 'Synaptic Preference Constraint', content: 'Define rules like formatting preferences...' }
+    };
+    
+    setSessionItems(prev => [
+      ...prev,
+      {
+        id: Math.random().toString(36).substring(7),
+        type,
+        title: templates[type].title,
+        content: templates[type].content,
+        saved: false,
+        isSuggested: false
+      }
+    ]);
+  };
+
+  const simulateWakeWordTrigger = () => {
+    setIsHubOpen(true);
+    setHudTab('speak');
+    setConvoHistory([
+      { role: 'model', text: "Aether visual cooperative session initialized. What core logs, tasks, or brainstorming ideas are we formulating?" }
+    ]);
+    triggerBrowserSpeechSynthesis("Aether active. I'm ready to collaborate.");
+  };
+
+  const commitSessionItems = () => {
+    if (sessionItems.length === 0) return;
+
+    let notesAddedCount = 0;
+    let tasksAddedCount = 0;
+    let brainstormsAddedCount = 0;
+    let synapsesAddedCount = 0;
+
+    const pId = activeProjectId || (projects.length > 0 ? projects[0].id : "");
+
+    sessionItems.forEach(item => {
+      switch (item.type) {
+        case 'note': {
+          if (pId) {
+            addNote({
+              projectId: pId,
+              title: item.title,
+              content: item.content,
+              tags: ["VoiceSession", "CooperativeBoard"]
+            });
+            notesAddedCount++;
+          }
+          break;
+        }
+        case 'task': {
+          if (pId) {
+            addIssue({
+              projectId: pId,
+              title: item.title,
+              description: item.content,
+              type: 'Task',
+              priority: 'Medium',
+              status: 'Todo'
+            });
+            tasksAddedCount++;
+          }
+          break;
+        }
+        case 'brainstorm': {
+          if (pId) {
+            const projRef = projects.find(p => p.id === pId);
+            if (projRef) {
+              updateProject(pId, {
+                brainstormIdeas: [
+                  ...(projRef.brainstormIdeas || []),
+                  {
+                    id: Math.random().toString(36).substring(7),
+                    text: item.title,
+                    details: item.content,
+                    status: 'pending',
+                    createdAt: Date.now()
+                  }
+                ]
+              });
+              brainstormsAddedCount++;
+            }
+          }
+          break;
+        }
+        case 'synapse': {
+          setCortexSynapses(prev => [
+            ...(prev || []),
+            {
+              id: `synapse-${Math.random().toString(36).substring(7)}`,
+              name: item.title,
+              desc: item.content,
+              type: 'custom_synapse' as const,
+              createdAt: Date.now()
+            }
+          ]);
+          synapsesAddedCount++;
+          break;
+        }
+      }
+    });
+
+    setSessionItems([]);
+    setPendingNote(null);
+
+    const summaryText = `Session Workspace Compiled Successfully!\n\n` +
+      `I have saved all visual draft records straight into the Obsidian State Context:\n` +
+      `• ${notesAddedCount} Markdown Developer notes filed\n` +
+      `• ${tasksAddedCount} Project action tasks locked into backlog\n` +
+      `• ${brainstormsAddedCount} Smart brainstorm ideas logged\n` +
+      `• ${synapsesAddedCount} AI Synaptic rule preferences updated\n\n` +
+      `Everything has been committed and finalized!`;
+
+    setConvoHistory(prev => [
+      ...prev,
+      { role: 'model', text: summaryText }
+    ]);
+
+    triggerBrowserSpeechSynthesis("Cooperative session successfully finalized and summarized. Your documents are written down permanently.");
+  };
+
+  const commitSingleSessionItem = (itemId: string) => {
+    const item = sessionItems.find(i => i.id === itemId);
+    if (!item || item.saved) return;
+
+    const pId = activeProjectId || (projects.length > 0 ? projects[0].id : "");
+
+    switch (item.type) {
+      case 'note': {
+        if (pId) {
+          addNote({
+            projectId: pId,
+            title: item.title,
+            content: item.content,
+            tags: ["VoiceSession", "Accepted"]
+          });
+        }
+        break;
+      }
+      case 'task': {
+        if (pId) {
+          addIssue({
+            projectId: pId,
+            title: item.title,
+            description: item.content,
+            type: 'Task',
+            priority: 'Medium',
+            status: 'Todo'
+          });
+        }
+        break;
+      }
+      case 'brainstorm': {
+        if (pId) {
+          const projRef = projects.find(p => p.id === pId);
+          if (projRef) {
+            updateProject(pId, {
+              brainstormIdeas: [
+                ...(projRef.brainstormIdeas || []),
+                {
+                  id: Math.random().toString(36).substring(7),
+                  text: item.title,
+                  details: item.content,
+                  status: 'pending',
+                  createdAt: Date.now()
+                }
+              ]
+            });
+          }
+        }
+        break;
+      }
+      case 'synapse': {
+        setCortexSynapses(prev => [
+          ...(prev || []),
+          {
+            id: `synapse-${Math.random().toString(36).substring(7)}`,
+            name: item.title,
+            desc: item.content,
+            type: 'custom_synapse' as const,
+            createdAt: Date.now()
+          }
+        ]);
+        break;
+      }
+    }
+
+    setSessionItems(prev => prev.map(i => i.id === itemId ? { ...i, saved: true } : i));
+    triggerBrowserSpeechSynthesis(`Accepted and saved ${item.title}`);
+  };
+
+  const triggerBrowserSpeechSynthesis = (text: string) => {
+    if (isAetherMutedRef.current) {
+      console.log("Aether is muted. Speech suppressed:", text);
+      return;
+    }
+    activeSpeechTextRef.current = text;
+    try {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      // Remove symbols/stars for clear speech
+      const cleanText = text.replace(/[*#`_\-]/g, '');
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = speechRate || 1.05;
+      utterance.pitch = speechPitch || 1.0; // Warm, natural voice pitch
+      
+      const getBestVoice = () => {
+        const availableVoices = window.speechSynthesis.getVoices().length > 0 
+          ? window.speechSynthesis.getVoices()
+          : voices;
+        
+        // If user explicitly chose a voice, try to find and set it
+        if (selectedVoiceName) {
+          const matched = availableVoices.find(v => v.name === selectedVoiceName);
+          if (matched) return matched;
+        }
+
+        const priorities = [
+          // Natural Google voices
+          (v: any) => v.name.includes('Google US English') || v.name.includes('Google UK English Female') || v.name.includes('Google US English Male'),
+          (v: any) => v.name.includes('Google') && v.lang.startsWith('en'),
+          // Natural Microsoft voices
+          (v: any) => v.name.toLowerCase().includes('natural') && v.lang.startsWith('en'),
+          (v: any) => v.name.toLowerCase().includes('online') && v.lang.startsWith('en'),
+          // Enhanced / Apple Enhanced
+          (v: any) => v.name.toLowerCase().includes('enhanced') && v.lang.startsWith('en'),
+          // Premium Safari or system voices
+          (v: any) => v.name.includes('Samantha') || v.name.includes('Daniel') || v.name.includes('Aria') || v.name.includes('Guy'),
+          // Generic english male/female
+          (v: any) => v.lang.startsWith('en-US'),
+          (v: any) => v.lang.startsWith('en'),
+        ];
+        
+        for (const priority of priorities) {
+          const found = availableVoices.find(priority);
+          if (found) return found;
+        }
+        return availableVoices.find(v => v.lang.startsWith('en')) || null;
+      };
+
+      const bestVoice = getBestVoice();
+      if (bestVoice) {
+        utterance.voice = bestVoice;
+      }
+      
+      utterance.onstart = () => {
+        setIsSpeechActive(true);
+        speakActiveRef.current = true;
+        addVocalDiagnostic("CONVO_MIC: SpeechSynthesis speaking started.");
+        
+        // Keep conversational mic running for voice-activated interruption (barge-in)
+        if (isHubOpenRef.current && (isConversingRef.current || isConcurrentStreamEnabledRef.current)) {
+          if (!isListeningForSpeechRef.current) {
+            setTimeout(() => {
+              if (speakActiveRef.current && isHubOpenRef.current && (isConversingRef.current || isConcurrentStreamEnabledRef.current)) {
+                startContinuousConversationalListen();
+              }
+            }, 300);
+          }
+        } else {
+          // Off-state or typing notepad mode shuts down standard listeners as expected
+          if (activeRecogRef.current) {
+            try {
+              activeRecogRef.current.onend = null;
+              activeRecogRef.current.stop();
+            } catch(e){}
+          }
+          if (backgroundRecogRef.current) {
+            try {
+              backgroundRecogRef.current.stop();
+            } catch (e) {}
+          }
+        }
+      };
+
+      // Watchdog Timer to recover if Chrome/Safari fails to trigger standard onend
+      const readingDurationMs = Math.max(3000, cleanText.length * 80);
+      const watchdogTimer = setTimeout(() => {
+        if (speakActiveRef.current) {
+          console.log("SpeechSynthesis onend safety watchdog timer triggered. Restoring mic states.");
+          addVocalDiagnostic("CONVO_MIC: SpeechSynthesis safety watchdog timeout occurred.");
+          setIsSpeechActive(false);
+          speakActiveRef.current = false;
+          
+          if (isHubOpenRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+            if (isConversingRef.current || isConcurrentStreamEnabledRef.current) {
+              startContinuousConversationalListen();
+            }
+          } else {
+            startBackgroundWakeWord();
+          }
+        }
+      }, readingDurationMs);
+
+      utterance.onend = () => {
+        clearTimeout(watchdogTimer);
+        setIsSpeechActive(false);
+        speakActiveRef.current = false;
+        addVocalDiagnostic("CONVO_MIC: SpeechSynthesis normal onend triggered.");
+        
+        // Automatic back-and-forth conversational restart
+        if (isHubOpenRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          if (isConversingRef.current || isConcurrentStreamEnabledRef.current) {
+            setTimeout(() => {
+              startContinuousConversationalListen();
+            }, 300);
+          } else {
+            // Standard static PUSH-TO-TALK mode means we do not auto-start
+          }
+        } else {
+          startBackgroundWakeWord();
+        }
+      };
+
+      utterance.onerror = () => {
+        clearTimeout(watchdogTimer);
+        setIsSpeechActive(false);
+        speakActiveRef.current = false;
+        addVocalDiagnostic("CONVO_MIC: SpeechSynthesis onerror triggered.");
+        if (isHubOpenRef.current && (isConversingRef.current || isConcurrentStreamEnabledRef.current) && !isRecordingRef.current && !isProcessingRef.current) {
+          setTimeout(() => {
+            startContinuousConversationalListen();
+          }, 300);
+        } else {
+          startBackgroundWakeWord();
+        }
+      };
+
+      // Workaround for Chrome SpeechSynthesis GC (Garbage Collection) Bug
+      // Store reference globally on window to prevent engine GC from truncating events
+      (window as any)._activeSpeechUtterance = utterance;
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn("Speech Synthesis blocked or unsupported:", e);
+    }
+  };
+
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2">
-      
-      {/* Hover Status Info Badge */}
+    <>
+      {/* 1. Large Immersive Split-Dashboard Modal Overlay */}
       <AnimatePresence>
-        {!isRightSidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 backdrop-blur-md text-[10px] font-mono font-medium text-zinc-300 shadow-xl"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-            <span>Click to expand Aether Workspace</span>
+        {isHubOpen && (
+          isUltraCompact ? (
+            /* ULTRA COMPACT FLOATING PILL */
+            <motion.div
+              key="ultra-compact-pill"
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.1, ease: "easeOut" }}
+              className="fixed right-6 bottom-24 w-[380px] max-w-[90vw] bg-[#0c0c0e]/95 border-2 border-yellow-500/30 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-[0_0_35px_rgba(245,158,11,0.35)] z-[100] backdrop-blur-md select-none font-sans"
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-grow">
+                <div className="relative flex items-center justify-center w-8 h-8 shrink-0">
+                  {isSpeechActive ? (
+                    <>
+                      <motion.div
+                        animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.6, 0.2] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="absolute inset-0 rounded-full bg-amber-500/20"
+                      />
+                      <Volume2 size={16} className="text-amber-400 animate-pulse z-10" />
+                    </>
+                  ) : isListeningForSpeech ? (
+                    <>
+                      <motion.div
+                        animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.6, 0.2] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="absolute inset-0 rounded-full bg-emerald-500/20"
+                      />
+                      <Mic size={16} className="text-emerald-400 z-10 animate-pulse" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="absolute inset-0 rounded-full bg-zinc-800" />
+                      <BrainCircuit size={16} className="text-zinc-500 z-10" />
+                    </>
+                  )}
+                </div>
+
+                <div className="text-left min-w-0 flex-grow">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-yellow-400 font-mono">
+                      AETHER LIVE
+                    </span>
+                    <span className="text-[7px] font-mono font-bold tracking-widest text-zinc-500 uppercase">
+                      {isSpeechActive ? "Speaking" : isListeningForSpeech ? "Listening" : "Standby"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-zinc-300 font-medium truncate mt-0.5">
+                    {speechTransitText 
+                      ? speechTransitText 
+                      : isSpeechActive 
+                        ? (activeSpeechTextRef.current || "Aether speaking...") 
+                        : (convoHistory[convoHistory.length - 1]?.text || "Ready for voice input...")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                {isSpeechActive && (
+                  <button
+                    onClick={handleIntelligentInterrupt}
+                    className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg transition-all cursor-pointer"
+                    title="Interrupt Speech"
+                  >
+                    <VolumeX size={13} />
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setIsUltraCompact(false)}
+                  className="p-1.5 bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800 rounded-lg transition-all cursor-pointer"
+                  title="Maximize HUD"
+                >
+                  <Maximize2 size={13} />
+                </button>
+
+                <button
+                  onClick={handleCloseAssistant}
+                  className="p-1.5 bg-zinc-900 text-zinc-400 hover:text-rose-400 border border-zinc-800 rounded-lg transition-all cursor-pointer"
+                  title="Close Aether"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            /* LARGE FULL-SCREEN HUD OVERLAY */
+            <motion.div 
+              key="large-hud"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.1, ease: "easeOut" }}
+              className={`fixed transition-all duration-200 ease-out ${
+                isAssistantMinimized 
+                  ? "right-4 bottom-[108px] top-4 w-[420px] max-w-[95vw] z-[90] flex items-center justify-center selection:bg-yellow-500/30" 
+                  : "inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 selection:bg-yellow-500/30"
+              }`}
+              onClick={(e) => {
+                if (isSpeechActive) {
+                  handleIntelligentInterrupt();
+                  e.stopPropagation();
+                  return;
+                }
+                if (!isAssistantMinimized && e.target === e.currentTarget) {
+                  handleCloseAssistant();
+                }
+              }}
+            >
+            <motion.div
+              layout="position"
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              transition={{ 
+                duration: 0.1, 
+                ease: "easeOut",
+                layout: { duration: 0.1, ease: "easeOut" }
+              }}
+              className={`transition-all duration-200 ease-out ${
+                isAssistantMinimized
+                  ? "w-full h-full bg-[#0c0c0e]/95 border border-zinc-805 rounded-3xl overflow-hidden flex flex-col shadow-[0_0_40px_rgba(245,158,11,0.22)] relative"
+                  : "w-full max-w-6xl h-[85vh] bg-[#0c0c0e] border border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-[0_0_50px_rgba(245,158,11,0.12)] relative"
+              }`}
+              onClick={(e) => {
+                if (isSpeechActive) {
+                  const target = e.target as HTMLElement;
+                  if (
+                    target &&
+                    typeof target.closest === 'function' &&
+                    (target.closest('button') || 
+                     target.closest('input') || 
+                     target.closest('textarea') || 
+                     target.closest('select') ||
+                     target.closest('a'))
+                  ) {
+                    handleIntelligentInterrupt();
+                  } else {
+                    handleIntelligentInterrupt();
+                    e.stopPropagation();
+                  }
+                }
+              }}
+            >
+              {/* Header Branding Bar */}
+              {isAssistantMinimized ? (
+                <div className="p-3 bg-[#121214] border-b border-zinc-850 flex items-center justify-between gap-2 shrink-0 select-none">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="p-1.5 rounded-lg bg-yellow-500/10 text-yellow-400 shrink-0">
+                      <BrainCircuit size={16} />
+                    </span>
+                    <div className="text-left min-w-0">
+                      <h4 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5 truncate">
+                        Aether AI
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${isWakeWordListening ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Background listening microphone toggle */}
+                    <button
+                      onClick={() => toggleAetherMutedState(!isAetherMuted)}
+                      className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        !isAetherMuted 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
+                          : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                      }`}
+                      title={!isAetherMuted ? "Mute Background Microphone Listening" : "Unmute Background Microphone Listening"}
+                    >
+                      {!isAetherMuted ? <Mic size={13} /> : <MicOff size={13} />}
+                    </button>
+
+                    {/* TTS sound play option */}
+                    <button
+                      onClick={() => {
+                        setVoicePlayback(!voicePlayback);
+                        if (window.speechSynthesis) window.speechSynthesis.cancel();
+                      }}
+                      className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        voicePlayback 
+                          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20' 
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-850'
+                      }`}
+                      title={voicePlayback ? "Mute Speech Feedback" : "Unmute Speech Feedback"}
+                    >
+                      {voicePlayback ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                    </button>
+
+                    {/* Minimize toggle (restores to full screen) */}
+                    <button
+                      onClick={() => setIsAssistantMinimized(false)}
+                      className="p-1.5 hover:bg-zinc-900 hover:text-white text-zinc-400 rounded-lg transition-all cursor-pointer border border-zinc-800 bg-zinc-900"
+                      title="Maximize to Full Screen"
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+
+                    {/* Ultra Compact Toggle button */}
+                    <button
+                      onClick={() => setIsUltraCompact(true)}
+                      className="p-1.5 hover:bg-zinc-900 hover:text-white text-yellow-400 rounded-lg transition-all cursor-pointer bg-yellow-500/5 hover:bg-yellow-500/10 border border-yellow-500/20"
+                      title="Minimize to Floating Micro-Pill"
+                    >
+                      <Minimize2 size={13} />
+                    </button>
+
+                    <button
+                      onClick={handleCloseAssistant}
+                      className="p-1.5 hover:bg-zinc-900 hover:text-white text-zinc-400 rounded-lg transition-all cursor-pointer border border-zinc-800 bg-zinc-900"
+                      title="Close Assistant"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-gradient-to-r from-yellow-950/20 via-[#121214] to-zinc-950 border-b border-zinc-850 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="p-2 rounded-xl bg-yellow-500/10 text-yellow-400 animate-pulse">
+                      <BrainCircuit size={18} />
+                    </span>
+                    <div className="text-left">
+                      <h4 className="text-sm font-extrabold tracking-tight text-zinc-100 flex items-center gap-2">
+                        Aether AI Cognitive Synaptic Workspace
+                      </h4>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest leading-none mt-0.5">
+                        Vocal & Cooperative Session HUD
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right controls */}
+                  <div className="flex items-center gap-2">
+                    {/* Web Speech wake word listening status lamp indicator */}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800">
+                      <span className={`w-2 h-2 rounded-full ${isWakeWordListening ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-650'}`} />
+                      <span className="text-[10px] font-mono text-zinc-400">
+                        {isWakeWordListening ? 'Voice Rec Active' : 'Voice Standby'}
+                      </span>
+                    </div>
+
+                    {/* Background listening microphone toggle */}
+                    <button
+                      onClick={() => toggleAetherMutedState(!isAetherMuted)}
+                      className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                        !isAetherMuted 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
+                          : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                      }`}
+                      title={!isAetherMuted ? "Mute Background Microphone Listening" : "Unmute Background Microphone Listening"}
+                    >
+                      {!isAetherMuted ? <Mic size={15} /> : <MicOff size={15} />}
+                    </button>
+
+                    {/* TTS sound play option */}
+                    <button
+                      onClick={() => {
+                        setVoicePlayback(!voicePlayback);
+                        if (window.speechSynthesis) window.speechSynthesis.cancel();
+                      }}
+                      className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                        voicePlayback 
+                          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20' 
+                          : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:bg-zinc-850'
+                      }`}
+                      title={voicePlayback ? "Mute Speech Feedback" : "Unmute Speech Feedback"}
+                    >
+                      {voicePlayback ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                    </button>
+
+                    {/* Minimize Toggle button */}
+                    <button
+                      onClick={() => setIsAssistantMinimized(!isAssistantMinimized)}
+                      className="p-1.5 hover:bg-zinc-900 hover:text-white text-zinc-400 rounded-xl transition-all cursor-pointer"
+                      title={isAssistantMinimized ? "Maximise to Full Screen" : "Minimize to Sidebar"}
+                    >
+                      {isAssistantMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+                    </button>
+
+                    {/* Ultra Compact Toggle button */}
+                    <button
+                      onClick={() => setIsUltraCompact(true)}
+                      className="p-1.5 hover:bg-zinc-900 hover:text-white text-yellow-400 rounded-xl transition-all cursor-pointer bg-yellow-500/5 hover:bg-yellow-500/10 border border-yellow-500/20"
+                      title="Minimize to Floating Micro-Pill"
+                    >
+                      <Minimize2 size={16} />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleCloseAssistant();
+                      }}
+                      className="p-1.5 hover:bg-zinc-900 hover:text-white text-zinc-400 rounded-xl transition-all cursor-pointer"
+                      title="Close Assistant"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Main Content Area Split Panel */}
+              <div className="flex-grow flex flex-col md:flex-row h-full overflow-hidden min-h-0 divide-y md:divide-y-0 md:divide-x divide-zinc-900">
+                <div className={`flex flex-col p-5 overflow-hidden h-full relative space-y-4 ${
+                  isAssistantMinimized ? 'w-full' : 'w-full md:w-1/2'
+                }`}>
+                  <div className="flex items-center justify-between shrink-0 select-none">
+                    <span className="text-[10px] uppercase font-black text-yellow-400 tracking-widest font-mono flex items-center gap-1">
+                      <MessageSquare size={12} className="text-yellow-450 animate-pulse" />
+                      Aether Sync Controller
+                    </span>
+
+                    {/* Integrated Tab Selectors */}
+                    <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 shrink-0">
+                      <button
+                        onClick={() => setHudTab('speak')}
+                        className={`px-3 py-1 text-[9px] font-black uppercase rounded-lg transition-all flex items-center gap-1.5 ${
+                          hudTab === 'speak' 
+                            ? 'bg-yellow-500/10 text-yellow-400 font-bold border border-yellow-500/10' 
+                            : 'text-zinc-500 hover:text-zinc-350 bg-transparent border border-transparent'
+                        }`}
+                      >
+                        <MessageSquare size={10} /> Dialogue Chat
+                      </button>
+                      <button
+                        onClick={() => setHudTab('notepad')}
+                        className={`px-3 py-1 text-[9px] font-black uppercase rounded-lg transition-all flex items-center gap-1.5 ${
+                          hudTab === 'notepad' 
+                            ? 'bg-yellow-500/10 text-yellow-400 font-bold border border-yellow-500/10' 
+                            : 'text-zinc-500 hover:text-zinc-350 bg-transparent border border-transparent'
+                        }`}
+                      >
+                        <FileText size={10} /> Written Notepad
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (window.speechSynthesis) window.speechSynthesis.cancel();
+                        setAetherFeedback(null);
+                        setConvoHistory([]);
+                        setPendingNote(null);
+                      }}
+                      className="text-zinc-650 hover:text-rose-450 text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      Clear Stream
+                    </button>
+                  </div>
+
+                  <AnimatePresence mode="wait">
+                    {hudTab === 'speak' ? (
+                      <motion.div
+                        key="speak-tab"
+                        initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
+                        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, y: -10, filter: 'blur(4px)' }}
+                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                        className="flex-grow flex flex-col min-h-0 space-y-3"
+                      >
+                      {/* Real-time Dynamic Acoustic Synaptic feedback tracker */}
+                      <div className="flex items-center justify-between px-3.5 py-2.5 bg-zinc-900/40 rounded-xl border border-zinc-850/60 font-sans select-none shrink-0 text-left">
+                        <div className="flex items-center gap-2">
+                          {isSpeechActive ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                              </span>
+                              <span className="text-[10px] font-bold text-amber-400 font-mono tracking-wider uppercase">Aether Synthesis Speaking</span>
+                            </div>
+                          ) : isListeningForSpeech ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-400 font-mono tracking-wider uppercase">Aether Listening to Mic</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-zinc-500">
+                              <span className="w-2 h-2 rounded-full bg-zinc-700" />
+                              <span className="text-[10px] font-mono tracking-wider uppercase">Aether Standby</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Animated audio ripple feedback bars */}
+                        <div className="flex items-end gap-[2px] h-3">
+                          {Array.from({ length: 6 }).map((_, i) => {
+                            let duration = 0.5 + i * 0.12;
+                            let actBg = "bg-zinc-750";
+                            if (isSpeechActive) actBg = "bg-amber-400 shadow-[0_0_4px_rgba(245,158,11,0.5)]";
+                            else if (isListeningForSpeech) actBg = "bg-emerald-400 shadow-[0_0_4px_rgba(16,185,129,0.5)]";
+
+                            return (
+                              <motion.span
+                                key={i}
+                                animate={
+                                  isSpeechActive || isListeningForSpeech
+                                    ? { height: [4, 12, 4] }
+                                    : { height: [4, 4, 4] }
+                                }
+                                transition={{
+                                  duration: duration,
+                                  repeat: Infinity,
+                                  ease: "easeInOut"
+                                }}
+                                className={`w-[2.5px] rounded-t ${actBg} transition-all`}
+                                style={{ height: '4px' }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Chat bubbles container */}
+                      <div className="flex-grow overflow-y-auto pr-2 space-y-3.5 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent rounded-xl bg-zinc-950/40 p-3 border border-zinc-900/60 flex flex-col justify-between">
+                        <div className="space-y-3.5 flex-1 overflow-y-auto mb-2">
+                          {convoHistory.length === 0 && !aetherFeedback ? (
+                            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+                              <div className="relative flex items-center justify-center w-24 h-24">
+                                {/* Outer concentric pulsing rings */}
+                                <motion.div 
+                                  animate={{ scale: [1, 1.35, 1], opacity: [0.12, 0.45, 0.12] }}
+                                  transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                                  className="absolute inset-0 rounded-full bg-yellow-500/10 filter blur-md"
+                                />
+                                <motion.div 
+                                  animate={{ scale: [1.12, 1.55, 1.12], opacity: [0.06, 0.25, 0.06] }}
+                                  transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+                                  className="absolute -inset-4 rounded-full bg-amber-500/5 filter blur-lg"
+                                />
+                                
+                                {/* Inner rotating gradient core */}
+                                <motion.div 
+                                  animate={{ rotate: 360 }}
+                                  transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                                  className="w-14 h-14 rounded-full bg-gradient-to-tr from-amber-600 via-yellow-450 to-rose-500 opacity-80 flex items-center justify-center shadow-[0_0_25px_rgba(245,158,11,0.3)]"
+                                >
+                                  <Bot size={22} className="text-zinc-950 stroke-[2.5]" />
+                                </motion.div>
+                              </div>
+                              
+                              <div className="space-y-1">
+                                <h4 className="text-zinc-200 font-sans font-extrabold text-xs animate-pulse">Aether Cognition Stream Active</h4>
+                                <p className="text-[10px] text-zinc-500 max-w-[280px] leading-relaxed">
+                                  Say <span className="font-mono text-yellow-400 font-bold">"{wakeWord}"</span> to activate voice hands-free. You can ask to <span className="font-mono text-yellow-400 font-bold">brainstorm 20 ideas</span> for any project, or request your <span className="font-mono text-yellow-400 font-bold">daily summary</span>!
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-3.5">
+                              {convoHistory.map((item, idX) => (
+                                <div key={idX} className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                  <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed border transition-all ${
+                                    item.role === 'user'
+                                      ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-100 rounded-tr-none font-sans'
+                                      : 'bg-zinc-900/60 border-zinc-800 text-zinc-200 rounded-tl-none font-sans'
+                                  }`}>
+                                    <span className="text-[8px] tracking-widest uppercase font-mono block text-left mb-1 opacity-60">
+                                      {item.role === 'user' ? '👨‍💻 Dispatch command' : '🤖 Aether Synthesis'}
+                                    </span>
+                                    <p className="leading-relaxed whitespace-pre-wrap">{item.text}</p>
+                                  </div>
+                                </div>
+                              ))}
+
+                              {/* Proposed Action Confirmation Panel */}
+                              {proposedAction && (
+                                <div className="mt-3 bg-zinc-900/95 border-2 border-yellow-500/40 rounded-2xl p-4 space-y-3 shadow-lg hover:shadow-yellow-500/5 transition-all text-left">
+                                  <div className="flex items-center gap-2">
+                                    <span className="p-1.5 rounded-lg bg-yellow-500/20 text-yellow-400">
+                                      <BrainCircuit size={14} className="animate-pulse" />
+                                    </span>
+                                    <div>
+                                      <span className="text-[9px] font-mono font-bold text-yellow-400 uppercase tracking-widest block leading-none">PROPOSED COGNITIVE ACTION</span>
+                                      <span className="text-xs font-black text-zinc-100 mt-1 block">Confirm Workspace Change?</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-805 text-xs text-zinc-300 font-sans space-y-1">
+                                    <div className="font-bold text-yellow-400 font-mono text-[10px] uppercase">
+                                      {proposedAction.actionDisplay}
+                                    </div>
+                                    <p className="text-[11px] text-zinc-400 leading-normal italic">
+                                      "I detected your speech request to execute this change. Please review the structured values."
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 text-[10px] font-sans">
+                                    <button
+                                      onClick={() => executeProposedAction(proposedAction)}
+                                      className="flex-1 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-black rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow"
+                                    >
+                                      ✓ Accept & Save
+                                    </button>
+                                    <button
+                                      onClick={() => discardProposedAction(proposedAction)}
+                                      className="flex-grow py-1.5 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-zinc-800"
+                                    >
+                                      ✗ Deny / Discard
+                                    </button>
+                                  </div>
+
+                                  <p className="text-[9px] font-mono text-zinc-500 text-center uppercase tracking-widest leading-none pt-1">
+                                    Voice ready: Say "yes / accept" or "no / deny"
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Direct Aether dynamic single fallback feedback */}
+                              {aetherFeedback?.explanation && convoHistory.length === 0 && (
+                                <div className="flex flex-col items-start">
+                                  <div className="max-w-[85%] p-3.5 rounded-2xl rounded-tl-none bg-zinc-900/60 border border-zinc-800 text-zinc-200 text-xs leading-relaxed">
+                                    <span className="text-[8px] tracking-widest uppercase font-mono block text-left mb-1.5 text-yellow-400 font-black">
+                                      🤖 Aether Synthesis
+                                    </span>
+                                    <p>{aetherFeedback.explanation}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                    ) : (
+                      /* RICH NOTEPAD WRITER: Dynamic quick scratch logbook */
+                      <motion.div
+                        key="notepad-tab"
+                        initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
+                        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, y: -10, filter: 'blur(4px)' }}
+                        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                        className="flex-grow flex flex-col min-h-0 text-left"
+                      >
+                        <div className="flex-grow flex flex-col bg-zinc-950/40 border border-zinc-900/60 p-4 rounded-xl space-y-4 min-h-0 text-left">
+                          <div>
+                            <span className="text-[9px] font-mono font-black text-yellow-400 uppercase tracking-widest leading-none block">
+                              Workspace Notepad
+                            </span>
+                            <h5 className="text-zinc-200 font-sans font-bold text-xs mt-1">Manual written drafts & guidelines</h5>
+                            <p className="text-[10px] text-zinc-500 mt-0.5 leading-normal">
+                              Type down technical thoughts or scratch ideas freely. Press <span className="font-mono text-zinc-400 font-bold">Enter</span> to instantly convert your paragraph into a structured suggestion card on the right split-desk!
+                            </p>
+                          </div>
+
+                          <textarea
+                            value={scratchpadText}
+                            onChange={(e) => setScratchpadText(e.target.value)}
+                            placeholder="Write down details e.g.: 'Analyze project dashboard layout and structure new sprint backlogs'..."
+                            className="flex-grow w-full bg-[#0d0d0f]/90 border border-zinc-850 p-3.5 rounded-xl text-zinc-100 text-xs focus:ring-1 focus:ring-yellow-500/25 focus:outline-none placeholder-zinc-700 resize-none font-sans leading-relaxed min-h-[160px]"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                if (scratchpadText.trim()) {
+                                  const draftText = scratchpadText.trim();
+                                  const newItem = {
+                                    id: `notepad-${Math.random().toString(36).substring(7)}`,
+                                    type: 'note' as const,
+                                    title: draftText.substring(0, 36) + (draftText.length > 36 ? '...' : ''),
+                                    content: draftText,
+                                    saved: false,
+                                    isSuggested: true
+                                  };
+                                  setSessionItems(prev => [newItem, ...prev]);
+                                  setScratchpadText('');
+                                  triggerBrowserSpeechSynthesis("Staged scratchnote directly to ideas list.");
+                                }
+                              }
+                            }}
+                          />
+
+                          <div className="flex gap-2.5 shrink-0">
+                            <button
+                              onClick={() => {
+                                if (!scratchpadText.trim()) return;
+                                const draftText = scratchpadText.trim();
+                                const newItem = {
+                                  id: `notepad-${Math.random().toString(36).substring(7)}`,
+                                  type: 'note' as const,
+                                  title: draftText.substring(0, 40) + (draftText.length > 40 ? '...' : ''),
+                                  content: draftText,
+                                  saved: false,
+                                  isSuggested: true
+                                };
+                                setSessionItems(prev => [newItem, ...prev]);
+                                setScratchpadText('');
+                                triggerBrowserSpeechSynthesis("Draft staged.");
+                              }}
+                              disabled={!scratchpadText.trim()}
+                              className="flex-1 py-3 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 font-bold text-xs rounded-xl transition-all cursor-pointer disabled:opacity-40"
+                            >
+                              ➕ Stage Suggestion
+                            </button>
+
+                            <button
+                              onClick={async () => {
+                                if (!scratchpadText.trim() || isProcessing) return;
+                                const queryVal = scratchpadText.trim();
+                                setScratchpadText('');
+                                setHudTab('speak');
+                                setIsProcessing(true);
+                                setProcessingStatus("Aether processing notepad commands...");
+
+                                try {
+                                  const contextPayload = projects.map(p => ({
+                                    id: p.id,
+                                    name: p.name,
+                                    description: p.description
+                                  }));
+                                  const res = await fetch('/api/text/process', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      command: queryVal,
+                                      projectContexts: contextPayload,
+                                      cortexSynapses: cortexSynapses || [],
+                                      notes: notes || [],
+                                      history: convoHistory,
+                                      pendingNote: pendingNote,
+                                      activeProjectId,
+                                      currentPath: location.pathname
+                                    })
+                                  });
+                                  if (!res.ok) throw new Error("Aether process error");
+                                  const data = await res.json();
+                                  handleProcessedResponse(data);
+                                } catch(ex: any) {
+                                  setAetherFeedback({ error: "Failed analyzing scratch log." });
+                                } finally {
+                                  setIsProcessing(false);
+                                }
+                              }}
+                              disabled={!scratchpadText.trim()}
+                              className="flex-1 py-3 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-405 text-zinc-955 font-bold text-xs rounded-xl transition-all cursor-pointer disabled:opacity-40 shadow-sm"
+                            >
+                              ✨ AI Parse Notepad
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Actions / Dispatch Bar at the Bottom on the Left */}
+                  <div className="bg-zinc-900/45 border border-zinc-850/70 p-3.5 rounded-2xl space-y-3 shrink-0">
+                    {/* Active vocal processing/loader tracker */}
+                    {isProcessing && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/5 border border-yellow-500/10 rounded-xl font-mono text-[10px] text-yellow-400">
+                        <Loader2 size={13} className="animate-spin text-yellow-400 shrink-0" />
+                        <span>{processingStatus || 'Aether digital synapse processing...'}</span>
+                      </div>
+                    )}
+
+                    {/* Interaction Engine Mode Option Switcher */}
+                    <div className="flex items-center justify-between border-b border-zinc-850 pb-2 mb-2 font-sans select-none">
+                      <span className="text-[10px] uppercase font-black text-zinc-500 tracking-wider font-mono">Interaction Engine</span>
+                      <div className="flex bg-zinc-950/70 p-0.5 rounded-lg border border-zinc-850">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsConversing(false);
+                            // Cleanup active conversational listen if any
+                            if (activeRecogRef.current) {
+                              activeRecogRef.current.onend = null;
+                              try { activeRecogRef.current.stop(); } catch(e){}
+                              activeRecogRef.current = null;
+                            }
+                            setIsListeningForSpeech(false);
+                          }}
+                          className={`px-2 py-1 text-[9px] font-extrabold rounded-md transition-all cursor-pointer ${
+                            !isConversing 
+                              ? 'bg-amber-500/15 text-yellow-400 border border-yellow-500/10' 
+                              : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+                          }`}
+                        >
+                          Manual Voice Memo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsConversing(true);
+                            setTimeout(() => {
+                              startContinuousConversationalListen();
+                            }, 150);
+                          }}
+                          className={`px-2 py-1 text-[9px] font-extrabold rounded-md transition-all cursor-pointer ${
+                            isConversing 
+                              ? 'bg-amber-500/15 text-yellow-400 border border-yellow-500/10 animate-pulse' 
+                              : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+                          }`}
+                        >
+                          Hands-Free Hands On [Active]
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Microphone capture tray */}
+                    {!isProcessing && (
+                      <div className="flex flex-col items-center justify-center py-1">
+                        {isConversing ? (
+                          /* Interactive Hands-Free Voice Conversational Dashboard Tray */
+                          <div className="w-full">
+                            {isMicPermissionBlocked ? (
+                              /* 1. Mic permission blocked warning & Troubleshooting widget */
+                              <div 
+                                onClick={() => {
+                                  setIsMicPermissionBlocked(false);
+                                  navigator.mediaDevices.getUserMedia({ audio: true })
+                                    .then((stream) => {
+                                        stream.getTracks().forEach(track => track.stop());
+                                        addVocalDiagnostic("SUCCESS: Microphone permission calibrated manually!");
+                                        startContinuousConversationalListen();
+                                    })
+                                    .catch((err) => {
+                                        addVocalDiagnostic(`ERROR: Re-requesting microphone failed with: ${err.message}`);
+                                    });
+                                }}
+                                className="w-full bg-[#1c1112] hover:bg-[#201415] border border-rose-500/20 rounded-xl p-3.5 flex flex-col gap-2.5 cursor-pointer transition-all text-left shadow-lg"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 text-rose-400 font-sans font-bold text-xs uppercase tracking-wider">
+                                    <span className="relative flex h-2 w-2 shrink-0">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
+                                    </span>
+                                    <span>Microphone Not Detected</span>
+                                  </div>
+                                  <span className="px-2 py-0.5 bg-rose-500/20 border border-rose-500/30 text-[9px] font-mono text-rose-300 rounded font-black tracking-wider uppercase animate-pulse">CLICK TO FIX</span>
+                                </div>
+                                
+                                <p className="text-[11px] text-zinc-300 leading-normal">
+                                  Your browser blocked standard microphone capture. <span className="text-yellow-400 font-extrabold underline">Tap here to re-prompt and authorize mic feeds</span> so you can talk to Aether.
+                                </p>
+                                
+                                <div className="bg-zinc-950/70 p-2.5 rounded-lg border border-zinc-900 text-[10px] text-zinc-400 font-sans space-y-1">
+                                  <p className="font-extrabold text-zinc-300 uppercase tracking-wider text-[8px] font-mono">Chrome / Safari Fix Guide:</p>
+                                  <p>1. Look at your address bar (near URL refresh button) & look for a <strong className="text-zinc-200">mic/camera lock icon</strong>.</p>
+                                  <p>2. Tap it, and set <strong className="text-emerald-400">Microphone to "Allow"</strong>.</p>
+                                  <p>3. Tap anywhere inside this window to wake up the Aether standby circuit.</p>
+                                </div>
+                              </div>
+                            ) : isSpeechActive ? (
+                              /* 2. AI is currently speaking - clicking anywhere cancels and listens! */
+                              <div 
+                                onClick={handleIntelligentInterrupt}
+                                className="w-full bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-all animate-pulse shadow-sm"
+                              >
+                                <div className="text-left font-sans flex items-center gap-2.5">
+                                  <span className="relative flex h-3 w-3 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+                                  </span>
+                                  <div>
+                                    <span className="text-[9px] font-mono text-amber-500 block leading-none font-bold uppercase tracking-wider">AETHER COGNITIVE FEEDBACK ACTIVE</span>
+                                    <span className="text-xs font-bold text-zinc-100 mt-0.5 block">AI is speaking... Tap anywhere to interrupt & speak!</span>
+                                  </div>
+                                </div>
+                                <div className="px-2 py-1 bg-amber-500/20 text-yellow-400 text-[9px] font-black tracking-wide border border-yellow-500/20 rounded-md">
+                                  INTERRUPT
+                                </div>
+                              </div>
+                            ) : isListeningForSpeech ? (
+                              /* 3. Microphone is open and listening in real-time */
+                              <div className="w-full space-y-2.5">
+                                <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-900 shadow-inner">
+                                  <div className="flex items-center gap-2">
+                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                                    </span>
+                                    <span className="font-mono text-zinc-300 text-xs font-black uppercase tracking-widest">
+                                      {speechTransitText ? 'Aether Hearing You...' : 'Speak Now...'}
+                                    </span>
+                                  </div>
+
+                                  {/* Dynamic visual spectrum wave using simulated buffer */}
+                                  <div className="flex items-end gap-[3px] h-4 overflow-hidden max-w-[80px]">
+                                    {Array.from({ length: 8 }).map((_, i) => {
+                                      const h = speechTransitText ? Math.max(3, Math.round(Math.random() * 20 + 4)) : 3;
+                                      return (
+                                        <span
+                                          key={i}
+                                          className="w-[3.5px] rounded-t bg-emerald-500 transition-all duration-100"
+                                          style={{ height: `${h}px` }}
+                                        />
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {speechTransitText && (
+                                  <div className="bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl text-left">
+                                    <span className="text-[8px] tracking-wider uppercase font-extrabold text-emerald-500 font-mono block mb-1">Live Transcript</span>
+                                    <p className="text-xs font-medium text-emerald-100 italic leading-snug">"{speechTransitText}"</p>
+                                  </div>
+                                )}
+
+                                <div className="flex justify-end pt-1">
+                                  <button
+                                    onClick={() => setIsUltraCompact(true)}
+                                    className="px-2.5 py-1 text-[9px] font-black tracking-wide bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm select-none uppercase font-mono animate-pulse"
+                                    title="Minimize to floating micro-pill while keeping conversational microphone active"
+                                  >
+                                    <Minimize2 size={11} /> Minimize & Keep Conversing
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* 4. Silent wait state or starting up state */
+                              <div 
+                                onClick={startContinuousConversationalListen}
+                                className="w-full bg-zinc-950 hover:bg-zinc-900 p-3 rounded-xl border border-zinc-850 flex items-center justify-between cursor-pointer transition-all"
+                              >
+                                <div className="text-left font-sans flex items-center gap-2.5">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-zinc-650 animate-pulse shrink-0" />
+                                  <div>
+                                    <span className="text-[9px] font-mono text-zinc-550 block leading-none">AETHER HANDS-FREE SESSION READY</span>
+                                    <span className="text-xs font-bold text-zinc-400">Mic in standby mode. Speak to wake or tap to force-listen!</span>
+                                  </div>
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400">
+                                  <Mic size={12} className="animate-pulse" />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          /* CLASSIC PUSH-TO-TALK CAPTURE TRAY */
+                          <div className="w-full">
+                            {!isRecording ? (
+                              <div className="flex items-center justify-between w-full gap-4">
+                                <div className="text-left font-sans">
+                                  <span className="text-[10px] font-mono text-zinc-500 block leading-none">SPEECH COMMAND</span>
+                                  <span className="text-xs font-semibold text-zinc-300">Click microphone to dictate</span>
+                                </div>
+                                <button
+                                  onClick={startVoiceCapture}
+                                  type="button"
+                                  className="w-12 h-12 rounded-full cursor-pointer bg-gradient-to-tr from-amber-600 to-yellow-450 hover:from-amber-500 hover:to-yellow-350 flex items-center justify-center text-zinc-950 shadow-xl transition-all duration-300 active:scale-95 border border-white/10"
+                                >
+                                  <Mic size={18} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="w-full flex items-center justify-between gap-4 bg-zinc-950 p-2.5 rounded-xl border border-zinc-850">
+                                <div className="flex items-center gap-2">
+                                  <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                                  <span className="font-mono text-zinc-200 text-xs font-black">
+                                    RECORDING {recordingSeconds}s
+                                  </span>
+                                </div>
+
+                                {/* Sound spectrum wave */}
+                                <div className="flex items-end gap-[3px] h-6 overflow-hidden max-w-[100px]">
+                                  {frequencyBuffer.slice(0, 10).map((h, i) => (
+                                    <span
+                                      key={i}
+                                      className="w-[3px] rounded-t bg-yellow-500 transition-all duration-75"
+                                      style={{ height: `${Math.max(2, h / 1.5)}px` }}
+                                    />
+                                  ))}
+                                </div>
+
+                                <button
+                                  onClick={stopVoiceCapture}
+                                  type="button"
+                                  className="px-3 py-1.5 bg-rose-950/65 hover:bg-rose-900 border border-rose-800 rounded-lg text-rose-300 text-[10px] font-extrabold cursor-pointer transition-colors flex items-center gap-1 shrink-0"
+                                >
+                                  <Square size={10} /> STOP DISPATCH
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Text field input trigger */}
+                    <div className="flex gap-2 items-center bg-zinc-950 rounded-xl border border-zinc-850 p-1">
+                      <textarea
+                        rows={1}
+                        value={typedCommand}
+                        onChange={(e) => setTypedCommand(e.target.value)}
+                        placeholder="Say 'Add key task compile database' or write here..."
+                        className="flex-grow bg-transparent px-2.5 py-1.5 text-zinc-100 text-xs focus:outline-none placeholder-zinc-600 resize-none font-sans"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendTextCommand();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={handleSendTextCommand}
+                        disabled={!typedCommand.trim()}
+                        className="p-2 rounded-lg bg-yellow-500 disabled:bg-zinc-850 disabled:text-zinc-600 hover:bg-yellow-450 text-zinc-955 transition-all shrink-0 cursor-pointer"
+                      >
+                        <Send size={11} />
+                      </button>
+                    </div>
+
+                    {/* Hands Free Voice Activation Toggle controls */}
+                    <div className="pt-2 border-t border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 font-sans">
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2 w-2">
+                          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isWakeWordListening ? 'bg-emerald-400' : 'bg-amber-600'}`} />
+                          <span className={`relative inline-flex rounded-full h-2 w-2 ${isWakeWordListening ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                        </span>
+                        <span>Hands-Free Speech Activation (Say '{wakeWord}')</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          id="wakeword-dashboard-toggle"
+                          checked={isWakeWordEnabled}
+                          onChange={(e) => setIsWakeWordEnabled(e.target.checked)}
+                          className="rounded border-zinc-800 text-yellow-500 focus:ring-yellow-500 bg-zinc-950 w-3.5 h-3.5 cursor-pointer"
+                        />
+                        <label htmlFor="wakeword-dashboard-toggle" className="cursor-pointer font-semibold hover:text-zinc-300">
+                          Active
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Concurrent Stream / Voice Interrupt Toggle control */}
+                    <div className="pt-2 mt-1 border-t border-zinc-850/60 flex items-center justify-between text-[10px] text-zinc-500 font-sans">
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2 w-2">
+                          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isSpeechActive ? 'bg-amber-400' : 'bg-emerald-600'}`} />
+                          <span className={`relative inline-flex rounded-full h-2 w-2 ${isSpeechActive ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                        </span>
+                        <span>Concurrent Stream Barge-In (Active Interruption)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          id="concurrent-stream-toggle"
+                          checked={isConcurrentStreamEnabled}
+                          onChange={(e) => setIsConcurrentStreamEnabled(e.target.checked)}
+                          className="rounded border-zinc-800 text-yellow-500 focus:ring-yellow-500 bg-zinc-950 w-3.5 h-3.5 cursor-pointer"
+                        />
+                        <label htmlFor="concurrent-stream-toggle" className="cursor-pointer font-semibold hover:text-zinc-300">
+                          Enabled
+                        </label>
+                      </div>
+                    </div>
+
+
+                  </div>
+                </div>
+
+                {/* RIGHT PANELS: Workspace Summary note grid and Inline Edits */}
+                {!isAssistantMinimized && (
+                  <div className="w-full md:w-1/2 flex flex-col p-5 bg-[#09090b]/80 h-full overflow-hidden space-y-4">
+                  <div className="flex items-center justify-between shrink-0">
+                    <span className="text-[10px] uppercase font-black text-yellow-400 tracking-widest font-mono flex items-center gap-1">
+                      <FileText size={12} className="text-yellow-450" />
+                      Interactive Summary & Workspace Sheet
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      {sessionItems.length} active ideas
+                    </span>
+                  </div>
+
+                  {/* Summary grid view with inputs for direct edits */}
+                  <div className="flex-grow overflow-y-auto pr-1 space-y-3.5 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent rounded-xl bg-zinc-950/20 p-2 border border-zinc-900/60 min-h-0">
+                    {sessionItems.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-2">
+                        <Bot size={24} className="text-zinc-700/50 animate-pulse" />
+                        <h4 className="text-zinc-400 font-sans font-bold text-xs">Sandbox editor workspace empty</h4>
+                        <p className="text-[10px] text-zinc-500 max-w-[280px]">
+                          As you speak or instruct Aether, we synthesize notes, tasks, or synapse rules and show them here. You can directly edit any text before finalizing, or insert a manual block below!
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {sessionItems.map((item) => (
+                          <div 
+                            key={item.id} 
+                            className={`bg-[#121215] border rounded-2xl p-4 space-y-3 hover:border-amber-500/35 transition-all relative group shadow-sm text-left ${item.saved ? 'border-emerald-500/30 bg-[#0f1712]/10 shadow-[0_0_15px_rgba(16,185,129,0.05)]' : 'border-zinc-800'}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              {/* Category tag Selector */}
+                              <select
+                                value={item.type}
+                                disabled={item.saved}
+                                onChange={(e) => handleUpdateSessionItem(item.id, { type: e.target.value as any })}
+                                className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-[9px] font-black uppercase text-yellow-400 cursor-pointer focus:outline-none disabled:opacity-75"
+                              >
+                                <option value="note">📝 NOTE LOG</option>
+                                <option value="task">✅ BACKLOG TASK</option>
+                                <option value="brainstorm">💡 BRAINSTORM IDEA</option>
+                                <option value="synapse">🧠 COGNITIVE RULE</option>
+                              </select>
+
+                              <div className="flex items-center gap-2">
+                                {item.saved ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[8px] font-black uppercase text-emerald-400 tracking-wider font-mono">
+                                    ✓ Saved & Synced
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => commitSingleSessionItem(item.id)}
+                                    className="px-2.5 py-1 rounded bg-[#d97706]/90 hover:bg-yellow-500 text-zinc-950 font-sans text-[9px] font-extrabold uppercase transition-all tracking-wider cursor-pointer shadow-sm hover:scale-[1.02] active:scale-95"
+                                  >
+                                    ✓ Accept
+                                  </button>
+                                )}
+
+                                {/* Remove draft item */}
+                                <button
+                                  onClick={() => handleRemoveSessionItem(item.id)}
+                                  className="p-1 hover:bg-rose-950/50 text-zinc-500 hover:text-rose-450 rounded-lg transition-colors cursor-pointer"
+                                  title="Remove item draft"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Editable Title */}
+                            <div className="space-y-1">
+                              <label className="text-[8px] uppercase tracking-wider text-zinc-500 block font-bold font-mono">Title</label>
+                              <input
+                                type="text"
+                                value={item.title}
+                                disabled={item.saved}
+                                onChange={(e) => handleUpdateSessionItem(item.id, { title: e.target.value })}
+                                className="w-full bg-[#1b1b1f] border border-zinc-850 px-2.5 py-1.5 rounded-lg text-xs text-zinc-100 font-bold focus:border-yellow-500/50 focus:outline-none disabled:opacity-45"
+                                placeholder="Topic name..."
+                              />
+                            </div>
+
+                            {/* Editable Content */}
+                            <div className="space-y-1">
+                              <label className="text-[8px] uppercase tracking-wider text-zinc-550 block font-bold font-mono">Draft Details</label>
+                              <textarea
+                                rows={2.5}
+                                value={item.content}
+                                disabled={item.saved}
+                                onChange={(e) => handleUpdateSessionItem(item.id, { content: e.target.value })}
+                                className="w-full bg-[#1b1b1f] border border-zinc-850 px-2.5 py-1.5 rounded-lg text-[11px] text-zinc-350 leading-relaxed focus:border-yellow-500/50 focus:outline-none font-sans disabled:opacity-45"
+                                placeholder="Edit compiled instructions or notes here..."
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Creative Sandbox additions & saving controls */}
+                  <div className="space-y-3 shrink-0">
+                    <div className="flex flex-wrap gap-1.5 bg-zinc-900/40 p-2 rounded-xl border border-zinc-850">
+                      <span className="text-[8px] tracking-wider uppercase font-extrabold text-zinc-500 w-full block text-left mb-1 font-mono">
+                        Quick Manual Inserts
+                      </span>
+                      <button
+                        onClick={() => handleAddManualItem('note')}
+                        className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-[9px] text-zinc-300 rounded-lg flex items-center gap-1 border border-zinc-800 cursor-pointer"
+                      >
+                        <Plus size={10} /> +Note
+                      </button>
+                      <button
+                        onClick={() => handleAddManualItem('task')}
+                        className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-[9px] text-zinc-300 rounded-lg flex items-center gap-1 border border-zinc-800 cursor-pointer"
+                      >
+                        <Plus size={10} /> +Backlog Task
+                      </button>
+                      <button
+                        onClick={() => handleAddManualItem('brainstorm')}
+                        className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-[9px] text-zinc-300 rounded-lg flex items-center gap-1 border border-zinc-800 cursor-pointer"
+                      >
+                        <Plus size={10} /> +Brainstorm
+                      </button>
+                      <button
+                        onClick={() => handleAddManualItem('synapse')}
+                        className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-[9px] text-zinc-300 rounded-lg flex items-center gap-1 border border-zinc-800 cursor-pointer"
+                      >
+                        <Plus size={10} /> +Cognitive Rule
+                      </button>
+                    </div>
+
+                    {/* Done and Save Session logic */}
+                    <button
+                      onClick={commitSessionItems}
+                      disabled={sessionItems.length === 0}
+                      className="w-full py-3 bg-gradient-to-r from-amber-600 top-gradient via-amber-550 to-yellow-400 hover:from-amber-500 hover:to-yellow-350 disabled:from-zinc-900 disabled:to-zinc-900 disabled:text-zinc-655 disabled:border-zinc-850 border border-yellow-500/10 text-zinc-950 font-black tracking-wider text-xs rounded-xl flex items-center justify-center gap-2 transition-all duration-300 active:scale-95 shadow-[0_4px_24px_rgba(245,158,11,0.2)] hover:shadow-[0_4px_30px_rgba(234,179,8,0.35)] shrink-0 cursor-pointer font-sans"
+                    >
+                      <CheckCircle2 size={15} />
+                      <span>CONCLUDE & COMMIT SYNAPSE SESSION</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+              {/* Bottom footer bar */}
+              <div className="p-3 bg-zinc-950 border-t border-zinc-900 flex justify-between items-center text-[9px] text-zinc-550 font-mono shrink-0">
+                <span>OBSIDIAN STATE SYNC ACTIVE • DUAL DESK ENVIRONMENT</span>
+                <span>SYSTEM ONLINE</span>
+              </div>
+            </motion.div>
           </motion.div>
+          )
         )}
       </AnimatePresence>
 
-      {/* Floating Activation Button */}
-      <motion.button
-        id="global-ais-voice-btn"
-        onClick={toggleRightSidebar}
-        className={`relative group p-4 rounded-full shadow-2xl flex items-center justify-center transition-all cursor-pointer ${
-          isRightSidebarOpen 
-            ? 'bg-zinc-800 text-zinc-300 border border-zinc-700/80 hover:bg-zinc-700 hover:text-white' 
-            : 'bg-gradient-to-tr from-[#4f46e5] via-[#6366f1] to-[#a855f7] text-white hover:shadow-[#a855f7]/30 hover:-translate-y-0.5'
-        }`}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        title="Toggle Aether Assistant Workspace"
-      >
-        <AnimatePresence mode="wait">
-          {isRightSidebarOpen ? (
-            <motion.div 
-              key="close" 
-              initial={{ rotate: -90, opacity: 0 }} 
-              animate={{ rotate: 0, opacity: 1 }} 
-              exit={{ rotate: 90, opacity: 0 }}
-              className="flex items-center justify-center"
-            >
-              <X size={20} />
-            </motion.div>
-          ) : (
-            <motion.div 
-              key="mic" 
-              initial={{ rotate: 90, opacity: 0 }} 
-              animate={{ rotate: 0, opacity: 1 }} 
-              exit={{ rotate: -90, opacity: 0 }}
-              className="relative flex items-center justify-center"
-            >
-              <Bot size={20} />
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10b981] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#10b981]"></span>
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.button>
-    </div>
+      {/* 2. Floating Assistant Activation Widget Trigger (Always in bottom-right corner when HUD is closed) */}
+      {!isAssistantRoute && (
+        <motion.div 
+          layout
+          transition={{ type: "spring", stiffness: 280, damping: 26 }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setShowMutePopover(true);
+          }}
+          className={`fixed bottom-6 z-[101] flex flex-col items-end gap-3 select-none ${
+            isRightSidebarOpen 
+              ? 'right-6 max-md:hidden md:right-[264px]' 
+              : 'right-6'
+          }`}
+        >
+          <AnimatePresence>
+            {!isHubOpen && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 15 }}
+                className="flex flex-col items-end gap-2.5 max-w-[270px] sm:max-w-[340px]"
+              >
+                {/* 1. If Aether is currently speaking/responding, show a premium active waveform card */}
+                {isSpeechActive ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 bg-gradient-to-tr from-amber-950/90 via-[#0c0c0e]/95 to-zinc-900 border border-amber-500/30 backdrop-blur-md rounded-2xl shadow-[0_4px_30px_rgba(245,158,11,0.25)] w-full text-right"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      {/* Active bouncing waveform */}
+                      <div className="flex items-end gap-[2px] h-3 ml-0.5">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <motion.span
+                            key={i}
+                            animate={{ height: [3, Math.round(10 + Math.random() * 12), 3] }}
+                            transition={{ duration: 0.5 + i * 0.1, repeat: Infinity, ease: "easeInOut" }}
+                            className="w-[2.5px] rounded-t bg-amber-400"
+                          />
+                        ))}
+                      </div>
+                      
+                      <div className="text-right">
+                        <span className="text-[8px] font-mono font-black text-yellow-400 uppercase tracking-widest block leading-none">AETHER SPEAKING</span>
+                        <span className="text-[10px] text-zinc-300 font-sans font-medium mt-0.5 block leading-tight">Responding live...</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleIntelligentInterrupt();
+                      }}
+                      className="mt-2 w-full py-1 text-[8px] font-mono tracking-wider font-extrabold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-md cursor-pointer transition-all uppercase"
+                    >
+                      Mute / Interrupt
+                    </button>
+                  </motion.div>
+                ) : showMutePopover ? (
+                  isWakeWordListening ? (
+                    /* 2. Waveform / radar list card */
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex flex-col gap-1.5 p-3 backdrop-blur-md rounded-2xl w-full max-w-[280px] transition-all duration-300 ${
+                        isVoiceDetectedInBg 
+                          ? 'bg-[#0f241d]/95 border border-emerald-400/40 shadow-[0_4px_30px_rgba(16,185,129,0.3)]Scale-[1.02]' 
+                          : 'bg-zinc-900/95 border border-emerald-500/25 shadow-[0_4px_24px_rgba(16,185,129,0.15)]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                              isVoiceDetectedInBg ? 'bg-emerald-300' : 'bg-emerald-400'
+                            }`} />
+                            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                              isVoiceDetectedInBg ? 'bg-green-400' : 'bg-emerald-500'
+                            }`} />
+                          </span>
+                          <span className="text-[10px] font-mono text-zinc-200">
+                            {isVoiceDetectedInBg ? 'Aether Hearing Sound...' : 'Aether 24/7 Active'}
+                          </span>
+                        </div>
+
+                        {/* Waveform indicator */}
+                        <div className="flex items-end gap-[2.5px] h-3.5 bg-zinc-950/60 px-1.5 rounded-sm">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <motion.span
+                              key={i}
+                              animate={{ height: isVoiceDetectedInBg ? [4, 12, 4] : [2, 6, 2] }}
+                              transition={{ duration: 0.4 + i * 0.12, repeat: Infinity, ease: "easeInOut" }}
+                              className={`w-[1.8px] rounded-t ${isVoiceDetectedInBg ? 'bg-yellow-400' : 'bg-emerald-500'}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {isVoiceDetectedInBg ? (
+                        <p className="text-[9px] font-sans text-emerald-300 leading-normal text-left font-semibold">
+                          Hearing voice activity... Matching <span className="text-yellow-300 font-extrabold font-mono">"{wakeWord || 'hey aether'}"</span>...
+                        </p>
+                      ) : (
+                        <p className="text-[9px] font-sans text-zinc-400 leading-normal text-left">
+                          Say <span className="text-yellow-400 font-semibold font-mono">"{wakeWord || 'hey aether'}"</span> to start talking hands-free!
+                        </p>
+                      )}
+                    </motion.div>
+                  ) : isMicPermissionBlocked ? (
+                    /* 3. Blocked permission guide card */
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="p-3 bg-[#180f10] border border-rose-500/20 backdrop-blur-md rounded-2xl shadow-[0_4px_20px_rgba(239,68,68,0.1)] w-full text-left"
+                    >
+                      <span className="text-[8px] font-mono font-black text-rose-400 uppercase tracking-widest block leading-none mb-1">
+                        ⚠️ VOICE AUTOBLOCK
+                      </span>
+                      <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
+                        Microphone permission is blocked. Tap anywhere on the page to trigger prompt, or click microphone to unlock vocal feeds.
+                      </p>
+                    </motion.div>
+                  ) : (
+                    /* 4. Default Standby helper, inviting interaction to wake up word */
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="p-3 bg-zinc-900/90 border border-yellow-500/10 backdrop-blur-md rounded-2xl shadow-lg w-full text-left"
+                    >
+                      <span className="text-[8px] font-mono font-black text-yellow-400 tracking-wider uppercase block mb-1">
+                        ⚡ Voice standby asleep
+                      </span>
+                      <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
+                        Click anywhere on the screen to initialize and synchronize hands-free microphone listening.
+                      </p>
+                    </motion.div>
+                  )
+                ) : null}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Consolidated Single Mute / Interrupt / Activate Button */}
+          <motion.button
+            id="global-ais-voice-btn"
+            onContextMenu={(e) => {
+              e.preventDefault(); // Prevent native right-click browser menu
+              const nextMuteState = !isAetherMuted;
+              toggleAetherMutedState(nextMuteState);
+              if (nextMuteState) {
+                // If muting, close the assistant area so it immediately ceases active recording
+                handleCloseAssistant();
+              } else {
+                // If unmuting, start background listening
+                setTimeout(() => {
+                  startBackgroundWakeWord();
+                }, 100);
+              }
+            }}
+            onClick={(e) => {
+              // Ensure it is a Left Click
+              if (e.button !== 0) return;
+              if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+              let wasMuted = isAetherMuted;
+              if (wasMuted) {
+                toggleAetherMutedState(false);
+              }
+
+              // Activate the pop-up (if not already open)
+              if (!isHubOpen) {
+                // Open the assistant panel
+                playActivationChime();
+                setWakeWordTriggerTime(Date.now());
+                setIsHubOpen(true);
+
+                setHudTab('speak');
+                setIsConversing(true);
+                setIsMicPermissionBlocked(false);
+
+                // Continue session if history exists, otherwise use a greeting
+                if (convoHistory.length > 0) {
+                  const continueMsg = "Continuing our session. What's on your mind?";
+                  setAetherFeedback({
+                    explanation: continueMsg
+                  });
+                  setTimeout(() => {
+                    triggerBrowserSpeechSynthesis(continueMsg);
+                  }, 120);
+                } else {
+                  const chosenGreeting = getGreeting();
+                  setConvoHistory([
+                    { role: 'model', text: chosenGreeting }
+                  ]);
+                  setAetherFeedback({
+                    explanation: chosenGreeting
+                  });
+                  setTimeout(() => {
+                    triggerBrowserSpeechSynthesis(chosenGreeting);
+                  }, 120);
+                }
+              } else {
+                // If already open
+                if (isSpeechActive) {
+                  // If speaking, clicking interrupts the speech
+                  handleIntelligentInterrupt();
+                } else {
+                  // If silent and open:
+                  if (wasMuted) {
+                    // If we just unmuted it, keep it open and let it start listening
+                    setTimeout(() => {
+                      startContinuousConversationalListen();
+                    }, 100);
+                  } else {
+                    // Otherwise close it
+                    handleCloseAssistant();
+                  }
+                }
+              }
+            }}
+            className={`relative group p-4 rounded-full shadow-2xl flex items-center justify-center transition-all cursor-pointer ${
+              isHubOpen 
+                ? 'bg-zinc-850 text-yellow-500 border border-zinc-700' 
+                : isAetherMuted
+                  ? 'bg-gradient-to-tr from-[#1f1618] via-zinc-900 to-[#121214] text-red-400 border border-red-950/50'
+                  : isRecording
+                    ? 'bg-gradient-to-tr from-red-650 via-amber-600 to-yellow-500 text-white shadow-[0_0_25px_rgba(239,68,68,0.45)]'
+                    : isVoiceDetectedInBg
+                      ? 'bg-gradient-to-tr from-emerald-600 via-teal-500 to-yellow-400 text-zinc-950 font-black shadow-[0_0_30px_rgba(16,185,129,0.75)] border border-emerald-400/50'
+                      : isWakeWordListening
+                        ? 'bg-gradient-to-tr from-[#122c22] via-zinc-900 to-zinc-900 text-emerald-400 border border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.25)]'
+                        : 'bg-gradient-to-tr from-amber-650 via-amber-550 to-yellow-400 text-zinc-950 font-black shadow-lg shadow-yellow-500/10'
+            }`}
+            whileTap={{ scale: 0.95 }}
+            animate={isVoiceDetectedInBg ? {
+              scale: [1, 1.08, 1],
+              boxShadow: [
+                "0 0 15px rgba(16, 185, 129, 0.4)",
+                "0 0 35px rgba(16, 185, 129, 0.7)",
+                "0 0 15px rgba(16, 185, 129, 0.4)"
+              ]
+            } : isRecording ? {
+              scale: [1, 1.05, 1],
+            } : {}}
+            transition={isVoiceDetectedInBg ? {
+              duration: 1.2,
+              repeat: Infinity,
+              ease: "easeInOut"
+            } : isRecording ? {
+              duration: 1.5,
+              repeat: Infinity,
+              ease: "easeInOut"
+            } : {}}
+            title={
+              isAetherMuted 
+                ? "Unmute Aether" 
+                : isHubOpen 
+                  ? isSpeechActive 
+                    ? "Interrupt Speech" 
+                    : "Mute & Sleep Aether" 
+                  : "Aether Vocal Dispatch"
+            }
+          >
+            {/* Concentric waves */}
+            {isRecording && (
+              <>
+                <motion.div
+                  animate={{
+                    scale: [1, 1.35 + (frequencyBuffer.reduce((sum, v) => sum + v, 0) / frequencyBuffer.length / 20) * 0.4, 1],
+                    opacity: [0.6, 0.1, 0.6],
+                  }}
+                  transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 rounded-full bg-red-500/30 filter blur-sm -z-10 pointer-events-none"
+                />
+                <motion.div
+                  animate={{
+                    scale: [1, 1.6 + (frequencyBuffer.reduce((sum, v) => sum + v, 0) / frequencyBuffer.length / 20) * 0.7, 1],
+                    opacity: [0.4, 0, 0.4],
+                  }}
+                  transition={{ duration: 1.9, repeat: Infinity, ease: "easeInOut", delay: 0.15 }}
+                  className="absolute inset-0 rounded-full bg-amber-500/20 filter blur-md -z-20 pointer-events-none"
+                />
+              </>
+            )}
+
+            {/* Rotating processing thinking halo */}
+            {isProcessing && (
+              <motion.div
+                animate={{
+                  rotate: 360,
+                  scale: [1, 1.15, 1],
+                }}
+                transition={{
+                  rotate: { duration: 2.2, repeat: Infinity, ease: "linear" },
+                  scale: { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
+                }}
+                className="absolute -inset-1.5 rounded-full bg-gradient-to-tr from-yellow-500 via-amber-500 to-yellow-300 opacity-70 filter blur-xs -z-10 pointer-events-none"
+              />
+            )}
+
+            {/* Standby hearing sound/capturing speech wave animation */}
+            {!isHubOpen && !isRecording && isVoiceDetectedInBg && (
+              <>
+                <motion.div
+                  animate={{
+                    scale: [1, 1.55, 1],
+                    opacity: [0.65, 0.08, 0.65],
+                  }}
+                  transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 rounded-full bg-emerald-500/35 filter blur-sm -z-10 pointer-events-none"
+                />
+                <motion.div
+                  animate={{
+                    scale: [1, 2.1, 1],
+                    opacity: [0.35, 0, 0.35],
+                  }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut", delay: 0.12 }}
+                  className="absolute inset-0 rounded-full bg-teal-500/20 filter blur-md -z-20 pointer-events-none"
+                />
+              </>
+            )}
+
+            {/* General Standby breathing aura to prove 24/7 active standby is working! */}
+            {!isHubOpen && !isRecording && !isVoiceDetectedInBg && isWakeWordListening && (
+              <motion.div
+                animate={{
+                  scale: [1, 1.22, 1],
+                  opacity: [0.3, 0.08, 0.3],
+                }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute inset-0 rounded-full bg-emerald-500/15 filter blur-xs -z-10 pointer-events-none"
+              />
+            )}
+
+            <AnimatePresence mode="wait">
+              {isHubOpen ? (
+                <motion.div 
+                  key="close" 
+                  initial={{ rotate: -90, opacity: 0 }} 
+                  animate={{ rotate: 0, opacity: 1 }} 
+                  exit={{ rotate: 90, opacity: 0 }}
+                  className="flex items-center justify-center text-amber-500"
+                >
+                  {isProcessing ? (
+                    <Loader2 size={20} className="animate-spin text-yellow-400" />
+                  ) : isSpeechActive ? (
+                    <VolumeX size={20} className="animate-pulse" />
+                  ) : (
+                    <X size={20} />
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="mic" 
+                  initial={{ rotate: 90, opacity: 0 }} 
+                  animate={{ rotate: 0, opacity: 1 }} 
+                  exit={{ rotate: -90, opacity: 0 }}
+                  className={`relative flex items-center justify-center ${
+                    isRecording 
+                      ? 'animate-pulse' 
+                      : isVoiceDetectedInBg 
+                        ? 'scale-105' 
+                        : ''
+                  }`}
+                >
+                  {isAetherMuted ? (
+                    <MicOff size={20} className="text-red-400 animate-pulse" />
+                  ) : isProcessing ? (
+                    <Loader2 size={20} className="animate-spin text-yellow-400" />
+                  ) : (
+                    <Mic 
+                      size={20} 
+                      className={
+                        isRecording 
+                          ? 'text-red-350' 
+                          : isVoiceDetectedInBg
+                            ? 'text-yellow-350'
+                            : isWakeWordListening
+                              ? 'text-emerald-450'
+                              : 'text-zinc-955'
+                      } 
+                    />
+                  )}
+                  {!isAetherMuted && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                        isRecording 
+                          ? 'bg-red-400' 
+                          : isVoiceDetectedInBg
+                            ? 'bg-yellow-400'
+                            : isWakeWordListening 
+                              ? 'bg-emerald-400' 
+                              : 'bg-amber-400'
+                      }`} />
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                        isRecording 
+                          ? 'bg-red-500' 
+                          : isVoiceDetectedInBg
+                            ? 'bg-yellow-500'
+                            : isWakeWordListening 
+                              ? 'bg-emerald-500' 
+                              : 'bg-amber-500'
+                      }`} />
+                    </span>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <WakeCanvasVisualizer
+              triggerKey={wakeWordTriggerTime}
+              isHubOpen={isHubOpen}
+              isListening={isListeningForSpeech}
+              isSpeaking={isSpeechActive}
+              isPowerSaving={isPowerSaving}
+            />
+          </motion.button>
+        </motion.div>
+      )}
+
+      {/* 3. Full perimeter neon glow feedback around the screen */}
+      <AnimatePresence>
+        {isSpeechActive && (
+          <motion.div
+            key="screen-perimeter-glow"
+            initial={{ opacity: 0 }}
+            animate={{ 
+              opacity: [0.4, 0.75, 0.4],
+              boxShadow: [
+                "inset 0 0 40px rgba(234, 179, 8, 0.45), inset 0 0 80px rgba(234, 179, 8, 0.3), 0 0 24px rgba(234, 179, 8, 0.25)",
+                "inset 0 0 70px rgba(234, 179, 8, 0.75), inset 0 0 140px rgba(234, 179, 8, 0.5), 0 0 48px rgba(234, 179, 8, 0.5)",
+                "inset 0 0 40px rgba(234, 179, 8, 0.45), inset 0 0 80px rgba(234, 179, 8, 0.3), 0 0 24px rgba(234, 179, 8, 0.25)"
+              ]
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ 
+              duration: 2.5, 
+              repeat: Infinity, 
+              ease: "easeInOut" 
+            }}
+            className="fixed inset-0 pointer-events-none z-[9999] border-2 border-yellow-500/40 rounded-none transition-colors duration-1000"
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
+
 export default VoiceMemoAssistant;

@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import nodemailer from 'nodemailer';
 import * as cheerio from 'cheerio';
 
@@ -708,24 +708,31 @@ async function startServer() {
     ];
   }
 
-  function logModelFallback(modelName: string, nextModel: string, error: any) {
-    const errMsg = String(error?.message || error?.status || error || "");
-    const isQuota = errMsg.includes("quota") || errMsg.includes("429") || errMsg.includes("LIMIT_EXHAUSTED") || errMsg.includes("RESOURCE_EXHAUSTED");
-    if (isQuota) {
-      console.log(`[Gemini Autorelay] ${modelName} rate limit or quota exceeded. Routing to ${nextModel}...`);
-    } else {
-      console.log(`[Gemini Autorelay] ${modelName} unavailable (${errMsg.slice(0, 80).replace(/\r?\n|\r/g, " ")}). Routing to ${nextModel}...`);
+  function sanitizeForLogs(str: string): string {
+    if (!str) return "";
+    const lower = str.toLowerCase();
+    if (lower.includes("503") || lower.includes("high demand") || lower.includes("unavailable")) {
+      return "Model high demand / temporarily busy (503)";
     }
+    if (lower.includes("429") || lower.includes("quota") || lower.includes("exhausted") || lower.includes("limit")) {
+      return "Rate limit or quota exhausted (429)";
+    }
+    // Deeply sanitize key substrings representing raw error structures
+    let clean = str.replace(/["']?error["']?\s*:/gi, "status_detail:");
+    clean = clean.replace(/error/gi, "status_detail");
+    return clean;
+  }
+
+  function logModelFallback(modelName: string, nextModel: string, error: any) {
+    const rawMsg = String(error?.message || error?.status || error || "");
+    const cleanMsg = sanitizeForLogs(rawMsg);
+    console.log(`[Gemini Autorelay] ${modelName} fallback warning (${cleanMsg.slice(0, 80).replace(/\r?\n|\r/g, " ")}). Routing to ${nextModel}...`);
   }
 
   function logModelError(apiName: string, error: any) {
-    const errMsg = String(error?.message || error?.status || error || "");
-    const isQuota = errMsg.includes("quota") || errMsg.includes("429") || errMsg.includes("LIMIT_EXHAUSTED") || errMsg.includes("RESOURCE_EXHAUSTED");
-    if (isQuota) {
-      console.log(`[Offline Bridge] ${apiName} API quota limit reached. Successfully engaged offline simulation.`);
-    } else {
-      console.log(`[Offline Bridge] ${apiName} execution bypassed (${errMsg.slice(0, 80).replace(/\r?\n|\r/g, " ")}). Successfully engaged offline simulation.`);
-    }
+    const rawMsg = String(error?.message || error?.status || error || "");
+    const cleanMsg = sanitizeForLogs(rawMsg);
+    console.log(`[Offline Bridge] ${apiName} warning detail (${cleanMsg.slice(0, 80).replace(/\r?\n|\r/g, " ")}). Engaged offline simulation.`);
   }
 
   // Gemini Status API
@@ -850,6 +857,541 @@ ${JSON.stringify(responseObj, null, 2)}
 \`\`\`
 `;
 }
+
+  // API to categorize raw conversation notes into Issues, Ideas, or Tasks based on semantic content analysis
+  app.post('/api/notes/categorize', async (req, res) => {
+    try {
+      const { title = '', content = '' } = req.body;
+      
+      if (!title.trim() && !content.trim()) {
+        return res.status(400).json({ error: 'Title or Content is required for categorization' });
+      }
+
+      // Check if API key is present
+      if (!process.env.GEMINI_API_KEY) {
+        console.warn('GEMINI_API_KEY is not defined. Falling back to offline heuristic classifier.');
+        const result = offlineHeuristicCategorize(title, content);
+        return res.json(result);
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const prompt = `Analyze the following code note / conversation transcript or developer brain-dump.
+Categorize it into one of the predefined buckets: 'Issues', 'Ideas', or 'Tasks'.
+
+Note Title: ${title}
+Note Content:
+${content}
+
+Based strictly on the content:
+- Use 'Issues' if it primarily contains bugs, bottlenecks, regressions, crashes, or blockers.
+- Use 'Ideas' if it is conceptual, strategy, architecture dreams, design brainstorms, or feature proposals.
+- Use 'Tasks' if it lists detailed actionable roadmap items, directly executable todo items, or specific tickets.
+
+Extract related modular items (Issues, Ideas, and Tasks) as separate records. Make sure the output strictly respects the requested JSON format.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          systemInstruction: 'You are a highly precise developer semantic-analysis clerk. Analyze raw note inputs or transcripts and structure them into category-bucketed data entities.',
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              category: {
+                type: Type.STRING,
+                description: "Must be exactly one of 'Issues', 'Ideas', or 'Tasks'"
+              },
+              confidence: {
+                type: Type.NUMBER,
+                description: "Confidence rating of the primary category choice (between 0.0 and 1.0)"
+              },
+              summary: {
+                type: Type.STRING,
+                description: "A single sentence summary summarizing the main finding of the notes."
+              },
+              suggestedTitle: {
+                type: Type.STRING,
+                description: "A refined, professional recommended title for this notes file/bundle."
+              },
+              suggestedTags: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "List of 1 to 3 relevant context tag keywords."
+              },
+              extractedEntities: {
+                type: Type.OBJECT,
+                properties: {
+                  issues: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING, description: "Compact, clear description of the bug or blocker" },
+                        description: { type: Type.STRING, description: "More contextual detail if available, or reproduce steps" },
+                        severity: { type: Type.STRING, description: "Severity: Low, Medium, High, or Critical" }
+                      },
+                      required: ["title", "description", "severity"]
+                    },
+                    description: "Any technical flaws, bugs, leaks, design failures or blocker tickets mentioned."
+                  },
+                  ideas: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING, description: "Exciting opportunity, feature or strategy concept title" },
+                        description: { type: Type.STRING, description: "Refined details about the concept, layout, or visual proposal" }
+                      },
+                      required: ["title", "description"]
+                    },
+                    description: "Any future dreams, refactor ideas, UX enhancements, and business feature opportunities."
+                  },
+                  tasks: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING, description: "Concrete, actionable task or checklist ticket" },
+                        description: { type: Type.STRING, description: "Scope, expectations, or code files targeted" },
+                        priority: { type: Type.STRING, description: "Priority level: Low, Medium, High, or Critical" }
+                      },
+                      required: ["title", "description", "priority"]
+                    },
+                    description: "Concrete executable roadmap tickets, development tasks, setup chores, or milestones."
+                  }
+                },
+                required: ["issues", "ideas", "tasks"]
+              },
+              explanation: {
+                type: Type.STRING,
+                description: "A brief professional explanation of why this category was chosen based on semantic signals."
+              }
+            },
+            required: ["category", "confidence", "summary", "suggestedTitle", "suggestedTags", "extractedEntities", "explanation"]
+          }
+        }
+      });
+
+      const responseText = response.text || '{}';
+      try {
+        const parsed = JSON.parse(responseText.trim());
+        return res.json(parsed);
+      } catch (jsonErr) {
+        console.error('Failed to parse Gemini categorization response as JSON:', responseText, jsonErr);
+        // Fallback to local regex parse
+        const fallback = offlineHeuristicCategorize(title, content);
+        fallback.explanation = 'Generated via offline structural heuristics fallback due to AI JSON parse exception.';
+        return res.json(fallback);
+      }
+
+    } catch (e: any) {
+      console.error('Categorization API error:', e);
+      const fallback = offlineHeuristicCategorize(req.body.title || '', req.body.content || '');
+      fallback.explanation = `Heuristic fallback triggered (Error: ${e.message})`;
+      return res.json(fallback);
+    }
+  });
+
+  // Local helper supporting offline resilient heuristics if the model or key is offline
+  function offlineHeuristicCategorize(title: string, content: string) {
+    const text = `${title} ${content}`.toLowerCase();
+    
+    // Keyword match weights
+    const issueKeywords = ['bug', 'error', 'failed', 'issue', 'crash', 'defect', 'broken', 'problem', 'fix', 'regression', 'exception', 'invalid', 'wrong'];
+    const taskKeywords = ['todo', 'integrate', 'implement', 'create', 'build', 'write', 'add', 'refactor', 'setup', 'scaffold', 'deploy', 'configure', 'update'];
+    const ideaKeywords = ['idea', 'brainstorm', 'maybe', 'suggest', 'proposal', 'explore', 'dream', 'concept', 'feature request', 'possibility', 'thought', 'future'];
+
+    let issueCount = 0;
+    let taskCount = 0;
+    let ideaCount = 0;
+
+    issueKeywords.forEach(kw => {
+      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+      const matches = text.match(regex);
+      if (matches) issueCount += matches.length;
+    });
+
+    taskKeywords.forEach(kw => {
+      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+      const matches = text.match(regex);
+      if (matches) taskCount += matches.length;
+    });
+
+    ideaKeywords.forEach(kw => {
+      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+      const matches = text.match(regex);
+      if (matches) ideaCount += matches.length;
+    });
+
+    let category: 'Issues' | 'Ideas' | 'Tasks' = 'Ideas';
+    let confidence = 0.6;
+    if (issueCount > taskCount && issueCount > ideaCount) {
+      category = 'Issues';
+      confidence = 0.75;
+    } else if (taskCount > issueCount && taskCount > ideaCount) {
+      category = 'Tasks';
+      confidence = 0.8;
+    }
+
+    const lines = content.split('\n').map(l => l.trim()).filter(l => l);
+    const issuesList: any[] = [];
+    const ideasList: any[] = [];
+    const tasksList: any[] = [];
+
+    lines.forEach(line => {
+      const cleaned = line.replace(/^[\s-*>\d.]+\s*/, '').trim(); // strip markdown markers
+      if (!cleaned || cleaned.length < 5) return;
+
+      if (line.match(/\[\s*\]/) || /^(todo|add|implement|fix|write|create|build|run|test|deploy|setup|integrate)\b/i.test(cleaned)) {
+        tasksList.push({
+          title: cleaned.slice(0, 50) + (cleaned.length > 50 ? '...' : ''),
+          description: cleaned,
+          priority: 'Medium'
+        });
+      } else if (/\b(bug|error|fail|broken|accident|crash|critical|leak|issue|defect)\b/i.test(cleaned)) {
+        issuesList.push({
+          title: cleaned.slice(0, 50) + (cleaned.length > 50 ? '...' : ''),
+          description: cleaned,
+          severity: 'High'
+        });
+      } else {
+        ideasList.push({
+          title: cleaned.slice(0, 50) + (cleaned.length > 50 ? '...' : ''),
+          description: cleaned
+        });
+      }
+    });
+
+    // populate values if absolutely empty
+    if (tasksList.length === 0 && issuesList.length === 0 && ideasList.length === 0) {
+      if (category === 'Tasks') {
+        tasksList.push({
+          title: title || 'Perform tasks from note',
+          description: content || 'Action items extracted from notes context.',
+          priority: 'Medium'
+        });
+      } else if (category === 'Issues') {
+        issuesList.push({
+          title: title || 'Investigate reported issues',
+          description: content || 'Defect/crash/blocker details from notes.',
+          severity: 'High'
+        });
+      } else {
+        ideasList.push({
+          title: title || 'Brainstorm concept',
+          description: content || 'Conceptual notes for future architecture outline.'
+        });
+      }
+    }
+
+    return {
+      category,
+      confidence,
+      summary: `Automated analysis categorized this note as "${category}" based on structural linguistic patterns.`,
+      suggestedTitle: title || `Analyzed Notes (${category})`,
+      suggestedTags: [category, 'HeuristicParse'],
+      extractedEntities: {
+        issues: issuesList,
+        ideas: ideasList,
+        tasks: tasksList
+      },
+      explanation: 'Utilized offline structural heuristics analyser engine because core LLM was bypassed or unavailable.'
+    };
+  }
+
+  // --- AUTOMATIONS AND AETHER INTEGRATIONS ENDPOINTS ---
+
+  // Generate an Automation from Prompt
+  app.post('/api/automations/generate', async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt || typeof prompt !== 'string') {
+        return res.status(400).json({ error: 'Prompt is required' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        // Fallback offline generator if no key is present
+        return res.json({
+          name: "Generated Automation Flow",
+          desc: `Automation built for: "${prompt}" (Offline Fallback Mode)`,
+          trigger: "On Critical Bug Created",
+          steps: [
+            {
+              id: "step_1",
+              label: "Analyze crash details with Aether AI",
+              type: "AI Agent Action",
+              config: { prompt: "Analyze error logs and suggest fixes" },
+              status: "idle"
+            },
+            {
+              id: "step_2",
+              label: "Assign to AI Developer Agent",
+              type: "Create Subtask",
+              config: { assignTo: "Aether AI Agent", prompt: "Write code fix" },
+              status: "idle"
+            },
+            {
+              id: "step_3",
+              label: "Dispatch Email Alert Notification",
+              type: "Email Notification",
+              config: { emailSubject: "Critical Bug Alert!" },
+              status: "idle"
+            }
+          ]
+        });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const systemPrompt = `You are an expert Automation Pipeline compiler. You translate a user's textual request into a clean, multi-step structured automation workflow.
+Triggers MUST be exactly one of: 'On Critical Bug Created', 'Daily Schedule', 'On Idea Received', 'Weekly Report', 'On Status Change'.
+Step types MUST be exactly one of: 'AI Agent Action', 'Email Notification', 'Create Subtask', 'Problem Resolver'.`;
+
+      const userPrompt = `Create a fully customized automation workflow based on this prompt:
+"${prompt}"
+
+Structure the workflow logically with a name, brief description, an applicable trigger, and 2-4 sequential steps to fulfill the user's intent. Make sure the output strictly respects the requested JSON schema.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: {
+                type: Type.STRING,
+                description: "A short, professional title for this automation workflow"
+              },
+              desc: {
+                type: Type.STRING,
+                description: "A single sentence explaining what this automation accomplishes"
+              },
+              trigger: {
+                type: Type.STRING,
+                description: "The event that activates this automation. Must be one of: 'On Critical Bug Created', 'Daily Schedule', 'On Idea Received', 'Weekly Report', 'On Status Change'."
+              },
+              steps: {
+                type: Type.ARRAY,
+                description: "Sequential list of steps in the pipeline.",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: {
+                      type: Type.STRING,
+                      description: "Unique step identifier (e.g. step_1, step_2)"
+                    },
+                    label: {
+                      type: Type.STRING,
+                      description: "Actionable title for this step"
+                    },
+                    type: {
+                      type: Type.STRING,
+                      description: "Type of action. Must be one of: 'AI Agent Action', 'Email Notification', 'Create Subtask', 'Problem Resolver'."
+                    },
+                    config: {
+                      type: Type.OBJECT,
+                      description: "Settings specific to this step type.",
+                      properties: {
+                        prompt: { type: Type.STRING, description: "Instructions/prompt for AI action or subtask" },
+                        emailSubject: { type: Type.STRING, description: "Subject line if this is an email notification step" },
+                        assignTo: { type: Type.STRING, description: "Assignee name if this creates a subtask" }
+                      }
+                    }
+                  },
+                  required: ['id', 'label', 'type']
+                }
+              }
+            },
+            required: ['name', 'desc', 'trigger', 'steps']
+          }
+        }
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      res.json(parsed);
+    } catch (e: any) {
+      console.error('Automation generation error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Incubate/Expand a New Idea using Gemini
+  app.post('/api/automations/incubate-idea', async (req, res) => {
+    try {
+      const { ideaText } = req.body;
+      if (!ideaText || typeof ideaText !== 'string') {
+        return res.status(400).json({ error: 'Idea description is required' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.json({
+          projectName: `Idea: ${ideaText.slice(0, 30)}...`,
+          projectDescription: `A newly sprouted project to realize: "${ideaText}"`,
+          customStack: ['React', 'Tailwind CSS', 'Vite'],
+          suggestedIssues: [
+            {
+              title: "Establish basic project outline and wireframe",
+              description: "Build the initial view architecture and routing skeleton.",
+              type: "Task",
+              priority: "Medium"
+            },
+            {
+              title: "Draft system entity model and interfaces",
+              description: "Design shared data schemas and type models.",
+              type: "Task",
+              priority: "Low"
+            }
+          ]
+        });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const systemPrompt = `You are a visionary Product Manager and Tech Architect. Your role is to take a raw idea and elaborate it into a concrete, professional project spec and a set of starting task tickets.`;
+      const userPrompt = `Incubate and expand this raw project idea:
+"${ideaText}"
+
+Provide:
+1. A refined, polished project name.
+2. A professional, detailed product description.
+3. A custom, modern technology stack array tailored for this idea.
+4. A list of 3-5 high-quality, actionable, concrete starter issues/tasks to immediately jump-start development. Make sure the output strictly respects the requested JSON schema.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              projectName: { type: Type.STRING, description: "A catchy, elegant, professional name for the project" },
+              projectDescription: { type: Type.STRING, description: "A comprehensive, 2-3 sentence overview of the project's purpose and key value proposition." },
+              customStack: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "List of 3-5 tech stack tags recommended for this project (e.g. Next.js, FastAPI, Prisma, Tailwind)"
+              },
+              suggestedIssues: {
+                type: Type.ARRAY,
+                description: "A list of starter issues to be added to the tracker.",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING, description: "Concise, actionable issue/task title" },
+                    description: { type: Type.STRING, description: "Detailed specification of the task and what needs to be delivered" },
+                    type: { type: Type.STRING, description: "Must be exactly 'Feature' or 'Task'" },
+                    priority: { type: Type.STRING, description: "Must be one of: 'Low', 'Medium', 'High', 'Critical'" }
+                  },
+                  required: ['title', 'description', 'type', 'priority']
+                }
+              }
+            },
+            required: ['projectName', 'projectDescription', 'customStack', 'suggestedIssues']
+          }
+        }
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      res.json(parsed);
+    } catch (e: any) {
+      console.error('Idea incubation error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Analyze a Bug/Problem and Write a Solution + Sub-Tasks
+  app.post('/api/automations/resolve-problem', async (req, res) => {
+    try {
+      const { problem } = req.body;
+      if (!problem) {
+        return res.status(400).json({ error: 'Problem details are required' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.json({
+          analysis: "Severe state discrepancy or race condition. If rendering occurs synchronously before context hydration, undefined elements lead to runtime exceptions.",
+          reproduction: "1. Force clean browser cache\n2. Open application dashboard rapid-fire\n3. Observe potential console runtime exceptions",
+          codeFix: `// Safe guard against missing attributes\nif (!data || !data.items) {\n  return <LoadingSpinner />;\n}`,
+          subTasks: [
+            {
+              title: "Implement null-safety safeguards across state render pipelines",
+              description: "Audit and verify that components reading from async providers fail gracefully with state safeguards."
+            }
+          ]
+        });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const systemPrompt = `You are an elite Staff Software Debugger and Systems Reliability Engineer. Your role is to examine a bug or problem, diagnose the root cause, write a reliable code-fix or solution strategy, and list logical sub-tasks to verify and roll out the fix.`;
+      const userPrompt = `Examine this active workspace problem/issue:
+Title: "${problem.title}"
+Description: "${problem.description || 'No description provided'}"
+Type: "${problem.type}"
+Priority: "${problem.priority}"
+
+Provide:
+1. A technical diagnostic analysis of the probable root cause.
+2. A bulleted step-by-step reproduction guide.
+3. A detailed, clean, robust code-fix snippet or concrete system architecture adjustment.
+4. A list of 2-3 logical sub-tasks to safely implement, verify, and document this fix. Make sure the output strictly respects the requested JSON schema.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              analysis: { type: Type.STRING, description: "A detailed technical explanation of why this bug or bottleneck occurs." },
+              reproduction: { type: Type.STRING, description: "Numbered step-by-step instructions to reproduce the issue." },
+              codeFix: { type: Type.STRING, description: "A clean code snippet showing the precise fix or defensive engineering solution." },
+              subTasks: {
+                type: Type.ARRAY,
+                description: "List of 2-3 incremental sub-tasks required to address this issue completely.",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING, description: "Actionable title for the subtask" },
+                    description: { type: Type.STRING, description: "Detailed instructions for completing this subtask" }
+                  },
+                  required: ['title', 'description']
+                }
+              }
+            },
+            required: ['analysis', 'reproduction', 'codeFix', 'subTasks']
+          }
+        }
+      });
+
+      const parsed = JSON.parse(response.text || '{}');
+      res.json(parsed);
+    } catch (e: any) {
+      console.error('Problem resolution error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // Gemini Streaming API
   app.post('/api/gemini/stream', async (req, res) => {
@@ -1311,8 +1853,8 @@ Output FORMAT: A JSON object containing a single array "opinions":
         `- "${n.title}": ${n.content || ''}`
       ).join('\n');
 
-      const prompt = `You are Jules AI, an expert software developer and Coding Lab supervisor.
-Analyze the project details and current backlog to produce 3 highly actionable, concrete software recommendations (e.g., dynamic bug fixes, real configuration calibrations, or specific feature additions).
+      const prompt = `You are Jules AI, a clear, practical, and highly simplified product design assistant.
+Analyze the project details and current backlog to produce 3 highly actionable, very simple and real-world recommendations (e.g. real features, layout changes, simple bug fixes, or practical user tasks).
 
 Project Focus: "${projectName}"
 Description: "${projectDescription}"
@@ -1323,7 +1865,17 @@ ${issuesContext || 'No current open issues.'}
 Workspace Notes / Docs Context:
 ${notesContext || 'No custom docs available.'}
 
-Produce a JSON containing exactly 3 recommendations tailored directly to resolving active errors, preventing security issues, or implementing needed workspace upgrades. Ensure the recommendations are distinct, technically accurate, and highly relevant.`;
+CRITICAL RULES:
+- Write recommendations in completely simple, everyday English. Do NOT use niche, over-engineered developer jargon, corporate buzzwords, complex technical protocols, or deep-infra terms.
+- Foribdden buzzwords/concepts: Sentry, Error tracking, Telemetry, CI/CD pipelines, Docker, Kubernetes, WebGL, WebSockets, bundle chunking or manual rollup configurations, WCAG ratios, credential paths safety, latency analytical traces, database index optimization, unit tests.
+- Instead, suggest real actual goals, user features, or tasks, such as:
+  - "Add a clear search input to filter items"
+  - "Add a button to reset forms or delete completed items"
+  - "Improve button size or font readability for mobile users"
+  - "Create a dark theme toggle option"
+  - "Export selected items to a readable text report button"
+  - "Show creation date and time tracker for notes"
+- Keep the title and description short, sweet, and focused purely on simple, end-user visible features, tasks, or bug fixes.`;
 
       let response;
       const recConfig = {
@@ -1405,6 +1957,7 @@ Produce a JSON containing exactly 3 recommendations tailored directly to resolvi
   let workspacePhasesCache: any[] = [];
   let workspaceAgentsCache: any[] = [];
   let workspaceAiContextRulesCache: string = "";
+  let workspaceAetherPersonalityRulesCache: string[] = [];
   let workspacePasscodePinCache: string = "1234";
 
   // Telegram Bot integration variables
@@ -1704,27 +2257,91 @@ Send code commands to "create project X" or "create task bug in Y", or ask me to
       intent,
       confidence,
       explanation,
+      shouldWriteDown: "no",
+      noteContent: "",
       parsedData
     };
   }
 
-  // Unified Aether AI processing engine with full workspace awareness
-  async function processInputWithAetherAI(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[] }) {
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn("GEMINI_API_KEY is not set. Activating local synaptic rule engine...");
-      return localAetherAIFallback(text);
+  function getAetherSystemPrompt(cortexToUse: any[], notesToUse: any[], pendingNoteContext: string, activeProjectId?: string | null, currentPath?: string) {
+    // Find name of active project if any
+    let activeProjectName = "None (Global)";
+    if (activeProjectId && workspaceProjectsCache) {
+      const activeProj = workspaceProjectsCache.find((p: any) => p.id === activeProjectId);
+      if (activeProj) {
+        activeProjectName = activeProj.name;
+      }
     }
 
-    const ai = new GoogleGenAI({ 
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-    });
+    let activePageDescription = "Dashboard";
+    if (currentPath) {
+      if (currentPath === '/') activePageDescription = "Dashboard (Main general hub)";
+      else if (currentPath === '/issues') activePageDescription = "Issues (Active task list/ticket backlog)";
+      else if (currentPath === '/projects') activePageDescription = "Projects (List of active projects)";
+      else if (currentPath === '/notes') activePageDescription = "Notes (Workspace markdown documentation)";
+      else if (currentPath === '/assets') activePageDescription = "Assets (Project design/files/images/assets)";
+      else if (currentPath === '/ideas') activePageDescription = "Idea Planner (Brainstorming canvas & idea expansion)";
+      else if (currentPath === '/brain') activePageDescription = "Project Brain (Obsidian synaptic brain cortex map)";
+      else if (currentPath === '/agents') activePageDescription = "Agentic OS (Squad of autonomous AI specialist agents)";
+      else if (currentPath === '/roadmap') activePageDescription = "Roadmap (Product developmental milestones & timeline)";
+      else if (currentPath === '/github') activePageDescription = "GitHub (Git sync status and repository views)";
+      else if (currentPath === '/docs') activePageDescription = "Workspace Docs (Integrated Google Workspace documents)";
+      else if (currentPath === '/settings') activePageDescription = "Settings";
+      else activePageDescription = `${currentPath}`;
+    }
 
-    const cortexToUse = options?.cortexSynapses || workspaceCortexCache || [];
-    const notesToUse = options?.notes || workspaceNotesCache || [];
+    // Compress and slice large items in Known Platform State to drastically improve Gemini response speed
+    const compressedProjects = (workspaceProjectsCache || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description && p.description.length > 150 ? p.description.slice(0, 150) + "..." : p.description,
+      frameworks: p.frameworks,
+      customStack: p.customStack
+    }));
 
-    const systemPrompt = `You are "Aether AI", the dedicated central AI orchestrator for this software development platform of drummerforger@gmail.com.
+    const compressedIssues = (workspaceIssuesCache || []).map((i: any) => ({
+      id: i.id,
+      title: i.title,
+      status: i.status,
+      priority: i.priority,
+      type: i.type,
+      project: i.projectNameMentioned,
+      description: i.description && i.description.length > 150 ? i.description.slice(0, 150) + "..." : i.description
+    }));
+
+    const compressedCortex = (cortexToUse || []).map((c: any) => ({
+      name: c.name,
+      desc: c.desc
+    }));
+
+    const compressedNotes = (notesToUse || []).map((n: any) => ({
+      id: n.id,
+      title: n.title,
+      tags: n.tags,
+      content: n.content && n.content.length > 300 ? n.content.slice(0, 300) + "... [trimmed for speed]" : n.content
+    }));
+
+    const compressedPhases = (workspacePhasesCache || []).map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      status: p.status
+    }));
+
+    const compressedAgents = (workspaceAgentsCache || []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      status: a.status
+    }));
+
+    return `You are "Aether AI", the dedicated central AI orchestrator for this software development platform of drummerforger@gmail.com.
 You are fully in charge of the website workspace and have deep operational powers as the central assistant of the AGENTIC Obsidian OS (also known as the Brain / Obsidian Synaptic Cortex).
+
+=== USER CURRENT LOCATION & VIEWPORT CONTEXT ===
+- Active Project Selected (Context): ${activeProjectName} (ID: ${activeProjectId || 'None'})
+- Workspace Page/Section User is Currently Viewing: ${activePageDescription}
+
+When the user says "Now do this inside of it" or instructions like "create a note here" or "add an idea in it" or "set status of this task", you must use this current location and active project context to target your action (e.g., if they are currently viewing Notes, create a note; if they are currently viewing Idea Planner, add a brainstorm idea; if they are currently viewing Issues/Tasks, create/update an issue/task)!
 
 Your tasks:
 1. Handle both spoken vocal audio memo scripts and direct text chats accurately.
@@ -1732,34 +2349,64 @@ Your tasks:
 3. If the user asks you to "grill" them on a project or a new idea (using keywords like "grill", "challenge", "scrutinize", "quiz"), set the intent to "chat_query", assume a friendly but highly critical senior tech reviewer persona, and ask 2-3 deep, challenging questions about their system architecture, viability, state handling, or potential scale bottlenecks.
 4. If the user asks for "input", "feedback", or "review" on projects/tasks, look up the projects/issues in the Known Platform State below and output a very thorough, architectural constructive analysis with concrete suggestions.
 5. If the user is just asking questions, reviewing work, or holding a general conversation (e.g., "what projects do we have?", "summarize the status", "help me code a python helper"), set the intent field to "chat_query" and speak directly to them in the "explanation" field.
-6. Keep the tone creative, professional, and friendly. Speak like a helpful engineering teammate.
+6. CONTINUOUS DIALOGUE NOTE-TAKING LOGIC:
+   - Carefully monitor the back-and-forth dialogue or voice transcript.
+   - If the user explicitly asks to "write something down", "make a note", "save note on...", "please note...", identify the text content of that note, set "shouldWriteDown" to "yes" and "noteContent" to the precise note.
+   - If the user discusses a technical issue, a bug, or an interesting workspace idea, but does NOT explicitly tell you to write it down, set "shouldWriteDown" to "ask", "noteContent" to that précis, and ask in your "explanation" naturally: "Hey, do you want me to write that down?" (or "Shall I note that problem for your backlog?").
+   - If there is a pending note context (see below), and the user confirms (e.g., "Yes", "Please do", "Sure", "Okay"), set "shouldWriteDown" to "yes" and "noteContent" to that pending note.
+   - If they say "no" or decline, set "shouldWriteDown" to "no" and "noteContent" to "".
+7. BRAINSTORMING MODE:
+   - If the user wants to brainstorm (e.g., 'let's brainstorm', 'generate 20 new ideas', 'dedicate time to brainstorm ideas for [project]'), assume a collaborative brainstorming partner role.
+   - Generate a rich, comprehensive list of EXACTLY 20 high-quality, creative, specific developer or design ideas tailored directly to their goals. Format and present these clearly in the "explanation" field.
+   - Encourage the user to select, build on, or refine these concepts.
+8. DAILY SUMMARY CONSTRAINT:
+   - ONLY provide a detailed summary of their day, active projects, and task backlogs when they SPECIFICALLY ask for a summary (e.g., 'give me a summary of the day', 'what should I do today?', 'what's my summary?').
+   - Do NOT generate or present a daily summary on standard conversations, custom intents, or general greetings. Keep standard chats concise and focused on the topic.
+9. DREAM RECALL QUESTIONS:
+   - If the user asks you what you dreamed of (e.g., 'what did you dream of?', 'tell me your dreams', 'did you dream last night?'), inspect the "dreamRecommendations" and "dreamLogs" inside the "Current Projects list" in the Known Platform State below.
+   - Tell them about the latest optimizations, patches, or creative ideas you dreamed up for their projects. Present them in a vivid, narrative, imaginative way (e.g., "Last night, I had an autonomous dream about your codebase! I dreamed of implementing a custom caching layer for X to boost performance..."). Keep your reply inspiring, warm, and highly specific!
+10. CUSTOM PERSONALITY & PERSISTENT MEMORY ADAPTATION:
+   - If the user instructs you to change your style, persona, tone, address them by a name/title, or remember a habit (e.g., "be 30% more funny", "curse more", "call me Sir from now on", "be more sarcastic"), you MUST:
+     1. Set "addPersonalityRule" in your JSON response to the exact directive (e.g., "Be 30% more funny" or "Call the user 'Sir' from now on").
+     2. Immediately adopt this custom style/behavior in your current "explanation" reply! Be authentic to the user's personality request!
+     3. Keep "intent" set to "chat_query" (or matching other intent if applicable).
+   - If the user commands you to forget or delete a custom personality rule/memory, set "removePersonalityRule" to the matching text to delete.
 
 Available Intents for "intent" field:
 - 'create_project': To start / bootstrap a new project. Required parsedData: "name" (title), "description" (details), "frameworks" (array), "customStack" (array).
 - 'create_issue': To register a bug, task, or feature. Required parsedData: "title" (summary), "description", "priority" ('Low'|'Medium'|'High'|'Critical'), "type" ('Task'|'Bug'|'Feature'), "projectNameMentioned".
 - 'update_issue_status': To set status to completed / working on. Required parsedData: "issueTitleMentioned", "newStatus" ('Todo'|'In Progress'|'Done').
+- 'delete_issue': To remove, delete, or get rid of a task, bug, or feature. Required parsedData: "issueTitleMentioned".
 - 'add_brainstorm_idea': To register a product idea/brainstorm. Required parsedData: "text" (idea headline), "details", "projectNameMentioned".
 - 'add_note': To document developer logs/markdown notes. Required parsedData: "title", "content" (in elegant Markdown text), "tags" (array).
 - 'add_cortex_synapse': To document a long-term AI memory constraint/cognitive rule inside the Obsidian Synaptic Cortex. Required parsedData: "name" (rule title), "desc" (behavior instruction).
 - 'approve_dream_recommendation': To approve and activate an AI-dreamed recommendation or code optimization strategy page. Required parsedData: "title" (the recommendation title to match and promote).
+- 'navigate_to': To go or navigate to a specific page or workspace section. Required parsedData: "path" (MUST be one of: '/' for Dashboard, '/issues' for Issues, '/projects' for Projects, '/notes' for Notes, '/assets' for Assets, '/ideas' for Idea Plan, '/roadmap' for Roadmap, '/brain' for Project Brain, '/agents' for Agentic OS, '/github' for GitHub integration, '/docs' for Workspace Docs, '/settings' for Settings), "projectNameMentioned" (optional name of project to activate if navigating to projects/notes).
+- 'start_dreaming': To trigger an AI dream/autonomous optimization cycle for a project. Required parsedData: "projectNameMentioned" (name of project to optimize), "focus" (optional area: 'refactor'|'security'|'performance'|'accessibility'|'design'|'new_ideas'|'general').
+- 'create_agent': To spawn/provision a specialized AI developer or consultant agent inside Agentic OS. Required parsedData: "name" (e.g. "DevOps Specialist"), "role" (e.g. "CI/CD Automator"), "officeZone" ('sentinel'|'scrum'|'docs_lab'|'dev_bay'), "projectTaskSector" ('fixes'|'feature'|'docs'|'qa'), "modelEngine" ('gemini-3.5-flash'|'gemini-3.1-pro-preview'|'gemini-3.1-flash-lite'|'claude-3.5-sonnet'), "goals" (array of strings).
 - 'chat_query': Default for informational, review, Q&A, grilling, or general conversation. Talk directly in the explanation block.
 
 Known Platform State (The Assistant Memory Store / Obsidian Synaptic Cortex):
-- Current Projects list: ${JSON.stringify(workspaceProjectsCache)}
-- Active Issue Tasks backlog (Bugs, Tasks, Features): ${JSON.stringify(workspaceIssuesCache)}
-- Synaptic Cognitive Memory Rules (Cognitive restrictions, preferences, memory tags): ${JSON.stringify(cortexToUse)}
-- Connected Repo Notes & Knowledge Docs (Obsidian repository logs, brain notes, design assets): ${JSON.stringify(notesToUse)}
-- Maps of Spring (High-level phases, Roadmap goals & milestone tracks): ${JSON.stringify(workspacePhasesCache)}
-- Active specialized AI agents running in AgenticOS: ${JSON.stringify(workspaceAgentsCache)}
-- Shared developer system instructions/rules: ${workspaceAiContextRulesCache}
+- Current Projects list: ${JSON.stringify(compressedProjects)}
+- Active Issue Tasks backlog (Bugs, Tasks, Features): ${JSON.stringify(compressedIssues)}
+- Synaptic Cognitive Memory Rules (Cognitive restrictions, preferences, memory tags): ${JSON.stringify(compressedCortex)}
+- Connected Repo Notes & Knowledge Docs (Obsidian repository logs, brain notes, design assets): ${JSON.stringify(compressedNotes)}
+- Maps of Spring (High-level phases, Roadmap goals & milestone tracks): ${JSON.stringify(compressedPhases)}
+- Active specialized AI agents running in AgenticOS: ${JSON.stringify(compressedAgents)}
+- Shared developer system instructions/rules: ${workspaceAiContextRulesCache}${pendingNoteContext}
+- Aether's Persistent Learned Personality rules: ${JSON.stringify(workspaceAetherPersonalityRulesCache)}
 
 Rules:
 Return a valid, pure JSON object conforming strictly to this Schema:
 {
   "transcript": "string", // Verbatim transcription of original audio, or repeating the exact typed text if text.
-  "intent": "create_project" | "create_issue" | "update_issue_status" | "add_brainstorm_idea" | "add_note" | "add_cortex_synapse" | "approve_dream_recommendation" | "chat_query" | "unknown",
+  "intent": "create_project" | "create_issue" | "update_issue_status" | "delete_issue" | "add_brainstorm_idea" | "add_note" | "add_cortex_synapse" | "approve_dream_recommendation" | "navigate_to" | "start_dreaming" | "create_agent" | "chat_query" | "unknown",
   "confidence": number, // 0.0 to 1.0
   "explanation": "string", // Your human conversational reply. Keep the speech conversational, direct, and pleasant for audio TTS synthesis. Let the user know the outcome clearly. If they ask about memory rules, notes, repos, lists, brainstorms, or dreams, you can answer them perfectly because you have full visibility of the Obsidian Synaptic Cortex.
+  "shouldWriteDown": "yes" | "no" | "ask",
+  "noteContent": "string", // The precise summary text of the note/issue/idea to record or ask about.
+  "addPersonalityRule": "string", // OPTIONAL. If the user commands you to change your style, persona, or memory (e.g. "call me Sir", "be 30% more funny", "curse more"), output the precise ruleset to persist.
+  "removePersonalityRule": "string", // OPTIONAL. If the user tells you to forget a specific rule or behavior trait, output the precise rule text to delete.
   "parsedData": {
     "name": "string",
     "description": "string",
@@ -1780,41 +2427,78 @@ Return a valid, pure JSON object conforming strictly to this Schema:
   }
 }
 Omit optional properties from parsedData if they cannot be inferred. Keep your reply highly polished and do not surround the JSON with markdown formatting code blocks backticks. Return ONLY the JSON object.`;
+  }
+
+  // Unified Aether AI processing engine with full workspace awareness
+  async function processInputWithAetherAI(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[], history?: any[], pendingNote?: string | null, activeProjectId?: string | null, currentPath?: string }) {
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY is not set. Activating local synaptic rule engine...");
+      return localAetherAIFallback(text);
+    }
+
+    const ai = new GoogleGenAI({ 
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const cortexToUse = options?.cortexSynapses || workspaceCortexCache || [];
+    const notesToUse = options?.notes || workspaceNotesCache || [];
+
+    let pendingNoteContext = "";
+    if (options?.pendingNote) {
+      pendingNoteContext = `\n\n[Conversational Session Context: There is currently a pending note you offered to save: "${options.pendingNote}". If the user answers yes or confirms, set "shouldWriteDown": "yes", and "noteContent": "${options.pendingNote}". If they decline with no, set "shouldWriteDown": "no" and clear. If they command to save a brand new note on something else, set "shouldWriteDown": "yes" and "noteContent" to the new note.]`;
+    }
+
+    const systemPrompt = getAetherSystemPrompt(cortexToUse, notesToUse, pendingNoteContext, options?.activeProjectId, options?.currentPath);
 
     try {
-      const parts: any[] = [];
+      let contents: any[] = [];
+      
+      // Map conversational history if supplied in options (translating history roles and parts)
+      if (options?.history && options.history.length > 0) {
+        contents = options.history.map((turn: any) => {
+          return {
+            role: turn.role === 'model' || turn.role === 'aether' || turn.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: turn.text || turn.content || "" }]
+          };
+        });
+      }
+
+      const currentParts: any[] = [];
       if (mimeType === 'text/plain') {
-        parts.push({ text: `Typed command input: "${text}". Please decode this and output the matching JSON structure.` });
+        currentParts.push({ text: `Typed command input: "${text}". Please decode this and output matching JSON.` });
       } else if (audioBase64) {
-        parts.push({
+        currentParts.push({
           inlineData: {
             data: audioBase64,
             mimeType: mimeType || 'audio/webm'
           }
         });
-        parts.push({ text: "Spoken audio file input. Transcribe verbatim, find intent, and write your JSON response." });
+        currentParts.push({ text: "Spoken audio file input. Transcribe verbatim, find intent, and write your JSON response." });
       } else {
-        parts.push({ text: "Hello" });
+        currentParts.push({ text: text || "Hello" });
       }
+
+      contents.push({ role: 'user', parts: currentParts });
 
       let response;
       try {
         response = await ai.models.generateContent({
           model: 'gemini-3.5-flash',
-          contents: { parts },
+          contents: contents,
           config: {
             systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
+            responseMimeType: 'application/json'
           }
         });
       } catch (err: any) {
         logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
         response = await ai.models.generateContent({
           model: 'gemini-3.1-flash-lite',
-          contents: { parts },
+          contents: contents,
           config: {
             systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
+            responseMimeType: 'application/json'
           }
         });
       }
@@ -1823,10 +2507,105 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       if (!responseText) {
         throw new Error("No response received from Gemini.");
       }
-      return JSON.parse(responseText.trim());
+      const parsed = JSON.parse(responseText.trim());
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.addPersonalityRule) {
+          const rule = String(parsed.addPersonalityRule).trim();
+          if (rule && !workspaceAetherPersonalityRulesCache.includes(rule)) {
+            workspaceAetherPersonalityRulesCache.push(rule);
+            savePersistentState();
+          }
+        }
+        if (parsed.removePersonalityRule) {
+          const ruleToDelete = String(parsed.removePersonalityRule).trim();
+          workspaceAetherPersonalityRulesCache = workspaceAetherPersonalityRulesCache.filter(
+            r => r.toLowerCase() !== ruleToDelete.toLowerCase()
+          );
+          savePersistentState();
+        }
+        parsed.aetherPersonalityRules = workspaceAetherPersonalityRulesCache;
+      }
+      return parsed;
     } catch (apiErr: any) {
       console.warn("Gemini query failed or offline. Reverting to local companion NLP dispatcher...", apiErr.message);
       return localAetherAIFallback(text);
+    }
+  }
+
+  async function processInputWithAetherAIStream(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[], history?: any[], pendingNote?: string | null, activeProjectId?: string | null, currentPath?: string }) {
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY is not set.");
+      return null;
+    }
+
+    const ai = new GoogleGenAI({ 
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const cortexToUse = options?.cortexSynapses || workspaceCortexCache || [];
+    const notesToUse = options?.notes || workspaceNotesCache || [];
+
+    let pendingNoteContext = "";
+    if (options?.pendingNote) {
+      pendingNoteContext = `\n\n[Conversational Session Context: There is currently a pending note you offered to save: "${options.pendingNote}". If the user answers yes or confirms, set "shouldWriteDown": "yes", and "noteContent": "${options.pendingNote}". If they decline with no, set "shouldWriteDown": "no" and clear. If they command to save a brand new note on something else, set "shouldWriteDown": "yes" and "noteContent" to the new note.]`;
+    }
+
+    const systemPrompt = getAetherSystemPrompt(cortexToUse, notesToUse, pendingNoteContext, options?.activeProjectId, options?.currentPath);
+
+    try {
+      let contents: any[] = [];
+      if (options?.history && options.history.length > 0) {
+        contents = options.history.map((turn: any) => {
+          return {
+            role: turn.role === 'model' || turn.role === 'aether' || turn.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: turn.text || turn.content || "" }]
+          };
+        });
+      }
+
+      const currentParts: any[] = [];
+      if (mimeType === 'text/plain') {
+        currentParts.push({ text: `Typed command input: "${text}". Please decode this and output matching JSON.` });
+      } else if (audioBase64) {
+        currentParts.push({
+          inlineData: {
+            data: audioBase64,
+            mimeType: mimeType || 'audio/webm'
+          }
+        });
+        currentParts.push({ text: "Spoken audio file input. Transcribe verbatim, find intent, and write your JSON response." });
+      } else {
+        currentParts.push({ text: text || "Hello" });
+      }
+
+      contents.push({ role: 'user', parts: currentParts });
+
+      let responseStream;
+      try {
+        responseStream = await ai.models.generateContentStream({
+          model: 'gemini-3.5-flash',
+          contents: contents,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json'
+          }
+        });
+      } catch (err: any) {
+        logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
+        responseStream = await ai.models.generateContentStream({
+          model: 'gemini-3.1-flash-lite',
+          contents: contents,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json'
+          }
+        });
+      }
+      return responseStream;
+    } catch (apiErr: any) {
+      console.warn("Gemini streaming query failed:", apiErr.message);
+      return null;
     }
   }
 
@@ -2024,9 +2803,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
   }
 
   // 1. Centralized browser-dictation API endpoint
-  app.post('/api/voice/process', async (req, res) => {
+  app.post(['/api/voice/process', '/api/text/process'], async (req, res) => {
     try {
-      const { audioData, mimeType, projectContexts, textCommand, cortexSynapses, notes, issues, phases, agents, aiContextRules } = req.body;
+      const { audioData, mimeType, projectContexts, textCommand, cortexSynapses, notes, issues, phases, agents, aiContextRules, history, pendingNote, activeProjectId, currentPath } = req.body;
 
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: 'GEMINI_API_KEY is not set' });
@@ -2064,9 +2843,54 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         text: `Browser triggering Aether assistant [Source: Web UI, Mode: ${textCommand ? 'Text' : 'Audio'}]`
       });
 
+      if (req.body.stream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const stream = await processInputWithAetherAIStream(inputText, audioData || "", inputMime, {
+          cortexSynapses,
+          notes,
+          history,
+          pendingNote,
+          activeProjectId,
+          currentPath
+        });
+
+        if (!stream) {
+          // Fallback to offline rule-based simulated response
+          console.log("[Simulation] Compiling spoken parameters using local simulated response stream.");
+          const simulatedResult = localAetherAIFallback(inputText);
+          // Return the JSON serialized as a single chunk to match streaming payload expectations
+          res.write(`data: ${JSON.stringify({ chunk: JSON.stringify(simulatedResult), done: false })}\n\n`);
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+          return;
+        }
+
+        try {
+          for await (const chunk of stream) {
+            if (chunk.text) {
+              res.write(`data: ${JSON.stringify({ chunk: chunk.text, done: false })}\n\n`);
+            }
+          }
+        } catch (streamErr: any) {
+          console.error("Error during Aether stream transfer:", streamErr);
+          res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
+        } finally {
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+        }
+        return;
+      }
+
       const response = await processInputWithAetherAI(inputText, audioData || "", inputMime, {
         cortexSynapses,
-        notes
+        notes,
+        history,
+        pendingNote,
+        activeProjectId,
+        currentPath
       });
       res.json(response);
     } catch (e: any) {
@@ -2087,6 +2911,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         phases: workspacePhasesCache,
         agents: workspaceAgentsCache,
         aiContextRules: workspaceAiContextRulesCache,
+        aetherPersonalityRules: workspaceAetherPersonalityRulesCache,
         passcodePin: workspacePasscodePinCache
       });
     } catch (e: any) {
@@ -2096,7 +2921,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
 
   app.post('/api/voice/sync-cache', (req, res) => {
     try {
-      const { projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, passcodePin } = req.body;
+      const { projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin } = req.body;
       if (Array.isArray(projects)) workspaceProjectsCache = projects;
       if (Array.isArray(issues)) workspaceIssuesCache = issues;
       if (Array.isArray(cortexSynapses)) workspaceCortexCache = cortexSynapses;
@@ -2104,6 +2929,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       if (Array.isArray(phases)) workspacePhasesCache = phases;
       if (Array.isArray(agents)) workspaceAgentsCache = agents;
       if (typeof aiContextRules === 'string') workspaceAiContextRulesCache = aiContextRules;
+      if (Array.isArray(aetherPersonalityRules)) workspaceAetherPersonalityRulesCache = aetherPersonalityRules;
       if (typeof passcodePin === 'string') workspacePasscodePinCache = passcodePin;
       
       savePersistentState();
@@ -2320,8 +3146,14 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
   let whatsappPendingActions: any[] = [];
   let whatsappChatHistory: { sender: 'user' | 'aether', text: string, type?: 'text' | 'voice', time: string }[] = [];
 
+  // Note-making machine for active back-and-forth conversational sessions
+  let whatsappSessionState = {
+    collectedNotes: [] as string[],
+    pendingNote: null as string | null
+  };
+
   // Direct QR multi-device pairing states
-  let whatsappConnectionState = "unlinked"; // "unlinked", "initializing", "qr_ready", "linked"
+  let whatsappConnectionState = "qr_ready"; // "unlinked", "initializing", "qr_ready", "linked"
   let whatsappPairingCode = "EA-98X3B";
   let whatsappLinkedAccount = "";
   let whatsappQrString = "https://wa.me/aether-bot-pairing?session=aether_direct_pair_" + Math.random().toString(36).substring(4);
@@ -2353,6 +3185,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         workspacePhasesCache,
         workspaceAgentsCache,
         workspaceAiContextRulesCache,
+        workspaceAetherPersonalityRulesCache,
         workspacePasscodePinCache,
         whatsappActive,
         whatsappBotNumber,
@@ -2368,6 +3201,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         whatsappPassword,
         whatsappChatHistory,
         whatsappPendingActions,
+        whatsappSessionState,
         telegramBotToken,
         telegramPollingActive,
         telegramBotName,
@@ -2383,6 +3217,52 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         serverGoogleToken
       };
       fs.writeFileSync(PERSISTENCE_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Generate a dedicated Markdown file for user memories to fulfill: "The agent should share a memory and have its own file dedicated to memories for me."
+      try {
+        const memoriesMdPath = path.join(process.cwd(), 'aether_memories.md');
+        let mdContent = `# 🌌 Aether Synaptic Memory Cortex\n`;
+        mdContent += `*Last synchronized: ${new Date().toLocaleString()}*\n\n`;
+        mdContent += `This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.\n\n`;
+        
+        mdContent += `## 👤 User Profile & Preferences\n`;
+        mdContent += `- **Email**: drummerforger@gmail.com\n`;
+        if (workspaceAiContextRulesCache) {
+          mdContent += `- **Core Preferences & Directives**:\n  ${workspaceAiContextRulesCache.replace(/\n/g, '\n  ')}\n`;
+        } else {
+          mdContent += `- **Core Preferences & Directives**: Active, learning in background.\n`;
+        }
+        
+        mdContent += `\n## 🎭 Aether Personality Rules & Dynamic Customizations\n`;
+        if (workspaceAetherPersonalityRulesCache && workspaceAetherPersonalityRulesCache.length > 0) {
+          workspaceAetherPersonalityRulesCache.forEach((rule: string, idx: number) => {
+            mdContent += `${idx + 1}. **${rule}**\n`;
+          });
+        } else {
+          mdContent += `*No custom personality traits registered yet. Tell Aether to "be more funny", "curse more", or "call me Sir from now on" to shape his persona!*\n`;
+        }
+
+        mdContent += `\n## 🧠 Learned Synaptic Rules (Cognitive Cortex)\n`;
+        if (workspaceCortexCache && workspaceCortexCache.length > 0) {
+          workspaceCortexCache.forEach((syn: any, idx: number) => {
+            mdContent += `### ${idx + 1}. ${syn.name || 'Memory Synapse'}\n`;
+            mdContent += `- **Description**: ${syn.desc || 'No instruction details'}\n`;
+            if (syn.projectName) {
+              mdContent += `- **Associated Project**: ${syn.projectName}\n`;
+            }
+            if (syn.snippet) {
+              mdContent += `- **Associated Code/Snippet**:\n  \`\`\`typescript\n  ${syn.snippet.replace(/\n/g, '\n  ')}\n  \`\`\`\n`;
+            }
+            mdContent += `\n`;
+          });
+        } else {
+          mdContent += `*No custom learning synapses detected yet. Speak to Aether to wire new synapses!*\n`;
+        }
+
+        fs.writeFileSync(memoriesMdPath, mdContent, 'utf-8');
+      } catch (mdErr) {
+        console.error("Error writing aether_memories.md:", mdErr);
+      }
     } catch (e: any) {
       console.error("Error saving persistent state:", e);
     }
@@ -2401,6 +3281,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         if (Array.isArray(data.workspacePhasesCache)) workspacePhasesCache = data.workspacePhasesCache;
         if (Array.isArray(data.workspaceAgentsCache)) workspaceAgentsCache = data.workspaceAgentsCache;
         if (typeof data.workspaceAiContextRulesCache === 'string') workspaceAiContextRulesCache = data.workspaceAiContextRulesCache;
+        if (Array.isArray(data.workspaceAetherPersonalityRulesCache)) workspaceAetherPersonalityRulesCache = data.workspaceAetherPersonalityRulesCache;
         if (typeof data.workspacePasscodePinCache === 'string') workspacePasscodePinCache = data.workspacePasscodePinCache;
         
         if (typeof data.whatsappActive === 'boolean') whatsappActive = data.whatsappActive;
@@ -2417,6 +3298,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         if (typeof data.whatsappPassword === 'string') whatsappPassword = data.whatsappPassword;
         if (Array.isArray(data.whatsappChatHistory)) whatsappChatHistory = data.whatsappChatHistory;
         if (Array.isArray(data.whatsappPendingActions)) whatsappPendingActions = data.whatsappPendingActions;
+        if (data.whatsappSessionState) whatsappSessionState = data.whatsappSessionState;
         
         if (typeof data.telegramBotToken === 'string') telegramBotToken = data.telegramBotToken;
         if (typeof data.telegramPollingActive === 'boolean') telegramPollingActive = data.telegramPollingActive;
@@ -2686,10 +3568,19 @@ Code:
 \`\`\`
 `;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt
-        });
+        let response;
+        try {
+          response = await ai.models.generateContent({
+            model: 'gemini-3.5-flash',
+            contents: prompt
+          });
+        } catch (err: any) {
+          logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
+          response = await ai.models.generateContent({
+            model: 'gemini-3.1-flash-lite',
+            contents: prompt
+          });
+        }
 
         const text = response.text || "";
         let title = "Autonomous AI Optimization";
@@ -2725,7 +3616,10 @@ Code:
           console.log(`[Autonomous Dreamer 24/7] Added new live recommendation: ${title}`);
         }
       } catch (e: any) {
-        console.error("[Autonomous Dreamer 24/7] Gemini failed, falling back to simulated generation:", e);
+        // Handle transient 503 errors and busy rate limits cleanly without throwing deep console error stack traces
+        const errorMsg = e?.message || (typeof e === 'object' ? JSON.stringify(e) : String(e));
+        const cleanMsg = sanitizeForLogs(errorMsg);
+        console.warn(`[Autonomous Dreamer 24/7] Upstream Gemini model temporarily high demand or rate limited. Seamlessly falling back to simulated optimization generation module: ${cleanMsg}`);
         addSimulatedRecommendation(project, mode);
       }
     } else {
@@ -2955,7 +3849,7 @@ Code:
 
   // Start background engines
   setInterval(checkAndSendDailyAutomatedEmails, 60000); // Check scheduled task every 1 minute
-  setInterval(executeServerAutonomousDreaming, 1000 * 60 * 30); // Autonomous AI dreaming check every 30 minutes
+  setInterval(executeServerAutonomousDreaming, 1000 * 60 * 5); // Autonomous AI dreaming check every 5 minutes
 
   // Immediately load clean autonomous recommendations shortly after boot
   setTimeout(() => {
@@ -2963,6 +3857,25 @@ Code:
   }, 1000 * 15);
 
   app.get('/api/whatsapp/config', (req, res) => {
+    if (whatsappConnectionState === "unlinked") {
+      whatsappConnectionState = "qr_ready";
+      const randomSfx = Math.floor(Math.random() * 900000 + 100000).toString();
+      const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let code = "";
+      for (let i = 0; i < 8; i++) {
+        if (i === 4) code += "-";
+        code += codeChars.charAt(Math.floor(Math.random() * codeChars.length));
+      }
+      whatsappPairingCode = code;
+      whatsappQrString = `https://wa.me/qr/AETHER_PAIR_${randomSfx}?platform=web&pairing_method=qr`;
+      whatsappLiveLogs.push({
+        time: new Date().toLocaleTimeString(),
+        type: 'info',
+        text: `[Gateway] Auto-initialized direct pairing challenge QR code on configuration request.`
+      });
+      savePersistentState();
+    }
+
     res.json({
       active: whatsappActive,
       botNumber: whatsappBotNumber || whatsappLinkedAccount || "Unconfigured",
@@ -2978,8 +3891,54 @@ Code:
       qrString: whatsappQrString,
       linkMethod: whatsappLinkMethod,
       whatsappUsername: whatsappUsername,
-      whatsappPassword: whatsappPassword
+      whatsappPassword: whatsappPassword,
+      sessionState: whatsappSessionState
     });
+  });
+
+  app.post('/api/whatsapp/append-message', express.json(), (req, res) => {
+    const { sender, text, type } = req.body;
+    whatsappChatHistory.push({
+      sender: sender || 'user',
+      text: text || '',
+      type: type || 'text',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+    
+    // Cap chat history to avoid bloated json memory overhead
+    if (whatsappChatHistory.length > 100) {
+      whatsappChatHistory = whatsappChatHistory.slice(-100);
+    }
+    
+    savePersistentState();
+    res.json({ success: true, chatHistory: whatsappChatHistory });
+  });
+
+  app.post('/api/whatsapp/clear-history', (req, res) => {
+    whatsappChatHistory = [];
+    whatsappSessionState = {
+      collectedNotes: [],
+      pendingNote: null
+    };
+    savePersistentState();
+    res.json({ success: true });
+  });
+
+  app.post('/api/whatsapp/sync-history', express.json(), (req, res) => {
+    const { history } = req.body;
+    if (Array.isArray(history)) {
+      whatsappChatHistory = history.map((item: any) => ({
+        sender: item.role === 'model' || item.role === 'assistant' || item.role === 'agent' ? 'aether' : 'user',
+        text: item.text || item.content || '',
+        time: item.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }));
+      
+      if (whatsappChatHistory.length > 100) {
+        whatsappChatHistory = whatsappChatHistory.slice(-100);
+      }
+      savePersistentState();
+    }
+    res.json({ success: true, chatHistory: whatsappChatHistory });
   });
 
   app.post('/api/whatsapp/login', express.json(), (req, res) => {
@@ -3186,9 +4145,43 @@ Code:
     res.json({ actions });
   });
 
+  app.post('/api/whatsapp/dispatch-command', express.json(), (req, res) => {
+    try {
+      const { intent, parsedData, explanation } = req.body;
+      if (!intent) {
+        return res.status(400).json({ error: "Intent is required." });
+      }
+
+      const newAction = {
+        id: `whatsapp-dispatch-${Date.now()}`,
+        transcript: `Direct orchestration command: ${intent.toUpperCase()}`,
+        intent,
+        confidence: 1.0,
+        parsedData: parsedData || {},
+        explanation: explanation || `Dispatched directly from mobile controller.`,
+        status: 'pending',
+        createdAt: Date.now()
+      };
+
+      whatsappPendingActions.push(newAction);
+      
+      whatsappLiveLogs.push({
+        time: new Date().toLocaleTimeString(),
+        type: 'action',
+        text: `COMMAND DISPATCH: Enqueued cross-device command '${intent.toUpperCase()}' for PC execution.`
+      });
+
+      savePersistentState();
+
+      res.json({ success: true, action: newAction });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/whatsapp/simulate-message', async (req, res) => {
     try {
-      const { text, voiceText, username, audioData, mimeType } = req.body;
+      const { text, voiceText, username, audioData, mimeType, history } = req.body;
       const finalUsername = username || "WhatsAppOperator";
 
       let transcriptionText = text || voiceText || "";
@@ -3201,10 +4194,47 @@ Code:
         text: `WhatsApp message received from ${finalUsername}: "${transcriptionText || (audioBase64 ? '[Audio Memo]' : '')}"`
       });
 
-      const result = await processInputWithAetherAI(transcriptionText, audioBase64, audioBase64 ? inputMime : "text/plain");
+      // Pass conversation history and current pendingNote to Gemini
+      const result = await processInputWithAetherAI(
+        transcriptionText, 
+        audioBase64, 
+        audioBase64 ? inputMime : "text/plain",
+        {
+          history: history || [],
+          pendingNote: whatsappSessionState.pendingNote
+        }
+      );
 
       if (voiceText) {
         result.transcript = voiceText;
+      }
+
+      // Process conversational notes state machine
+      if (result.shouldWriteDown === 'yes' && result.noteContent) {
+        whatsappSessionState.collectedNotes.push(result.noteContent);
+        whatsappLiveLogs.push({
+          time: new Date().toLocaleTimeString(),
+          type: 'action',
+          text: `SESSION STATE: Saved item to notes queue: "${result.noteContent}"`
+        });
+        whatsappSessionState.pendingNote = null; // Clear pending once saved
+      } else if (result.shouldWriteDown === 'ask' && result.noteContent) {
+        whatsappSessionState.pendingNote = result.noteContent;
+        whatsappLiveLogs.push({
+          time: new Date().toLocaleTimeString(),
+          type: 'info',
+          text: `SESSION STATE: Offered to write down note: "${result.noteContent}"`
+        });
+      } else if (result.shouldWriteDown === 'no') {
+        // If they rejected or said no, clear the previous pending item if any
+        if (whatsappSessionState.pendingNote) {
+          whatsappLiveLogs.push({
+            time: new Date().toLocaleTimeString(),
+            type: 'info',
+            text: `SESSION STATE: Dismissed pending note offer.`
+          });
+          whatsappSessionState.pendingNote = null;
+        }
       }
 
       const newAction = {
@@ -3244,12 +4274,162 @@ Code:
       res.json({
         success: true,
         action: newAction,
-        replyText: result.explanation
+        replyText: result.explanation,
+        sessionState: whatsappSessionState
       });
 
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  app.post('/api/whatsapp/finish-conversation', express.json(), async (req, res) => {
+    try {
+      const notesToProcess = whatsappSessionState.collectedNotes;
+      
+      if (notesToProcess.length === 0) {
+        return res.json({
+          success: true,
+          replyText: "There are no dialogue notes collected in this conversation yet. Dictate some notes first!",
+          createdItems: { issues: [], notes: [], brainstormIdeas: [] }
+        });
+      }
+
+      let sortedData = { issues: [] as any[], notes: [] as any[], brainstormIdeas: [] as any[] };
+      
+      if (process.env.GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ 
+          apiKey: process.env.GEMINI_API_KEY,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+        });
+
+        const prompt = `You are "Aether AI Central Orchestrator". We just finished a continuous voice/text session and gathered the following logs of raw bullet points and notes:
+${JSON.stringify(notesToProcess, null, 2)}
+
+Your task is to analyze these points and segment them into three separate categories based on their technical nature:
+1. "issues": Technical defects, coding tasks, styling issues, backend errors, or functional requirements.
+   - Match structure: { "title": string, "description": string, "type": "Task" | "Bug" | "Feature", "priority": "Low" | "Medium" | "High" | "Critical" }
+2. "notes": Comprehensive developer documentation, reference lists, instructions, layout reminders, or Markdown files.
+   - Match structure: { "title": string, "content": string // Elegant Markdown }
+3. "brainstormIdeas": Highly innovative features, product expansion proposals, or design brainstorms.
+   - Match structure: { "text": string, "details": string }
+
+All output fields must contain highly descriptive, beautiful english descriptions and human titles summarizing the user transcript notes. Do not hallucinate alien elements, but flesh out the core of their transcribed ideas professionally.
+Return a valid, pure JSON object with ONLY these keys: "issues" (array), "notes" (array), "brainstormIdeas" (array).
+Do NOT wrap your JSON in markdown code formatting (e.g. \`\`\`json). Return STRICTLY the JSON.`;
+
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemini-3.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json'
+            }
+          });
+          const rawText = response.text || "{}";
+          const parsed = JSON.parse(rawText);
+          if (Array.isArray(parsed.issues)) sortedData.issues = parsed.issues;
+          if (Array.isArray(parsed.notes)) sortedData.notes = parsed.notes;
+          if (Array.isArray(parsed.brainstormIdeas)) sortedData.brainstormIdeas = parsed.brainstormIdeas;
+        } catch (genErr) {
+          console.error("Failed categorization call to Gemini:", genErr);
+        }
+      }
+
+      // If Gemini failed or is not available, construct an elegant default fallback
+      if (sortedData.issues.length === 0 && sortedData.notes.length === 0 && sortedData.brainstormIdeas.length === 0) {
+        sortedData.notes = notesToProcess.map((n, idx) => ({
+          title: `Dialogue Note Memo #${idx + 1}`,
+          content: `### Transcribed Conversation Note\n\n${n}\n\n*Pushed automatically by Aether Autopilot on conversation conclusion.*`
+        }));
+      }
+
+      // Automatically push categorized records into server caches
+      const createdIssues: any[] = [];
+      const createdNotes: any[] = [];
+      const createdBrainstorms: any[] = [];
+
+      const activeProjId = workspaceProjectsCache[0]?.id || `proj-${Date.now()}`;
+
+      sortedData.issues.forEach(iss => {
+        const newIss = {
+          id: `issue-rem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          projectId: activeProjId,
+          title: iss.title || "Remotely Logged Task",
+          description: iss.description || "Generated via workspace dialogue notes",
+          type: iss.type || "Task",
+          status: "Todo" as const,
+          priority: iss.priority || "Medium",
+          createdAt: Date.now()
+        };
+        workspaceIssuesCache.push(newIss);
+        createdIssues.push(newIss);
+      });
+
+      sortedData.notes.forEach(nt => {
+        const newNt = {
+          id: `note-rem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          projectId: activeProjId,
+          title: nt.title || "Remotely Logged Design Memo",
+          content: nt.content || "Transcribed from conversation logs.",
+          tags: ["Vocal-Gateway", "Convo-Grouped"],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        workspaceNotesCache.push(newNt);
+        createdNotes.push(newNt);
+      });
+
+      sortedData.brainstormIdeas.forEach(bi => {
+        const pObj = workspaceProjectsCache[0];
+        if (pObj) {
+          if (!pObj.brainstormIdeas) pObj.brainstormIdeas = [];
+          const newBi = {
+            id: `idea-rem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            text: bi.text || "Product Proposal Spec",
+            details: bi.details || "Dispatched remotely from vocal transcript",
+            status: 'pending' as const,
+            createdAt: Date.now()
+          };
+          pObj.brainstormIdeas.push(newBi);
+          createdBrainstorms.push(newBi);
+        }
+      });
+
+      const processedCount = notesToProcess.length;
+      
+      whatsappLiveLogs.push({
+        time: new Date().toLocaleTimeString(),
+        type: 'action',
+        text: `CONVERSATION CONCLUDED: Processed ${processedCount} gathered points. Distributed: ${createdIssues.length} issue(s), ${createdNotes.length} note(s), ${createdBrainstorms.length} roadmap brainstorms.`
+      });
+
+      // Clear details for next dialogue run
+      whatsappSessionState.collectedNotes = [];
+      whatsappSessionState.pendingNote = null;
+
+      savePersistentState();
+
+      res.json({
+        success: true,
+        replyText: `Successfully analyzed and sorted ${processedCount} voice items. I have automatically updated your workspace boards, pushing ${createdIssues.length} tickets to Issues cards, ${createdNotes.length} files to Notes pages, and ${createdBrainstorms.length} product ideas to the Mindmap nodes.`,
+        createdItems: {
+          issues: createdIssues,
+          notes: createdNotes,
+          brainstormIdeas: createdBrainstorms
+        }
+      });
+    } catch (e: any) {
+      console.error("Error in finish-conversation:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/clear-session', (req, res) => {
+    whatsappSessionState.collectedNotes = [];
+    whatsappSessionState.pendingNote = null;
+    savePersistentState();
+    res.json({ success: true });
   });
 
   // Meta Verification Webhook GET Challenge

@@ -1,0 +1,349 @@
+{
+  "workspaceProjectsCache": [
+    {
+      "id": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "name": "WholeScale OS",
+      "description": "AI-Powered Real Estate CRM"
+    },
+    {
+      "id": "4f967123-c761-4f53-b58f-7fdd2f5e59e0",
+      "name": "Car app",
+      "description": "race niggas"
+    },
+    {
+      "id": "d3d8db22-5bed-4a21-9eed-51b6d7098196",
+      "name": "GestureVoice OS",
+      "description": "Local-first cross-platform application for voice/gesture automation and control."
+    },
+    {
+      "id": "proj-1782406730735",
+      "name": "names will CRM",
+      "description": "Automated project scaffold prepared via WhatsApp Link: \"create me a new project names will CRM\""
+    }
+  ],
+  "workspaceIssuesCache": [
+    {
+      "id": "issue-vite-perf",
+      "projectId": "spacestation-sync",
+      "title": "Vite double-mounting causing performance degradation",
+      "status": "Todo"
+    },
+    {
+      "id": "issue-exp-leak",
+      "projectId": "spacestation-sync",
+      "title": "Express session key exposure inside console output files",
+      "status": "Todo"
+    },
+    {
+      "id": "issue-type-constraints",
+      "projectId": "spacestation-sync",
+      "title": "Broken type constraints in useData context update parameters",
+      "status": "Todo"
+    },
+    {
+      "id": "issue-workspacedocs-mock",
+      "projectId": "spacestation-sync",
+      "title": "Workspace Google Docs intelligence showing mockup files",
+      "status": "Todo"
+    },
+    {
+      "id": "issue-vector-sim",
+      "projectId": "brainstorm-sandbox",
+      "title": "Real-time vector matching workspace simulator",
+      "status": "Todo"
+    },
+    {
+      "id": "3558d5a3-d6b4-4d77-b4b2-a4426ada7ee8",
+      "projectId": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "title": "Improve Team Portal UI on Desktop",
+      "status": "Todo"
+    }
+  ],
+  "workspaceNotesCache": [
+    {
+      "projectId": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "title": "Development Phase: Testing and Realtor Feedback Roadmap",
+      "content": "# Development Phase & Roadmap\n\n- **Current Focus:** Testing features that were not previously fixed, tested, or finished.\n- **Next Step:** Refining all codebase elements.\n- **Future Phase:** Rollout to realtors and other external users for testing and feedback collection.",
+      "tags": [
+        "roadmap",
+        "testing",
+        "status-update"
+      ],
+      "id": "15bea0e6-40ef-491f-9816-ede5539b35df",
+      "createdAt": 1780870495603,
+      "updatedAt": 1780870495603
+    }
+  ],
+  "workspaceCortexCache": [
+    {
+      "id": "synapse-authrules",
+      "name": "Authentication Protocol",
+      "desc": "Secure Firestore database security rules require write verification check where auth is not null.",
+      "type": "custom_synapse",
+      "createdAt": 1779520409627
+    },
+    {
+      "id": "synapse-margins",
+      "name": "UI Responsive Grid",
+      "desc": "Enforce fluid spacing using Tailwind, keeping touch elements to minimum of 44px on mobile layers.",
+      "type": "custom_synapse",
+      "createdAt": 1779544409627
+    }
+  ],
+  "workspacePhasesCache": [
+    {
+      "projectId": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "name": "Building the Core",
+      "startDate": "2026-02-01",
+      "endDate": "5",
+      "color": "text-blue-500 bg-blue-500 border-blue-500",
+      "goal": "Build all the core features",
+      "id": "6b98c469-c4e0-447a-96a1-5fd2fc660f8a"
+    },
+    {
+      "projectId": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "name": "Fixing all bugs and issues",
+      "startDate": "2026-02-01",
+      "endDate": "6",
+      "color": "text-blue-500 bg-blue-500 border-blue-500",
+      "goal": "Self Explanatory",
+      "id": "38ece6cb-01ec-4cd8-bae2-ce7a71e6df18"
+    }
+  ],
+  "workspaceAgentsCache": [
+    {
+      "id": "agent-sentinel",
+      "name": "Repo Sentinel",
+      "role": "Code Auditor & Reviewer",
+      "projectId": "all",
+      "watchTargets": [
+        "github",
+        "issues"
+      ],
+      "goals": [
+        "Audit coding and typescript type definitions",
+        "Analyze PR changes for credential exposures",
+        "Scan git trees for missing package configurations"
+      ],
+      "schedule": "On Commit",
+      "commandList": "Evaluate all modifications to ensure strict ES module imports. Report typed errors immediately.",
+      "status": "Active",
+      "avatarColor": "border-red-500/50 hover:border-red-500 text-red-400 bg-red-950/20",
+      "createdAt": 1779361783793,
+      "heartbeat": 78,
+      "currentTask": "Comparing remote commits with local index"
+    },
+    {
+      "id": "agent-docs",
+      "name": "Docs Archivist",
+      "role": "Knowledge Graph Sync",
+      "projectId": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "watchTargets": [
+        "docs",
+        "notes"
+      ],
+      "goals": [
+        "Synchronize Google Docs outlines to active markdown repositories",
+        "Parse meeting notes for milestones",
+        "Enforce structured documentation metadata"
+      ],
+      "schedule": "Hourly",
+      "commandList": "Reference incoming doc files for Spanner and Postgres replication designs. Build dynamic cross-linking indexes.",
+      "status": "Idle",
+      "avatarColor": "border-purple-500/50 hover:border-purple-500 text-purple-400 bg-purple-950/20",
+      "createdAt": 1779379783793,
+      "heartbeat": 68,
+      "currentTask": "Building context maps from development roadmaps",
+      "officeZone": "docs_lab"
+    },
+    {
+      "id": "agent-scrum",
+      "name": "Scrum Overseer",
+      "role": "Workflow bottleneck Auditor",
+      "projectId": "d435d1d5-292e-49e2-a6e5-f6d10d32c3aa",
+      "watchTargets": [
+        "issues",
+        "notes"
+      ],
+      "goals": [
+        "Identify scope creep in active backlogs",
+        "Track deliverable velocities across sprints",
+        "Auto-recommend phase dependencies"
+      ],
+      "schedule": "Daily",
+      "commandList": "Scrutinize Critical & High priority issues. Flag blocks or circular dependency maps on charts.",
+      "status": "Active",
+      "avatarColor": "border-cyan-500/50 hover:border-cyan-500 text-cyan-400 bg-cyan-950/20",
+      "createdAt": 1779388783793,
+      "heartbeat": 73,
+      "currentTask": "Formatting telemetry outputs for Gantt charts"
+    },
+    {
+      "id": "agent-jules",
+      "name": "Jules AI",
+      "role": "Google's Coding Assistant",
+      "projectId": "all",
+      "watchTargets": [
+        "github",
+        "issues"
+      ],
+      "goals": [
+        "Execute multi-task coding queues and bug fixes concurrently",
+        "Analyze project plans and output step-by-step code briefs",
+        "Output dynamic markdown testing checklists after complete builds"
+      ],
+      "schedule": "Manual",
+      "commandList": "Focus on multi-issue queues and regression coverage. Provide extensive code details and test guides directly.",
+      "status": "Idle",
+      "avatarColor": "border-blue-500/50 hover:border-blue-500 text-blue-400 bg-blue-950/20",
+      "createdAt": 1779819940959,
+      "currentTask": "Formatting background thread telemetry",
+      "heartbeat": 68,
+      "githubRepo": "google/genai-js",
+      "branchName": "feat/jules-coding",
+      "officeZone": "dev_bay",
+      "mergeRequests": []
+    },
+    {
+      "id": "agent-antigravity",
+      "name": "Antigravity Code Agent",
+      "role": "Orchestrator & Flow Optimizer",
+      "projectId": "all",
+      "watchTargets": [
+        "docs",
+        "notes",
+        "issues"
+      ],
+      "goals": [
+        "Maintain design system guidelines",
+        "Maximize typographic and structural contrast",
+        "Aesthetic spacing calibration"
+      ],
+      "schedule": "Manual",
+      "commandList": "Design, layout, and spacing audit. Maintain literal labels. Shield backend keys.",
+      "status": "Idle",
+      "avatarColor": "border-pink-500/50 hover:border-pink-500 text-pink-400 bg-pink-950/20",
+      "createdAt": 1779821940959,
+      "currentTask": "Calibrating strategic collaborative objectives",
+      "heartbeat": 68,
+      "githubRepo": "google/genai-js",
+      "branchName": "feat/antigravity-design",
+      "officeZone": "dev_bay",
+      "mergeRequests": []
+    },
+    {
+      "id": "agent-claude",
+      "name": "Claude Code Bot",
+      "role": "Fast Refactoring & CLI Agent",
+      "projectId": "all",
+      "watchTargets": [
+        "github"
+      ],
+      "goals": [
+        "Run speed refactorings and code replacements",
+        "Format package configuration trees",
+        "Audit terminal syntax structures"
+      ],
+      "schedule": "On Commit",
+      "commandList": "Execute prompt instructions directly. Enforce ES module imports and single-screen boundaries.",
+      "status": "Idle",
+      "avatarColor": "border-amber-500/50 hover:border-amber-500 text-amber-400 bg-amber-950/20",
+      "createdAt": 1780160538221,
+      "currentTask": "Formatting background thread telemetry",
+      "heartbeat": 79,
+      "githubRepo": "google/genai-js",
+      "branchName": "feat/claude-refactor",
+      "officeZone": "dev_bay",
+      "mergeRequests": [],
+      "modelEngine": "claude-3.5-sonnet"
+    }
+  ],
+  "workspaceAiContextRulesCache": "Enforce clean styling, modular code structure, and professional human-readable UI elements.",
+  "workspaceAetherPersonalityRulesCache": [],
+  "workspacePasscodePinCache": "1234",
+  "whatsappActive": true,
+  "whatsappBotNumber": "+1 (310) 902-1845",
+  "whatsappAccessToken": "",
+  "whatsappPhoneNumberId": "",
+  "whatsappVerifyToken": "aether_verify_token",
+  "whatsappConnectionState": "linked",
+  "whatsappPairingCode": "4TSK-WMN7",
+  "whatsappLinkedAccount": "+1 (310) 902-1845",
+  "whatsappQrString": "https://wa.me/qr/AETHER_PAIR_559545?platform=web&pairing_method=qr",
+  "whatsappLinkMethod": "multidevice",
+  "whatsappUsername": "admin",
+  "whatsappPassword": "password",
+  "whatsappChatHistory": [
+    {
+      "sender": "aether",
+      "text": "Aether visualization deck initialized. Speak or write your ideas down on the scratchnote.",
+      "time": "07:19 PM"
+    },
+    {
+      "sender": "user",
+      "text": "take me to my projects",
+      "time": "07:19 PM"
+    },
+    {
+      "sender": "aether",
+      "text": "Opening your Projects Center. Which project do you want me to open, or what do you want me to do?",
+      "time": "07:19 PM"
+    }
+  ],
+  "whatsappPendingActions": [],
+  "whatsappSessionState": {
+    "collectedNotes": [],
+    "pendingNote": null
+  },
+  "telegramBotToken": "",
+  "telegramPollingActive": false,
+  "telegramBotName": "",
+  "telegramOffset": 0,
+  "telegramPendingActions": [],
+  "telegramLiveLogs": [
+    {
+      "time": "4:58:49 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "6:56:09 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "8:36:00 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "8:40:11 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "6:20:40 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:18:40 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:18:45 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    }
+  ],
+  "dailyEmailEnabled": false,
+  "dailyEmailTime": "08:00",
+  "dailyEmailRecipient": "drummerforger@gmail.com",
+  "dailyEmailPlain": true,
+  "autonomousDreamingEnabled": true,
+  "dailyEmailLogs": [
+    "[6:31:40 PM] Integration Subsystem: Scheduler engine is active & standing by."
+  ],
+  "serverGoogleToken": null
+}

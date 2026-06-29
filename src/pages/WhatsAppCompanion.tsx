@@ -45,8 +45,10 @@ import {
   Lightbulb,
   CheckSquare,
   Target,
-  BarChart2
+  BarChart2,
+  Archive
 } from 'lucide-react';
+import { motion, useMotionValue, useTransform, useAnimation } from 'motion/react';
 import { useData } from '../context/DataProvider';
 import { googleSignIn, initAuth, logout as googleLogout } from '../lib/auth';
 import { MemoryCortex } from '../components/MemoryCortex';
@@ -58,11 +60,107 @@ interface RecommendedAction {
   description: string;
 }
 
+interface SwipeableItemProps {
+  children: React.ReactNode;
+  onSwipeLeft?: () => void;
+  onSwipeRight?: () => void;
+  leftLabel?: string;
+  leftIcon?: React.ReactNode;
+  leftBgColor?: string;
+  rightLabel?: string;
+  rightIcon?: React.ReactNode;
+  rightBgColor?: string;
+}
+
+export function SwipeableItem({
+  children,
+  onSwipeLeft,
+  onSwipeRight,
+  leftLabel = "Mark Complete",
+  leftIcon,
+  leftBgColor = "bg-amber-600",
+  rightLabel = "Delete",
+  rightIcon,
+  rightBgColor = "bg-rose-600"
+}: SwipeableItemProps) {
+  const x = useMotionValue(0);
+  const controls = useAnimation();
+  
+  // Transform opacity based on drag position
+  const leftBgOpacity = useTransform(x, [0, 50], [0, 1]);
+  const rightBgOpacity = useTransform(x, [-50, 0], [1, 0]);
+  
+  // Transform scale of content based on drag position (elastic feedback!)
+  const leftScale = useTransform(x, [0, 80], [0.5, 1.15]);
+  const rightScale = useTransform(x, [-80, 0], [1.15, 0.5]);
+
+  const handleDragEnd = async (_event: any, info: any) => {
+    const swipeThreshold = 100; // swipe 100px to trigger
+    if (info.offset.x > swipeThreshold && onSwipeRight) {
+      await controls.start({ x: 260, opacity: 0, transition: { duration: 0.15 } });
+      onSwipeRight();
+      controls.set({ x: 0, opacity: 1 });
+    } else if (info.offset.x < -swipeThreshold && onSwipeLeft) {
+      await controls.start({ x: -260, opacity: 0, transition: { duration: 0.15 } });
+      onSwipeLeft();
+      controls.set({ x: 0, opacity: 1 });
+    } else {
+      // Bounce back
+      controls.start({ x: 0, opacity: 1, transition: { type: 'spring', damping: 22, stiffness: 350 } });
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-xl w-full bg-zinc-950/25">
+      {/* Background action for Swipe Right */}
+      {onSwipeRight && (
+        <motion.div 
+          style={{ opacity: leftBgOpacity }}
+          className={`absolute inset-0 ${leftBgColor} flex items-center justify-start pl-4 text-white z-0 rounded-xl`}
+        >
+          <motion.div style={{ scale: leftScale }} className="flex items-center gap-1.5 font-extrabold text-[9.5px] uppercase tracking-wider">
+            {leftIcon || <Check size={14} />}
+            <span>{leftLabel}</span>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Background action for Swipe Left */}
+      {onSwipeLeft && (
+        <motion.div 
+          style={{ opacity: rightBgOpacity }}
+          className={`absolute inset-0 ${rightBgColor} flex items-center justify-end pr-4 text-white z-0 rounded-xl`}
+        >
+          <motion.div style={{ scale: rightScale }} className="flex items-center gap-1.5 font-extrabold text-[9.5px] uppercase tracking-wider">
+            <span>{rightLabel}</span>
+            {rightIcon || <Trash2 size={14} />}
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Foreground Draggable Content */}
+      <motion.div
+        style={{ x }}
+        drag={onSwipeLeft || onSwipeRight ? "x" : undefined}
+        dragDirectionLock
+        dragConstraints={{ left: onSwipeLeft ? -150 : 0, right: onSwipeRight ? 150 : 0 }}
+        dragElastic={0.25}
+        animate={controls}
+        onDragEnd={handleDragEnd}
+        className="relative z-10 w-full"
+      >
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
 export function WhatsAppCompanion() {
   const { 
     projects = [], 
     addProject, 
     updateProject,
+    deleteProject,
     issues = [], 
     addIssue, 
     updateIssue, 
@@ -71,6 +169,7 @@ export function WhatsAppCompanion() {
     addNote,
     deleteNote,
     agents = [],
+    voiceQueue = [],
     phases = [],
     addPhase,
     updatePhase,
@@ -131,7 +230,7 @@ export function WhatsAppCompanion() {
   const [detPhaseGoal, setDetPhaseGoal] = useState('');
   const [detPhaseStart, setDetPhaseStart] = useState('');
   const [detPhaseEnd, setDetPhaseEnd] = useState('');
-  const [detPhaseColor, setDetPhaseColor] = useState('#00a884');
+  const [detPhaseColor, setDetPhaseColor] = useState('#fbbf24');
   const [isExpandingDetPhase, setIsExpandingDetPhase] = useState(false);
 
   // Helper mapping action-agent selections
@@ -196,6 +295,29 @@ export function WhatsAppCompanion() {
   const [loginMethod, setLoginMethod] = useState<'code' | 'password'>('password');
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
+
+  const dispatchCommandToPC = async (intent: string, parsedData: any = {}) => {
+    addSystemLog(`ORCHESTRATION: Dispatching remote command "${intent.toUpperCase()}" to PC...`);
+    try {
+      const res = await fetch('/api/whatsapp/dispatch-command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          intent,
+          parsedData,
+          explanation: `Dispatched interactively from Mobile Companion controller interface.`
+        })
+      });
+      if (res.ok) {
+        showToast(`⚡ Dispatched: ${intent.toUpperCase()}`);
+        addSystemLog(`ORCHESTRATION: Sent '${intent.toUpperCase()}' successfully.`);
+      } else {
+        showToast("❌ Failed to dispatch command.");
+      }
+    } catch {
+      showToast("❌ Orchestration transport failure.");
+    }
+  };
 
   const handleUpdateAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -543,6 +665,8 @@ export function WhatsAppCompanion() {
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
   const [speechOptimized, setSpeechOptimized] = useState(false);
 
+  const [chatViewMode, setChatViewMode] = useState<'list' | 'room'>('room');
+
   // Synced Chat Sessions (Synced with computer's Central AI chat dialogues)
   const [chatSessions, setChatSessions] = useState<any[]>(() => {
     try {
@@ -660,6 +784,12 @@ export function WhatsAppCompanion() {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
 
+  // Conversational back-and-forth session states
+  const [sessionNotesCount, setSessionNotesCount] = useState(0);
+  const [sessionNotes, setSessionNotes] = useState<string[]>([]);
+  const [pendingNote, setPendingNote] = useState<string | null>(null);
+  const [isFinishingConv, setIsFinishingConv] = useState(false);
+
   // Voice Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -703,6 +833,12 @@ export function WhatsAppCompanion() {
             if (data.pairingCode) {
               localStorage.setItem('whatsapp_companion_pairing_code', data.pairingCode);
             }
+
+            if (data.sessionState) {
+              setSessionNotesCount(data.sessionState.collectedNotes?.length || 0);
+              setSessionNotes(data.sessionState.collectedNotes || []);
+              setPendingNote(data.sessionState.pendingNote || null);
+            }
             
             if (data.chatHistory && data.chatHistory.length > 0) {
               const formatted = data.chatHistory.map((m: any, idx: number) => ({
@@ -742,6 +878,36 @@ export function WhatsAppCompanion() {
     checkCurrentConfig();
   }, []);
 
+  // Auto-pairing hook when scanned via QR code
+  useEffect(() => {
+    if (urlCode && !isLinked && !isLinking) {
+      const autoPair = async () => {
+        setIsLinking(true);
+        try {
+          const res = await fetch('/api/whatsapp/confirm-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: '+1 (310) 902-1845', code: urlCode })
+          });
+          if (res.ok) {
+            setIsLinked(true);
+            setPhoneNumber('+1 (310) 902-1845');
+            setPairingCode(urlCode);
+            localStorage.setItem('whatsapp_companion_linked', 'true');
+            localStorage.setItem('whatsapp_companion_phone_number', '+1 (310) 902-1845');
+            localStorage.setItem('whatsapp_companion_pairing_code', urlCode);
+            addSystemLog(`LINKED: Companion associated to phone +1 (310) 902-1845 automatically via scanned QR code.`);
+          }
+        } catch (err) {
+          console.error("Auto pairing via QR code failed:", err);
+        } finally {
+          setIsLinking(false);
+        }
+      };
+      autoPair();
+    }
+  }, [urlCode, isLinked, isLinking]);
+
   // Update localStorage on changes
   useEffect(() => {
     if (isLinked) {
@@ -759,21 +925,67 @@ export function WhatsAppCompanion() {
     }
   }, [isLinked, phoneNumber, pairingCode]);
 
-  // Sync messages list to active session
+  // Sync messages list to active session (local) or poll from backend (when linked on mobile)
   useEffect(() => {
-    const active = chatSessions.find((s: any) => s.id === currentSessionId);
-    if (active && Array.isArray(active.messages)) {
-      const formatted = active.messages.map((m: any, idx: number) => ({
-        id: `m-${currentSessionId}-${idx}-${m.id || Math.random()}`,
-        sender: (m.role === 'user' ? 'user' : 'aether') as 'user' | 'aether',
-        text: m.content || '',
-        type: (m.content && (m.content.includes('🎙️') || m.content.toLowerCase().includes('voice'))) ? 'voice' as const : 'text' as const,
-        time: m.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'read' as const
-      }));
-      setMessages(formatted);
+    if (isLinked) {
+      // In linked companion mode, poll server-side central chat history
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch('/api/whatsapp/config');
+          if (res.ok) {
+            const data = await res.json();
+            
+            if (data.sessionState) {
+              setSessionNotesCount(data.sessionState.collectedNotes?.length || 0);
+              setSessionNotes(data.sessionState.collectedNotes || []);
+              setPendingNote(data.sessionState.pendingNote || null);
+            }
+            
+            if (data.connectionState && data.connectionState !== 'linked') {
+              // Server disconnected us
+              setIsLinked(false);
+            }
+
+            if (data.chatHistory) {
+              const formatted = data.chatHistory.map((m: any, idx: number) => ({
+                id: `msg-${idx}-${m.time}-${m.sender}`,
+                sender: (m.sender === 'user' ? 'user' : 'aether') as 'user' | 'aether',
+                text: m.text,
+                type: (m.type || (m.text && (m.text.includes('🎙️') || m.text.toLowerCase().includes('voice'))) ? 'voice' as const : 'text' as const),
+                time: m.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'read' as const
+              }));
+              
+              setMessages(prev => {
+                if (prev.length !== formatted.length || (prev.length > 0 && prev[prev.length - 1]?.text !== formatted[formatted.length - 1]?.text)) {
+                  return formatted;
+                }
+                return prev;
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Failed to poll central chat state:", err);
+        }
+      }, 2000);
+
+      return () => clearInterval(interval);
+    } else {
+      // Offline / Unlinked mode: load from localStorage chatSessions
+      const active = chatSessions.find((s: any) => s.id === currentSessionId);
+      if (active && Array.isArray(active.messages)) {
+        const formatted = active.messages.map((m: any, idx: number) => ({
+          id: `m-${currentSessionId}-${idx}-${m.id || Math.random()}`,
+          sender: (m.role === 'user' ? 'user' : 'aether') as 'user' | 'aether',
+          text: m.content || '',
+          type: (m.content && (m.content.includes('🎙️') || m.content.toLowerCase().includes('voice'))) ? 'voice' as const : 'text' as const,
+          time: m.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'read' as const
+        }));
+        setMessages(formatted);
+      }
     }
-  }, [currentSessionId, chatSessions]);
+  }, [currentSessionId, chatSessions, isLinked]);
 
   // Handle live storage sync with actual computer's page
   useEffect(() => {
@@ -1846,8 +2058,88 @@ export function WhatsAppCompanion() {
     return false;
   };
 
+  const handleFinishAndCategorize = async () => {
+    if (sessionNotesCount === 0) return;
+    setIsFinishingConv(true);
+    addSystemLog(`CONVERSATION_FINISHING: Categorizing ${sessionNotesCount} notes...`);
+    try {
+      const response = await fetch('/api/whatsapp/finish-conversation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Push created things into front-end Context so they are updated instantly in UI
+        if (data.createdItems) {
+          const { issues: newIssues, notes: newNotes, brainstormIdeas: newIdeas } = data.createdItems;
+          
+          if (Array.isArray(newIssues)) {
+            newIssues.forEach((iss: any) => {
+              if (addIssue) {
+                addIssue(iss);
+              }
+            });
+          }
+          
+          if (Array.isArray(newNotes)) {
+            newNotes.forEach((nt: any) => {
+              if (addNote) {
+                addNote(nt);
+              }
+            });
+          }
+          
+          if (Array.isArray(newIdeas) && newIdeas.length > 0 && projects.length > 0) {
+            const firstProj = projects[0];
+            const updatedIdeas = [...(firstProj.brainstormIdeas || []), ...newIdeas];
+            if (updateProject) {
+              updateProject(firstProj.id, { brainstormIdeas: updatedIdeas });
+            }
+          }
+        }
+
+        // Reset local session state counters
+        setSessionNotesCount(0);
+        setSessionNotes([]);
+        setPendingNote(null);
+
+        // Add model's beautiful summarizing response to chat messages
+        setMessages(prev => [...prev, {
+          id: `aether-msg-finish-${Date.now()}`,
+          sender: 'aether' as const,
+          text: data.replyText || "Conversation successfully concluded and notes sorted!",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'read' as const
+        }]);
+
+        addSystemLog(`CONVERSATION_FINISHED_SUCCESS: Notes compiled and categorized successfully.`);
+      }
+    } catch (err: any) {
+      console.error("Error finalizing conversation:", err);
+      addSystemLog(`CONVERSATION_FINISHED_ERROR: ${err.message}`);
+    } finally {
+      setIsFinishingConv(false);
+    }
+  };
+
   const handleSendMessage = async (textToSend: string, isVoice = false, audioBase64 = '') => {
     silenceVoice(); // Immediately interrupt Aether speaking when user intervenes or sends a command
+    
+    // Deactivate active speech recognition so it stops capturing in the background
+    if (typeof window !== 'undefined') {
+      if ((window as any).activeSilenceTimer) {
+        clearTimeout((window as any).activeSilenceTimer);
+      }
+      if ((window as any).activeRecog) {
+        try {
+          (window as any).activeRecog.stop();
+        } catch {}
+        (window as any).activeRecog = null;
+      }
+      setIsRecording(false);
+    }
+
     if (!textToSend.trim() && !audioBase64) return;
     
     setIsSending(true);
@@ -1948,6 +2240,13 @@ export function WhatsAppCompanion() {
       setMessages(prev => prev.map(m => m.id === userMsgId ? { ...m, status: 'delivered' as const } : m));
     }, 400);
 
+    // Get conversation history to guide back-and-forth context
+    const activeThread = chatSessions.find((s: any) => s.id === currentSessionId);
+    const historyPayload = (activeThread?.messages || []).slice(-8).map((msg: any) => ({
+      role: msg.role || (msg.sender === 'user' ? 'user' : 'model'),
+      text: msg.content || msg.text || ""
+    }));
+
     try {
       const response = await fetch('/api/whatsapp/simulate-message', {
         method: 'POST',
@@ -1957,13 +2256,21 @@ export function WhatsAppCompanion() {
           voiceText: isVoice ? finalPrompt : undefined,
           username: phoneNumber || "AetherCompanionUser",
           audioData: audioBase64,
-          mimeType: isVoice ? 'audio/webm' : 'text/plain'
+          mimeType: isVoice ? 'audio/webm' : 'text/plain',
+          history: historyPayload
         })
       });
 
       if (response.ok) {
         const data = await response.json();
         const replyText = data.replyText || "Prompt successfully compiled. Action dispatched to agent nodes.";
+
+        // Update sessionState counts from response
+        if (data.sessionState) {
+          setSessionNotesCount(data.sessionState.collectedNotes?.length || 0);
+          setSessionNotes(data.sessionState.collectedNotes || []);
+          setPendingNote(data.sessionState.pendingNote || null);
+        }
         
         // Update checkmarks to read (blue ticks)
         setMessages(prev => prev.map(m => m.id === userMsgId ? { ...m, status: 'read' as const } : m));
@@ -2530,20 +2837,20 @@ export function WhatsAppCompanion() {
         {
           id: "fb-1",
           type: "Fix",
-          title: "Verify environment credential paths safely",
-          description: "Inspect the backend environment loading process, ensuring all variables are loaded from safe configuration files rather than hardcoded client sources."
+          title: "Fix text alignment in chat list view",
+          description: "Adjust horizontal margins and centering on small screens so text fits cleanly."
         },
         {
           id: "fb-2",
           type: "New Feature",
-          title: "Vite Dynamic Bundle Chunk Layout config",
-          description: "Optimize application loading speeds by segmenting the vendor packages into lazy-loaded chunks using manual Rollup configurations."
+          title: "Add quick search for contacts",
+          description: "Implement a simple search bar at the top of the chat page to filter active chat threads."
         },
         {
           id: "fb-3",
           type: "Task",
-          title: "Audit WCAG Visual color contrast values",
-          description: "Verify text and background element pairs to assure accessibility ratios align with standard human readability metrics."
+          title: "Optimize button sizes for mobile use",
+          description: "Enlarge action buttons to at least 44px to make tapping on phones effortless."
         }
       ]);
     } finally {
@@ -2802,15 +3109,15 @@ export function WhatsAppCompanion() {
     return (
       <div className="flex flex-col min-h-screen bg-[#080d10] text-[#e9edef] font-sans relative w-full overflow-x-hidden animate-fadeIn select-text">
         {/* SECURE TOP HEADER CARD */}
-        <div className="bg-[#1f2c34] border-b border-zinc-900 px-6 py-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md bg-opacity-95 shadow">
+        <div className="bg-[#16161a] border-b border-zinc-900 px-6 py-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-md bg-opacity-95 shadow">
           <div className="flex items-center gap-3">
-            <span className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 shadow-inner">
-              <Bot size={28} className="text-emerald-400" />
+            <span className="p-2.5 bg-yellow-500/10 text-yellow-400 rounded-xl border border-yellow-500/20 shadow-inner">
+              <Bot size={28} className="text-yellow-400" />
             </span>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-black tracking-tight text-white font-sans uppercase">Aether Workspace</h1>
-                <span className="px-2 py-0.5 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/20 text-[9px] font-mono font-bold uppercase tracking-wider">
+                <span className="px-2 py-0.5 rounded bg-emerald-950/40 text-yellow-400 border border-emerald-800/20 text-[9px] font-mono font-bold uppercase tracking-wider">
                   Companion Host
                 </span>
               </div>
@@ -2821,7 +3128,7 @@ export function WhatsAppCompanion() {
           <div className="flex items-center gap-4">
             <div className="hidden lg:flex items-center gap-6 text-xs font-mono text-zinc-550">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
                 <span>Websocket Stream: Active</span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -2848,14 +3155,14 @@ export function WhatsAppCompanion() {
           <div className="lg:col-span-7 space-y-6 flex flex-col h-full">
             
             {/* System Metrics card */}
-            <div className="bg-[#111b21] border border-zinc-900 p-5 rounded-2xl grid grid-cols-2 sm:grid-cols-4 gap-4 shadow-xl">
+            <div className="bg-[#0b0b0e] border border-zinc-900 p-5 rounded-2xl grid grid-cols-2 sm:grid-cols-4 gap-4 shadow-xl">
               <div className="space-y-1">
                 <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest font-black block">Active Projects</span>
                 <span className="text-2xl font-extrabold text-white font-sans tracking-tight">{projects.length}</span>
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest font-black block font-sans">Backlog Tasks</span>
-                <span className="text-2xl font-extrabold text-emerald-400 font-sans tracking-tight">{issues.length}</span>
+                <span className="text-2xl font-extrabold text-yellow-400 font-sans tracking-tight">{issues.length}</span>
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest font-black block">Active Agents</span>
@@ -2863,14 +3170,14 @@ export function WhatsAppCompanion() {
               </div>
               <div className="space-y-1">
                 <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest font-black block">Linked Status</span>
-                <span className={`text-base font-extrabold font-mono tracking-wide block uppercase ${isLinked ? 'text-emerald-400' : 'text-zinc-550'}`}>
+                <span className={`text-base font-extrabold font-mono tracking-wide block uppercase ${isLinked ? 'text-yellow-400' : 'text-zinc-550'}`}>
                   {isLinked ? 'Connected' : 'Unlinked'}
                 </span>
               </div>
             </div>
 
             {/* Diagnostic Log Terminal */}
-            <div className="bg-[#111b21] border border-zinc-900 rounded-2xl p-5 flex-1 flex flex-col min-h-[400px] shadow-xl">
+            <div className="bg-[#0b0b0e] border border-zinc-900 rounded-2xl p-5 flex-1 flex flex-col min-h-[400px] shadow-xl">
               <div className="flex items-center justify-between border-b border-zinc-900 pb-3 mb-4 shrink-0">
                 <div className="flex items-center gap-2">
                   <Terminal size={14} className="text-zinc-550" />
@@ -2890,7 +3197,7 @@ export function WhatsAppCompanion() {
                       <span className="text-zinc-650 font-semibold select-none shrink-0 w-8">[{idx + 1}]</span>
                       <span className={
                         log.includes('ERROR') ? 'text-rose-405' :
-                        log.includes('LINKED') || log.includes('SYNC') || log.includes('NOTIFICATION') ? 'text-emerald-400 font-semibold' :
+                        log.includes('LINKED') || log.includes('SYNC') || log.includes('NOTIFICATION') ? 'text-yellow-400 font-semibold' :
                         log.includes('SECURITY') ? 'text-amber-405' : 'text-zinc-300'
                       }>{log}</span>
                     </div>
@@ -2904,7 +3211,7 @@ export function WhatsAppCompanion() {
               <button
                 type="button"
                 onClick={() => addSystemLog("DIAGNOSTICS: Fired localized neural dreaming cycles across all laptop workspace channels")}
-                className="flex-1 py-3 bg-zinc-900 hover:bg-[#00a884]/20 hover:text-emerald-300 text-zinc-350 rounded-xl text-xs font-mono font-bold transition-all border border-zinc-805 hover:border-emerald-500/15 cursor-pointer text-center"
+                className="flex-1 py-3 bg-zinc-900 hover:bg-[#fbbf24]/20 hover:text-yellow-300 text-zinc-350 rounded-xl text-xs font-mono font-bold transition-all border border-zinc-805 hover:border-yellow-500/15 cursor-pointer text-center"
               >
                 ⚡ Fire Local Workspace Diagnostics
               </button>
@@ -2915,9 +3222,9 @@ export function WhatsAppCompanion() {
           <div className="lg:col-span-5 space-y-6">
             
             {/* Step-by-Step Linking Instructions Container */}
-            <div className="bg-[#111b21] border border-zinc-900 p-6 rounded-2xl space-y-5 shadow-xl text-left">
+            <div className="bg-[#0b0b0e] border border-zinc-900 p-6 rounded-2xl space-y-5 shadow-xl text-left">
               <div className="flex items-center gap-2.5">
-                <Smartphone className="text-emerald-400 animate-pulse" size={20} />
+                <Smartphone className="text-yellow-400 animate-pulse" size={20} />
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider font-sans">1. Connect Mobile Companion</h3>
               </div>
 
@@ -2926,16 +3233,16 @@ export function WhatsAppCompanion() {
                   Deploy your actual mobile phone as an interactive AI monitor node. Enjoy full hands-free vocal synthesis and control over your backlog while walking or away from your desk.
                 </p>
 
-                <div className="bg-[#1f2c34]/80 border border-zinc-850 p-4 rounded-xl space-y-3 font-mono text-[11px]">
+                <div className="bg-[#16161a]/80 border border-zinc-850 p-4 rounded-xl space-y-3 font-mono text-[11px]">
                   <div className="flex gap-2">
-                    <span className="text-emerald-500 font-bold">1.</span>
+                    <span className="text-yellow-500 font-bold">1.</span>
                     <span>
                       Scan the QR code below or open the URL in your phone's browser:
                       <a 
                         href={`${window.location.origin}/whatsapp-companion`} 
                         target="_blank" 
                         rel="noreferrer" 
-                        className="block text-emerald-400 hover:underline mt-1 break-all"
+                        className="block text-yellow-400 hover:underline mt-1 break-all"
                       >
                         {window.location.origin}/whatsapp-companion
                       </a>
@@ -2943,7 +3250,7 @@ export function WhatsAppCompanion() {
                   </div>
                   <div className="flex gap-2 pt-1 border-t border-zinc-850/50 flex-col">
                     <div className="flex gap-2">
-                      <span className="text-emerald-500 font-bold">2.</span>
+                      <span className="text-yellow-500 font-bold">2.</span>
                       <span>Enter the client Static Access Code, or let the scanned QR auto-populate and tap authorize.</span>
                     </div>
                   </div>
@@ -2952,9 +3259,9 @@ export function WhatsAppCompanion() {
             </div>
 
             {/* Set Custom Login Pairing Code Form */}
-            <div className="bg-[#111b21] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
+            <div className="bg-[#0b0b0e] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
               <div className="flex items-center gap-2 text-white">
-                <Sparkles className="text-emerald-400" size={18} />
+                <Sparkles className="text-yellow-400" size={18} />
                 <h3 className="text-xs font-bold uppercase tracking-wider font-mono">2. Set Static Access Code</h3>
               </div>
               <p className="text-[11px] text-zinc-450 font-sans leading-normal">
@@ -2969,12 +3276,12 @@ export function WhatsAppCompanion() {
                     onChange={(e) => setCustomOneTimeCode(e.target.value)}
                     placeholder="e.g. MYLAPTOP99"
                     maxLength={15}
-                    className="flex-grow bg-zinc-950 border border-zinc-850 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono font-bold tracking-widest text-[#00a884] uppercase outline-none"
+                    className="flex-grow bg-zinc-950 border border-zinc-850 focus:border-yellow-500/50 rounded-xl px-4 py-3 text-xs font-mono font-bold tracking-widest text-[#fbbf24] uppercase outline-none"
                   />
                   <button
                     type="submit"
                     disabled={isUpdatingCode}
-                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 flex items-center justify-center font-mono cursor-pointer"
+                    className="px-4 py-3 bg-amber-600 hover:bg-yellow-500 active:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 flex items-center justify-center font-mono cursor-pointer"
                   >
                     {isUpdatingCode ? "Syncing..." : "Update Code"}
                   </button>
@@ -2986,9 +3293,9 @@ export function WhatsAppCompanion() {
             </div>
 
             {/* Set Gateway Lock passcode PIN on PC */}
-            <div className="bg-[#111b21] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
+            <div className="bg-[#0b0b0e] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
               <div className="flex items-center gap-2 text-white">
-                <Lock className="text-emerald-400" size={17} />
+                <Lock className="text-yellow-400" size={17} />
                 <h3 className="text-xs font-bold uppercase tracking-wider font-mono">3. Set Mobile Lock screen Passcode</h3>
               </div>
               <p className="text-[11px] text-zinc-450 font-sans leading-normal">
@@ -3016,7 +3323,7 @@ export function WhatsAppCompanion() {
                         showToast("🔓 Lock disabled!");
                       }
                     }}
-                    className="flex-grow bg-zinc-950 border border-zinc-850 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono font-bold tracking-widest text-[#00a884] uppercase outline-none"
+                    className="flex-grow bg-zinc-950 border border-zinc-850 focus:border-yellow-500/50 rounded-xl px-4 py-3 text-xs font-mono font-bold tracking-widest text-[#fbbf24] uppercase outline-none"
                   />
                   {passcodePin && (
                     <button
@@ -3035,7 +3342,7 @@ export function WhatsAppCompanion() {
                 </div>
                 <div className="text-[10px] text-zinc-550 font-mono flex justify-between items-center bg-zinc-950/40 px-3 py-2 rounded-lg border border-zinc-900">
                   <span>Pin lock status:</span>
-                  <span className={passcodePin ? "text-emerald-400 font-bold" : "text-amber-500"}>
+                  <span className={passcodePin ? "text-yellow-400 font-bold" : "text-amber-500"}>
                     {passcodePin ? "ENABLED (SECURE)" : "DISABLED"}
                   </span>
                 </div>
@@ -3043,9 +3350,9 @@ export function WhatsAppCompanion() {
             </div>
 
             {/* Set Mobile Gateway Login Credentials Form */}
-            <div className="bg-[#111b21] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
+            <div className="bg-[#0b0b0e] border border-zinc-900 p-6 rounded-2xl space-y-4 shadow-xl text-left">
               <div className="flex items-center gap-2 text-white">
-                <Smartphone className="text-[#00a884]" size={17} />
+                <Smartphone className="text-[#fbbf24]" size={17} />
                 <h3 className="text-xs font-bold uppercase tracking-wider font-mono">4. Mobile Gateway Account Credentials</h3>
               </div>
               <p className="text-[11px] text-zinc-450 font-sans leading-normal">
@@ -3060,7 +3367,7 @@ export function WhatsAppCompanion() {
                     value={authUsername}
                     onChange={(e) => setAuthUsername(e.target.value)}
                     placeholder="admin"
-                    className="w-full bg-zinc-950 border border-zinc-850 focus:border-emerald-500/50 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 outline-none"
+                    className="w-full bg-zinc-950 border border-zinc-850 focus:border-yellow-500/50 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 outline-none"
                   />
                 </div>
                 <div className="space-y-2">
@@ -3070,13 +3377,13 @@ export function WhatsAppCompanion() {
                     value={authPassword}
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="password"
-                    className="w-full bg-zinc-950 border border-zinc-850 focus:border-emerald-500/50 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 outline-none"
+                    className="w-full bg-zinc-950 border border-zinc-850 focus:border-yellow-500/50 rounded-xl px-4 py-2.5 text-xs font-mono text-zinc-200 outline-none"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={isUpdatingAuth}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 flex items-center justify-center font-mono cursor-pointer"
+                  className="w-full py-2.5 bg-amber-600 hover:bg-yellow-500 active:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all disabled:opacity-50 flex items-center justify-center font-mono cursor-pointer"
                 >
                   {isUpdatingAuth ? "Updating..." : "Save Companion Credentials"}
                 </button>
@@ -3084,7 +3391,7 @@ export function WhatsAppCompanion() {
             </div>
 
             {/* Beautiful QR Code Server display panel */}
-            <div className="bg-[#111b21] border border-[#00a884]/15 p-6 rounded-2xl flex flex-col items-center justify-center space-y-4 shadow-xl relative overflow-hidden group">
+            <div className="bg-[#0b0b0e] border border-[#fbbf24]/15 p-6 rounded-2xl flex flex-col items-center justify-center space-y-4 shadow-xl relative overflow-hidden group">
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/20 via-emerald-500/70 to-emerald-500/20" />
               
               <div className="text-center">
@@ -3105,10 +3412,10 @@ export function WhatsAppCompanion() {
               </div>
 
               {/* Real-time sync feedback message */}
-              <div className="text-center space-y-1 w-full bg-[#1f2c34]/60 p-2.5 rounded-xl border border-zinc-900 font-mono text-[9.5px]">
+              <div className="text-center space-y-1 w-full bg-[#16161a]/60 p-2.5 rounded-xl border border-zinc-900 font-mono text-[9.5px]">
                 {isLinked ? (
                   <div className="text-emerald-405 font-bold flex items-center justify-center gap-1.5 py-0.5 animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping shrink-0" />
                     <span>🟢 Connected Device: {phoneNumber || "Linked Companion"}</span>
                   </div>
                 ) : (
@@ -3125,23 +3432,23 @@ export function WhatsAppCompanion() {
         
         {/* Footnotes */}
         <div className="p-6 bg-[#030708] border-t border-zinc-900 flex items-center justify-center text-[10px] text-zinc-550 font-mono uppercase tracking-wider shrink-0 gap-1.5 animate-fadeIn">
-          <Shield size={11} className="text-emerald-500/35" /> Aether Secure Workspace Connection Shell • End-to-End Encrypted Handshake
+          <Shield size={11} className="text-yellow-500/35" /> Aether Secure Workspace Connection Shell • End-to-End Encrypted Handshake
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-[#0b141a] text-zinc-100 font-sans select-none relative max-w-md mx-auto border-x border border-zinc-900 shadow-2xl overflow-hidden">
+    <div className="flex flex-col h-[100dvh] bg-[#050508] text-zinc-100 font-sans select-none relative max-w-md mx-auto border-x border border-zinc-900 shadow-2xl overflow-hidden">
       
       {/* SECURE BIOMETRIC & PASSCODE LOCK SCREEN */}
       {isLockScreenActive && (
-        <div className="absolute inset-0 bg-[#0b141a] z-50 flex flex-col justify-between p-6 animate-fadeIn">
+        <div className="absolute inset-0 bg-[#050508] z-50 flex flex-col justify-between p-6 animate-fadeIn">
           {/* Lock Screen Header */}
           <div className="flex flex-col items-center justify-center pt-10 text-center space-y-4">
             <div className="w-16 h-16 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center relative shadow-lg">
-              <Lock size={24} className="text-emerald-400 animate-pulse" />
-              <div className="absolute inset-0 rounded-full border-2 border-emerald-500/20 animate-ping" style={{ animationDuration: '3s' }} />
+              <Lock size={24} className="text-yellow-400 animate-pulse" />
+              <div className="absolute inset-0 rounded-full border-2 border-yellow-500/20 animate-ping" style={{ animationDuration: '3s' }} />
             </div>
             
             <div className="space-y-1">
@@ -3155,7 +3462,7 @@ export function WhatsAppCompanion() {
             {isScanningBiometrics ? (
               <div className="flex flex-col items-center justify-center space-y-2 animate-pulse">
                 <Fingerprint size={44} className="text-emerald-450 animate-[ping_1.5s_infinite]" />
-                <span className="text-[9px] font-mono tracking-widest uppercase text-emerald-400">Scanning Biometrics...</span>
+                <span className="text-[9px] font-mono tracking-widest uppercase text-yellow-400">Scanning Biometrics...</span>
               </div>
             ) : (
               <>
@@ -3219,7 +3526,7 @@ export function WhatsAppCompanion() {
                 <button
                   type="button"
                   onClick={handleRealBiometricAuth}
-                  className="w-14 h-14 rounded-full bg-[#132d29]/40 hover:bg-[#132d29]/80 border border-emerald-500/30 text-emerald-400 flex items-center justify-center cursor-pointer active:scale-90 transition-all shadow-md"
+                  className="w-14 h-14 rounded-full bg-[#132d29]/40 hover:bg-[#132d29]/80 border border-yellow-500/30 text-yellow-400 flex items-center justify-center cursor-pointer active:scale-90 transition-all shadow-md"
                 >
                   <Fingerprint size={22} className="animate-pulse" />
                 </button>
@@ -3280,12 +3587,12 @@ export function WhatsAppCompanion() {
           <div className="space-y-6 pt-4">
             <div className="flex items-center justify-between text-[#e9edef] text-left">
               <div className="flex items-center gap-2">
-                <span className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                <span className="p-2 bg-yellow-500/10 text-yellow-400 rounded-xl border border-yellow-500/20">
                   <Bot size={24} />
                 </span>
                 <div>
                   <h1 className="text-base font-bold tracking-tight text-white font-sans">Aether OS</h1>
-                  <span className="text-[10px] text-emerald-400 font-mono tracking-wider font-semibold">WHATSAPP COMPANION GATEWAY</span>
+                  <span className="text-[10px] text-yellow-400 font-mono tracking-wider font-semibold">MOBILE GATEWAY COMPANION</span>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -3295,7 +3602,7 @@ export function WhatsAppCompanion() {
                 <button
                   type="button"
                   onClick={() => setIsLaptopView(true)}
-                  className="text-[9.5px] font-bold text-emerald-400 hover:underline hover:text-emerald-300 cursor-pointer flex items-center gap-1 font-sans"
+                  className="text-[9.5px] font-bold text-yellow-400 hover:underline hover:text-yellow-300 cursor-pointer flex items-center gap-1 font-sans"
                 >
                   <span>💻 Desktop Host</span>
                 </button>
@@ -3303,20 +3610,20 @@ export function WhatsAppCompanion() {
             </div>
 
             {urlCode && (
-              <div className="bg-emerald-950/40 border border-emerald-500/20 p-3.5 rounded-2xl flex flex-col gap-1 text-[#e9edef] text-left select-all hover:bg-emerald-950/60 transition-colors duration-150 shadow-inner">
-                <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[10px] font-mono uppercase">
+              <div className="bg-emerald-950/40 border border-yellow-500/20 p-3.5 rounded-2xl flex flex-col gap-1 text-[#e9edef] text-left select-all hover:bg-emerald-950/60 transition-colors duration-150 shadow-inner">
+                <div className="flex items-center gap-1.5 text-yellow-400 font-bold text-[10px] font-mono uppercase">
                   <Sparkles size={11} className="text-emerald-450 animate-bounce" />
                   <span>QR Scan Handshake Detected</span>
                 </div>
-                <p className="text-[9.5px] text-emerald-300 leading-normal font-sans">
-                  Aether workspace paired successfully via QR! Token matches <span className="font-mono text-white text-[11px] font-bold underline bg-emerald-900/40 px-1 py-0.5 rounded border border-emerald-500/10 ml-0.5">{urlCode}</span>. Ready to authorize pairing immediately.
+                <p className="text-[9.5px] text-yellow-300 leading-normal font-sans">
+                  Aether workspace paired successfully via QR! Token matches <span className="font-mono text-white text-[11px] font-bold underline bg-emerald-900/40 px-1 py-0.5 rounded border border-yellow-500/10 ml-0.5">{urlCode}</span>. Ready to authorize pairing immediately.
                 </p>
               </div>
             )}
 
-            <div className="bg-zinc-950/40 border border-emerald-500/10 rounded-2xl p-5 space-y-4">
+            <div className="bg-zinc-950/40 border border-yellow-500/10 rounded-2xl p-5 space-y-4">
               <div className="text-center space-y-1">
-                <Smartphone className="mx-auto text-emerald-400 animate-pulse" size={40} />
+                <Smartphone className="mx-auto text-yellow-400 animate-pulse" size={40} />
                 <h2 className="text-sm font-bold text-slate-100 font-sans">Establish Companion Connection</h2>
                 <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
                   Connect your simulated mobile browser directly to your Aether persistent development cloud database.
@@ -3333,7 +3640,7 @@ export function WhatsAppCompanion() {
                   }}
                   className={`py-2 text-[10px] uppercase font-bold font-mono tracking-wider rounded-lg transition-all cursor-pointer ${
                     loginMethod === 'password'
-                      ? 'bg-emerald-600 text-white shadow-md'
+                      ? 'bg-amber-600 text-white shadow-md'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -3347,7 +3654,7 @@ export function WhatsAppCompanion() {
                   }}
                   className={`py-2 text-[10px] uppercase font-bold font-mono tracking-wider rounded-lg transition-all cursor-pointer ${
                     loginMethod === 'code'
-                      ? 'bg-emerald-600 text-white shadow-md'
+                      ? 'bg-amber-600 text-white shadow-md'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -3366,7 +3673,7 @@ export function WhatsAppCompanion() {
                       onChange={(e) => setLoginUser(e.target.value)}
                       placeholder="e.g. admin"
                       disabled={isLinking}
-                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 outline-none transition-colors"
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-yellow-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 outline-none transition-colors"
                     />
                   </div>
 
@@ -3378,7 +3685,7 @@ export function WhatsAppCompanion() {
                       onChange={(e) => setLoginPass(e.target.value)}
                       placeholder="Enter password..."
                       disabled={isLinking}
-                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 outline-none transition-colors"
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-yellow-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 outline-none transition-colors"
                     />
                   </div>
 
@@ -3392,7 +3699,7 @@ export function WhatsAppCompanion() {
                   <button
                     type="submit"
                     disabled={isLinking}
-                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                    className="w-full py-3.5 px-4 bg-amber-600 hover:bg-yellow-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
                   >
                     {isLinking ? (
                       <>
@@ -3415,7 +3722,7 @@ export function WhatsAppCompanion() {
                       onChange={(e) => setPhoneNumber(e.target.value)}
                       placeholder="+1 (310) 902-1845"
                       disabled={isLinking}
-                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 placeholder-zinc-700 outline-none transition-colors"
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-yellow-500/50 rounded-xl px-4 py-3 text-xs font-mono text-zinc-150 placeholder-zinc-700 outline-none transition-colors"
                     />
                   </div>
 
@@ -3428,7 +3735,7 @@ export function WhatsAppCompanion() {
                       placeholder="Enter pairing code..."
                       disabled={isLinking}
                       maxLength={15}
-                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-emerald-500/50 rounded-xl px-4 py-3 text-xs font-mono tracking-widest font-extrabold uppercase text-center text-emerald-400 outline-none transition-colors"
+                      className="w-full bg-zinc-900/80 border border-zinc-800 focus:border-yellow-500/50 rounded-xl px-4 py-3 text-xs font-mono tracking-widest font-extrabold uppercase text-center text-yellow-400 outline-none transition-colors"
                     />
                   </div>
 
@@ -3442,7 +3749,7 @@ export function WhatsAppCompanion() {
                   <button
                     type="submit"
                     disabled={isLinking}
-                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
+                    className="w-full py-3.5 px-4 bg-amber-600 hover:bg-yellow-500 active:bg-emerald-750 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg disabled:opacity-50"
                   >
                     {isLinking ? (
                       <>
@@ -3471,31 +3778,31 @@ export function WhatsAppCompanion() {
           </div>
 
           <div className="text-center pt-6 text-[10px] text-zinc-550 font-mono flex items-center justify-center gap-1.5 border-t border-zinc-900/50">
-            <Shield size={11} className="text-emerald-500/40" /> End-to-End Handshake Authorization Active
+            <Shield size={11} className="text-yellow-500/40" /> End-to-End Handshake Authorization Active
           </div>
         </div>
       ) : (
         
         // 2. Beautiful WhatsApp Chat & Dashboard Interface
-        <div className="flex-grow flex flex-col h-full bg-[#0b141a] overflow-hidden select-text">
+        <div className="flex-grow flex flex-col h-full bg-[#050508] overflow-hidden select-text">
           
           {/* Authentic WhatsApp Green Header */}
-          <div className="bg-[#1f2c34] px-4 py-3 flex items-center justify-between shrink-0 border-b border-zinc-900/30">
+          <div className="bg-[#16161a] px-4 py-3 flex items-center justify-between shrink-0 border-b border-zinc-900/30">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-slate-900 border border-emerald-500/20 flex items-center justify-center relative font-bold font-sans">
-                  <Bot size={20} className="text-emerald-400" />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-[#1f2c34]" />
+                <div className="w-10 h-10 rounded-full bg-slate-900 border border-yellow-500/20 flex items-center justify-center relative font-bold font-sans">
+                  <Bot size={20} className="text-yellow-400" />
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-yellow-500 rounded-full border border-[#16161a]" />
                 </div>
               </div>
               <div>
                 <div className="flex items-center gap-1">
                   <span className="text-sm font-bold text-zinc-100 font-sans tracking-tight">Aether OS</span>
-                  <span className="p-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 rounded text-[7.5px] font-mono uppercase font-black tracking-normal">
+                  <span className="p-0.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/10 rounded text-[7.5px] font-mono uppercase font-black tracking-normal">
                      BOT CPU
                   </span>
                 </div>
-                <span className="text-[10px] text-emerald-400 block font-normal leading-none font-sans mt-0.5">
+                <span className="text-[10px] text-yellow-400 block font-normal leading-none font-sans mt-0.5">
                   online • {phoneNumber || "Linked Device"}
                 </span>
               </div>
@@ -3511,12 +3818,12 @@ export function WhatsAppCompanion() {
           </div>
 
           {/* Tab Selection Bar (Dual-purpose mobile layout) */}
-          <div className="bg-[#182229] flex border-b border-zinc-900/40 select-none shrink-0">
+          <div className="bg-[#1c1c21] flex border-b border-zinc-900/40 select-none shrink-0">
             <button 
               onClick={() => setActiveTab('chat')}
               className={`flex-1 py-3 text-center text-[10.5px] font-extrabold tracking-wider transition-all border-b-[3px] flex items-center justify-center gap-1.5 ${
                 activeTab === 'chat' 
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5 font-sans' 
+                  ? 'border-yellow-500 text-yellow-400 bg-yellow-500/5 font-sans' 
                   : 'border-transparent text-zinc-400 hover:text-zinc-200 font-sans'
               }`}
             >
@@ -3527,39 +3834,28 @@ export function WhatsAppCompanion() {
               onClick={() => setActiveTab('dashboard')}
               className={`flex-1 py-3 text-center text-[10.5px] font-extrabold tracking-wider transition-all border-b-[3px] flex items-center justify-center gap-1.5 ${
                 activeTab === 'dashboard' 
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5 font-sans' 
+                  ? 'border-yellow-500 text-yellow-400 bg-yellow-500/5 font-sans' 
                   : 'border-transparent text-zinc-400 hover:text-zinc-200 font-sans'
               }`}
             >
               <Activity size={12} />
               <span>DASHBOARD</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
             </button>
           </div>
 
           {/* TAB 1: Real-time Terminal Chat */}
           {activeTab === 'chat' && (
-            <div className="flex-grow flex flex-col overflow-hidden relative">
-              
-              {/* Dynamic Conversation Synced Thread Selector & Brainstorm Mode Toggle */}
-              <div className="bg-[#1f2c34] px-3.5 py-2.5 flex items-center justify-between border-b border-zinc-950/60 select-none shrink-0 font-sans gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Command size={13} className="text-emerald-400 shrink-0" />
-                  <select
-                    value={currentSessionId}
-                    onChange={(e) => {
-                      const selectedId = e.target.value;
-                      setCurrentSessionId(selectedId);
-                      addSystemLog(`SYNC: Swapped active conversational thread context to "${chatSessions.find(s=>s.id===selectedId)?.title || selectedId}"`);
-                    }}
-                    className="bg-[#111b21] border border-zinc-150/10 rounded px-2 py-1 text-[10.5px] text-zinc-150 outline-none max-w-[150px] font-sans truncate font-bold cursor-pointer"
-                  >
-                    {chatSessions.map((session: any) => (
-                      <option key={session.id} value={session.id}>
-                        {session.title}
-                      </option>
-                    ))}
-                  </select>
+            chatViewMode === 'list' ? (
+              <div className="flex-grow flex flex-col overflow-hidden relative bg-[#050508] animate-fadeIn">
+                {/* Chats List Screen header */}
+                <div className="bg-[#16161a] px-4 py-3.5 flex items-center justify-between border-b border-zinc-950/70 select-none shrink-0 font-sans">
+                  <div className="flex items-center gap-2">
+                    <Smartphone size={15} className="text-yellow-400 animate-pulse" />
+                    <span className="font-bold text-xs uppercase tracking-wider text-zinc-100">Aether Messenger</span>
+                  </div>
+                  
+                  {/* Start New Thread button */}
                   <button
                     type="button"
                     onClick={() => {
@@ -3577,14 +3873,137 @@ export function WhatsAppCompanion() {
                       setChatSessions(updated);
                       localStorage.setItem('aether_chat_sessions', JSON.stringify(updated));
                       setCurrentSessionId(newId);
+                      setChatViewMode('room'); // Jump straight into new chat
                       addSystemLog(`SYNC: Created fresh conversational thread: "${newTitle}"`);
                     }}
-                    className="p-1 rounded bg-[#00a884]/20 hover:bg-[#00a884]/35 text-emerald-400 border border-emerald-500/25 transition-all text-[9.5px] font-semibold cursor-pointer flex items-center gap-0.5"
-                    title="Start New Thread"
+                    className="px-2.5 py-1 bg-yellow-400/20 hover:bg-yellow-400/30 text-yellow-400 border border-yellow-500/20 text-[9.5px] font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1"
                   >
                     <Plus size={10} />
+                    New Contact Active Chat
                   </button>
                 </div>
+
+                {/* Scrollable list of chat sessions */}
+                <div className="flex-grow overflow-y-auto p-4 space-y-2.5 custom-scrollbar bg-[#050508]/40">
+                  <p className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-bold pb-1 block border-b border-zinc-900/50 mb-3">
+                    Conversations History ({chatSessions.length})
+                  </p>
+
+                  {chatSessions.map((session: any) => {
+                    const lastMsg = session.messages && session.messages.length > 0 
+                      ? session.messages[session.messages.length - 1] 
+                      : null;
+                    const lastMsgText = lastMsg ? (lastMsg.content || lastMsg.text || 'Empty thread') : 'No messages yet';
+
+                    return (
+                      <div
+                        key={session.id}
+                        onClick={() => {
+                          setCurrentSessionId(session.id);
+                          setChatViewMode('room');
+                          addSystemLog(`NAVIGATION: Opened chat session "${session.title}"`);
+                        }}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group relative overflow-hidden ${
+                          session.id === currentSessionId
+                            ? 'bg-yellow-500/5 border-yellow-500/25 shadow-md hover:bg-yellow-500/10'
+                            : 'bg-[#16161a] hover:bg-[#1c1c21] border-zinc-900 hover:border-zinc-800'
+                        }`}
+                      >
+                        {/* Avatar & Info */}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-yellow-500/15 to-amber-500/15 border border-yellow-500/15 flex items-center justify-center text-yellow-400 group-hover:scale-105 transition-all">
+                            <Bot size={15} />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-zinc-150 group-hover:text-white transition-colors truncate">
+                              {session.title}
+                            </h4>
+                            <p className="text-[10.5px] text-[#8696a0] truncate mt-0.5 max-w-[250px]">
+                              {lastMsgText}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Side meta details */}
+                        <div className="text-right shrink-0 flex flex-col justify-between h-9">
+                          <span className="text-[8.5px] font-mono text-zinc-500">
+                            {new Date(session.createdAt || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </span>
+                          {session.id === currentSessionId && (
+                            <span className="text-[8.5px] bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 rounded-full border border-yellow-500/20 font-bold self-end animate-pulse">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Chat List Screen helper / footer guidelines */}
+                <div className="p-4 border-t border-zinc-950/40 bg-[#16161a]/90 shrink-0 text-[10px] text-zinc-400 leading-tight flex items-start gap-2 select-none">
+                  <span className="text-yellow-500 font-bold mt-0.5">ℹ️</span>
+                  <span>
+                    Select a live thread above to check details, run compilation tests, or speak to Aether. New threads bootstrap clean context pipelines.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-grow flex flex-col overflow-hidden relative">
+                
+                {/* Dynamic Conversation Synced Thread Selector & Brainstorm Mode Toggle */}
+                <div className="bg-[#16161a] px-3.5 py-2.5 flex items-center justify-between border-b border-zinc-950/60 select-none shrink-0 font-sans gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {/* Back to Chats button */}
+                    <button
+                      type="button"
+                      onClick={() => setChatViewMode('list')}
+                      className="mr-1.5 py-1 px-2 rounded bg-[#0b0b0e] border border-zinc-800 text-zinc-300 text-[10px] font-bold hover:bg-zinc-850 flex items-center gap-1 cursor-pointer transition-all hover:text-white shrink-0"
+                    >
+                      <ArrowLeft size={11} className="text-yellow-400" />
+                      <span>Chats</span>
+                    </button>
+
+                    <select
+                      value={currentSessionId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        setCurrentSessionId(selectedId);
+                        addSystemLog(`SYNC: Swapped active conversational thread context to "${chatSessions.find(s=>s.id===selectedId)?.title || selectedId}"`);
+                      }}
+                      className="bg-[#0b0b0e] border border-zinc-150/10 rounded px-1.5 py-1 text-[10px] text-zinc-150 outline-none max-w-[100px] font-sans truncate font-bold cursor-pointer"
+                    >
+                      {chatSessions.map((session: any) => (
+                        <option key={session.id} value={session.id}>
+                          {session.title}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newId = `session-${Date.now()}`;
+                        const newTitle = `Mobile Workspace #${chatSessions.length + 1}`;
+                        const freshSess = {
+                          id: newId,
+                          title: newTitle,
+                          createdAt: Date.now(),
+                          messages: [
+                            { id: '1', role: 'agent', content: `Aether Mobile sync node established in thread ${newTitle}. Ready for developer directives!` }
+                          ]
+                        };
+                        const updated = [freshSess, ...chatSessions];
+                        setChatSessions(updated);
+                        localStorage.setItem('aether_chat_sessions', JSON.stringify(updated));
+                        setCurrentSessionId(newId);
+                        addSystemLog(`SYNC: Created fresh conversational thread: "${newTitle}"`);
+                      }}
+                      className="p-1 rounded bg-[#fbbf24]/20 hover:bg-[#fbbf24]/35 text-yellow-400 border border-yellow-500/25 transition-all text-[9.5px] font-semibold cursor-pointer flex items-center gap-0.5 shrink-0"
+                      title="Start New Thread"
+                    >
+                      <Plus size={10} />
+                    </button>
+                  </div>
 
                 {/* Brainstorm Mode Toggle Button */}
                 <button
@@ -3608,6 +4027,93 @@ export function WhatsAppCompanion() {
                   <Brain size={11} className={isBrainstormMode ? "animate-bounce" : ""} />
                   <span>{isBrainstormMode ? 'BRAINSTORM ON' : 'BRAINSTORM'}</span>
                 </button>
+              </div>
+
+              {/* AETHER CONVERSATIONAL NOTE COLLECTION PANEL */}
+              <div className="bg-gradient-to-r from-amber-950/45 via-yellow-950/15 to-amber-950/45 border-b border-yellow-500/20 px-3.5 py-2 flex flex-col gap-1.5 animate-fadeIn font-sans select-none shrink-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500" />
+                    </span>
+                    <span className="text-[10px] text-yellow-500 font-mono font-bold tracking-tight uppercase">
+                      Obsidian Convo Session Logging
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      disabled={sessionNotesCount === 0 || isFinishingConv}
+                      onClick={handleFinishAndCategorize}
+                      className={`px-2 py-1 text-[9px] font-extrabold rounded uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 ${
+                        sessionNotesCount > 0 
+                          ? 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black shadow-[0_0_12px_rgba(245,158,11,0.55)]' 
+                          : 'bg-zinc-850 text-zinc-500 cursor-not-allowed border border-zinc-700/55'
+                      }`}
+                    >
+                      {isFinishingConv ? (
+                        <>
+                          <span className="w-1.5 h-1.5 border-t border-r border-black rounded-full animate-spin truncate" />
+                          <span>Distributing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Finish & Auto-Sort Notes 🏁</span>
+                        </>
+                      )}
+                    </button>
+                    {sessionNotesCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm("Reset current conversation logs and discard temporary notes?")) {
+                            await fetch('/api/whatsapp/clear-session', { method: 'POST' });
+                            setSessionNotesCount(0);
+                            setSessionNotes([]);
+                            setPendingNote(null);
+                            addSystemLog("SYNC: Discarded active conversational note memory.");
+                          }
+                        }}
+                        className="p-1 rounded bg-zinc-800 hover:bg-red-950/40 text-red-400 hover:text-red-300 border border-zinc-700 transition leading-none text-[10px]"
+                        title="Clear Temporary Dialogues"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Subtitle details */}
+                <div className="text-[10px] text-zinc-400 leading-tight">
+                  {sessionNotesCount > 0 ? (
+                    <div className="space-y-1">
+                      <p>
+                        Captured <strong className="text-yellow-400 font-bold">{sessionNotesCount} raw points</strong>.
+                        They will be automatically pushed into Issues backlog, notebooks, and mindmaps.
+                      </p>
+                      {/* Show chips of notes */}
+                      <div className="flex flex-wrap gap-1 max-h-[44px] overflow-y-auto pt-0.5">
+                        {sessionNotes.map((note, idx) => (
+                          <span key={idx} className="bg-amber-950/60 border border-yellow-500/15 text-[9px] text-yellow-300 px-1.5 py-0.5 rounded-md max-w-[125px] truncate" title={note}>
+                            • {note}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="italic text-zinc-500">
+                      Gathering architectural logs. Dictate tasks or tell Aether to "note down this problem..." to populate the ledger.
+                    </p>
+                  )}
+                  {pendingNote && (
+                    <div className="mt-1.5 bg-yellow-500/10 border border-dashed border-yellow-500/25 p-1 rounded text-[9.5px] text-yellow-300 animate-pulse flex items-center justify-between">
+                      <span>
+                        🤔 Prompt: Save note on <strong>"{pendingNote}"</strong>? say "yes" / "no"
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Dynamic Brainstorming Banner Overlay */}
@@ -3690,7 +4196,7 @@ export function WhatsAppCompanion() {
               )}
 
               {/* Vocal Assistant Bar & HUD */}
-              <div className="flex flex-col bg-[#182229] border-b border-zinc-900/60 select-none shrink-0 font-sans" id="vocal-assistant-hud">
+              <div className="flex flex-col bg-[#1c1c21] border-b border-zinc-900/60 select-none shrink-0 font-sans" id="vocal-assistant-hud">
                 <div className="px-3.5 py-2.5 flex items-center justify-between text-xs text-zinc-400 border-b border-zinc-900/30">
                   <div className="flex items-center gap-2 animate-fadeIn">
                     <div className={`w-2.5 h-2.5 rounded-full ${isTalkModeActive ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-zinc-600'}`} />
@@ -3715,7 +4221,7 @@ export function WhatsAppCompanion() {
                     }}
                     className={`px-3 py-1 text-[9px] font-extrabold tracking-widest uppercase rounded-full cursor-pointer transition-all duration-150 border ${
                       isTalkModeActive 
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-450 font-sans' 
+                        ? 'bg-yellow-500/10 border-yellow-500/30 text-emerald-450 font-sans' 
                         : 'bg-zinc-950 border-zinc-805 text-zinc-500'
                     }`}
                   >
@@ -3724,7 +4230,7 @@ export function WhatsAppCompanion() {
                 </div>
 
                 {isTalkModeActive && (
-                  <div className="bg-[#111b21] p-3 border-b border-zinc-950/60 space-y-2.5 transition-all animate-scaleUp">
+                  <div className="bg-[#0b0b0e] p-3 border-b border-zinc-950/60 space-y-2.5 transition-all animate-scaleUp">
                     {/* Status Display with Waves */}
                     <div className="flex items-center justify-between bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-900/50">
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -3735,8 +4241,8 @@ export function WhatsAppCompanion() {
                           </div>
                         ) : isAetherSpeaking ? (
                           <div className="relative flex items-center justify-center shrink-0">
-                            <span className="absolute inline-flex h-4 w-4 rounded-full bg-emerald-500/50 opacity-75 animate-ping" />
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00a884] animate-pulse" />
+                            <span className="absolute inline-flex h-4 w-4 rounded-full bg-yellow-500/50 opacity-75 animate-ping" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#fbbf24] animate-pulse" />
                           </div>
                         ) : (
                           <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 shrink-0" />
@@ -3802,7 +4308,7 @@ export function WhatsAppCompanion() {
                           className={`flex-1 py-1.5 px-3 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all ${
                             isRecording 
                               ? 'bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 hover:border-amber-550 text-amber-500' 
-                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 hover:border-emerald-500 text-emerald-450'
+                              : 'bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/25 hover:border-yellow-500 text-emerald-450'
                           }`}
                         >
                           {isRecording ? (
@@ -3835,7 +4341,7 @@ export function WhatsAppCompanion() {
                 )}
               </div>
 
-              <div className="flex-grow overflow-y-auto p-4 space-y-3.5 relative bg-[#0b141a]/95 custom-scrollbar cursor-text"
+              <div className="flex-grow overflow-y-auto p-4 space-y-3.5 relative bg-[#050508]/95 custom-scrollbar cursor-text"
                    onClick={() => {
                      if (isAetherSpeaking) {
                        silenceVoice();
@@ -3850,8 +4356,8 @@ export function WhatsAppCompanion() {
               >
                 {/* E2E Announcement Card */}
                 <div className="mx-auto max-w-xs text-center">
-                  <div className="bg-[#182229] border border-zinc-800/40 rounded-xl p-2.5 text-[9px] text-[#8696a0] leading-relaxed font-sans shadow flex items-start gap-1 text-left">
-                    <Lock size={12} className="text-emerald-500/80 shrink-0 mt-0.5" />
+                  <div className="bg-[#1c1c21] border border-zinc-800/40 rounded-xl p-2.5 text-[9px] text-[#8696a0] leading-relaxed font-sans shadow flex items-start gap-1 text-left">
+                    <Lock size={12} className="text-yellow-500/80 shrink-0 mt-0.5" />
                     <span>
                       Persisted session connected. You can audit workspace outputs, trigger action loops, or dispatch speech directives.
                     </span>
@@ -3868,13 +4374,13 @@ export function WhatsAppCompanion() {
                     >
                       <div className={`max-w-[85%] rounded-2xl px-3 py-2 flex flex-col relative shadow-md ${
                         isAether 
-                          ? 'bg-[#202c33] text-zinc-150 rounded-tl-none border-l-2 border-emerald-500/40 pr-8 pb-1.5' 
-                          : 'bg-[#005c4b] text-white rounded-tr-none'
+                          ? 'bg-[#1e1e24] text-zinc-150 rounded-tl-none border-l-2 border-yellow-500/40 pr-8 pb-1.5' 
+                          : 'bg-[#fbbf2422] text-white rounded-tr-none'
                       }`}>
                         {/* Render message block */}
                         {m.type === 'voice' ? (
                           <div className="flex items-center gap-2 py-1 mb-1 border-b border-emerald-950/20">
-                            <Volume2 size={13} className={isAether ? "text-emerald-400" : "text-emerald-300"} />
+                            <Volume2 size={13} className={isAether ? "text-yellow-400" : "text-yellow-300"} />
                             <span className="text-[9px] font-mono tracking-wide italic text-slate-300">
                               [Vocal Command Dispatch]
                             </span>
@@ -3890,7 +4396,7 @@ export function WhatsAppCompanion() {
                           <button
                             type="button"
                             onClick={() => speakResponse(m.text, false)}
-                            className="absolute right-1.5 top-1.5 p-1 text-[#8696a0] hover:text-emerald-400 hover:bg-zinc-800/40 rounded transition-colors cursor-pointer"
+                            className="absolute right-1.5 top-1.5 p-1 text-[#8696a0] hover:text-yellow-400 hover:bg-zinc-800/40 rounded transition-colors cursor-pointer"
                             title="Speak response out loud"
                           >
                             <Volume2 size={12} />
@@ -3904,7 +4410,7 @@ export function WhatsAppCompanion() {
                             <span>
                               {m.status === 'sent' && <Check size={11} />}
                               {m.status === 'delivered' && <CheckCheck size={11} />}
-                              {m.status === 'read' && <CheckCheck size={11} className="text-emerald-400" />}
+                              {m.status === 'read' && <CheckCheck size={11} className="text-yellow-400" />}
                             </span>
                           )}
                         </div>
@@ -3915,8 +4421,8 @@ export function WhatsAppCompanion() {
 
                 {isSending && (
                   <div className="flex justify-start">
-                    <div className="bg-[#202c33] text-zinc-400 rounded-2xl rounded-tl-none px-3.5 py-2.5 shadow-sm text-[10px] font-mono flex items-center gap-2">
-                      <Loader2 size={12} className="animate-spin text-emerald-400" />
+                    <div className="bg-[#1e1e24] text-zinc-400 rounded-2xl rounded-tl-none px-3.5 py-2.5 shadow-sm text-[10px] font-mono flex items-center gap-2">
+                      <Loader2 size={12} className="animate-spin text-yellow-400" />
                       <span>Aether is compiling response...</span>
                     </div>
                   </div>
@@ -3927,9 +4433,9 @@ export function WhatsAppCompanion() {
 
               {/* Aether Speaking overlay bar */}
               {isAetherSpeaking && (
-                <div className="bg-[#132d29] px-4 py-2.5 flex items-center justify-between text-xs font-sans text-emerald-400 border-t border-emerald-500/25 shrink-0 animate-fadeIn">
+                <div className="bg-[#132d29] px-4 py-2.5 flex items-center justify-between text-xs font-sans text-yellow-400 border-t border-yellow-500/25 shrink-0 animate-fadeIn">
                   <div className="flex items-center gap-2">
-                    <Volume2 size={13} className="text-emerald-400 animate-bounce" />
+                    <Volume2 size={13} className="text-yellow-400 animate-bounce" />
                     <span className="text-[10px] font-mono font-black tracking-widest uppercase">Aether Voicing Response...</span>
                     {/* Animated visual wave */}
                     <div className="flex gap-0.5 items-center h-2.5">
@@ -3953,7 +4459,7 @@ export function WhatsAppCompanion() {
 
               {/* Recording overlay bar */}
               {isRecording && (
-                <div className="bg-[#1f2c34] px-4 py-3 flex items-center justify-between text-xs font-mono text-red-400 border-t border-red-500/20 shrink-0">
+                <div className="bg-[#16161a] px-4 py-3 flex items-center justify-between text-xs font-mono text-red-400 border-t border-red-500/20 shrink-0">
                   <div className="flex items-center gap-2 animate-pulse">
                     <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
                     <span>AETHER VOICE DIRECTIVE: SPEAK FREELY NOW</span>
@@ -3973,9 +4479,9 @@ export function WhatsAppCompanion() {
 
               {/* Floating Slash Autocomplete Menu */}
               {showSlashMenu && customSkills.filter(s => s.trigger.toLowerCase().startsWith(inputText.slice(1).toLowerCase())).length > 0 && (
-                <div className="mx-3.5 mb-2 bg-[#1f2c34] border border-[#00a884]/40 rounded-xl shadow-2xl p-2.5 z-30 max-h-[160px] overflow-y-auto custom-scrollbar space-y-1 animate-fadeIn">
+                <div className="mx-3.5 mb-2 bg-[#16161a] border border-[#fbbf24]/40 rounded-xl shadow-2xl p-2.5 z-30 max-h-[160px] overflow-y-auto custom-scrollbar space-y-1 animate-fadeIn">
                   <div className="flex items-center justify-between px-2 py-1 border-b border-zinc-800 pb-1.5">
-                    <span className="text-[9px] font-mono text-emerald-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
+                    <span className="text-[9px] font-mono text-yellow-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
                       <Command size={10} /> Active AI Skills Custom Set
                     </span>
                     <span className="text-[8px] text-zinc-500 font-mono">Press trigger to apply</span>
@@ -3992,10 +4498,10 @@ export function WhatsAppCompanion() {
                             setShowSlashMenu(false);
                             addSystemLog(`SKILLS: Selected trigger skill command: "/${skill.trigger}"`);
                           }}
-                          className="w-full text-left px-2 py-1.5 hover:bg-[#2a3942] rounded-lg transition-colors flex items-center justify-between gap-4 group cursor-pointer"
+                          className="w-full text-left px-2 py-1.5 hover:bg-[#27272a] rounded-lg transition-colors flex items-center justify-between gap-4 group cursor-pointer"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-white font-mono bg-emerald-500/10 group-hover:bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded">
+                            <span className="text-[10px] font-bold text-white font-mono bg-yellow-500/10 group-hover:bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">
                               /{skill.trigger}
                             </span>
                             <span className="text-[10px] text-zinc-350 font-sans truncate pr-2 max-w-[200px] block">
@@ -4022,9 +4528,9 @@ export function WhatsAppCompanion() {
                       audioFileInputRef.current?.click();
                       setShowAttachmentMenu(false);
                     }}
-                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#182229] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#1c1c21] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
                   >
-                    <Volume2 size={13} className="text-emerald-400 shrink-0" />
+                    <Volume2 size={13} className="text-yellow-400 shrink-0" />
                     <div className="flex flex-col min-w-0">
                       <span className="font-bold text-[11px] leading-tight text-white font-sans">Upload Voice Memo</span>
                       <span className="text-[8.5px] text-[#8696a0] truncate font-mono">Transcribe .mp3, .wav, .m4a</span>
@@ -4037,7 +4543,7 @@ export function WhatsAppCompanion() {
                       handleSendMessage("📋 Fast Audit Check: Check metadata setup and asset links", false);
                       setShowAttachmentMenu(false);
                     }}
-                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#182229] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#1c1c21] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
                   >
                     <CheckCircle2 size={13} className="text-emerald-450 shrink-0" />
                     <div className="flex flex-col min-w-0">
@@ -4052,7 +4558,7 @@ export function WhatsAppCompanion() {
                       runDiagnosticCheck();
                       setShowAttachmentMenu(false);
                     }}
-                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#182229] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-[#1c1c21] hover:text-white rounded transition-colors text-left text-xs cursor-pointer bg-transparent border-none w-full"
                   >
                     <Activity size={13} className="text-emerald-450 shrink-0" />
                     <div className="flex flex-col min-w-0">
@@ -4065,14 +4571,14 @@ export function WhatsAppCompanion() {
 
               {/* Dynamic Transcription Progress Overlay Card */}
               {isTranscribingFile && (
-                <div className="absolute inset-0 bg-[#0b141ac0] backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-fadeIn">
-                  <div className="w-full max-w-sm bg-[#1f2c34] border border-emerald-500/30 rounded-2xl p-5 shadow-[0_15px_40px_rgba(0,0,0,0.8)] flex flex-col space-y-4">
+                <div className="absolute inset-0 bg-[#050508c0] backdrop-blur-[2px] flex items-center justify-center p-4 z-50 animate-fadeIn">
+                  <div className="w-full max-w-sm bg-[#16161a] border border-yellow-500/30 rounded-2xl p-5 shadow-[0_15px_40px_rgba(0,0,0,0.8)] flex flex-col space-y-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                        <Loader2 className="text-emerald-400 animate-spin" size={20} />
+                      <div className="w-10 h-10 rounded-full bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center shrink-0">
+                        <Loader2 className="text-yellow-400 animate-spin" size={20} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="block text-[8.5px] font-mono tracking-widest text-[#00a884] uppercase font-black">AI Speech Processing Gateway</span>
+                        <span className="block text-[8.5px] font-mono tracking-widest text-[#fbbf24] uppercase font-black">AI Speech Processing Gateway</span>
                         <h4 className="text-xs font-bold text-zinc-100 truncate pr-1" title={transcriptionFileName}>
                           {transcriptionFileName || "Allocating audio stream..."}
                         </h4>
@@ -4084,21 +4590,21 @@ export function WhatsAppCompanion() {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-[10px] font-mono text-zinc-400">
                         <span>Acoustic Sync Indexing</span>
-                        <span className="font-bold text-emerald-400">{transcriptionProgress}%</span>
+                        <span className="font-bold text-yellow-400">{transcriptionProgress}%</span>
                       </div>
-                      <div className="w-full bg-[#111b21] h-2 rounded-full overflow-hidden border border-zinc-900/40 p-[1px]">
+                      <div className="w-full bg-[#0b0b0e] h-2 rounded-full overflow-hidden border border-zinc-900/40 p-[1px]">
                         <div 
-                          className="bg-[#00a884] h-full rounded-full transition-all duration-300"
+                          className="bg-[#fbbf24] h-full rounded-full transition-all duration-300"
                           style={{ width: `${transcriptionProgress}%` }}
                         />
                       </div>
                     </div>
 
                     {/* Progressive Logs Terminal Display */}
-                    <div className="bg-[#111b21] border border-zinc-800 rounded-xl p-3.5 space-y-1.5 h-[125px] overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed text-zinc-400">
+                    <div className="bg-[#0b0b0e] border border-zinc-800 rounded-xl p-3.5 space-y-1.5 h-[125px] overflow-y-auto custom-scrollbar font-mono text-[9px] leading-relaxed text-zinc-400">
                       {transcriptionLogs.map((log, idx) => (
                         <div key={idx} className="flex gap-2 items-start animate-fadeIn">
-                          <span className="text-emerald-500/70 shrink-0 font-bold">✓</span>
+                          <span className="text-yellow-500/70 shrink-0 font-bold">✓</span>
                           <span className="break-all">{log}</span>
                         </div>
                       ))}
@@ -4113,7 +4619,7 @@ export function WhatsAppCompanion() {
               )}
 
               {/* Authentic WhatsApp Input Bottom Section */}
-              <div className="bg-[#1f2c34] px-3 py-2 flex items-center gap-2 border-t border-zinc-900/30 shrink-0 relative">
+              <div className="bg-[#16161a] px-3 py-2 flex items-center gap-2 border-t border-zinc-900/30 shrink-0 relative">
                 {/* Hidden Audio File Input picker */}
                 <input
                   type="file"
@@ -4126,12 +4632,12 @@ export function WhatsAppCompanion() {
                 <div className="flex items-center text-[#8696a0] gap-2">
                   <Paperclip 
                     size={20} 
-                    className={`cursor-pointer transition-all duration-150 hover:text-zinc-200 ${showAttachmentMenu ? 'text-emerald-400 rotate-45 scale-110' : ''}`} 
+                    className={`cursor-pointer transition-all duration-150 hover:text-zinc-200 ${showAttachmentMenu ? 'text-yellow-400 rotate-45 scale-110' : ''}`} 
                     onClick={() => setShowAttachmentMenu(!showAttachmentMenu)} 
                   />
                 </div>
 
-                <div className="flex-grow bg-[#2a3942] rounded-xl flex items-center px-3.5 py-1.5 border border-zinc-805">
+                <div className="flex-grow bg-[#27272a] rounded-xl flex items-center px-3.5 py-1.5 border border-zinc-805">
                   <input
                     type="text"
                     value={inputText}
@@ -4149,19 +4655,34 @@ export function WhatsAppCompanion() {
                         handleSendMessage(inputText);
                       }
                     }}
-                    disabled={isSending || isRecording}
-                    placeholder={isRecording ? "Listening..." : "Type command... (e.g. '/' for skills)"}
+                    disabled={isSending}
+                    placeholder={isRecording ? "Listening & Transcribing..." : "Type command... (e.g. '/' for skills)"}
                     className="w-full bg-transparent text-xs text-zinc-100 placeholder-[#8696a0] outline-none border-none py-1 h-auto"
                   />
                 </div>
 
                 {/* Send or Voice Record Action Button */}
-                {inputText.trim() ? (
+                {isRecording ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopSpeechDictation();
+                      stopVoiceRecording();
+                      if (inputText.trim()) {
+                        handleSendMessage(inputText, true);
+                      }
+                    }}
+                    className="w-9 h-9 flex items-center justify-center bg-rose-650 hover:bg-rose-600 text-white rounded-full cursor-pointer shrink-0 shadow-lg scale-110 animate-pulse"
+                    title="Stop & Send Voice Directive"
+                  >
+                    <Mic size={15} className="animate-bounce" />
+                  </button>
+                ) : inputText.trim() ? (
                   <button
                     type="button"
                     onClick={() => handleSendMessage(inputText)}
                     disabled={isSending}
-                    className="w-9 h-9 flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-full cursor-pointer shrink-0 shadow transition-colors"
+                    className="w-9 h-9 flex items-center justify-center bg-amber-600 hover:bg-yellow-500 active:bg-amber-700 text-white rounded-full cursor-pointer shrink-0 shadow transition-colors"
                   >
                     <Send size={15} />
                   </button>
@@ -4169,64 +4690,74 @@ export function WhatsAppCompanion() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (isRecording) {
-                        stopSpeechDictation();
-                        stopVoiceRecording();
-                      } else {
-                        startSpeechDictation();
-                      }
+                      startSpeechDictation();
                     }}
                     disabled={isSending}
-                    className={`w-9 h-9 flex items-center justify-center rounded-full cursor-pointer shrink-0 shadow transition-all ${
-                      isRecording 
-                        ? 'bg-rose-650 text-white scale-110 shadow-lg' 
-                        : 'bg-[#2a3942] text-zinc-300 hover:bg-[#34414b]'
-                    }`}
+                    className="w-9 h-9 flex items-center justify-center rounded-full bg-[#27272a] text-zinc-300 hover:bg-[#34414b] cursor-pointer shrink-0 shadow transition-all"
                   >
                     <Mic size={15} />
                   </button>
                 )}
               </div>
             </div>
-          )}
+          )
+        )}
 
           {/* TAB 2: Dynamic System & Workspace Control Dashboard */}
           {activeTab === 'dashboard' && (
-            <div ref={dashboardContainerRef} className="flex-1 overflow-y-auto p-4 space-y-5 bg-[#0b141a] custom-scrollbar">
+            <div ref={dashboardContainerRef} className="flex-1 overflow-y-auto p-4 space-y-5 bg-[#050508] custom-scrollbar">
               
               {/* Stat HUD Display Grid */}
               <div className="grid grid-cols-2 gap-3.5">
-                <div className="bg-[#152026] border border-zinc-800/80 rounded-xl p-3 space-y-1 relative overflow-hidden">
-                  <div className="absolute right-2 top-2 bg-emerald-500/10 text-emerald-400 p-1 rounded-lg">
-                    <Gauge size={14} />
+                <div className="bg-[#152026] border border-zinc-805 rounded-xl p-3 space-y-1 relative overflow-hidden">
+                  <div className="absolute right-2 top-2 bg-yellow-500/10 text-emerald-450 p-1 rounded-lg">
+                    <Layers size={13} />
                   </div>
-                  <span className="text-[10px] text-zinc-450 uppercase font-bold tracking-wider block">Diagnostics</span>
+                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">Workspaces</span>
                   <div className="flex items-baseline gap-1.5 pt-0.5">
-                    <span className="text-sm font-bold text-emerald-400">98.5%</span>
-                    <span className="text-[8px] text-zinc-550 font-mono">OPTIMAL</span>
-                  </div>
-                  <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full w-[98.5%]" />
+                    <span className="text-sm font-bold text-yellow-400">{projects.length}</span>
+                    <span className="text-[8px] text-zinc-500 font-mono">ACTIVE</span>
                   </div>
                 </div>
 
-                <div className="bg-[#152026] border border-zinc-800/80 rounded-xl p-3 space-y-1 relative overflow-hidden">
-                  <div className="absolute right-2 top-2 bg-emerald-500/10 text-emerald-400 p-1 rounded-lg">
-                    <Clock size={14} />
+                <div className="bg-[#152026] border border-zinc-805 rounded-xl p-3 space-y-1 relative overflow-hidden">
+                  <div className="absolute right-2 top-2 bg-yellow-500/10 text-emerald-455 p-1 rounded-lg">
+                    <CheckSquare size={13} />
                   </div>
-                  <span className="text-[10px] text-zinc-455 uppercase font-bold tracking-wider block">Port Channel</span>
+                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">Global Backlog</span>
                   <div className="flex items-baseline gap-1.5 pt-0.5">
-                    <span className="text-sm font-bold text-emerald-400">Port 3000</span>
-                    <span className="text-[8px] text-zinc-550 font-mono">PROXY_LIVE</span>
+                    <span className="text-sm font-bold text-yellow-400">{issues.length}</span>
+                    <span className="text-[8px] text-zinc-500 font-mono">ISSUES</span>
                   </div>
-                  <div className="text-[8px] text-zinc-500 font-mono leading-none truncate">HOST: 0.0.0.0 (Cloud Run)</div>
+                </div>
+
+                <div className="bg-[#152026] border border-zinc-805 rounded-xl p-3 space-y-1 relative overflow-hidden">
+                  <div className="absolute right-2 top-2 bg-yellow-500/10 text-emerald-455 p-1 rounded-lg">
+                    <FileText size={13} />
+                  </div>
+                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">Obsidian Brain</span>
+                  <div className="flex items-baseline gap-1.5 pt-0.5">
+                    <span className="text-sm font-bold text-yellow-400">{notes.length}</span>
+                    <span className="text-[8px] text-zinc-500 font-mono font-sans">MD NODES</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#152026] border border-zinc-805 rounded-xl p-3 space-y-1 relative overflow-hidden">
+                  <div className="absolute right-2 top-2 bg-yellow-500/10 text-emerald-455 p-1 rounded-lg">
+                    <Mic size={13} />
+                  </div>
+                  <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">Interactive Logs</span>
+                  <div className="flex items-baseline gap-1.5 pt-0.5">
+                    <span className="text-sm font-bold text-yellow-400">{voiceQueue?.length || 0}</span>
+                    <span className="text-[8px] text-zinc-500 font-mono">VOICE</span>
+                  </div>
                 </div>
               </div>
 
               {/* Connection Card Badge */}
-              <div className="bg-[#152026]/85 border border-[#202c33] rounded-xl p-3.5 space-y-2 flex items-center justify-between">
+              <div className="bg-[#152026]/85 border border-[#1e1e24] rounded-xl p-3.5 space-y-2 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl text-emerald-450 flex items-center justify-center">
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 p-2 rounded-xl text-emerald-450 flex items-center justify-center">
                     <Smartphone size={18} />
                   </div>
                   <div>
@@ -4234,19 +4765,19 @@ export function WhatsAppCompanion() {
                     <span className="text-xs font-bold text-white font-mono leading-relaxed">{phoneNumber || "Simulator Link"}</span>
                   </div>
                 </div>
-                <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[8.5px] font-mono text-emerald-450 uppercase font-black tracking-wide">
+                <span className="px-2 py-0.5 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-[8.5px] font-mono text-emerald-450 uppercase font-black tracking-wide">
                   SECURE
                 </span>
               </div>
 
               {/* COMPANION NAVIGATION SEGMENT BAR */}
-              <div className="flex bg-[#111b21] p-1 rounded-xl border border-[#202c33] overflow-x-auto scrollbar-none flex-nowrap w-full">
+              <div className="flex bg-[#0b0b0e] p-1 rounded-xl border border-[#1e1e24] overflow-x-auto scrollbar-none flex-nowrap w-full">
                 <button
                   type="button"
                   onClick={() => setSubTab('controls')}
                   className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
                     subTab === 'controls' 
-                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      ? 'bg-[#1e1e24] text-yellow-400 border border-yellow-500/15' 
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -4257,7 +4788,7 @@ export function WhatsAppCompanion() {
                   onClick={() => setSubTab('projects')}
                   className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
                     subTab === 'projects' 
-                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      ? 'bg-[#1e1e24] text-yellow-400 border border-yellow-500/15' 
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -4268,7 +4799,7 @@ export function WhatsAppCompanion() {
                   onClick={() => setSubTab('backlog')}
                   className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
                     subTab === 'backlog' 
-                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      ? 'bg-[#1e1e24] text-yellow-400 border border-yellow-500/15' 
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -4279,7 +4810,7 @@ export function WhatsAppCompanion() {
                   onClick={() => setSubTab('obsidian')}
                   className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
                     subTab === 'obsidian' 
-                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      ? 'bg-[#1e1e24] text-yellow-400 border border-yellow-500/15' 
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -4290,7 +4821,7 @@ export function WhatsAppCompanion() {
                   onClick={() => setSubTab('github')}
                   className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
                     subTab === 'github' 
-                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      ? 'bg-[#1e1e24] text-yellow-400 border border-yellow-500/15' 
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -4301,7 +4832,7 @@ export function WhatsAppCompanion() {
                   onClick={() => setSubTab('email')}
                   className={`flex-shrink-0 px-3.5 py-1.5 text-center text-[10.5px] font-extrabold rounded-lg transition-all cursor-pointer ${
                     subTab === 'email' 
-                      ? 'bg-[#202c33] text-emerald-400 border border-emerald-500/15' 
+                      ? 'bg-[#1e1e24] text-yellow-400 border border-yellow-500/15' 
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -4320,7 +4851,7 @@ export function WhatsAppCompanion() {
                       <button 
                         type="button"
                         onClick={() => setSubTab('projects')} 
-                        className="text-[9px] font-sans text-emerald-450 hover:text-emerald-400 font-extrabold uppercase tracking-wide cursor-pointer select-none"
+                        className="text-[9px] font-sans text-emerald-450 hover:text-yellow-400 font-extrabold uppercase tracking-wide cursor-pointer select-none"
                       >
                         Manage All →
                       </button>
@@ -4351,7 +4882,7 @@ export function WhatsAppCompanion() {
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="bg-emerald-500/10 p-1.5 rounded-lg text-emerald-450 group-hover:text-emerald-400 group-hover:bg-emerald-500/15 transition-all">
+                                  <span className="bg-yellow-500/10 p-1.5 rounded-lg text-emerald-450 group-hover:text-yellow-400 group-hover:bg-yellow-500/15 transition-all">
                                     <Layers size={11} />
                                   </span>
                                   <span className="text-[11.5px] font-bold text-white font-sans truncate">{proj.name}</span>
@@ -4391,7 +4922,7 @@ export function WhatsAppCompanion() {
                       <button
                         type="button"
                         onClick={() => setSubTab('backlog')}
-                        className="text-[9px] font-sans text-emerald-450 hover:text-emerald-400 font-extrabold uppercase tracking-wide cursor-pointer select-none"
+                        className="text-[9px] font-sans text-emerald-450 hover:text-yellow-400 font-extrabold uppercase tracking-wide cursor-pointer select-none"
                       >
                         All Tasks →
                       </button>
@@ -4457,7 +4988,7 @@ export function WhatsAppCompanion() {
                       >
                         <div className="flex items-center gap-1.5 text-zinc-200">
                           {systemHealth === 'checking' ? (
-                            <Loader2 size={13} className="text-emerald-400 animate-spin" />
+                            <Loader2 size={13} className="text-yellow-400 animate-spin" />
                           ) : (
                             <CheckCircle2 size={13} className="text-emerald-450" />
                           )}
@@ -4475,7 +5006,7 @@ export function WhatsAppCompanion() {
                       >
                         <div className="flex items-center gap-1.5 text-zinc-200">
                           {isLoadingRecs ? (
-                            <Loader2 size={13} className="text-emerald-400 animate-spin" />
+                            <Loader2 size={13} className="text-yellow-400 animate-spin" />
                           ) : (
                             <Sparkles size={13} className="text-amber-400" />
                           )}
@@ -4492,7 +5023,7 @@ export function WhatsAppCompanion() {
                         className="p-3 bg-zinc-950/45 hover:bg-zinc-900 border border border-zinc-805 hover:border-zinc-700 rounded-xl text-left transition-all duration-150 flex flex-col items-start gap-1 cursor-pointer"
                       >
                         <div className="flex items-center gap-1.5 text-zinc-200">
-                          <Zap size={13} className={speechOptimized ? "text-emerald-400" : "text-zinc-400 animate-pulse"} />
+                          <Zap size={13} className={speechOptimized ? "text-yellow-400" : "text-zinc-400 animate-pulse"} />
                           <span className="text-[10px] font-extrabold uppercase font-sans tracking-tight">Vocal Optimizer</span>
                         </div>
                         <span className="text-[8.5px] text-zinc-500 leading-normal">Reduce recording noise and latency buffers</span>
@@ -4571,7 +5102,7 @@ export function WhatsAppCompanion() {
                         className="p-3 bg-[#152026] hover:bg-[#1f2c33] border border-zinc-800/80 rounded-xl text-left transition-all duration-150 flex flex-col items-start gap-1 cursor-pointer active:scale-95"
                       >
                         <div className="flex items-center gap-1.5 text-zinc-250">
-                          <RefreshCw size={13} className="text-emerald-400" />
+                          <RefreshCw size={13} className="text-yellow-400" />
                           <span className="text-[9px] font-extrabold uppercase font-sans tracking-tight">Preserve State</span>
                         </div>
                         <span className="text-[8.5px] text-zinc-500 leading-normal">Trigger immediate local disk state preservation</span>
@@ -4589,7 +5120,7 @@ export function WhatsAppCompanion() {
                         onClick={() => selectTemplatePrompt("Can you add this new project named Mobile Copilot with React Native?")}
                         className="p-2 text-left bg-zinc-900 border border-zinc-800 hover:bg-[#152026] rounded-xl text-[9.5px] font-sans text-zinc-350 cursor-pointer transition-colors"
                       >
-                        <span className="font-extrabold text-[#00a884] block pb-0.5 font-mono text-[9px]">🚀 ADD PROJECT</span>
+                        <span className="font-extrabold text-[#fbbf24] block pb-0.5 font-mono text-[9px]">🚀 ADD PROJECT</span>
                         "Can you add this new project..."
                       </button>
                       <button
@@ -4597,7 +5128,7 @@ export function WhatsAppCompanion() {
                         onClick={() => selectTemplatePrompt("I have this new idea for this project: integrate offline vector search with SQLite.")}
                         className="p-2 text-left bg-zinc-900 border border-zinc-800 hover:bg-[#152026] rounded-xl text-[9.5px] font-sans text-zinc-350 cursor-pointer transition-colors"
                       >
-                        <span className="font-extrabold text-[#00a884] block pb-0.5 font-mono text-[9px]">💡 NEW IDEA</span>
+                        <span className="font-extrabold text-[#fbbf24] block pb-0.5 font-mono text-[9px]">💡 NEW IDEA</span>
                         "I have this new idea for this project..."
                       </button>
                       <button
@@ -4605,7 +5136,7 @@ export function WhatsAppCompanion() {
                         onClick={() => selectTemplatePrompt("I have this new idea for a new project named Sync Synapse with Kotlin and compose.")}
                         className="p-2 text-left bg-zinc-900 border border-zinc-805 hover:bg-[#152026] rounded-xl text-[9.5px] font-sans text-zinc-350 cursor-pointer transition-colors"
                       >
-                        <span className="font-extrabold text-[#00a884] block pb-0.5 font-mono text-[9px]">✨ NEW WORKSPACE</span>
+                        <span className="font-extrabold text-[#fbbf24] block pb-0.5 font-mono text-[9px]">✨ NEW WORKSPACE</span>
                         "I have this new idea for a new..."
                       </button>
                       <button
@@ -4622,7 +5153,7 @@ export function WhatsAppCompanion() {
                   {/* VOCAL AUDIO & TTS CALIBRATION HUB */}
                   <div className="space-y-2 bg-[#152026]/90 border border-zinc-800 rounded-xl p-3.5 animate-fadeIn">
                     <div className="flex items-center gap-1.5 pb-1 border-b border-zinc-900/60 mb-2">
-                      <Volume2 size={13} className="text-[#00a884]" />
+                      <Volume2 size={13} className="text-[#fbbf24]" />
                       <span className="text-[10px] uppercase font-mono tracking-widest text-zinc-300 font-extrabold block">Aether Voice Calibrator</span>
                     </div>
 
@@ -4697,7 +5228,7 @@ export function WhatsAppCompanion() {
                               setVoiceRate(parseFloat(e.target.value));
                               setVocalsPreset('custom');
                             }}
-                            className="w-full accent-[#00a884] bg-zinc-950 rounded h-1 cursor-pointer"
+                            className="w-full accent-[#fbbf24] bg-zinc-950 rounded h-1 cursor-pointer"
                           />
                         </div>
 
@@ -4716,7 +5247,7 @@ export function WhatsAppCompanion() {
                               setVoicePitch(parseFloat(e.target.value));
                               setVocalsPreset('custom');
                             }}
-                            className="w-full accent-[#00a884] bg-zinc-950 rounded h-1 cursor-pointer"
+                            className="w-full accent-[#fbbf24] bg-zinc-950 rounded h-1 cursor-pointer"
                           />
                         </div>
                       </div>
@@ -4735,10 +5266,10 @@ export function WhatsAppCompanion() {
                   <div className="space-y-2 bg-[#152026]/90 border border-zinc-800 rounded-xl p-3.5">
                     <div className="flex items-center justify-between pb-1 border-b border-zinc-900/60 mb-2">
                       <div className="flex items-center gap-1.5">
-                        <Shield size={13} className="text-[#00a884]" />
+                        <Shield size={13} className="text-[#fbbf24]" />
                         <span className="text-[10px] uppercase font-mono tracking-widest text-zinc-300 font-extrabold block font-sans">24/7 Gateway Sync Station</span>
                       </div>
-                      <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-450 border border-emerald-500/25 px-1.5 py-0.2 rounded font-black uppercase animate-pulse">
+                      <span className="text-[8px] font-mono bg-yellow-500/10 text-emerald-450 border border-yellow-500/25 px-1.5 py-0.2 rounded font-black uppercase animate-pulse">
                         ONLINE 24/7
                       </span>
                     </div>
@@ -4759,7 +5290,7 @@ export function WhatsAppCompanion() {
                         </div>
                         <div className="flex items-center justify-between py-1">
                           <span className="text-zinc-500">COMPANION SHUTDOWN SAFE</span>
-                          <span className="text-[#00a884] font-bold">YES • Safe to turn off desk computer</span>
+                          <span className="text-[#fbbf24] font-bold">YES • Safe to turn off desk computer</span>
                         </div>
                         <div className="flex items-center justify-between py-1">
                           <span className="text-zinc-500">HOST SERVER DIRECTORY</span>
@@ -4771,7 +5302,7 @@ export function WhatsAppCompanion() {
                         <button
                           type="button"
                           onClick={() => selectTemplatePrompt("Hey Aether, can you grill me on our active project architecture or stack choices?")}
-                          className="flex-1 py-2 bg-emerald-600/10 border border-emerald-500/20 hover:bg-emerald-600/20 text-emerald-450 hover:text-emerald-400 font-black rounded-lg text-[9px] uppercase cursor-pointer transition-all"
+                          className="flex-1 py-2 bg-amber-600/10 border border-yellow-500/20 hover:bg-amber-600/20 text-emerald-450 hover:text-yellow-400 font-black rounded-lg text-[9px] uppercase cursor-pointer transition-all"
                         >
                           🔥 Grill Me Mode
                         </button>
@@ -4787,19 +5318,19 @@ export function WhatsAppCompanion() {
                   </div>
 
                   {/* TEACH SKILLS & COMMANDS CUSTOMIZER */}
-                  <div className="space-y-2 bg-[#121c21] border border-[#00a884]/30 rounded-xl p-3.5 mt-3 animate-fadeIn">
-                    <div className="flex items-center justify-between pb-1 border-b border-[#00a884]/20 mb-2">
+                  <div className="space-y-2 bg-[#121c21] border border-[#fbbf24]/30 rounded-xl p-3.5 mt-3 animate-fadeIn">
+                    <div className="flex items-center justify-between pb-1 border-b border-[#fbbf24]/20 mb-2">
                       <div className="flex items-center gap-1.5">
                         <Command size={13} className="text-emerald-450 shrink-0" />
                         <span className="text-[10px] uppercase font-mono tracking-widest text-[#e0e3e5] font-black block font-sans">Skills Training Terminal (Slash Commands)</span>
                       </div>
-                      <span className="text-[8px] font-mono bg-[#00a884]/10 text-emerald-400 border border-[#00a884]/20 px-1.5 py-0.2 rounded font-extrabold uppercase">
+                      <span className="text-[8px] font-mono bg-[#fbbf24]/10 text-yellow-400 border border-[#fbbf24]/20 px-1.5 py-0.2 rounded font-extrabold uppercase">
                         {customSkills.length} ACTIVE
                       </span>
                     </div>
 
                     <p className="text-[9px] text-[#8696a0] leading-tight pb-0.5">
-                      Teach the AI system a specific command. Activate them in chat by typing <strong className="text-white">/</strong> followed by your trigger word (e.g. <strong className="text-[#00a884]">/grill</strong> or <strong className="text-[#00a884]">/cool</strong>).
+                      Teach the AI system a specific command. Activate them in chat by typing <strong className="text-white">/</strong> followed by your trigger word (e.g. <strong className="text-[#fbbf24]">/grill</strong> or <strong className="text-[#fbbf24]">/cool</strong>).
                     </p>
 
                     {/* Skill addition form */}
@@ -4810,14 +5341,14 @@ export function WhatsAppCompanion() {
                           placeholder="trigger (e.g. grill)"
                           value={newSkillTrigger}
                           onChange={(e) => setNewSkillTrigger(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
-                          className="col-span-1 text-[10.5px] bg-zinc-900 border border-zinc-800 rounded p-1 text-emerald-400 font-mono focus:border-emerald-500 outline-none"
+                          className="col-span-1 text-[10.5px] bg-zinc-900 border border-zinc-800 rounded p-1 text-yellow-400 font-mono focus:border-yellow-500 outline-none"
                         />
                         <input
                           type="text"
                           placeholder="Describe skill behavior or instructions..."
                           value={newSkillDesc}
                           onChange={(e) => setNewSkillDesc(e.target.value)}
-                          className="col-span-2 text-[10.5px] bg-zinc-900 border border-zinc-800 rounded p-1 text-white focus:border-emerald-500 outline-none"
+                          className="col-span-2 text-[10.5px] bg-zinc-900 border border-zinc-800 rounded p-1 text-white focus:border-yellow-500 outline-none"
                         />
                       </div>
                       <button
@@ -4837,7 +5368,7 @@ export function WhatsAppCompanion() {
                           setNewSkillDesc('');
                           addSystemLog(`SKILLS: Trained AI with brand new custom command slash skill: "/${newSkillTrigger}"`);
                         }}
-                        className="w-full py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[9.5px] font-bold uppercase transition-all max-w-full cursor-pointer text-center"
+                        className="w-full py-1 bg-amber-600 hover:bg-yellow-500 text-white rounded text-[9.5px] font-bold uppercase transition-all max-w-full cursor-pointer text-center"
                       >
                         Teach Skill & Inject Trigger 🚀
                       </button>
@@ -4848,7 +5379,7 @@ export function WhatsAppCompanion() {
                       {customSkills.map((skill) => (
                         <div key={skill.trigger} className="bg-zinc-900/60 border border-zinc-850 p-2 rounded-lg flex items-start justify-between gap-3 group animate-scaleUp">
                           <div className="min-w-0 flex-1">
-                            <span className="text-[10px] font-bold font-mono text-emerald-450 bg-[#00a884]/10 rounded px-1.5 py-0.2 uppercase">
+                            <span className="text-[10px] font-bold font-mono text-emerald-450 bg-[#fbbf24]/10 rounded px-1.5 py-0.2 uppercase">
                               /{skill.trigger}
                             </span>
                             <span className="text-[10px] font-medium text-zinc-350 block mt-1 leading-relaxed pl-1">
@@ -4876,7 +5407,7 @@ export function WhatsAppCompanion() {
                   {/* GATEWAY PASSCODE & BIOMETRICS LOCK PANEL */}
                   <div className="space-y-2 bg-[#152026]/90 border border-zinc-800 rounded-xl p-3.5 mt-3 animate-fadeIn">
                     <div className="flex items-center gap-1.5 pb-1 border-b border-zinc-900/60 mb-2">
-                      <Lock size={13} className="text-[#00a884]" />
+                      <Lock size={13} className="text-[#fbbf24]" />
                       <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black block">Gateway Security Lock</span>
                     </div>
 
@@ -4888,7 +5419,7 @@ export function WhatsAppCompanion() {
                       <div className="space-y-1.5 bg-zinc-900/50 p-2.5 rounded-lg border border-zinc-850">
                         <div className="flex items-center justify-between text-[9.5px]">
                           <span className="text-zinc-300 font-bold">Require Secure Passcode</span>
-                          <span className={`${passcodePin ? "text-emerald-400 font-bold" : "text-amber-500"} font-mono text-[8.5px] uppercase`}>
+                          <span className={`${passcodePin ? "text-yellow-400 font-bold" : "text-amber-500"} font-mono text-[8.5px] uppercase`}>
                             {passcodePin ? "ENABLED" : "DISABLED"}
                           </span>
                         </div>
@@ -4909,7 +5440,7 @@ export function WhatsAppCompanion() {
                           }}
                           className={`px-3 py-1 text-[8.5px] font-extrabold uppercase rounded-lg border cursor-pointer transition-all ${
                             isBiometricEnabled
-                              ? 'bg-emerald-600/10 border-emerald-500/30 text-emerald-400'
+                              ? 'bg-amber-600/10 border-yellow-500/30 text-yellow-400'
                               : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-300'
                           }`}
                         >
@@ -4941,7 +5472,7 @@ export function WhatsAppCompanion() {
                         <Sparkles size={13} className="text-amber-400 animate-pulse" />
                         <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black">AI DISPATCH & RECOMMENDATIONS</span>
                       </div>
-                      <span className="bg-emerald-500/15 text-[8.5px] font-mono text-emerald-450 px-1.5 py-0.5 rounded border border-emerald-500/10 uppercase tracking-widest font-bold">
+                      <span className="bg-yellow-500/15 text-[8.5px] font-mono text-emerald-450 px-1.5 py-0.5 rounded border border-yellow-500/10 uppercase tracking-widest font-bold">
                         LIVE_SYNC
                       </span>
                     </div>
@@ -4991,7 +5522,7 @@ export function WhatsAppCompanion() {
                             <button
                               type="button"
                               onClick={fetchAiProposals}
-                              className="px-3 py-1 bg-emerald-600/10 hover:bg-[#00a884]/20 text-emerald-450 rounded-lg text-[9px] font-bold border border-[#00a884]/15 cursor-pointer mx-auto block"
+                              className="px-3 py-1 bg-amber-600/10 hover:bg-[#fbbf24]/20 text-emerald-450 rounded-lg text-[9px] font-bold border border-[#fbbf24]/15 cursor-pointer mx-auto block"
                             >
                               Scan Cognitive Cache
                             </button>
@@ -5007,7 +5538,7 @@ export function WhatsAppCompanion() {
                               <div key={rec.id} className="bg-zinc-950/50 border border-zinc-850 p-2.5 rounded-xl space-y-2 text-left">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[8px] uppercase tracking-wider font-bold bg-[#182229] px-1.5 py-0.5 rounded text-[#00a884] border border-emerald-500/10">
+                                    <span className="text-[8px] uppercase tracking-wider font-bold bg-[#1c1c21] px-1.5 py-0.5 rounded text-[#fbbf24] border border-yellow-500/10">
                                       {rec.type}
                                     </span>
                                     <span className="text-[8px] font-mono text-zinc-500 uppercase truncate max-w-[100px]">
@@ -5033,7 +5564,7 @@ export function WhatsAppCompanion() {
                                     <select
                                       value={selectedAgent}
                                       onChange={(e) => handleSelectAgentForRec(rec.id, e.target.value)}
-                                      className="w-full text-[8.5px] bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-zinc-300 outline-none focus:border-emerald-500"
+                                      className="w-full text-[8.5px] bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-zinc-300 outline-none focus:border-yellow-500"
                                     >
                                       {agents.length === 0 ? (
                                         <>
@@ -5083,7 +5614,7 @@ export function WhatsAppCompanion() {
                                       addSystemLog(`AGENTS: Dispatched proposed "${rec.title}" to Agent "${selectedAgent}"! Backlog synced.`);
                                       showToast(`✅ Deployed task assigned to ${selectedAgent}`);
                                     }}
-                                    className="px-2.5 py-1.5 bg-[#00a884] hover:bg-emerald-500 text-zinc-950 font-bold text-[8.5px] rounded-lg tracking-wider uppercase shrink-0 transition-colors shadow cursor-pointer self-end block"
+                                    className="px-2.5 py-1.5 bg-[#fbbf24] hover:bg-yellow-500 text-zinc-950 font-bold text-[8.5px] rounded-lg tracking-wider uppercase shrink-0 transition-colors shadow cursor-pointer self-end block"
                                   >
                                     Deploy ⚡
                                   </button>
@@ -5142,7 +5673,7 @@ export function WhatsAppCompanion() {
                           {allLogs.slice(0, 15).map((entry, index) => (
                             <div key={index} className="text-zinc-400 leading-relaxed break-all border-b border-zinc-900/40 pb-1">
                               <span className="text-cyan-400">[{entry.time}]</span>{' '}
-                              <span className="text-emerald-500">[{entry.projName}]</span>{' '}
+                              <span className="text-yellow-500">[{entry.projName}]</span>{' '}
                               <span className="text-zinc-200">{entry.log}</span>
                             </div>
                           ))}
@@ -5159,7 +5690,7 @@ export function WhatsAppCompanion() {
                         addSystemLog("AGENTS: Initiating full workspace wide parallel dream state sync!");
                         showToast("💤 Multi-threaded Dreaming Sync Ignited!");
                       }}
-                      className="w-full py-1.5 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/35 text-[9px] font-extrabold uppercase font-sans tracking-wide rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1 shadow-sm"
+                      className="w-full py-1.5 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/35 text-[9px] font-extrabold uppercase font-sans tracking-wide rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1 shadow-sm"
                     >
                       Ignite Unified AI Dreaming Scan 🌀
                     </button>
@@ -5214,7 +5745,7 @@ export function WhatsAppCompanion() {
                                   @{idea.projName}
                                 </span>
                                 <span className={`text-[7px] font-mono px-1 py-0.2 rounded uppercase ${
-                                  idea.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15' :
+                                  idea.status === 'approved' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/15' :
                                   idea.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/15' :
                                   'bg-amber-500/10 text-amber-500 border border-amber-500/15'
                                 }`}>
@@ -5257,7 +5788,7 @@ export function WhatsAppCompanion() {
                                       addSystemLog(`CONCEPTION: Approved brainstorm "${idea.text}" and converted into backlog task!`);
                                       showToast("💡 Synapse Idea Approved!");
                                     }}
-                                    className="flex-1 py-1 bg-emerald-600/15 hover:bg-emerald-500 text-emerald-450 hover:text-zinc-950 font-mono text-[8px] font-extrabold uppercase rounded cursor-pointer transition-all border border-emerald-500/10 text-center block"
+                                    className="flex-1 py-1 bg-amber-600/15 hover:bg-yellow-500 text-emerald-450 hover:text-zinc-950 font-mono text-[8px] font-extrabold uppercase rounded cursor-pointer transition-all border border-yellow-500/10 text-center block"
                                   >
                                     Approve & Deploy
                                   </button>
@@ -5294,7 +5825,7 @@ export function WhatsAppCompanion() {
                         <Brain size={14} className="text-emerald-450 animate-pulse" />
                         <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black block">CORTEX SYNAPTIC BRAIN</span>
                       </div>
-                      <span className="px-1.5 py-0.2 text-[8px] font-mono font-bold bg-[#111b21] border border-zinc-800 text-emerald-400 rounded">
+                      <span className="px-1.5 py-0.2 text-[8px] font-mono font-bold bg-[#0b0b0e] border border-zinc-800 text-yellow-400 rounded">
                         ONLINE ({cortexSynapses?.length || 0} Nodes)
                       </span>
                     </div>
@@ -5307,10 +5838,94 @@ export function WhatsAppCompanion() {
                         setSubTab('obsidian');
                         addSystemLog("NAVIGATION: Opened Synaptic Cortex Brain Graph visualization from controls screen.");
                       }}
-                      className="w-full py-2 bg-[#00a884]/15 hover:bg-[#00a884]/25 text-emerald-400 border border-[#00a884]/20 hover:border-[#00a884]/35 font-extrabold text-[10px] rounded-lg uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                      className="w-full py-2 bg-[#fbbf24]/15 hover:bg-[#fbbf24]/25 text-yellow-400 border border-[#fbbf24]/20 hover:border-[#fbbf24]/35 font-extrabold text-[10px] rounded-lg uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-1.5"
                     >
                       Explore Interactive Brain Model <Sparkles size={11} />
                     </button>
+                  </div>
+
+                  {/* CROSS-DEVICE ORCHESTRATION REMOTE CONTROLLER */}
+                  <div className="bg-[#152026] border border-emerald-500/20 p-3.5 rounded-xl space-y-3 text-left shadow-lg animate-fadeIn relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full filter blur-xl pointer-events-none" />
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Smartphone size={14} className="text-emerald-450 animate-pulse" />
+                        <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black block">PC DASHBOARD REAL-TIME CONTROLLER</span>
+                      </div>
+                      <span className="px-1.5 py-0.2 text-[7.5px] font-mono font-bold bg-[#0b0b0e] border border-emerald-500/10 text-emerald-450 rounded animate-pulse">
+                        CROSS_DEV_READY
+                      </span>
+                    </div>
+                    
+                    <p className="text-[10px] font-sans text-zinc-400 leading-normal">
+                      Instantly orchestrate your PC dashboard view, load views, trigger background project creations, or update issue ticket states directly:
+                    </p>
+
+                    {/* Navigation Remote Buttons */}
+                    <div className="space-y-1.5">
+                      <label className="text-[8px] text-zinc-500 uppercase font-mono block">PC Remote Navigation</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => dispatchCommandToPC('navigate_to', { path: '/' })}
+                          className="py-1.5 px-2 bg-zinc-950 hover:bg-[#1f2c33] border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-[9px] font-mono tracking-wide cursor-pointer transition-all text-left flex items-center gap-1.5"
+                        >
+                          <Gauge size={10} className="text-emerald-400" /> Go to PC Home
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dispatchCommandToPC('navigate_to', { path: '/projects' })}
+                          className="py-1.5 px-2 bg-zinc-950 hover:bg-[#1f2c33] border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-[9px] font-mono tracking-wide cursor-pointer transition-all text-left flex items-center gap-1.5"
+                        >
+                          <Layers size={10} className="text-blue-400" /> Go to PC Projects
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dispatchCommandToPC('navigate_to', { path: '/issues' })}
+                          className="py-1.5 px-2 bg-zinc-950 hover:bg-[#1f2c33] border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-[9px] font-mono tracking-wide cursor-pointer transition-all text-left flex items-center gap-1.5"
+                        >
+                          <CheckSquare size={10} className="text-amber-400" /> Go to PC Backlog
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dispatchCommandToPC('navigate_to', { path: '/notes' })}
+                          className="py-1.5 px-2 bg-zinc-950 hover:bg-[#1f2c33] border border-zinc-800 text-zinc-300 hover:text-white rounded-lg text-[9px] font-mono tracking-wide cursor-pointer transition-all text-left flex items-center gap-1.5"
+                        >
+                          <BookOpen size={10} className="text-purple-400" /> Go to PC Obsidian
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Direct Dispatch State Actions */}
+                    <div className="space-y-1.5 pt-1 border-t border-zinc-900/60">
+                      <label className="text-[8px] text-zinc-500 uppercase font-mono block">Direct Workspace Modifiers</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => dispatchCommandToPC('create_project', {
+                            name: `Mobile Quick-Proj #${Math.floor(Math.random() * 900) + 100}`,
+                            description: 'Created remotely from the Mobile Gateway controller interface.',
+                            frameworks: ['React', 'Tailwind', 'TypeScript']
+                          })}
+                          className="py-1.5 px-2 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/30 hover:border-emerald-800/40 text-emerald-400 hover:text-emerald-300 rounded-lg text-[9px] font-mono tracking-wide cursor-pointer transition-all text-left flex items-center gap-1.5"
+                        >
+                          <Plus size={10} /> Boot New Proj
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dispatchCommandToPC('create_issue', {
+                            title: `Mobile Task - ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+                            description: 'Remote back-office ticket queued from companion controller.',
+                            priority: 'High',
+                            type: 'Task'
+                          })}
+                          className="py-1.5 px-2 bg-blue-950/20 hover:bg-blue-950/40 border border-blue-900/30 hover:border-blue-800/40 text-blue-400 hover:text-blue-300 rounded-lg text-[9px] font-mono tracking-wide cursor-pointer transition-all text-left flex items-center gap-1.5"
+                        >
+                          <Plus size={10} /> Queue New Ticket
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                 </div>
@@ -5332,7 +5947,7 @@ export function WhatsAppCompanion() {
                                 setActiveProjectDetailId(null);
                                 addSystemLog(`NAVIGATION: Returned to projects portfolio portal`);
                               }}
-                              className="flex items-center gap-1 text-[9.5px] font-extrabold text-[#00a884] hover:text-emerald-400 uppercase tracking-wider font-mono bg-zinc-950/40 px-2.5 py-1 rounded border border-zinc-800 cursor-pointer transition-colors"
+                              className="flex items-center gap-1 text-[9.5px] font-extrabold text-[#fbbf24] hover:text-yellow-400 uppercase tracking-wider font-mono bg-zinc-950/40 px-2.5 py-1 rounded border border-zinc-800 cursor-pointer transition-colors"
                             >
                               <ArrowLeft size={10} /> Back to Portfolio
                             </button>
@@ -5342,7 +5957,7 @@ export function WhatsAppCompanion() {
                                 <h3 className="text-sm font-black text-white font-sans leading-tight truncate">{selectedProj.name}</h3>
                                 <p className="text-[8px] font-mono text-zinc-500">ID: {selectedProj.id}</p>
                               </div>
-                              <span className="bg-[#1e2e36] text-[8.5px] font-mono font-bold text-emerald-450 border border-emerald-500/10 px-2 py-0.5 rounded-lg shrink-0">
+                              <span className="bg-[#1e2e36] text-[8.5px] font-mono font-bold text-emerald-450 border border-yellow-500/10 px-2 py-0.5 rounded-lg shrink-0">
                                 {selectedProj.status || 'Active'}
                               </span>
                             </div>
@@ -5362,7 +5977,7 @@ export function WhatsAppCompanion() {
                                   onClick={() => setDetailSubTab(tab)}
                                   className={`text-[8px] font-black py-2 rounded capitalize tracking-tight transition-all cursor-pointer text-center ${
                                     detailSubTab === tab 
-                                      ? 'bg-[#202c33] text-[#00a884] border border-emerald-500/10 shadow-sm' 
+                                      ? 'bg-[#1e1e24] text-[#fbbf24] border border-yellow-500/10 shadow-sm' 
                                       : 'text-zinc-550 hover:text-zinc-350'
                                   }`}
                                 >
@@ -5411,7 +6026,7 @@ export function WhatsAppCompanion() {
                               <div className="bg-[#152026] border border-zinc-850 rounded-xl p-3.5 space-y-2 text-left">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">🔧 PENDING CODE FIXES</span>
-                                  <button onClick={() => setDetailSubTab('fixes')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
+                                  <button onClick={() => setDetailSubTab('fixes')} className="text-[8.5px] font-bold text-[#fbbf24] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
                                 </div>
                                 {(() => {
                                   const pendingBugs = issues.filter((iss: any) => iss.projectId === selectedProj.id && iss.type === 'Bug' && iss.status !== 'Done');
@@ -5432,7 +6047,7 @@ export function WhatsAppCompanion() {
                                               addSystemLog(`BACKLOG: Resolved bug ticket "${b.title}" from summary dashboard.`);
                                               showToast("🎉 Bug Fix Deployed!");
                                             }}
-                                            className="px-2 py-0.5 bg-emerald-950/30 border border-emerald-500/20 text-emerald-400 rounded text-[9px] font-bold font-mono tracking-wider uppercase cursor-pointer"
+                                            className="px-2 py-0.5 bg-emerald-950/30 border border-yellow-500/20 text-yellow-400 rounded text-[9px] font-bold font-mono tracking-wider uppercase cursor-pointer"
                                           >
                                             Resolve Fix
                                           </button>
@@ -5447,7 +6062,7 @@ export function WhatsAppCompanion() {
                               <div className="bg-[#152026] border border-zinc-850 rounded-xl p-3.5 space-y-2 text-left">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">💡 Recommended Actions / ideas</span>
-                                  <button onClick={() => setDetailSubTab('actions')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
+                                  <button onClick={() => setDetailSubTab('actions')} className="text-[8.5px] font-bold text-[#fbbf24] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
                                 </div>
                                 {(() => {
                                   const nonDismissed = (selectedProj.dreamRecommendations || []).filter((r: any) => r.status !== 'dismissed');
@@ -5472,7 +6087,7 @@ export function WhatsAppCompanion() {
                                             addSystemLog(`DIAGNOSTICS: Approved AI recommendation "${rec.title}" on Mobile visual gateway.`);
                                             showToast("👍 Recommendation Approved!");
                                           }}
-                                          className="py-1 bg-emerald-950/30 hover:bg-emerald-900 border border-emerald-500/20 text-emerald-400 font-mono text-[7.5px] font-black uppercase rounded cursor-pointer transition-colors text-center"
+                                          className="py-1 bg-emerald-950/30 hover:bg-emerald-900 border border-yellow-500/20 text-yellow-400 font-mono text-[7.5px] font-black uppercase rounded cursor-pointer transition-colors text-center"
                                         >
                                           Approve 👍
                                         </button>
@@ -5517,10 +6132,10 @@ export function WhatsAppCompanion() {
                               </div>
 
                               {/* MODULE C: APPROVED IDEAS SUMMARY TIMELINE */}
-                              <div className="bg-[#152026] border border-[#00a884]/10 rounded-xl p-3.5 space-y-2 text-left">
+                              <div className="bg-[#152026] border border-[#fbbf24]/10 rounded-xl p-3.5 space-y-2 text-left">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">🚀 Already Approved New Ideas</span>
-                                  <button onClick={() => setDetailSubTab('ideas')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
+                                  <button onClick={() => setDetailSubTab('ideas')} className="text-[8.5px] font-bold text-[#fbbf24] hover:text-[#53bdeb] cursor-pointer">Manage All</button>
                                 </div>
                                 {(() => {
                                   const approved = (selectedProj.brainstormIdeas || []).filter((bi: any) => bi.status === 'approved' || bi.status === 'Approved');
@@ -5533,7 +6148,7 @@ export function WhatsAppCompanion() {
                                         <p className="text-[10px] text-white font-bold truncate">{approved[0].text}</p>
                                         <p className="text-[8.5px] text-emerald-450 font-mono uppercase tracking-wide mt-0.5">Pipeline: Backlog Active</p>
                                       </div>
-                                      <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 rounded px-1 py-0.2">Validated</span>
+                                      <span className="text-[8px] bg-yellow-500/10 text-yellow-400 border border-yellow-500/10 rounded px-1 py-0.2">Validated</span>
                                     </div>
                                   );
                                 })()}
@@ -5543,20 +6158,20 @@ export function WhatsAppCompanion() {
                               <div className="bg-[#152026] border border-zinc-850 rounded-xl p-3.5 space-y-3 text-left">
                                 <div className="flex items-center justify-between border-b border-zinc-900/40 pb-1.5">
                                   <span className="text-[9.5px] font-black text-zinc-300 font-mono tracking-wider uppercase">🎙️ Area for notes & quick memo dictation</span>
-                                  <button onClick={() => setDetailSubTab('notes')} className="text-[8.5px] font-bold text-[#00a884] hover:text-[#53bdeb] cursor-pointer">Open Notes Hub</button>
+                                  <button onClick={() => setDetailSubTab('notes')} className="text-[8.5px] font-bold text-[#fbbf24] hover:text-[#53bdeb] cursor-pointer">Open Notes Hub</button>
                                 </div>
                                 <div className="bg-zinc-950/50 p-2.5 rounded-xl border border-zinc-900 flex flex-col items-center space-y-2 justify-center text-center">
                                   {isProjectNoteRecording ? (
                                     <button type="button" onClick={stopProjectNoteDictation} className="w-10 h-10 rounded-full bg-rose-650 text-white flex items-center justify-center cursor-pointer animate-pulse shadow-md"><Square size={13} /></button>
                                   ) : (
-                                    <button type="button" onClick={startProjectNoteDictation} className="w-10 h-10 rounded-full bg-zinc-900 text-emerald-400 hover:text-emerald-350 border border-zinc-800 flex items-center justify-center cursor-pointer"><Mic size={16} /></button>
+                                    <button type="button" onClick={startProjectNoteDictation} className="w-10 h-10 rounded-full bg-zinc-900 text-yellow-400 hover:text-emerald-350 border border-zinc-800 flex items-center justify-center cursor-pointer"><Mic size={16} /></button>
                                   )}
                                   <textarea
                                     rows={2}
                                     placeholder="Record voice notes or manually log space pipeline updates here..."
                                     value={projectNoteTranscript}
                                     onChange={(e) => setProjectNoteTranscript(e.target.value)}
-                                    className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-[9.5px] outline-none text-zinc-300 focus:border-[#00a884] placeholder-zinc-650 resize-none"
+                                    className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-[9.5px] outline-none text-zinc-300 focus:border-[#fbbf24] placeholder-zinc-650 resize-none"
                                   />
                                   {projectNoteTranscript.trim().length > 0 && (
                                     <button
@@ -5570,7 +6185,7 @@ export function WhatsAppCompanion() {
                                         showToast("Sync note to space!");
                                         setProjectNoteTranscript('');
                                       }}
-                                      className="py-1 bg-[#00a884] text-zinc-950 font-bold text-[9px] uppercase rounded-lg w-full cursor-pointer shadow transition-all hover:bg-emerald-555"
+                                      className="py-1 bg-[#fbbf24] text-zinc-950 font-bold text-[9px] uppercase rounded-lg w-full cursor-pointer shadow transition-all hover:bg-emerald-555"
                                     >
                                       Save Pipeline Memo 💾
                                     </button>
@@ -5589,14 +6204,14 @@ export function WhatsAppCompanion() {
                                   <button
                                     type="button"
                                     onClick={() => setIsExpandingAddIdea(true)}
-                                    className="w-full py-1.5 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-450 border border-[#00a884]/15 hover:border-[#00a884]/30 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
+                                    className="w-full py-1.5 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-emerald-450 border border-[#fbbf24]/15 hover:border-[#fbbf24]/30 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
                                   >
                                     <Plus size={11} /> Propose New Idea Concept
                                   </button>
                                 ) : (
                                   <div className="space-y-2.5">
                                     <div className="flex items-center justify-between pb-1 border-b border-zinc-900/60">
-                                      <span className="text-[9px] uppercase font-bold text-emerald-400 font-mono">NEW IDEA BUILDER</span>
+                                      <span className="text-[9px] uppercase font-bold text-yellow-400 font-mono">NEW IDEA BUILDER</span>
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -5615,7 +6230,7 @@ export function WhatsAppCompanion() {
                                         placeholder="Idea Title (e.g. Add offline caching layer)"
                                         value={newIdeaTitle}
                                         onChange={e => setNewIdeaTitle(e.target.value)}
-                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-600"
+                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-600"
                                       />
                                     </div>
                                     <div className="space-y-1">
@@ -5624,7 +6239,7 @@ export function WhatsAppCompanion() {
                                         value={newIdeaContent}
                                         onChange={e => setNewIdeaContent(e.target.value)}
                                         rows={2}
-                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-600 resize-none"
+                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-600 resize-none"
                                       />
                                     </div>
                                     <button
@@ -5651,7 +6266,7 @@ export function WhatsAppCompanion() {
                                         setNewIdeaContent('');
                                         setIsExpandingAddIdea(false);
                                       }}
-                                      className="w-full py-1.5 bg-[#00a884] hover:bg-emerald-500 text-zinc-950 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer shadow-md transition-all"
+                                      className="w-full py-1.5 bg-[#fbbf24] hover:bg-yellow-500 text-zinc-950 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer shadow-md transition-all"
                                     >
                                       Register Idea Concept 🚀
                                     </button>
@@ -5675,7 +6290,7 @@ export function WhatsAppCompanion() {
                                             {new Date(idea.createdAt).toLocaleDateString()}
                                           </span>
                                           <span className={`text-[7px] font-mono px-1 py-0.2 rounded uppercase border ${
-                                            idea.status === 'approved' ? 'bg-emerald-500/10 text-emerald-455 border-emerald-500/15' :
+                                            idea.status === 'approved' ? 'bg-yellow-500/10 text-emerald-455 border-yellow-500/15' :
                                             idea.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border-rose-500/15' :
                                             'bg-amber-500/10 text-amber-500 border-amber-500/15'
                                           }`}>
@@ -5712,7 +6327,7 @@ export function WhatsAppCompanion() {
                                                 addSystemLog(`PLANNING: Approved concept brainstorm "${idea.text}" and spawned new backlog task.`);
                                                 showToast("✅ Promoted Idea to Core Backlog!");
                                               }}
-                                              className="flex-1 py-1 bg-emerald-600/15 hover:bg-emerald-500 text-emerald-450 hover:text-zinc-950 text-[8px] font-bold uppercase rounded cursor-pointer transition-all border border-[#00a884]/10 text-center block"
+                                              className="flex-1 py-1 bg-amber-600/15 hover:bg-yellow-500 text-emerald-450 hover:text-zinc-950 text-[8px] font-bold uppercase rounded cursor-pointer transition-all border border-[#fbbf24]/10 text-center block"
                                             >
                                               Approve & Deploy ⚡
                                             </button>
@@ -5749,7 +6364,7 @@ export function WhatsAppCompanion() {
                                   <button
                                     type="button"
                                     onClick={() => setIsExpandingDetIssue(true)}
-                                    className="w-full py-1.5 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-450 border border-[#00a884]/15 hover:border-[#00a884]/30 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
+                                    className="w-full py-1.5 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-emerald-450 border border-[#fbbf24]/15 hover:border-[#fbbf24]/30 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
                                   >
                                     <Plus size={11} /> Scaffold Task / Bug Ticket
                                   </button>
@@ -5777,7 +6392,7 @@ export function WhatsAppCompanion() {
                                         placeholder="e.g. Implement webhook listener"
                                         value={detIssueTitle}
                                         onChange={e => setDetIssueTitle(e.target.value)}
-                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#00a884]"
+                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#fbbf24]"
                                       />
                                     </div>
                                     <div className="space-y-0.5">
@@ -5787,7 +6402,7 @@ export function WhatsAppCompanion() {
                                         value={detIssueDesc}
                                         onChange={e => setDetIssueDesc(e.target.value)}
                                         rows={1.5}
-                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#00a884] resize-none"
+                                        className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#fbbf24] resize-none"
                                       />
                                     </div>
                                     <div className="grid grid-cols-2 gap-1.5">
@@ -5796,7 +6411,7 @@ export function WhatsAppCompanion() {
                                         <select
                                           value={detIssueType}
                                           onChange={e => setDetIssueType(e.target.value as any)}
-                                          className="w-full text-[9.5px] bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-white outline-none focus:border-[#00a884]"
+                                          className="w-full text-[9.5px] bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-white outline-none focus:border-[#fbbf24]"
                                         >
                                           <option value="Task">Task 📋</option>
                                           <option value="Bug">Bug 🐛</option>
@@ -5808,7 +6423,7 @@ export function WhatsAppCompanion() {
                                         <select
                                           value={detIssuePriority}
                                           onChange={e => setDetIssuePriority(e.target.value as any)}
-                                          className="w-full text-[9.5px] bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-white outline-none focus:border-[#00a884]"
+                                          className="w-full text-[9.5px] bg-zinc-950 border border-zinc-800 rounded px-1.5 py-1 text-white outline-none focus:border-[#fbbf24]"
                                         >
                                           <option value="Low">Low</option>
                                           <option value="Medium">Medium</option>
@@ -5822,7 +6437,7 @@ export function WhatsAppCompanion() {
                                       <select
                                         value={detIssueAssignee}
                                         onChange={e => setDetIssueAssignee(e.target.value)}
-                                        className="w-full text-[9.5px] bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#00a884]"
+                                        className="w-full text-[9.5px] bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-white outline-none focus:border-[#fbbf24]"
                                       >
                                         <option value="">Unassigned</option>
                                         {agents.map((a: any) => (
@@ -5853,7 +6468,7 @@ export function WhatsAppCompanion() {
                                         setDetIssueAssignee('');
                                         setIsExpandingDetIssue(false);
                                       }}
-                                      className="w-full py-1.5 bg-[#00a884] hover:bg-emerald-500 text-zinc-950 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer transition-all mt-1"
+                                      className="w-full py-1.5 bg-[#fbbf24] hover:bg-yellow-500 text-zinc-950 font-extrabold text-[10px] rounded-lg tracking-wider uppercase cursor-pointer transition-all mt-1"
                                     >
                                       Bootstrap Backlog Task 💥
                                     </button>
@@ -5890,7 +6505,7 @@ export function WhatsAppCompanion() {
                                             </span>
                                           </div>
                                           <span className={`text-[7.5px] font-mono font-bold px-1.5 py-0.2 rounded border ${
-                                            iss.status === 'Done' ? 'bg-emerald-500/10 text-emerald-450 border-emerald-500/15' :
+                                            iss.status === 'Done' ? 'bg-yellow-500/10 text-emerald-450 border-yellow-500/15' :
                                             iss.status === 'In Progress' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/15' :
                                             'bg-zinc-900 text-zinc-500 border border-zinc-800'
                                           }`}>
@@ -5934,7 +6549,7 @@ export function WhatsAppCompanion() {
                                                   addSystemLog(`BACKLOG: Completed active task "${iss.title}" successfully`);
                                                   showToast("✅ Backlog status marked: Done");
                                                 }}
-                                                className="flex-1 py-0.5 bg-emerald-600/15 hover:bg-emerald-505 text-emerald-450 hover:text-zinc-950 font-mono text-[7px] uppercase font-black rounded cursor-pointer border border-emerald-500/10"
+                                                className="flex-1 py-0.5 bg-amber-600/15 hover:bg-yellow-505 text-emerald-450 hover:text-zinc-950 font-mono text-[7px] uppercase font-black rounded cursor-pointer border border-yellow-500/10"
                                               >
                                                 Complete Task
                                               </button>
@@ -5966,7 +6581,7 @@ export function WhatsAppCompanion() {
                               {/* Voice dictating center panel */}
                               <div className="bg-[#152026] border border-zinc-855 rounded-xl p-3.5 space-y-3">
                                 <span className="text-[9.5px] font-mono font-black uppercase text-zinc-300 tracking-wider flex items-center gap-1">
-                                  <Mic size={11} className="text-emerald-400 animate-pulse" /> Speech-to-text pipeline note dictator
+                                  <Mic size={11} className="text-yellow-400 animate-pulse" /> Speech-to-text pipeline note dictator
                                 </span>
                                 <div className="bg-zinc-950/60 border border-zinc-900 rounded-xl p-4 flex flex-col items-center justify-center text-center space-y-2.5">
                                   {isProjectNoteRecording ? (
@@ -5981,7 +6596,7 @@ export function WhatsAppCompanion() {
                                     </div>
                                   ) : (
                                     <div className="flex flex-col items-center space-y-1.5 py-1">
-                                      <button type="button" onClick={startProjectNoteDictation} className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-805 text-emerald-400 hover:text-emerald-355 flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow"><Mic size={20} /></button>
+                                      <button type="button" onClick={startProjectNoteDictation} className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-805 text-yellow-400 hover:text-emerald-355 flex items-center justify-center cursor-pointer transition-all active:scale-95 shadow"><Mic size={20} /></button>
                                       <span className="text-[8.5px] font-mono text-zinc-550 uppercase font-black">TAP KEY TO DICTATE STATUS UPDATE</span>
                                     </div>
                                   )}
@@ -5991,7 +6606,7 @@ export function WhatsAppCompanion() {
                                       value={projectNoteTranscript}
                                       placeholder="Transcribing audio words... You can manually append details or edit results right here before saving note."
                                       onChange={(e) => setProjectNoteTranscript(e.target.value)}
-                                      className="w-full text-xs font-sans bg-zinc-950 border border-zinc-850 p-2 rounded-xl text-zinc-150 outline-none focus:border-[#00a884] placeholder-zinc-655 resize-none"
+                                      className="w-full text-xs font-sans bg-zinc-950 border border-zinc-850 p-2 rounded-xl text-zinc-150 outline-none focus:border-[#fbbf24] placeholder-zinc-655 resize-none"
                                     />
                                     {projectNoteTranscript.trim().length > 0 && (
                                       <button
@@ -6001,7 +6616,7 @@ export function WhatsAppCompanion() {
                                           showToast("📝 Pipeline Memo saved!");
                                           setProjectNoteTranscript('');
                                         }}
-                                        className="py-1 bg-emerald-600 hover:bg-emerald-555 text-white font-black text-[9px] uppercase tracking-wider rounded-lg border border-emerald-550 w-full cursor-pointer text-center block"
+                                        className="py-1 bg-amber-600 hover:bg-emerald-555 text-white font-black text-[9px] uppercase tracking-wider rounded-lg border border-emerald-550 w-full cursor-pointer text-center block"
                                       >
                                         Save Project Note 💾
                                       </button>
@@ -6077,7 +6692,7 @@ export function WhatsAppCompanion() {
                                       return (
                                         <div key={rec.id} className="bg-zinc-950/40 border border-zinc-850 p-2.5 rounded-xl space-y-2 text-left">
                                           <div className="flex items-center justify-between">
-                                            <span className="text-[8px] uppercase tracking-wider font-bold bg-[#182229] px-1.5 py-0.5 rounded text-cyan-450 border border-cyan-500/10">
+                                            <span className="text-[8px] uppercase tracking-wider font-bold bg-[#1c1c21] px-1.5 py-0.5 rounded text-cyan-450 border border-cyan-500/10">
                                               {rec.category || 'Fix'}
                                             </span>
                                             <span className="text-[8px] font-mono text-zinc-500">
@@ -6089,7 +6704,7 @@ export function WhatsAppCompanion() {
                                             <h4 className="text-[10px] font-bold text-white font-sans leading-tight">{rec.title}</h4>
                                             <p className="text-[9px] text-zinc-400 leading-normal font-sans mt-0.5">{rec.description}</p>
                                             {rec.snippet && (
-                                              <pre className="bg-zinc-955 p-1.5 border border-zinc-900/75 rounded mt-1.5 text-[7px] font-mono text-[#00a884] overflow-x-auto max-h-[80px]">
+                                              <pre className="bg-zinc-955 p-1.5 border border-zinc-900/75 rounded mt-1.5 text-[7px] font-mono text-[#fbbf24] overflow-x-auto max-h-[80px]">
                                                 {rec.snippet}
                                               </pre>
                                             )}
@@ -6178,7 +6793,7 @@ export function WhatsAppCompanion() {
                                                   addSystemLog(`DIAGNOSTICS: Approved AI Dream "${rec.title}" to Sandbox on mobile companion.`);
                                                   showToast("👍 Idea Saved to Sandbox!");
                                                 }}
-                                                className="py-1 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-450 font-mono text-[8px] font-bold uppercase rounded cursor-pointer transition-all text-center"
+                                                className="py-1 bg-emerald-950/40 hover:bg-emerald-900/60 border border-yellow-500/30 text-emerald-450 font-mono text-[8px] font-bold uppercase rounded cursor-pointer transition-all text-center"
                                               >
                                                 Yes / Approve 👍
                                               </button>
@@ -6231,7 +6846,7 @@ export function WhatsAppCompanion() {
                             <button
                               type="button"
                               onClick={() => setIsExpandingAddProj(true)}
-                              className="w-full py-2 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-450 border border-[#00a884]/20 hover:border-[#00a884]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
+                              className="w-full py-2 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-emerald-450 border border-[#fbbf24]/20 hover:border-[#fbbf24]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1 transition-all"
                             >
                               <Plus size={14} /> Add Workspace Project
                             </button>
@@ -6255,7 +6870,7 @@ export function WhatsAppCompanion() {
                                   placeholder="e.g. Sync Synapse"
                                   value={newProjName}
                                   onChange={e => setNewProjName(e.target.value)}
-                                  className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-605"
+                                  className="w-full text-xs bg-zinc-950/70 border border-zinc-800 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-605"
                                 />
                               </div>
                               <div className="space-y-1">
@@ -6265,12 +6880,12 @@ export function WhatsAppCompanion() {
                                   value={newProjDesc}
                                   onChange={e => setNewProjDesc(e.target.value)}
                                   rows={2}
-                                  className="w-full text-xs bg-zinc-950/70 border border-[#202c33] rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-605 resize-none"
+                                  className="w-full text-xs bg-zinc-950/70 border border-[#1e1e24] rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-605 resize-none"
                                 />
                               </div>
                               <button
                                 type="submit"
-                                className="w-full py-2 bg-[#00a884] hover:bg-emerald-500 text-zinc-950 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
+                                className="w-full py-2 bg-[#fbbf24] hover:bg-yellow-500 text-zinc-950 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
                               >
                                 Execute Scaffold & Bootstrap
                               </button>
@@ -6289,44 +6904,64 @@ export function WhatsAppCompanion() {
                           ) : (
                             <div className="space-y-2">
                               {projects.map((proj: any) => (
-                                <div 
-                                  key={proj.id} 
-                                  onClick={() => {
-                                    setActiveProjectDetailId(proj.id);
-                                    addSystemLog(`NAVIGATION: Opened details sub-tab dashboard for project "${proj.name}"`);
+                                <SwipeableItem
+                                  key={proj.id}
+                                  onSwipeRight={() => {
+                                    const nextStatus = proj.status === 'Completed' ? 'Active' : 'Completed';
+                                    updateProject(proj.id, { status: nextStatus });
+                                    addSystemLog(`SWIPE: Project "${proj.name}" was marked as ${nextStatus}`);
                                   }}
-                                  className="bg-[#152026] border border-zinc-805 hover:border-[#202c33] p-3 rounded-xl space-y-2 transition-all cursor-pointer hover:bg-[#1f2c33] text-left group"
+                                  onSwipeLeft={() => {
+                                    if (confirm(`Delete project "${proj.name}"? This action cannot be undone.`)) {
+                                      deleteProject(proj.id);
+                                      addSystemLog(`SWIPE: Project "${proj.name}" and references deleted from cache`);
+                                    }
+                                  }}
+                                  leftLabel={proj.status === 'Completed' ? "Activate" : "Complete"}
+                                  leftIcon={<Archive size={14} />}
+                                  leftBgColor={proj.status === 'Completed' ? "bg-amber-600" : "bg-blue-600"}
+                                  rightLabel="Delete"
+                                  rightIcon={<Trash2 size={14} />}
+                                  rightBgColor="bg-rose-600"
                                 >
-                                  <div className="flex items-center gap-2 justify-between">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className="bg-emerald-500/10 p-1.5 rounded-lg text-emerald-450 group-hover:bg-emerald-500/20 transition-all">
-                                        <Layers size={13} />
-                                      </span>
-                                      <div className="min-w-0 flex-1">
-                                        <h4 className="text-[11.5px] font-black text-white truncate font-sans group-hover:text-emerald-455 transition-colors">{proj.name}</h4>
-                                        <p className="text-[9px] text-zinc-500 leading-none font-mono">ID: {proj.id || "proj-temp"}</p>
+                                  <div 
+                                    onClick={() => {
+                                      setActiveProjectDetailId(proj.id);
+                                      addSystemLog(`NAVIGATION: Opened details sub-tab dashboard for project "${proj.name}"`);
+                                    }}
+                                    className="bg-[#152026] border border-zinc-805 hover:border-[#1e1e24] p-3 rounded-xl space-y-2 transition-all cursor-pointer hover:bg-[#1f2c33] text-left group"
+                                  >
+                                    <div className="flex items-center gap-2 justify-between">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="bg-yellow-500/10 p-1.5 rounded-lg text-emerald-450 group-hover:bg-yellow-500/20 transition-all">
+                                          <Layers size={13} />
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                          <h4 className="text-[11.5px] font-black text-white truncate font-sans group-hover:text-emerald-455 transition-colors">{proj.name}</h4>
+                                          <p className="text-[9px] text-zinc-500 leading-none font-mono">ID: {proj.id || "proj-temp"}</p>
+                                        </div>
                                       </div>
+                                      <span className="px-1.5 py-0.2 rounded bg-zinc-950 font-mono text-[8px] text-zinc-400 border border-zinc-800 shrink-0 animation-all">
+                                        {proj.status || 'Active'}
+                                      </span>
                                     </div>
-                                    <span className="px-1.5 py-0.2 rounded bg-zinc-950 font-mono text-[8px] text-zinc-400 border border-zinc-800 shrink-0 animation-all">
-                                      {proj.status || 'Active'}
-                                    </span>
+                                    {proj.description && (
+                                      <p className="text-[10px] text-zinc-400 leading-relaxed font-sans line-clamp-2">{proj.description}</p>
+                                    )}
+                                    <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-900/40">
+                                      {((proj.frameworks as string[]) || ["React"]).slice(0, 2).map((fw, i) => (
+                                        <span key={i} className="text-[8px] font-mono bg-zinc-950 text-zinc-400 px-1.5 py-0.2 rounded border border-zinc-900">
+                                          {fw}
+                                        </span>
+                                      ))}
+                                      {((proj.customStack as string[]) || ["Tailwind", "Vite"]).slice(0, 2).map((st, i) => (
+                                        <span key={i} className="text-[8px] font-mono bg-zinc-950 text-emerald-450 px-1.5 py-0.2 rounded border border-zinc-900">
+                                          {st}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
-                                  {proj.description && (
-                                    <p className="text-[10px] text-zinc-400 leading-relaxed font-sans line-clamp-2">{proj.description}</p>
-                                  )}
-                                  <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-900/40">
-                                    {((proj.frameworks as string[]) || ["React"]).slice(0, 2).map((fw, i) => (
-                                      <span key={i} className="text-[8px] font-mono bg-zinc-950 text-zinc-400 px-1.5 py-0.2 rounded border border-zinc-900">
-                                        {fw}
-                                      </span>
-                                    ))}
-                                    {((proj.customStack as string[]) || ["Tailwind", "Vite"]).slice(0, 2).map((st, i) => (
-                                      <span key={i} className="text-[8px] font-mono bg-zinc-950 text-emerald-450 px-1.5 py-0.2 rounded border border-zinc-900">
-                                        {st}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
+                                </SwipeableItem>
                               ))}
                             </div>
                           )}
@@ -6346,14 +6981,14 @@ export function WhatsAppCompanion() {
                       <button
                         type="button"
                         onClick={() => setIsExpandingAddTask(true)}
-                        className="w-full py-2 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-400 border border-[#00a884]/20 hover:border-[#00a884]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1"
+                        className="w-full py-2 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-yellow-400 border border-[#fbbf24]/20 hover:border-[#fbbf24]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1"
                       >
                         <Plus size={14} /> Claim New Backlog Action
                       </button>
                     ) : (
                       <form onSubmit={handleAddTaskDirectly} className="space-y-3">
                         <div className="flex items-center justify-between pb-1 border-b border-zinc-900">
-                          <span className="text-[10px] uppercase font-bold text-[#00a884] font-mono">BACKLOG_ADD_NODE</span>
+                          <span className="text-[10px] uppercase font-bold text-[#fbbf24] font-mono">BACKLOG_ADD_NODE</span>
                           <button
                             type="button"
                             onClick={() => setIsExpandingAddTask(false)}
@@ -6370,7 +7005,7 @@ export function WhatsAppCompanion() {
                             placeholder="e.g. Hotfix websocket heartbeat timeout limits"
                             value={newIssueTitle}
                             onChange={e => setNewIssueTitle(e.target.value)}
-                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-650"
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-650"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -6417,7 +7052,7 @@ export function WhatsAppCompanion() {
 
                         <button
                           type="submit"
-                          className="w-full py-2 bg-[#00a884] hover:bg-emerald-500 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
+                          className="w-full py-2 bg-[#fbbf24] hover:bg-yellow-500 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
                         >
                           Push to Backlog Stream
                         </button>
@@ -6445,58 +7080,110 @@ export function WhatsAppCompanion() {
                           else if (iss.priority === 'Medium') priorityColor = "bg-blue-950/20 text-blue-450 border border-blue-900/30";
 
                           let statusColor = "bg-zinc-900 text-zinc-400";
-                          if (iss.status === 'Done') statusColor = "bg-emerald-500/10 text-emerald-450 border border-emerald-500/30";
+                          if (iss.status === 'Done') statusColor = "bg-yellow-500/10 text-emerald-450 border border-yellow-500/30";
                           else if (iss.status === 'In Progress') statusColor = "bg-purple-900/10 text-purple-400 border border-purple-800/20";
                           
                           return (
-                            <div key={iss.id} className="bg-[#152026] p-3 rounded-xl border border-zinc-800 space-y-2 hover:border-[#202c33] transition-all">
-                              <div className="flex items-start justify-between gap-1.5">
-                                <span className={`text-[8.5px] font-mono px-2 py-0.5 rounded uppercase shrink-0 font-bold ${
-                                  isBug ? 'bg-rose-500/10 text-rose-400 border border-rose-500/25' : 
-                                  isFeature ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/25' : 'bg-[#1e2a30] text-[#8696a0]'
-                                }`}>
-                                  {iss.type || "Task"}
-                                </span>
-
-                                <div className="flex gap-1">
-                                  <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded ${priorityColor}`}>
-                                    {iss.priority}
+                            <SwipeableItem
+                              key={iss.id}
+                              onSwipeRight={() => {
+                                const nextStatus = iss.status === 'Done' ? 'Todo' : 'Done';
+                                updateIssue(iss.id, { status: nextStatus });
+                                addSystemLog(`SWIPE: Task "${iss.title}" was marked as ${nextStatus}`);
+                              }}
+                              onSwipeLeft={() => {
+                                if (confirm(`Delete task "${iss.title}"?`)) {
+                                  deleteIssue(iss.id);
+                                  addSystemLog(`SWIPE: Task "${iss.title}" was deleted`);
+                                }
+                              }}
+                              leftLabel={iss.status === 'Done' ? "Set Todo" : "Complete"}
+                              leftIcon={<CheckCircle2 size={14} />}
+                              leftBgColor={iss.status === 'Done' ? "bg-amber-600" : "bg-amber-600"}
+                              rightLabel="Delete"
+                              rightIcon={<Trash2 size={14} />}
+                              rightBgColor="bg-rose-600"
+                            >
+                              <div className="bg-[#152026] p-3 rounded-xl border border-zinc-805 space-y-2 hover:border-[#1e1e24] transition-all">
+                                <div className="flex items-start justify-between gap-1.5">
+                                  <span className={`text-[8.5px] font-mono px-2 py-0.5 rounded uppercase shrink-0 font-bold ${
+                                    isBug ? 'bg-rose-500/10 text-rose-400 border border-rose-500/25' : 
+                                    isFeature ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/25' : 'bg-[#1e2a30] text-[#8696a0]'
+                                  }`}>
+                                    {iss.type || "Task"}
                                   </span>
-                                  <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${statusColor}`}>
-                                    {iss.status}
-                                  </span>
-                                </div>
-                              </div>
 
-                              <h4 className="text-[11px] font-bold text-white font-sans leading-relaxed pt-0.5">{iss.title}</h4>
-                              
-                              <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-900/40">
-                                <div className="text-[8.5px] text-zinc-400">
-                                  {iss.assignee ? (
-                                    <span className="text-[#00a884] font-mono font-bold">👤 {iss.assignee}</span>
-                                  ) : (
-                                    <span className="text-zinc-550 italic">Unassigned</span>
-                                  )}
-                                </div>
-
-                                {iss.status !== 'In Progress' && iss.status !== 'Done' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAssignToAether(iss.id, iss.title)}
-                                    className="px-2.5 py-1 bg-[#00a884] hover:bg-emerald-500 hover:text-white rounded text-[10px] text-emerald-100 font-extrabold cursor-pointer select-none transition-colors border border-[#00a884]/35"
-                                  >
-                                    Assign to Aether
-                                  </button>
-                                ) : iss.status === 'In Progress' ? (
-                                  <div className="flex items-center gap-1.5 text-[9.5px] text-emerald-400 font-bold">
-                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                                    <span>AI Working...</span>
+                                  <div className="flex gap-1">
+                                    <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded ${priorityColor}`}>
+                                      {iss.priority}
+                                    </span>
+                                    <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${statusColor}`}>
+                                      {iss.status}
+                                    </span>
                                   </div>
-                                ) : (
-                                  <span className="text-[9.5px] text-[#00a884] font-black">✓ Complete</span>
-                                )}
+                                </div>
+
+                                <h4 className="text-[11px] font-bold text-white font-sans leading-relaxed pt-0.5">{iss.title}</h4>
+                                
+                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-900/40">
+                                  <div className="text-[8.5px] text-zinc-400">
+                                    {iss.assignee ? (
+                                      <span className="text-[#fbbf24] font-mono font-bold">👤 {iss.assignee}</span>
+                                    ) : (
+                                      <span className="text-zinc-550 italic">Unassigned</span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {iss.status !== 'In Progress' && iss.status !== 'Done' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAssignToAether(iss.id, iss.title)}
+                                        className="px-2 py-0.5 bg-[#fbbf24]/25 hover:bg-[#fbbf24]/40 text-yellow-400 rounded text-[9px] font-extrabold cursor-pointer transition-colors border border-[#fbbf24]/30 shrink-0"
+                                      >
+                                        Assign Aether
+                                      </button>
+                                    )}
+
+                                    <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-900 gap-1 select-none shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateIssue(iss.id, { status: 'Todo' })}
+                                        className={`px-1 py-0.5 rounded text-[8px] font-mono hover:text-white transition-colors ${iss.status === 'Todo' ? 'bg-zinc-800 text-zinc-300 font-bold' : 'text-zinc-600'}`}
+                                        title="Set Todo"
+                                      >
+                                        Todo
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateIssue(iss.id, { status: 'In Progress' })}
+                                        className={`px-1 py-0.5 rounded text-[8px] font-mono hover:text-white transition-colors ${iss.status === 'In Progress' ? 'bg-purple-900/40 text-purple-400 font-bold' : 'text-zinc-600'}`}
+                                        title="Set In Progress"
+                                      >
+                                        IP
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateIssue(iss.id, { status: 'Done' })}
+                                        className={`px-1 py-0.5 rounded text-[8px] font-mono hover:text-white transition-colors ${iss.status === 'Done' ? 'bg-emerald-950/40 text-yellow-400 font-bold' : 'text-zinc-600'}`}
+                                        title="Set Done"
+                                      >
+                                        Done
+                                      </button>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => { if (confirm("Delete this backlog task?")) deleteIssue(iss.id); }}
+                                      className="p-1 hover:bg-zinc-900 rounded text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0"
+                                      title="Delete Action"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
+                            </SwipeableItem>
                           );
                         })}
                       </div>
@@ -6510,16 +7197,16 @@ export function WhatsAppCompanion() {
                 <div className="space-y-4 animate-fadeIn text-left">
                   {/* Interactive D3 Brain model block */}
                   <div className="bg-[#152026] border border-zinc-800 rounded-xl overflow-hidden shadow-lg flex flex-col">
-                    <div className="bg-[#202c33] p-3 border-b border-zinc-800/80 flex items-center justify-between">
+                    <div className="bg-[#1e1e24] p-3 border-b border-zinc-800/80 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <Brain size={14} className="text-[#00a884] animate-pulse" />
+                        <Brain size={14} className="text-[#fbbf24] animate-pulse" />
                         <span className="text-[10px] uppercase font-bold text-white font-mono leading-none">Cortex Synapsis D3 Graph</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-[8px] font-mono text-zinc-500 font-bold uppercase">
                           {cortexSynapses?.length || 0} synapses
                         </span>
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
                       </div>
                     </div>
                     
@@ -6541,7 +7228,7 @@ export function WhatsAppCompanion() {
                     </div>
                     
                     <div className="p-2.5 bg-zinc-950/25 text-[9.5px] text-zinc-450 font-mono flex items-center gap-1.5">
-                      <span className="text-[#00a884]">⚙ Mobile Rule Injector:</span>
+                      <span className="text-[#fbbf24]">⚙ Mobile Rule Injector:</span>
                       <span>Click nodes to view connections on the go. Modifies workspace prompt constraints.</span>
                     </div>
                   </div>
@@ -6552,14 +7239,14 @@ export function WhatsAppCompanion() {
                       <button
                         type="button"
                         onClick={() => setIsExpandingAddNote(true)}
-                        className="w-full py-2 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-400 border border-[#00a884]/20 hover:border-[#00a884]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1"
+                        className="w-full py-2 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-yellow-400 border border-[#fbbf24]/20 hover:border-[#fbbf24]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1"
                       >
                         <Plus size={14} /> Log Obsidian Note
                       </button>
                     ) : (
                       <form onSubmit={handleAddNoteDirectly} className="space-y-3">
                         <div className="flex items-center justify-between pb-1 border-b border-zinc-900">
-                          <span className="text-[10px] uppercase font-bold text-[#00a884] font-mono">NEW_OBSIDIAN_MD_NODE</span>
+                          <span className="text-[10px] uppercase font-bold text-[#fbbf24] font-mono">NEW_OBSIDIAN_MD_NODE</span>
                           <button
                             type="button"
                             onClick={() => setIsExpandingAddNote(false)}
@@ -6576,7 +7263,7 @@ export function WhatsAppCompanion() {
                             placeholder="e.g. Cognitive Memory Architecture"
                             value={newNoteTitle}
                             onChange={e => setNewNoteTitle(e.target.value)}
-                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-650"
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-650"
                           />
                         </div>
                         <div className="space-y-1">
@@ -6587,7 +7274,7 @@ export function WhatsAppCompanion() {
                             value={newNoteContent}
                             onChange={e => setNewNoteContent(e.target.value)}
                             rows={3}
-                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-650 resize-none font-mono"
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-650 resize-none font-mono"
                           />
                         </div>
                         <div className="space-y-1">
@@ -6597,7 +7284,7 @@ export function WhatsAppCompanion() {
                             placeholder="e.g. memory, system, core, guidelines"
                             value={newNoteTags}
                             onChange={e => setNewNoteTags(e.target.value)}
-                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-650"
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-650"
                           />
                         </div>
                         <div className="space-y-1">
@@ -6615,7 +7302,7 @@ export function WhatsAppCompanion() {
                         </div>
                         <button
                           type="submit"
-                          className="w-full py-2 bg-[#00a884] hover:bg-emerald-500 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
+                          className="w-full py-2 bg-[#fbbf24] hover:bg-yellow-500 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
                         >
                           Anchor to Semantic Brain
                         </button>
@@ -6630,7 +7317,7 @@ export function WhatsAppCompanion() {
                       placeholder="🔍 Search Obsidian brain indexes..."
                       value={noteSearch}
                       onChange={e => setNoteSearch(e.target.value)}
-                      className="w-full text-xs bg-zinc-950 border border-zinc-850 rounded-xl p-2.5 text-zinc-300 outline-none focus:border-[#00a884] placeholder-zinc-600"
+                      className="w-full text-xs bg-zinc-950 border border-zinc-850 rounded-xl p-2.5 text-zinc-300 outline-none focus:border-[#fbbf24] placeholder-zinc-600"
                     />
                   </div>
 
@@ -6658,10 +7345,10 @@ export function WhatsAppCompanion() {
                             const isExpanded = activeExpandedNoteId === note.id;
                             const proj = projects.find(p => p.id === note.projectId);
                             return (
-                              <div key={note.id} className="bg-[#152026] p-3 rounded-xl border border-zinc-800 space-y-2 hover:border-[#202c33] transition-all">
+                              <div key={note.id} className="bg-[#152026] p-3 rounded-xl border border-zinc-800 space-y-2 hover:border-[#1e1e24] transition-all">
                                 <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => setActiveExpandedNoteId(isExpanded ? null : note.id)}>
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    <BookOpen size={13} className="text-[#00a884] shrink-0" />
+                                    <BookOpen size={13} className="text-[#fbbf24] shrink-0" />
                                     <h4 className="text-[11px] font-extrabold text-white font-sans truncate">{note.title}</h4>
                                   </div>
                                   <span className="text-[8px] font-mono whitespace-nowrap bg-zinc-900 px-1.5 py-0.2 rounded text-zinc-500">
@@ -6682,7 +7369,7 @@ export function WhatsAppCompanion() {
                                 {note.tags && note.tags.length > 0 && (
                                   <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-900/50">
                                     {note.tags.map((tag: string, i: number) => (
-                                      <span key={i} className="text-[7.5px] font-mono bg-zinc-900 font-semibold px-1.5 py-0.2 rounded text-emerald-400 border border-zinc-800">
+                                      <span key={i} className="text-[7.5px] font-mono bg-zinc-900 font-semibold px-1.5 py-0.2 rounded text-yellow-400 border border-zinc-800">
                                         #{tag}
                                       </span>
                                     ))}
@@ -6734,7 +7421,7 @@ export function WhatsAppCompanion() {
                       <button
                         type="button"
                         onClick={() => setIsExpandingAddRepo(true)}
-                        className="w-full py-2 bg-[#00a884]/10 hover:bg-[#00a884]/20 text-emerald-400 border border-[#00a884]/20 hover:border-[#00a884]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1"
+                        className="w-full py-2 bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-yellow-400 border border-[#fbbf24]/20 hover:border-[#fbbf24]/30 font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer flex items-center justify-center gap-1"
                       >
                         <Plus size={14} /> Link GitHub Repository
                       </button>
@@ -6758,7 +7445,7 @@ export function WhatsAppCompanion() {
                             placeholder="e.g. facebook/react-native"
                             value={newRepoPath}
                             onChange={e => setNewRepoPath(e.target.value)}
-                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-650"
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-800/80 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-650"
                           />
                         </div>
                         <div className="space-y-1">
@@ -6776,7 +7463,7 @@ export function WhatsAppCompanion() {
                         </div>
                         <button
                           type="submit"
-                          className="w-full py-2 bg-[#00a884] hover:bg-emerald-500 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
+                          className="w-full py-2 bg-[#fbbf24] hover:bg-yellow-500 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase cursor-pointer shadow-lg transition-all"
                         >
                           Bind Repository Track
                         </button>
@@ -6842,7 +7529,7 @@ export function WhatsAppCompanion() {
                                 <button
                                   type="button"
                                   onClick={() => selectTemplatePrompt(`Aether, inspect the GitHub commits and pull requests for ${repoPath}`)}
-                                  className="text-[9px] text-[#00a884] font-bold hover:underline cursor-pointer"
+                                  className="text-[9px] text-[#fbbf24] font-bold hover:underline cursor-pointer"
                                 >
                                   Audit Sync ↗
                                 </button>
@@ -6864,7 +7551,7 @@ export function WhatsAppCompanion() {
                   <div className="bg-[#152026] border border-zinc-800 p-4 rounded-xl space-y-4 shadow-inner">
                     <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
                       <div className="flex items-center gap-1.5">
-                        <Mail size={14} className="text-[#00a884]" />
+                        <Mail size={14} className="text-[#fbbf24]" />
                         <span className="text-[10.5px] uppercase font-mono tracking-widest text-[#e9edef] font-black">AETHER EMAIL DISPATCH SECURITY</span>
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -6873,20 +7560,20 @@ export function WhatsAppCompanion() {
                           type="checkbox"
                           checked={smtpConfig.useRealSmtp}
                           onChange={(e) => setSmtpConfig({ ...smtpConfig, useRealSmtp: e.target.checked })}
-                          className="w-3.5 h-3.5 rounded border-zinc-805 bg-zinc-950 text-[#00a884] focus:ring-0 cursor-pointer"
+                          className="w-3.5 h-3.5 rounded border-zinc-805 bg-zinc-950 text-[#fbbf24] focus:ring-0 cursor-pointer"
                         />
                       </label>
                     </div>
 
                     {/* Google OAuth Access Gateway */}
                     {!smtpConfig.useRealSmtp && (
-                      <div className="bg-[#111b21] p-3.5 rounded-xl border border-zinc-900 space-y-3">
+                      <div className="bg-[#0b0b0e] p-3.5 rounded-xl border border-zinc-900 space-y-3">
                         {googleToken ? (
                           <div className="flex items-center justify-between gap-3">
                             <div className="space-y-1">
-                              <span className="text-[9.5px] font-mono font-extrabold text-[#00a884] uppercase tracking-wider block">✓ Google Workspace Linked</span>
+                              <span className="text-[9.5px] font-mono font-extrabold text-[#fbbf24] uppercase tracking-wider block">✓ Google Workspace Linked</span>
                               <div className="text-[#e9edef] text-xs font-bold flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
                                 <span>{googleUser?.email || 'Connected Account'}</span>
                               </div>
                               <p className="text-[10px] text-zinc-400">Reports will be securely dispatched directly via official Gmail REST API.</p>
@@ -6936,7 +7623,7 @@ export function WhatsAppCompanion() {
                             placeholder="e.g. drummerforger@gmail.com"
                             value={recipientEmail}
                             onChange={(e) => setRecipientEmail(e.target.value)}
-                            className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884] placeholder-zinc-700 font-mono"
+                            className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] placeholder-zinc-700 font-mono"
                           />
                         </div>
                       </div>
@@ -6954,7 +7641,7 @@ export function WhatsAppCompanion() {
                               placeholder="smtp.gmail.com"
                               value={smtpConfig.host}
                               onChange={(e) => setSmtpConfig({ ...smtpConfig, host: e.target.value })}
-                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#fbbf24] font-mono"
                             />
                           </div>
                           <div>
@@ -6964,7 +7651,7 @@ export function WhatsAppCompanion() {
                               placeholder="587"
                               value={smtpConfig.port}
                               onChange={(e) => setSmtpConfig({ ...smtpConfig, port: parseInt(e.target.value) || 587 })}
-                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#fbbf24] font-mono"
                             />
                           </div>
                           <div className="col-span-2">
@@ -6974,7 +7661,7 @@ export function WhatsAppCompanion() {
                               placeholder="your-email@gmail.com"
                               value={smtpConfig.user}
                               onChange={(e) => setSmtpConfig({ ...smtpConfig, user: e.target.value })}
-                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#fbbf24] font-mono"
                             />
                           </div>
                           <div className="col-span-2">
@@ -6984,15 +7671,15 @@ export function WhatsAppCompanion() {
                               placeholder="••••••••••••••••"
                               value={smtpConfig.pass}
                               onChange={(e) => setSmtpConfig({ ...smtpConfig, pass: e.target.value })}
-                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#00a884] font-mono"
+                              className="w-full text-[11px] bg-zinc-950/50 border border-zinc-850 rounded-lg p-1.5 text-white outline-none focus:border-[#fbbf24] font-mono"
                             />
                           </div>
                         </div>
                       )}
 
                       {!smtpConfig.useRealSmtp && !googleToken && (
-                        <div className="p-2 border border-emerald-500/10 bg-emerald-500/5 rounded-lg text-[10px] text-zinc-400 font-sans flex items-start gap-1.5">
-                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0 mt-0.5" />
+                        <div className="p-2 border border-yellow-500/10 bg-yellow-500/5 rounded-lg text-[10px] text-zinc-400 font-sans flex items-start gap-1.5">
+                          <CheckCircle2 size={12} className="text-yellow-400 shrink-0 mt-0.5" />
                           <span>
                             <strong>Developer Simulation Active</strong>. Logging in with Google unlocks high-speed real-world dispatches. Otherwise, compiled reports generate simulated logs below.
                           </span>
@@ -7011,7 +7698,7 @@ export function WhatsAppCompanion() {
                         onClick={() => setSelectedEmailReportType('summary')}
                         className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer h-24 ${
                           selectedEmailReportType === 'summary'
-                            ? 'bg-emerald-500/10 border-[#10b981] shadow-md shadow-[#10b981]/5'
+                            ? 'bg-yellow-500/10 border-[#10b981] shadow-md shadow-[#10b981]/5'
                             : 'bg-[#152026] border-zinc-800 hover:border-zinc-700'
                         }`}
                       >
@@ -7089,7 +7776,7 @@ export function WhatsAppCompanion() {
                       type="button"
                       onClick={() => triggerEmailReport(selectedEmailReportType)}
                       disabled={emailSendingStatus === 'sending'}
-                      className="w-full py-3 bg-[#00a884] hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-black text-xs rounded-xl tracking-widest uppercase cursor-pointer shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-[#fbbf24] hover:bg-yellow-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-black text-xs rounded-xl tracking-widest uppercase cursor-pointer shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2"
                     >
                       {emailSendingStatus === 'sending' ? (
                         <>
@@ -7107,8 +7794,8 @@ export function WhatsAppCompanion() {
 
                   {/* LAST DISPATCH RECEIPT */}
                   {lastDispatchedReport && (
-                    <div className="bg-[#111b21] border border-zinc-850 p-3.5 rounded-xl space-y-2.5 animate-scaleUp">
-                      <span className="text-[9.5px] uppercase font-mono tracking-widest text-[#00a884] font-black block border-b border-zinc-900 pb-1.5">DISPATCH TRANSMISSION RECEIPT</span>
+                    <div className="bg-[#0b0b0e] border border-zinc-850 p-3.5 rounded-xl space-y-2.5 animate-scaleUp">
+                      <span className="text-[9.5px] uppercase font-mono tracking-widest text-[#fbbf24] font-black block border-b border-zinc-900 pb-1.5">DISPATCH TRANSMISSION RECEIPT</span>
                       <table className="w-full text-[11px] text-zinc-300 font-mono">
                         <tbody>
                           <tr className="border-b border-zinc-900/40">
@@ -7117,7 +7804,7 @@ export function WhatsAppCompanion() {
                           </tr>
                           <tr className="border-b border-zinc-900/40">
                             <td className="py-1 text-zinc-500 leading-normal">RECIPIENT:</td>
-                            <td className="py-1 text-emerald-400 font-extrabold text-right truncate">{lastDispatchedReport.recipient}</td>
+                            <td className="py-1 text-yellow-400 font-extrabold text-right truncate">{lastDispatchedReport.recipient}</td>
                           </tr>
                           <tr className="border-b border-zinc-900/40">
                             <td className="py-1 text-zinc-400 text-right truncate text-[9.5px]">{lastDispatchedReport.txId}</td>
@@ -7128,7 +7815,7 @@ export function WhatsAppCompanion() {
                               <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
                                 lastDispatchedReport.simulated 
                                   ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
                               }`}>
                                 {lastDispatchedReport.simulated ? 'SIMULATED' : 'DISPATCHED_SMTP'}
                               </span>
@@ -7157,7 +7844,7 @@ export function WhatsAppCompanion() {
                       )}
                     </div>
 
-                    <div className="bg-[#0b141a] border border-zinc-900 text-[#00a884] font-mono text-[10px] p-3 rounded-xl max-h-[160px] overflow-y-auto leading-relaxed space-y-1 select-text scrollbar-thin">
+                    <div className="bg-[#050508] border border-zinc-900 text-[#fbbf24] font-mono text-[10px] p-3 rounded-xl max-h-[160px] overflow-y-auto leading-relaxed space-y-1 select-text scrollbar-thin">
                       {emailLogs.length === 0 ? (
                         <div className="text-zinc-650 italic text-[10px] py-1 text-center font-sans">
                           No dispatch activity recorded. Logs will print here in real-time.
@@ -7174,7 +7861,7 @@ export function WhatsAppCompanion() {
                   <div className="bg-[#152026] border border-zinc-800 p-4 rounded-xl space-y-4 shadow-xl">
                     <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
                       <div className="flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-[#00a884]" />
+                        <Sparkles size={14} className="text-[#fbbf24]" />
                         <span className="text-[10.5px] uppercase font-mono tracking-widest text-[#e9edef] font-black">☀️ DAILY AUTONOMIST AGENTS DISPATCH</span>
                       </div>
                     </div>
@@ -7185,7 +7872,7 @@ export function WhatsAppCompanion() {
 
                     <div className="space-y-3 text-xs">
                       {/* Scheduler Toggle */}
-                      <label className="flex items-center justify-between bg-[#111b21] p-2.5 rounded-lg border border-zinc-900 cursor-pointer select-none">
+                      <label className="flex items-center justify-between bg-[#0b0b0e] p-2.5 rounded-lg border border-zinc-900 cursor-pointer select-none">
                         <div className="space-y-0.5">
                           <span className="text-[11px] font-bold text-white block">Daily Automated Summary</span>
                           <span className="text-[9px] text-[#8696a0] block font-sans">Schedule reports to dispatch dynamically every single day</span>
@@ -7194,12 +7881,12 @@ export function WhatsAppCompanion() {
                           type="checkbox"
                           checked={dailyEmailEnabled}
                           onChange={(e) => setDailyEmailEnabled(e.target.checked)}
-                          className="w-4 h-4 rounded border-zinc-805 bg-zinc-950 text-[#00a884] focus:ring-0 cursor-pointer"
+                          className="w-4 h-4 rounded border-zinc-805 bg-zinc-950 text-[#fbbf24] focus:ring-0 cursor-pointer"
                         />
                       </label>
 
                       {/* Continuous 24/7 Autonomous Dreaming */}
-                      <label className="flex items-center justify-between bg-[#111b21] p-2.5 rounded-lg border border-zinc-900 cursor-pointer select-none">
+                      <label className="flex items-center justify-between bg-[#0b0b0e] p-2.5 rounded-lg border border-zinc-900 cursor-pointer select-none">
                         <div className="space-y-0.5 pr-2">
                           <span className="text-[11px] font-bold text-white block">24/7 AI Autonomous Dreaming</span>
                           <span className="text-[9px] text-[#8696a0] block font-sans">Background agent periodically inspects codebase and dreams new ideas around the clock</span>
@@ -7208,7 +7895,7 @@ export function WhatsAppCompanion() {
                           type="checkbox"
                           checked={autonomousDreamingEnabled}
                           onChange={(e) => setAutonomousDreamingEnabled(e.target.checked)}
-                          className="w-4 h-4 rounded border-zinc-805 bg-zinc-950 text-[#00a884] focus:ring-0 cursor-pointer"
+                          className="w-4 h-4 rounded border-zinc-805 bg-zinc-950 text-[#fbbf24] focus:ring-0 cursor-pointer"
                         />
                       </label>
 
@@ -7222,7 +7909,7 @@ export function WhatsAppCompanion() {
                               placeholder="e.g. developer@gmail.com"
                               value={dailyEmailRecipient}
                               onChange={(e) => setDailyEmailRecipient(e.target.value)}
-                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884] font-mono"
+                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] font-mono"
                             />
                           </div>
 
@@ -7233,7 +7920,7 @@ export function WhatsAppCompanion() {
                               required
                               value={dailyEmailTime}
                               onChange={(e) => setDailyEmailTime(e.target.value)}
-                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884] font-mono"
+                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24] font-mono"
                             />
                           </div>
 
@@ -7242,10 +7929,10 @@ export function WhatsAppCompanion() {
                             <select
                               value={dailyEmailPlain ? "plain" : "html"}
                               onChange={(e) => setDailyEmailPlain(e.target.value === "plain")}
-                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#00a884]"
+                              className="w-full text-xs bg-zinc-950/70 border border-zinc-850 rounded-lg p-2 text-white outline-none focus:border-[#fbbf24]"
                             >
-                              <option value="plain" className="bg-[#111b21]">Plain Text Monospace</option>
-                              <option value="html" className="bg-[#111b21]">HTML Template</option>
+                              <option value="plain" className="bg-[#0b0b0e]">Plain Text Monospace</option>
+                              <option value="html" className="bg-[#0b0b0e]">HTML Template</option>
                             </select>
                           </div>
                         </div>
@@ -7256,7 +7943,7 @@ export function WhatsAppCompanion() {
                           type="button"
                           onClick={handleSaveAutomatedSettings}
                           disabled={isSavingAutomated}
-                          className="flex-1 py-2 border border-[#00a884] bg-[#00a884]/10 hover:bg-[#00a884]/20 text-[#00a884] font-bold text-[10px] uppercase font-mono rounded-lg transition-all"
+                          className="flex-1 py-2 border border-[#fbbf24] bg-[#fbbf24]/10 hover:bg-[#fbbf24]/20 text-[#fbbf24] font-bold text-[10px] uppercase font-mono rounded-lg transition-all"
                         >
                           {isSavingAutomated ? "Saving..." : "✓ Save Schedule Configuration"}
                         </button>
@@ -7276,7 +7963,7 @@ export function WhatsAppCompanion() {
                     {automatedLogs.length > 0 && (
                       <div className="space-y-1.5 pt-2 border-t border-zinc-900">
                         <span className="text-[8px] font-mono uppercase tracking-widest text-zinc-500 font-bold block">Autonomous Dispatch History Logs</span>
-                        <div className="bg-[#0b141a] border border-zinc-950 rounded-lg p-2.5 max-h-[100px] overflow-y-auto space-y-1 font-mono text-[9px] text-zinc-400">
+                        <div className="bg-[#050508] border border-zinc-950 rounded-lg p-2.5 max-h-[100px] overflow-y-auto space-y-1 font-mono text-[9px] text-zinc-400">
                           {automatedLogs.map((log, idx) => (
                             <div key={idx} className="border-b border-zinc-900/60 pb-1 last:border-0">{log}</div>
                           ))}
@@ -7295,7 +7982,7 @@ export function WhatsAppCompanion() {
                     <span className="text-[10px] uppercase font-mono tracking-widest text-[#8696a0] font-black">PROPOSALS ADVISOR</span>
                   </div>
                   {aiRecommendations.length > 0 && (
-                    <button type="button" onClick={fetchAiProposals} className="text-[9px] font-mono text-[#00a884] hover:underline">
+                    <button type="button" onClick={fetchAiProposals} className="text-[9px] font-mono text-[#fbbf24] hover:underline">
                       Refresh ↻
                     </button>
                   )}
@@ -7308,7 +7995,7 @@ export function WhatsAppCompanion() {
                       type="button"
                       onClick={fetchAiProposals}
                       disabled={isLoadingRecs}
-                      className="px-3 py-1 bg-emerald-600/15 hover:bg-[#00a884]/35 text-emerald-450 rounded-lg text-[9px] font-bold border border-[#00a884]/20 cursor-pointer flex items-center gap-1 mx-auto"
+                      className="px-3 py-1 bg-amber-600/15 hover:bg-[#fbbf24]/35 text-emerald-450 rounded-lg text-[9px] font-bold border border-[#fbbf24]/20 cursor-pointer flex items-center gap-1 mx-auto"
                     >
                       {isLoadingRecs ? "Loading..." : "Request Proposals Now"}
                     </button>
@@ -7318,13 +8005,13 @@ export function WhatsAppCompanion() {
                     {aiRecommendations.map((rec) => (
                       <div key={rec.id} className="bg-zinc-900/60 border border-zinc-850 p-2.5 rounded-xl space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="text-[8px] uppercase tracking-wider font-bold bg-[#182229] px-1.5 py-0.5 rounded text-emerald-450">
+                          <span className="text-[8px] uppercase tracking-wider font-bold bg-[#1c1c21] px-1.5 py-0.5 rounded text-emerald-450">
                             {rec.type}
                           </span>
                           <button
                             type="button"
                             onClick={() => selectTemplatePrompt(`Investigate proposal: "${rec.title}" - ${rec.description}`)}
-                            className="text-[9px] text-[#00a884] font-bold hover:underline"
+                            className="text-[9px] text-[#fbbf24] font-bold hover:underline"
                           >
                             Dispatch Draft ↗
                           </button>
@@ -7343,17 +8030,17 @@ export function WhatsAppCompanion() {
                 <div className="bg-zinc-950 border border-zinc-900 rounded-xl p-2.5 divide-y divide-zinc-900">
                   <div className="flex items-center justify-between py-1.5">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                      <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
                       <span className="text-[10px] font-mono text-zinc-250 font-bold">Librarian Agent</span>
                     </div>
-                    <span className="text-[8px] font-mono text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10">IDLE • LISTENING</span>
+                    <span className="text-[8px] font-mono text-yellow-400 bg-yellow-500/5 px-2 py-0.5 rounded border border-yellow-500/10">IDLE • LISTENING</span>
                   </div>
                   <div className="flex items-center justify-between py-1.5">
                     <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 bg-[#00a884] rounded-full animate-ping" />
+                      <div className="w-1.5 h-1.5 bg-[#fbbf24] rounded-full animate-ping" />
                       <span className="text-[10px] font-mono text-zinc-250 font-bold">Developer Agent</span>
                     </div>
-                    <span className="text-[8px] font-mono text-emerald-450 bg-[#00a884]/5 px-2 py-0.5 rounded border border-[#00a884]/15">ACTIVE • WORKING</span>
+                    <span className="text-[8px] font-mono text-emerald-450 bg-[#fbbf24]/5 px-2 py-0.5 rounded border border-[#fbbf24]/15">ACTIVE • WORKING</span>
                   </div>
                 </div>
               </div>
@@ -7361,13 +8048,13 @@ export function WhatsAppCompanion() {
               {/* LIVE ACTION COMPANION LOGS BOARD */}
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5 text-zinc-400">
-                  <Terminal size={12} className="text-emerald-400" />
+                  <Terminal size={12} className="text-yellow-400" />
                   <span className="text-[10px] uppercase font-mono tracking-widest font-black leading-none pt-0.5">Live Companion Action Logs</span>
                 </div>
                 <div className="bg-zinc-950/80 border border-zinc-900 rounded-xl p-3 font-mono text-[9px] text-zinc-455 space-y-1 h-[155px] overflow-y-auto custom-scrollbar">
                   {systemLogs.map((log, idx) => (
                     <div key={idx} className="flex gap-1.5 break-all select-all hover:bg-zinc-900/40 p-0.5 rounded">
-                      <span className="text-emerald-500/40 shrink-0">➜</span>
+                      <span className="text-yellow-500/40 shrink-0">➜</span>
                       <span>{log}</span>
                     </div>
                   ))}
@@ -7380,8 +8067,8 @@ export function WhatsAppCompanion() {
 
           {/* COGNITIVE BRAINSTORMING CATEGORIZER MODAL */}
           {isReviewingBrainstorm && (
-            <div className="absolute inset-0 bg-[#0b141a] z-50 flex flex-col animate-fadeIn font-sans" id="brainstorm-modal">
-              <div className="bg-[#1f2c34] px-4 py-4 shrink-0 flex items-center justify-between border-b border-[#00a884]/20">
+            <div className="absolute inset-0 bg-[#050508] z-50 flex flex-col animate-fadeIn font-sans" id="brainstorm-modal">
+              <div className="bg-[#16161a] px-4 py-4 shrink-0 flex items-center justify-between border-b border-[#fbbf24]/20">
                 <div className="flex items-center gap-2">
                   <Brain size={18} className="text-purple-400 animate-pulse" />
                   <div>
@@ -7531,7 +8218,7 @@ export function WhatsAppCompanion() {
                     ))}
                   </div>
 
-                  <div className="bg-[#1f2c34] p-4 shrink-0 flex gap-2 border-t border-zinc-900">
+                  <div className="bg-[#16161a] p-4 shrink-0 flex gap-2 border-t border-zinc-900">
                     <button
                       type="button"
                       onClick={() => {
@@ -7554,8 +8241,8 @@ export function WhatsAppCompanion() {
                   </div>
                 </div>
               ) : (
-                <div className="absolute inset-0 bg-[#0b141a] z-50 flex flex-col items-center justify-center p-6 text-center space-y-5 animate-scaleUp">
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <div className="absolute inset-0 bg-[#050508] z-50 flex flex-col items-center justify-center p-6 text-center space-y-5 animate-scaleUp">
+                  <div className="w-16 h-16 rounded-full bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center text-yellow-400">
                     <CheckCircle2 size={36} className="animate-bounce" />
                   </div>
                   <div className="space-y-2">
@@ -7573,11 +8260,11 @@ export function WhatsAppCompanion() {
                     </div>
                     <div className="flex justify-between py-0.5">
                       <span>SYNC STATUS:</span>
-                      <span className="text-[#00a884] font-bold">COMPLETE (SERVER & BROWSER)</span>
+                      <span className="text-[#fbbf24] font-bold">COMPLETE (SERVER & BROWSER)</span>
                     </div>
                     <div className="flex justify-between py-0.5">
                       <span>OBSIDIAN RE-INDEX:</span>
-                      <span className="text-[#00a884]">SUCCESSFUL 📂</span>
+                      <span className="text-[#fbbf24]">SUCCESSFUL 📂</span>
                     </div>
                   </div>
 
@@ -7589,7 +8276,7 @@ export function WhatsAppCompanion() {
                       setIsBrainstormPublishComplete(false);
                       setBrainstormIdeas([]);
                     }}
-                    className="py-3 px-6 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-755 text-white rounded-xl text-xs font-bold transition-all cursor-pointer uppercase tracking-widest w-full max-w-xs"
+                    className="py-3 px-6 bg-amber-600 hover:bg-yellow-500 active:bg-emerald-755 text-white rounded-xl text-xs font-bold transition-all cursor-pointer uppercase tracking-widest w-full max-w-xs"
                   >
                     Return to Companion
                   </button>
