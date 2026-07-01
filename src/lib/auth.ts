@@ -58,19 +58,24 @@ export const initAuth = (
 
 export const signUpWithEmailPassword = async (email: string, password: string, username: string): Promise<User> => {
   try {
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = username.trim();
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('signup_username', cleanUsername);
+    }
+    const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
     const user = credential.user;
     
     // Update profile displayName
-    await updateProfile(user, { displayName: username });
+    await updateProfile(user, { displayName: cleanUsername });
     
     // Create User record in Firestore
     const userDocRef = doc(db, 'users', user.uid);
     await setDoc(userDocRef, {
       uid: user.uid,
-      email: email,
-      username: username,
-      displayName: username,
+      email: cleanEmail,
+      username: cleanUsername,
+      displayName: cleanUsername,
       avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
       title: 'Full-Stack Developer',
       bio: 'Active DevSpace collaborator and software designer.',
@@ -78,8 +83,15 @@ export const signUpWithEmailPassword = async (email: string, password: string, u
       updatedAt: Date.now()
     });
 
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('signup_username');
+    }
+
     return user;
   } catch (error: any) {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('signup_username');
+    }
     console.error('Email sign up error:', error);
     throw error;
   }
@@ -87,7 +99,8 @@ export const signUpWithEmailPassword = async (email: string, password: string, u
 
 export const loginWithEmailPassword = async (email: string, password: string): Promise<User> => {
   try {
-    const credential = await signInWithEmailAndPassword(auth, email, password);
+    const cleanEmail = email.trim().toLowerCase();
+    const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
     return credential.user;
   } catch (error: any) {
     console.error('Email sign in error:', error);

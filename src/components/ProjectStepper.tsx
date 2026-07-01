@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { githubSignIn } from "../lib/auth";
+import { useData } from "../context/DataProvider";
 import {
   X,
   Check,
@@ -45,6 +47,14 @@ export function ProjectStepper({
   loadingRepos,
   onFetchRepos
 }: ProjectStepperProps) {
+  const context = useData();
+  const activeToken = githubToken || context.githubToken;
+  const activeUser = githubUser || context.githubUser;
+  
+  const setGithubToken = context.setGithubToken;
+  const setGithubUser = context.setGithubUser;
+  const setGithubProfile = context.setGithubProfile;
+
   const [currentStep, setCurrentStep] = useState(1);
   
   // Form State
@@ -148,7 +158,7 @@ export function ProjectStepper({
           name: repoCreationName,
           description: repoCreationDesc,
           isPrivate: repoIsPrivate,
-          token: githubToken,
+          token: activeToken,
         }),
       });
 
@@ -164,7 +174,7 @@ export function ProjectStepper({
           full_name: data.fullName,
           description: repoCreationDesc || "Created by AgenticOS Devspace",
           private: repoIsPrivate,
-          owner: { login: data.owner || githubUser || "github-user" },
+          owner: { login: data.owner || activeUser || "github-user" },
         };
         // Prepend to parent synced list
         setGithubReposList((prev) => [newRepoItem, ...prev]);
@@ -599,76 +609,134 @@ export function ProjectStepper({
                           )}
 
                           <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                                Select Existing Repository
-                              </label>
-                              <div className="relative w-44">
-                                <Search size={10} className="absolute left-2.5 top-2.5 text-zinc-550" />
-                                <input
-                                  type="text"
-                                  placeholder="Filter repos..."
-                                  value={repoSearchQuery}
-                                  onChange={(e) => setRepoSearchQuery(e.target.value)}
-                                  className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 pl-7 text-[10px] text-zinc-200 outline-none focus:border-blue-500"
-                                />
-                              </div>
-                            </div>
-
-                            {loadingRepos ? (
-                              <div className="flex flex-col items-center justify-center py-8 text-zinc-500 text-xs gap-2 border border-zinc-800 rounded-lg bg-zinc-900/20">
-                                <Loader2 size={16} className="animate-spin text-blue-500" />
-                                Synchronizing user repositories...
+                            {!activeToken ? (
+                              <div className="p-4 bg-zinc-900/30 border border-zinc-800 rounded-xl text-center space-y-3">
+                                <p className="text-[11px] text-zinc-400">
+                                  GitHub account not connected. Authenticate to sync repositories automatically, or type the name manually below.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await githubSignIn();
+                                      if (res && res.username) {
+                                        setGithubUser?.(res.username);
+                                        setGithubToken?.(res.accessToken);
+                                        setGithubProfile?.(res.user);
+                                        if (onFetchRepos) onFetchRepos();
+                                      }
+                                    } catch (err: any) {
+                                      alert("GitHub Login Failed: " + err.message);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold px-4 py-2 rounded-lg border border-zinc-700 transition-colors shadow cursor-pointer"
+                                >
+                                  <Github size={13} />
+                                  Connect GitHub Account
+                                </button>
                               </div>
                             ) : (
-                              <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                                {filteredRepos.length === 0 ? (
-                                  <div className="text-center py-6 text-zinc-500 text-xs border border-dashed border-zinc-800 rounded-lg">
-                                    No repositories match your search or account scope.
+                              <>
+                                <div className="flex justify-between items-center">
+                                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                    Select Synced Repository
+                                  </label>
+                                  <div className="relative w-44">
+                                    <Search size={10} className="absolute left-2.5 top-2.5 text-zinc-550" />
+                                    <input
+                                      type="text"
+                                      placeholder="Filter repos..."
+                                      value={repoSearchQuery}
+                                      onChange={(e) => setRepoSearchQuery(e.target.value)}
+                                      className="w-full bg-zinc-950 border border-zinc-850 rounded px-2 py-1 pl-7 text-[10px] text-zinc-200 outline-none focus:border-blue-500 font-mono"
+                                    />
+                                  </div>
+                                </div>
+
+                                {loadingRepos ? (
+                                  <div className="flex flex-col items-center justify-center py-8 text-zinc-500 text-xs gap-2 border border-zinc-800 rounded-lg bg-zinc-900/20">
+                                    <Loader2 size={16} className="animate-spin text-blue-500" />
+                                    Synchronizing user repositories...
                                   </div>
                                 ) : (
-                                  filteredRepos.map((r) => {
-                                    const isChosen = formData.githubRepos === r.full_name;
-                                    return (
-                                      <label
-                                        key={r.id}
-                                        className={`flex items-center gap-3 p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
-                                          isChosen
-                                            ? "border-blue-500/80 bg-blue-500/10 text-blue-300"
-                                            : "border-zinc-850 bg-zinc-900/40 hover:bg-zinc-800/80 text-zinc-300"
-                                        }`}
-                                      >
-                                        <input
-                                          type="radio"
-                                          name="gitRepo"
-                                          checked={isChosen}
-                                          onChange={() => setFormData({ ...formData, githubRepos: r.full_name })}
-                                          className="sr-only"
-                                        />
-                                        <div
-                                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
-                                            isChosen ? "border-blue-500 bg-blue-500" : "border-zinc-700"
-                                          }`}
-                                        >
-                                          {isChosen && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                                        </div>
-                                        <div className="flex-grow min-w-0">
-                                          <div className="font-semibold text-zinc-200 truncate font-mono text-[11px] flex items-center gap-1.5">
-                                            <Github size={11} className="text-zinc-500 shrink-0" />
-                                            {r.full_name}
-                                          </div>
-                                          {r.description && (
-                                            <p className="text-[9px] text-zinc-500 truncate mt-0.5">
-                                              {r.description}
-                                            </p>
-                                          )}
-                                        </div>
-                                      </label>
-                                    );
-                                  })
+                                  <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar pr-1 border border-zinc-850 bg-zinc-950/20 p-1 rounded-lg">
+                                    {filteredRepos.length === 0 ? (
+                                      <div className="text-center py-6 text-zinc-500 text-xs border border-dashed border-zinc-800 rounded-lg">
+                                        No repositories match your search or account scope.
+                                      </div>
+                                    ) : (
+                                      filteredRepos.map((r) => {
+                                        const isChosen = formData.githubRepos === r.full_name;
+                                        return (
+                                          <label
+                                            key={r.id}
+                                            className={`flex items-center gap-3 p-2 rounded border text-xs cursor-pointer transition-colors ${
+                                              isChosen
+                                                ? "border-blue-500/80 bg-blue-500/10 text-blue-300"
+                                                : "border-zinc-850 bg-zinc-900/40 hover:bg-zinc-800/80 text-zinc-300"
+                                            }`}
+                                          >
+                                            <input
+                                              type="radio"
+                                              name="gitRepo"
+                                              checked={isChosen}
+                                              onChange={() => setFormData({ ...formData, githubRepos: r.full_name })}
+                                              className="sr-only"
+                                            />
+                                            <div
+                                              className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                                                isChosen ? "border-blue-500 bg-blue-500" : "border-zinc-700"
+                                              }`}
+                                            >
+                                              {isChosen && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                            </div>
+                                            <div className="flex-grow min-w-0">
+                                              <div className="font-semibold text-zinc-200 truncate font-mono text-[11px] flex items-center gap-1.5">
+                                                <Github size={11} className="text-zinc-500 shrink-0" />
+                                                {r.full_name}
+                                              </div>
+                                              {r.description && (
+                                                <p className="text-[9px] text-zinc-500 truncate mt-0.5">
+                                                  {r.description}
+                                                </p>
+                                              )}
+                                            </div>
+                                          </label>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {/* Manual Entry Target */}
+                            <div className="pt-3 border-t border-zinc-800/60">
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                                Manual Repository Link Target
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="owner/repo (e.g. facebook/react)"
+                                  value={formData.githubRepos}
+                                  onChange={(e) => setFormData({ ...formData, githubRepos: e.target.value })}
+                                  className="w-full bg-zinc-950 border border-zinc-850 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none focus:border-blue-500 font-mono"
+                                />
+                                {formData.githubRepos && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, githubRepos: "" })}
+                                    className="px-2 text-zinc-500 hover:text-zinc-300 text-xs border border-zinc-850 rounded-lg bg-zinc-900/20 cursor-pointer"
+                                  >
+                                    Clear
+                                  </button>
                                 )}
                               </div>
-                            )}
+                              <p className="text-[9px] text-zinc-500 mt-1 font-sans">
+                                Type any existing repository target formatted as <code>username/repository-name</code>.
+                              </p>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -679,80 +747,110 @@ export function ProjectStepper({
                             <Plus size={14} className="text-blue-400" /> Remote GitHub Creator
                           </h3>
 
-                          {repoCreatedSuccess && (
-                            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-2.5 rounded-lg text-[10px] font-mono">
-                              ✓ {repoCreatedSuccess}
+                          {!activeToken ? (
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800 rounded-xl text-center space-y-3">
+                              <p className="text-[11px] text-zinc-400">
+                                You need to authenticate with GitHub before we can automatically create remote repositories for you.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const res = await githubSignIn();
+                                    if (res && res.username) {
+                                      setGithubUser?.(res.username);
+                                      setGithubToken?.(res.accessToken);
+                                      setGithubProfile?.(res.user);
+                                      if (onFetchRepos) onFetchRepos();
+                                    }
+                                  } catch (err: any) {
+                                    alert("GitHub Login Failed: " + err.message);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold px-4 py-2 rounded-lg border border-zinc-700 transition-colors shadow cursor-pointer"
+                              >
+                                <Github size={13} />
+                                Connect GitHub Account
+                              </button>
                             </div>
-                          )}
+                          ) : (
+                            <>
+                              {repoCreatedSuccess && (
+                                <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-2.5 rounded-lg text-[10px] font-mono">
+                                  ✓ {repoCreatedSuccess}
+                                </div>
+                              )}
 
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
-                                Repository Name
-                              </label>
-                              <input
-                                type="text"
-                                value={repoCreationName}
-                                onChange={(e) => setRepoCreationName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
-                                placeholder="e.g. core-analytics-dashboard"
-                                className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500 transition-all font-mono"
-                              />
-                            </div>
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                                    Repository Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={repoCreationName}
+                                    onChange={(e) => setRepoCreationName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
+                                    placeholder="e.g. core-analytics-dashboard"
+                                    className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500 transition-all font-mono"
+                                  />
+                                </div>
 
-                            <div>
-                              <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
-                                Description
-                              </label>
-                              <textarea
-                                rows={2}
-                                value={repoCreationDesc}
-                                onChange={(e) => setRepoCreationDesc(e.target.value)}
-                                placeholder="Describe repo metrics or scopes..."
-                                className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-500 transition-all resize-none h-14"
-                              />
-                            </div>
+                                <div>
+                                  <label className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                                    Description
+                                  </label>
+                                  <textarea
+                                    rows={2}
+                                    value={repoCreationDesc}
+                                    onChange={(e) => setRepoCreationDesc(e.target.value)}
+                                    placeholder="Describe repo metrics or scopes..."
+                                    className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-500 transition-all resize-none h-14"
+                                  />
+                                </div>
 
-                            <div className="flex items-center justify-between border-t border-zinc-800 pt-2.5">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Visibility</span>
-                              <div className="flex bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                                <div className="flex items-center justify-between border-t border-zinc-800 pt-2.5">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Visibility</span>
+                                  <div className="flex bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                                    <button
+                                      type="button"
+                                      onClick={() => setRepoIsPrivate(false)}
+                                      className={`px-3 py-1 text-[10px] font-bold rounded-md ${
+                                        !repoIsPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-400 cursor-pointer"
+                                      }`}
+                                    >
+                                      Public
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRepoIsPrivate(true)}
+                                      className={`px-3 py-1 text-[10px] font-bold rounded-md ${
+                                        repoIsPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-400 cursor-pointer"
+                                      }`}
+                                    >
+                                      Private
+                                    </button>
+                                  </div>
+                                </div>
+
                                 <button
                                   type="button"
-                                  onClick={() => setRepoIsPrivate(false)}
-                                  className={`px-3 py-1 text-[10px] font-bold rounded-md ${
-                                    !repoIsPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-400 cursor-pointer"
-                                  }`}
+                                  disabled={creatingRepo || !repoCreationName}
+                                  onClick={handleCreateRepoSubmit}
+                                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                                 >
-                                  Public
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setRepoIsPrivate(true)}
-                                  className={`px-3 py-1 text-[10px] font-bold rounded-md ${
-                                    repoIsPrivate ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-400 cursor-pointer"
-                                  }`}
-                                >
-                                  Private
+                                  {creatingRepo ? (
+                                    <>
+                                      <Loader2 size={13} className="animate-spin" /> Creating remote...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkle size={13} /> Create & Select Remote Repo
+                                    </>
+                                  )}
                                 </button>
                               </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={creatingRepo || !repoCreationName}
-                              onClick={handleCreateRepoSubmit}
-                              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              {creatingRepo ? (
-                                <>
-                                  <Loader2 size={13} className="animate-spin" /> Creating remote...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkle size={13} /> Create & Select Remote Repo
-                                </>
-                              )}
-                            </button>
-                          </div>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

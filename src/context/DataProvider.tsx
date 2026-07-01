@@ -1248,6 +1248,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [projects, isInitialLoadDone]);
 
+  // Synchronize githubRepo with active project's connected repository
+  useEffect(() => {
+    if (activeProjectId && isInitialLoadDone) {
+      const activeProj = projects.find(p => p.id === activeProjectId);
+      if (activeProj && activeProj.githubRepos && activeProj.githubRepos.length > 0) {
+        const firstRepo = activeProj.githubRepos[0];
+        if (firstRepo && firstRepo !== githubRepo) {
+          setGithubRepo(firstRepo);
+        }
+      }
+    }
+  }, [activeProjectId, projects, isInitialLoadDone]);
+
   // Post issues to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
@@ -1671,11 +1684,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
             setUserProfile(data);
             setStored('app_user_profile', data);
           } else {
+            const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
             const initialProfile = {
               uid: user.uid,
               email: user.email || '',
-              username: user.displayName || user.email?.split('@')[0] || 'User',
-              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              username: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
+              displayName: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
               avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
               title: 'Full-Stack Developer',
               bio: 'Active DevSpace collaborator and software designer.',
@@ -1696,11 +1710,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (cachedProfile && cachedProfile.uid === user.uid) {
             setUserProfile(cachedProfile);
           } else {
+            const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
             const fallbackProfile = {
               uid: user.uid,
               email: user.email || '',
-              username: user.displayName || user.email?.split('@')[0] || 'User',
-              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              username: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
+              displayName: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
               avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
               title: 'Full-Stack Developer',
               bio: 'Active DevSpace collaborator and software designer.',
@@ -1819,13 +1834,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const acceptInvitation = async (invitationId: string) => {
     if (!auth.currentUser) throw new Error("Must be logged in to accept invitations");
-    const invite = invitations.find(i => i.id === invitationId);
+    
+    let invite = invitations.find(i => i.id === invitationId);
+    if (!invite) {
+      const snap = await getDoc(doc(db, 'invitations', invitationId));
+      if (snap.exists()) {
+        invite = snap.data();
+      }
+    }
     if (!invite) throw new Error("Invitation not found");
 
     // 1. Update invitation status to accepted
     const updatedInvite = { ...invite, status: 'accepted' };
     await setDocWithSanitize(doc(db, 'invitations', invitationId), updatedInvite);
-    setInvitations(prev => prev.map(inv => inv.id === invitationId ? updatedInvite : inv));
+    setInvitations(prev => {
+      if (prev.some(inv => inv.id === invitationId)) {
+        return prev.map(inv => inv.id === invitationId ? updatedInvite : inv);
+      } else {
+        return [...prev, updatedInvite];
+      }
+    });
 
     // 2. Add user to project collaborators
     try {
@@ -1865,12 +1893,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const declineInvitation = async (invitationId: string) => {
     if (!auth.currentUser) throw new Error("Must be logged in to decline invitations");
-    const invite = invitations.find(i => i.id === invitationId);
+    
+    let invite = invitations.find(i => i.id === invitationId);
+    if (!invite) {
+      const snap = await getDoc(doc(db, 'invitations', invitationId));
+      if (snap.exists()) {
+        invite = snap.data();
+      }
+    }
     if (!invite) throw new Error("Invitation not found");
 
     const updatedInvite = { ...invite, status: 'declined' };
     await setDocWithSanitize(doc(db, 'invitations', invitationId), updatedInvite);
-    setInvitations(prev => prev.map(inv => inv.id === invitationId ? updatedInvite : inv));
+    setInvitations(prev => {
+      if (prev.some(inv => inv.id === invitationId)) {
+        return prev.map(inv => inv.id === invitationId ? updatedInvite : inv);
+      } else {
+        return [...prev, updatedInvite];
+      }
+    });
   };
 
   const updateUserProfile = async (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => {

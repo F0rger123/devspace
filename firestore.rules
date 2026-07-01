@@ -132,6 +132,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Rules for notes
+    match /notes/{noteId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(noteId);
+    }
+
+    // Rules for cortexSynapses
+    match /cortexSynapses/{synId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(synId);
+    }
+
+    // Rules for chatSessions
+    match /chatSessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(sessionId);
+    }
+
     // Rules for invitations
     match /invitations/{invitationId} {
       allow read: if isSignedIn() && (

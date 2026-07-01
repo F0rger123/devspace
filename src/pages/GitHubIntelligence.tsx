@@ -25,10 +25,17 @@ export function GitHubIntelligence() {
     if (typeof r === 'function') {
       setGithubRepo((prev) => {
         const current = prev || (githubUser && githubUser !== 'google' ? `${githubUser}/` : 'google/genai-js') || '';
-        return r(current);
+        const updated = r(current);
+        if (updated && activeProjectId) {
+          updateProject(activeProjectId, { githubRepos: [updated] });
+        }
+        return updated;
       });
     } else {
       setGithubRepo(r);
+      if (r && activeProjectId) {
+        updateProject(activeProjectId, { githubRepos: [r] });
+      }
     }
   };
 
