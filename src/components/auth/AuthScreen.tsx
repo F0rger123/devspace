@@ -74,6 +74,10 @@ export function AuthScreen() {
           setError('This email address is already in use.');
         } else if (err.code === 'auth/invalid-email') {
           setError('The email address format is invalid.');
+        } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+          setError(
+            'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
+          );
         } else {
           setError(err.message || 'An error occurred during registration.');
         }
@@ -94,6 +98,10 @@ export function AuthScreen() {
       } catch (err: any) {
         if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
           setError('Invalid email or password combination.');
+        } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+          setError(
+            'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
+          );
         } else {
           setError(err.message || 'Failed to sign in. Please try again.');
         }
@@ -110,6 +118,10 @@ export function AuthScreen() {
       } catch (err: any) {
         if (err.code === 'auth/user-not-found') {
           setError('No user profile found with this email address.');
+        } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+          setError(
+            'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
+          );
         } else {
           setError(err.message || 'Failed to send password reset email.');
         }
@@ -129,7 +141,13 @@ export function AuthScreen() {
         setGoogleToken(result.accessToken);
       }
     } catch (err: any) {
-      setError(err.message || 'Google sign-in was unsuccessful.');
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setError(
+          'Firebase Auth Error: This domain is not authorized. Please add this app\'s development and shared domains to your "Authorized Domains" list under Authentication -> Settings -> Authorized Domains in your Firebase console.'
+        );
+      } else {
+        setError(err.message || 'Google sign-in was unsuccessful.');
+      }
     } finally {
       setLoading(false);
     }
@@ -147,7 +165,13 @@ export function AuthScreen() {
         setGithubProfile({ name: result.username, login: result.username });
       }
     } catch (err: any) {
-      setError(err.message || 'GitHub sign-in was unsuccessful.');
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setError(
+          'Firebase Auth Error: This domain is not authorized. Please add this app\'s development and shared domains to your "Authorized Domains" list under Authentication -> Settings -> Authorized Domains in your Firebase console.'
+        );
+      } else {
+        setError(err.message || 'GitHub sign-in was unsuccessful.');
+      }
     } finally {
       setLoading(false);
     }

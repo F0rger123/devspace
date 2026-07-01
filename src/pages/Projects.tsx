@@ -57,6 +57,8 @@ import { motion } from "motion/react";
 import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataProvider";
 import { ProjectStepper } from "../components/ProjectStepper";
+import { InviteUserWizard } from "../components/ui/InviteUserWizard";
+import { RepoTreeVisualizer } from "../components/ui/RepoTreeVisualizer";
 
 export function Projects() {
   const [githubReposList, setGithubReposList] = useState<any[]>([]);
@@ -136,6 +138,7 @@ export function Projects() {
   });
 
   // COLLABORATION INVITATION STATES
+  const [showInviteWizard, setShowInviteWizard] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'editor' | 'viewer'>('editor');
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -4065,62 +4068,9 @@ Description of fix or enhancement recommendation
                         </div>
                       )}
 
-                      {/* AI Code Auditor & Dreamer */}
-                      <div className="border-t border-zinc-800/80 pt-3 space-y-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                          <Bot size={12} className="text-purple-400" /> AI Code Reader & Dreamer
-                        </span>
-                        
-                        <p className="text-[10px] text-zinc-500 leading-normal">
-                          Index the repository file tree, select a source file to analyze, and let Gemini audit security issues and propose immediate new product features.
-                        </p>
-
-                        {loadingTree ? (
-                          <div className="flex items-center justify-center py-2">
-                            <Loader2 size={14} className="animate-spin text-purple-400" />
-                          </div>
-                        ) : scannedFileList.length === 0 ? (
-                          <button
-                            onClick={() => fetchWorkspaceTree(project.githubRepos[0])}
-                            className="w-full text-center py-2 border border-dashed border-zinc-800 hover:border-zinc-700 text-[10px] text-zinc-400 rounded-lg hover:text-white transition-colors cursor-pointer"
-                          >
-                            🔍 Index Repository File Tree
-                          </button>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="flex gap-1.5">
-                              <select
-                                value={selectedFileToScan}
-                                onChange={(e) => setSelectedFileToScan(e.target.value)}
-                                className="flex-1 bg-zinc-900 border border-zinc-800 text-[10px] text-zinc-300 rounded px-2 py-1.5 outline-none cursor-pointer"
-                              >
-                                {scannedFileList.map((f) => (
-                                  <option key={f.path} value={f.path}>
-                                    {f.path.split("/").pop()} ({f.path})
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => handleScanCodeAndDream(project.githubRepos[0], selectedFileToScan, project)}
-                                disabled={analysisLoading || !selectedFileToScan}
-                                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-[10px] px-3 py-1.5 rounded transition-all cursor-pointer shadow shadow-purple-500/15"
-                              >
-                                {analysisLoading ? "Auditing..." : "Audit & Dream"}
-                              </button>
-                            </div>
-
-                            {scannedFileAnalysis && (
-                              <div className="p-3 bg-purple-950/10 border border-purple-500/10 rounded-lg max-h-[220px] overflow-y-auto text-[10px] text-zinc-300 space-y-1.5 leading-relaxed scrollbar-thin scrollbar-thumb-zinc-800">
-                                <div className="text-purple-400 font-bold uppercase tracking-wider text-[9px] mb-1.5 flex items-center gap-1">
-                                  <ShieldCheck size={10} /> Audit Analysis Output:
-                                </div>
-                                <div className="whitespace-pre-line font-sans text-zinc-300">
-                                  {scannedFileAnalysis}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                      {/* AI Code Auditor & Dreamer with Interactive Canvas Tree */}
+                      <div className="border-t border-zinc-800/80 pt-4">
+                        <RepoTreeVisualizer repoName={project.githubRepos[0]} project={project} />
                       </div>
                     </div>
                   ) : (
@@ -4168,8 +4118,8 @@ Description of fix or enhancement recommendation
             return (
               <div className="space-y-6 animate-in fade-in duration-200">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Send Invitation Form */}
-                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg relative overflow-hidden">
+                  {/* Send Invitation Form via Wizard */}
+                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg relative overflow-hidden flex flex-col justify-between">
                     {!isAdmin && (
                       <div className="absolute inset-0 bg-[#0c0c0e]/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 text-center">
                         <span className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-sm mb-2">🔒</span>
@@ -4177,55 +4127,38 @@ Description of fix or enhancement recommendation
                         <p className="text-[10px] text-zinc-500 mt-1 max-w-[240px]">Only project administrators can invite new team members or update permissions.</p>
                       </div>
                     )}
-                    <h2 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
-                      👥 Invite Collaborator
-                    </h2>
-                    <p className="text-xs text-zinc-400 mb-4">
-                      Send an invitation to collaborate on this project. The invitee will be able to see and edit this project from their own DevSpace account once they accept.
-                    </p>
-                    
-                    <form onSubmit={handleSendInviteSubmit} className="space-y-4">
-                      <div>
-                        <label className="block text-xs text-zinc-400 font-medium mb-1">
-                          User Email Address
-                        </label>
-                        <input 
-                          type="email"
-                          required
-                          placeholder="collaborator@domain.com"
-                          value={inviteEmail}
-                          onChange={(e) => setInviteEmail(e.target.value)}
-                          className="w-full bg-[#1c1c1f] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500 text-zinc-200 transition-colors"
-                        />
+                    <div>
+                      <h2 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-2">
+                        👥 Invite Collaborator Wizard
+                      </h2>
+                      <p className="text-xs text-zinc-400 mb-4">
+                        Securely onboard team members by username or email. Assign customized access roles and specify whether they possess Git repository write/push permissions.
+                      </p>
+                      
+                      <div className="space-y-2.5 mb-6 text-[11px] text-zinc-400 font-mono">
+                        <div className="flex items-start gap-2">
+                          <span className="text-blue-500 font-bold">1.</span>
+                          <span>Identify the user by either email or unique DevSpace handle.</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-blue-500 font-bold">2.</span>
+                          <span>Assign role levels (Viewer, Editor, or Admin permissions).</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-blue-500 font-bold">3.</span>
+                          <span>Audit fine-grained toggles like Git Push and structural reviews.</span>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs text-zinc-400 font-medium mb-1">
-                          Collaborator Permission Level (Access Role)
-                        </label>
-                        <select
-                          value={inviteRole}
-                          onChange={(e) => setInviteRole(e.target.value as any)}
-                          className="w-full bg-[#1c1c1f] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500 text-zinc-300 transition-colors font-sans"
-                        >
-                          <option value="viewer">Viewer (Read-only project view)</option>
-                          <option value="editor">Editor (Can edit goals, issues, brainstorm, and notes)</option>
-                          <option value="admin">Admin (Full edit, invite collaborators, and manage roles)</option>
-                        </select>
-                      </div>
-                      {inviteError && (
-                        <p className="text-xs text-red-400 font-mono">{inviteError}</p>
-                      )}
-                      {inviteSuccess && (
-                        <p className="text-xs text-emerald-400 font-mono">{inviteSuccess}</p>
-                      )}
-                      <button
-                        type="submit"
-                        disabled={inviteLoading}
-                        className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 text-white font-medium rounded py-2 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {inviteLoading ? 'Sending...' : 'Send Collaboration Invitation'}
-                      </button>
-                    </form>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowInviteWizard(true)}
+                      className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded py-3 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.25)]"
+                    >
+                      <Sparkles size={13} className="text-yellow-400" />
+                      <span>Launch Step-by-Step Invite Wizard</span>
+                    </button>
                   </div>
 
                   {/* Team Members List */}
@@ -5172,6 +5105,13 @@ Description of fix or enhancement recommendation
         loadingRepos={loadingRepos}
         onFetchRepos={handleOpenModal}
       />
+
+      {showInviteWizard && (
+        <InviteUserWizard
+          projectId={viewingWorkspaceId || ''}
+          onClose={() => setShowInviteWizard(false)}
+        />
+      )}
     </div>
   );
 }

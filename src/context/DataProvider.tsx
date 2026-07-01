@@ -128,6 +128,7 @@ export type Project = {
   githubPushPolicy?: 'owner' | 'admins' | 'editors' | 'open';
   gitHubCollaboratorUsernames?: { [email: string]: string };
   gitHubCollaboratorStatus?: { [email: string]: 'none' | 'pending' | 'active' };
+  collaboratorPermissions?: { [email: string]: { canPushToGit: boolean; canViewCode: boolean; canEditRoadmap: boolean; canInviteOthers: boolean } };
 };
 
 export type Issue = {
@@ -292,7 +293,7 @@ type DataContextType = {
   updateUserProfile: (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => Promise<void>;
   invitations: any[];
   setInvitations: React.Dispatch<React.SetStateAction<any[]>>;
-  sendInvitation: (projectId: string, receiverEmail: string, role?: 'admin' | 'editor' | 'viewer') => Promise<void>;
+  sendInvitation: (projectId: string, receiverEmail: string, role?: 'admin' | 'editor' | 'viewer', permissions?: any, receiverUsername?: string) => Promise<void>;
   acceptInvitation: (invitationId: string) => Promise<void>;
   declineInvitation: (invitationId: string) => Promise<void>;
   updateCollaboratorRole: (projectId: string, email: string, role: 'admin' | 'editor' | 'viewer') => Promise<void>;
@@ -1430,6 +1431,73 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // 1.5 Migrate local anonymous projects and resources if they exist
+      const localProjects = getStored<Project[]>('app_projects', []);
+      const anonProjects = localProjects.filter(p => !p.ownerId || p.ownerId === 'anonymous');
+      
+      if (anonProjects.length > 0) {
+        console.log(`[Migration] Migrating ${anonProjects.length} anonymous projects to logged-in user ${user.uid}`);
+        const email = user.email || '';
+        const migratedProjects = localProjects.map(p => {
+          if (!p.ownerId || p.ownerId === 'anonymous') {
+            return {
+              ...p,
+              ownerId: user.uid,
+              collaborators: email ? [email.trim().toLowerCase()] : [],
+              collaboratorRoles: email ? { [email.trim().toLowerCase()]: 'admin' as const } : {}
+            };
+          }
+          return p;
+        });
+
+        // Write migrated projects to Firestore
+        for (const proj of migratedProjects) {
+          if (proj.ownerId === user.uid) {
+            try {
+              await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+              console.log(`[Migration] Migrated project ${proj.id} saved to Firestore.`);
+            } catch (fsErr) {
+              console.warn(`[Migration] Failed to save migrated project ${proj.id} to Firestore:`, fsErr);
+            }
+          }
+        }
+
+        // Migrate local anonymous issues, notes, synapses to Firestore
+        const localIssues = getStored<Issue[]>('app_issues', []);
+        for (const iss of localIssues) {
+          try {
+            await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+          } catch (fsErr) {
+            console.warn(`[Migration] Failed to save issues of migrated project ${iss.id} to Firestore:`, fsErr);
+          }
+        }
+
+        const localNotes = getStored<Note[]>('app_notes', []);
+        for (const note of localNotes) {
+          try {
+            await setDocWithSanitize(doc(db, 'notes', note.id), note);
+          } catch (fsErr) {
+            console.warn(`[Migration] Failed to save notes of migrated project ${note.id} to Firestore:`, fsErr);
+          }
+        }
+
+        const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+        for (const syn of localSynapses) {
+          try {
+            await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+          } catch (fsErr) {
+            console.warn(`[Migration] Failed to save synapses of migrated project ${syn.id} to Firestore:`, fsErr);
+          }
+        }
+
+        // Add them to fbProjects list so they are treated as fetched
+        migratedProjects.forEach(p => {
+          if (!fbProjects.some(fbP => fbP.id === p.id)) {
+            fbProjects.push(p);
+          }
+        });
+      }
+
       const allowedProjectIds = fbProjects.map(p => p.id);
       const allowedProjectNames = fbProjects.map(p => (p.name || '').toLowerCase());
 
@@ -1504,32 +1572,52 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setProjects(mergedProjects);
         setStored('app_projects', mergedProjects);
       } else {
-        setProjects([]);
-        setStored('app_projects', []);
+        if (finalProjects.length > 0) {
+          setProjects(finalProjects);
+          setStored('app_projects', finalProjects);
+        } else {
+          setProjects([]);
+          setStored('app_projects', []);
+        }
       }
 
       if (fbIssues.length > 0) {
         setIssues(fbIssues);
         setStored('app_issues', fbIssues);
       } else {
-        setIssues([]);
-        setStored('app_issues', []);
+        if (finalIssues.length > 0) {
+          setIssues(finalIssues);
+          setStored('app_issues', finalIssues);
+        } else {
+          setIssues([]);
+          setStored('app_issues', []);
+        }
       }
 
       if (fbNotes.length > 0) {
         setNotes(fbNotes);
         setStored('app_notes', fbNotes);
       } else {
-        setNotes([]);
-        setStored('app_notes', []);
+        const localNotes = getStored<Note[]>('app_notes', []);
+        if (localNotes.length > 0) {
+          setNotes(localNotes);
+        } else {
+          setNotes([]);
+          setStored('app_notes', []);
+        }
       }
 
       if (fbSynapses.length > 0) {
         setCortexSynapses(fbSynapses);
         setStored('app_cortex_synapses', fbSynapses);
       } else {
-        setCortexSynapses([]);
-        setStored('app_cortex_synapses', []);
+        const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+        if (localSynapses.length > 0) {
+          setCortexSynapses(localSynapses);
+        } else {
+          setCortexSynapses([]);
+          setStored('app_cortex_synapses', []);
+        }
       }
 
       // 3. Immediately POST merged state back to user-scoped server cache to initialize it
@@ -1661,13 +1749,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const sendInvitation = async (projectId: string, receiverEmail: string, role: 'admin' | 'editor' | 'viewer' = 'editor') => {
+  const sendInvitation = async (
+    projectId: string, 
+    receiverEmail: string, 
+    role: 'admin' | 'editor' | 'viewer' = 'editor',
+    permissions?: any,
+    receiverUsername?: string
+  ) => {
     if (!auth.currentUser) throw new Error("Must be logged in to send invitations");
     const proj = projects.find(p => p.id === projectId);
     if (!proj) throw new Error("Project not found");
 
     const id = crypto.randomUUID();
     const inviteLink = `${window.location.origin}/projects?inviteId=${id}`;
+    
+    const defaultPermissions = {
+      canPushToGit: role === 'admin' || role === 'editor',
+      canViewCode: true,
+      canEditRoadmap: role === 'admin' || role === 'editor',
+      canInviteOthers: role === 'admin'
+    };
+
     const newInvitation = {
       id,
       projectId,
@@ -1676,8 +1778,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       senderEmail: auth.currentUser.email || '',
       senderName: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'User',
       receiverEmail: receiverEmail.trim().toLowerCase(),
+      receiverUsername: receiverUsername ? receiverUsername.trim() : '',
       status: 'pending',
       role,
+      permissions: permissions || defaultPermissions,
       inviteLink,
       createdAt: Date.now()
     };
@@ -1697,7 +1801,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           senderName: auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || 'User',
           receiverEmail: receiverEmail.trim().toLowerCase(),
           invitationId: id,
-          role
+          role,
+          permissions: newInvitation.permissions
         })
       });
       if (!response.ok) {
@@ -1729,13 +1834,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const projDoc = projSnap.docs[0];
         const projData = projDoc.data() as Project;
         const collaborators = projData.collaborators || [];
-        if (!collaborators.includes(auth.currentUser.email || '')) {
-          collaborators.push(auth.currentUser.email || '');
+        const emailLower = (auth.currentUser.email || '').trim().toLowerCase();
+        if (!collaborators.includes(emailLower)) {
+          collaborators.push(emailLower);
         }
         const collaboratorRoles = projData.collaboratorRoles || {};
-        collaboratorRoles[auth.currentUser.email || ''] = invite.role || 'editor';
+        collaboratorRoles[emailLower] = invite.role || 'editor';
 
-        const updatedProj = { ...projData, collaborators, collaboratorRoles };
+        const collaboratorPermissions = projData.collaboratorPermissions || {};
+        collaboratorPermissions[emailLower] = invite.permissions || {
+          canPushToGit: invite.role === 'admin' || invite.role === 'editor',
+          canViewCode: true,
+          canEditRoadmap: invite.role === 'admin' || invite.role === 'editor',
+          canInviteOthers: invite.role === 'admin'
+        };
+
+        const updatedProj = { 
+          ...projData, 
+          collaborators, 
+          collaboratorRoles, 
+          collaboratorPermissions 
+        };
         await setDocWithSanitize(doc(db, 'projects', invite.projectId), updatedProj);
         setProjects(prev => prev.map(p => p.id === invite.projectId ? updatedProj : p));
       }
