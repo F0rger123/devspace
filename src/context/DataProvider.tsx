@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, ReactNod
 import { collection, getDocs, setDoc, doc, deleteDoc, query, where, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, auth } from '../lib/auth';
+import { Toast, ToastContainer } from '../components/ui/Toast';
 
 enum OperationType {
   CREATE = 'create',
@@ -399,6 +400,13 @@ type DataContextType = {
   setIsAssistantMinimized: React.Dispatch<React.SetStateAction<boolean>>;
   isAssistantOpen: boolean;
   setIsAssistantOpen: React.Dispatch<React.SetStateAction<boolean>>;
+
+  syncStatus: 'idle' | 'saving' | 'saved' | 'error';
+  lastSyncedTime: number | null;
+  toasts: Toast[];
+  showToast: (message: string, type?: Toast['type'], duration?: number) => void;
+  removeToast: (id: string) => void;
+  triggerFullSync: () => Promise<void>;
 };
 
 const DataContext = createContext<DataContextType | null>(null);
@@ -857,6 +865,120 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
+  // Sync and Toast States & Handlers
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSyncedTime, setLastSyncedTime] = useState<number | null>(null);
+  const [activeSyncs, setActiveSyncs] = useState<string[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const lastSyncToastTimeRef = useRef<number>(0);
+
+  const showToast = (message: string, type: Toast['type'] = 'info', duration: number = 3000) => {
+    const id = crypto.randomUUID();
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+    if (duration > 0) {
+      setTimeout(() => {
+        removeToast(id);
+      }, duration);
+    }
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const startSync = (key: string) => {
+    setSyncStatus('saving');
+    setActiveSyncs(prev => prev.includes(key) ? prev : [...prev, key]);
+  };
+
+  const endSync = (key: string, success: boolean = true) => {
+    setActiveSyncs(prev => {
+      const updated = prev.filter(k => k !== key);
+      if (updated.length === 0) {
+        setSyncStatus(success ? 'saved' : 'error');
+        if (success) {
+          setLastSyncedTime(Date.now());
+        }
+      }
+      return updated;
+    });
+  };
+
+  const triggerFullSync = async () => {
+    startSync('manual-sync');
+    try {
+      // 1. Sync to Server cache
+      await fetchWithAuth('/api/voice/sync-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projects,
+          issues,
+          cortexSynapses,
+          notes,
+          phases,
+          agents,
+          aiContextRules,
+          aetherPersonalityRules,
+          passcodePin
+        })
+      });
+
+      // 2. Sync projects to Firestore
+      for (const proj of projects) {
+        await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+      }
+
+      // 3. Sync issues to Firestore
+      for (const iss of issues) {
+        await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+      }
+
+      // 4. Sync notes to Firestore
+      for (const note of notes) {
+        await setDocWithSanitize(doc(db, 'notes', note.id), note);
+      }
+
+      // 5. Sync synapses to Firestore
+      for (const syn of cortexSynapses) {
+        await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+      }
+
+      endSync('manual-sync', true);
+      showToast('Manual workspace sync completed successfully.', 'success', 3000);
+    } catch (e) {
+      console.error("Manual synchronization failed:", e);
+      endSync('manual-sync', false);
+      showToast('Manual workspace sync failed. Check console for details.', 'error', 3000);
+    }
+  };
+
+  // Trigger throttled success / error toasts based on sync status
+  useEffect(() => {
+    if (syncStatus === 'saved' && lastSyncedTime) {
+      const now = Date.now();
+      if (now - lastSyncToastTimeRef.current > 12000) {
+        showToast('All changes synchronized with Firestore.', 'success', 2500);
+        lastSyncToastTimeRef.current = now;
+      }
+    } else if (syncStatus === 'error') {
+      showToast('Workspace synchronization failed. Please verify your connection.', 'error', 4000);
+    }
+  }, [syncStatus, lastSyncedTime]);
+
+  const fetchWithAuth = async (url: string, options: any = {}) => {
+    const headers = { ...(options.headers || {}) };
+    if (auth.currentUser) {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        headers['Authorization'] = `Bearer ${idToken}`;
+      } catch (e) {
+        console.warn("Failed to get idToken for authenticated request:", e);
+      }
+    }
+    return fetch(url, { ...options, headers });
+  };
+
   // Fetch server state cache on mount and sync with Firestore
   useEffect(() => {
     async function loadServerState() {
@@ -864,7 +986,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       let finalIssues: Issue[] = [];
 
       try {
-        const res = await fetch('/api/voice/sync-cache');
+        const res = await fetchWithAuth('/api/voice/sync-cache');
         if (res.ok) {
           const data = await res.json();
           if (data) {
@@ -1074,10 +1196,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post state cache to server on local changes (debounced by 400ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+    setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
+      startSync('sync-cache');
       try {
-        await fetch('/api/voice/sync-cache', {
+        await fetchWithAuth('/api/voice/sync-cache', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1092,8 +1216,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
             passcodePin
           })
         });
+        endSync('sync-cache', true);
       } catch (e) {
         console.error("Failed to auto-sync changes to server:", e);
+        endSync('sync-cache', false);
       }
     }, 400);
 
@@ -1103,14 +1229,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post projects to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+    setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
+      startSync('projects');
       try {
         for (const proj of projects) {
           await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
         }
+        endSync('projects', true);
       } catch (e) {
         console.error("Failed to auto-sync projects to Firestore:", e);
+        endSync('projects', false);
       }
     }, 450);
 
@@ -1120,14 +1250,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post issues to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+    setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
+      startSync('issues');
       try {
         for (const iss of issues) {
           await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
         }
+        endSync('issues', true);
       } catch (e) {
         console.error("Failed to auto-sync issues to Firestore:", e);
+        endSync('issues', false);
       }
     }, 450);
 
@@ -1137,14 +1271,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post notes to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+    setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
+      startSync('notes');
       try {
         for (const note of notes) {
           await setDocWithSanitize(doc(db, 'notes', note.id), note);
         }
+        endSync('notes', true);
       } catch (e) {
         console.error("Failed to auto-sync notes to Firestore:", e);
+        endSync('notes', false);
       }
     }, 450);
 
@@ -1154,14 +1292,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post cortexSynapses to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+    setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
+      startSync('cortexSynapses');
       try {
         for (const syn of cortexSynapses) {
           await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
         }
+        endSync('cortexSynapses', true);
       } catch (e) {
         console.error("Failed to auto-sync cortex synapses to Firestore:", e);
+        endSync('cortexSynapses', false);
       }
     }, 450);
 
@@ -1174,7 +1316,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/voice/sync-cache');
+        const res = await fetchWithAuth('/api/voice/sync-cache');
         if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data.projects)) {
@@ -1221,6 +1363,205 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_ai_context', aiContextRules); }, [aiContextRules]);
   useEffect(() => { setStored('app_aether_personality_rules', aetherPersonalityRules); }, [aetherPersonalityRules]);
   useEffect(() => { setStored('app_github_user', githubUser); }, [githubUser]);
+
+  const loadUserWorkspace = async (user: any) => {
+    if (!user) return;
+    try {
+      setIsInitialLoadDone(false);
+      const idToken = await user.getIdToken();
+      
+      // 1. Fetch user-scoped server cache
+      let finalProjects: Project[] = [];
+      let finalIssues: Issue[] = [];
+      
+      try {
+        const res = await fetch('/api/voice/sync-cache', {
+          headers: {
+            'Authorization': `Bearer ${idToken}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            finalProjects = data.projects || [];
+            finalIssues = data.issues || [];
+            setProjects(finalProjects);
+            setIssues(finalIssues);
+            setNotes(data.notes || []);
+            setPhases(data.phases || []);
+            setAgents(data.agents || []);
+            setCortexSynapses(data.cortexSynapses || []);
+            if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
+            if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
+            if (typeof data.passcodePin === 'string') {
+              setPasscodePin(data.passcodePin);
+              localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load user-scoped server state:", e);
+      }
+
+      // 2. Query Firestore directly for owned and collab projects
+      let fbProjects: Project[] = [];
+      try {
+        const ownedQuery = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
+        const ownedSnap = await getDocs(ownedQuery);
+        ownedSnap.forEach((docSnap) => {
+          fbProjects.push(docSnap.data() as Project);
+        });
+      } catch (err) {
+        console.warn("Failed to fetch owned projects:", err);
+      }
+
+      if (user.email) {
+        try {
+          const collabQuery = query(collection(db, 'projects'), where('collaborators', 'array-contains', user.email.trim().toLowerCase()));
+          const collabSnap = await getDocs(collabQuery);
+          collabSnap.forEach((docSnap) => {
+            const proj = docSnap.data() as Project;
+            if (!fbProjects.some(p => p.id === proj.id)) {
+              fbProjects.push(proj);
+            }
+          });
+        } catch (err) {
+          console.warn("Failed to fetch collab projects:", err);
+        }
+      }
+
+      const allowedProjectIds = fbProjects.map(p => p.id);
+      const allowedProjectNames = fbProjects.map(p => (p.name || '').toLowerCase());
+
+      // Fetch user's issues, notes, synapses
+      const issuesSnap = await getDocs(collection(db, 'issues'));
+      const fbIssues: Issue[] = [];
+      issuesSnap.forEach((docSnap) => {
+        const item = docSnap.data() as Issue;
+        if (allowedProjectIds.includes(item.projectId)) {
+          fbIssues.push(item);
+        }
+      });
+
+      const fbNotes: Note[] = [];
+      try {
+        const notesSnap = await getDocs(collection(db, 'notes'));
+        notesSnap.forEach((docSnap) => {
+          const item = docSnap.data() as Note;
+          if (allowedProjectIds.includes(item.projectId)) {
+            fbNotes.push(item);
+          }
+        });
+      } catch (e) {}
+
+      const fbSynapses: CortexSynapse[] = [];
+      try {
+        const synapsesSnap = await getDocs(collection(db, 'cortexSynapses'));
+        synapsesSnap.forEach((docSnap) => {
+          const item = docSnap.data() as CortexSynapse;
+          if (!item.projectName || allowedProjectNames.includes(item.projectName.toLowerCase())) {
+            fbSynapses.push(item);
+          }
+        });
+      } catch (e) {}
+
+      // Merge & set state
+      if (fbProjects.length > 0) {
+        const mergedProjects = fbProjects.map(fbP => {
+          const serverP = finalProjects.find(sp => sp.id === fbP.id);
+          if (serverP) {
+            const currentRecs = fbP.dreamRecommendations || [];
+            const serverRecs = serverP.dreamRecommendations || [];
+            const mergedRecs = [...currentRecs];
+            serverRecs.forEach((sr: any) => {
+              if (!mergedRecs.some((r: any) => r.id === sr.id || r.title.toLowerCase() === sr.title.toLowerCase())) {
+                mergedRecs.push(sr);
+              }
+            });
+            
+            const currentBrainstorms = fbP.brainstormIdeas || [];
+            const serverBrainstorms = serverP.brainstormIdeas || [];
+            const mergedBrainstorms = [...currentBrainstorms];
+            serverBrainstorms.forEach((sb: any) => {
+              if (!mergedBrainstorms.some((b: any) => b.id === sb.id || b.text.toLowerCase() === sb.text.toLowerCase())) {
+                mergedBrainstorms.push(sb);
+              }
+            });
+
+            return {
+              ...fbP,
+              dreamRecommendations: mergedRecs,
+              brainstormIdeas: mergedBrainstorms,
+              isDreamingActive: fbP.isDreamingActive ?? serverP.isDreamingActive,
+              dreamProgress: fbP.dreamProgress ?? serverP.dreamProgress,
+              dreamLogs: fbP.dreamLogs || serverP.dreamLogs || [],
+              dreamFocus: fbP.dreamFocus || serverP.dreamFocus,
+              lastDreamedTime: fbP.lastDreamedTime || serverP.lastDreamedTime
+            };
+          }
+          return fbP;
+        });
+        setProjects(mergedProjects);
+        setStored('app_projects', mergedProjects);
+      } else {
+        setProjects([]);
+        setStored('app_projects', []);
+      }
+
+      if (fbIssues.length > 0) {
+        setIssues(fbIssues);
+        setStored('app_issues', fbIssues);
+      } else {
+        setIssues([]);
+        setStored('app_issues', []);
+      }
+
+      if (fbNotes.length > 0) {
+        setNotes(fbNotes);
+        setStored('app_notes', fbNotes);
+      } else {
+        setNotes([]);
+        setStored('app_notes', []);
+      }
+
+      if (fbSynapses.length > 0) {
+        setCortexSynapses(fbSynapses);
+        setStored('app_cortex_synapses', fbSynapses);
+      } else {
+        setCortexSynapses([]);
+        setStored('app_cortex_synapses', []);
+      }
+
+      // 3. Immediately POST merged state back to user-scoped server cache to initialize it
+      try {
+        await fetch('/api/voice/sync-cache', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({
+            projects: fbProjects,
+            issues: fbIssues,
+            notes: fbNotes,
+            cortexSynapses: fbSynapses,
+            phases: [],
+            agents: [],
+            aiContextRules: "",
+            aetherPersonalityRules: [],
+            passcodePin: "1234"
+          })
+        });
+      } catch (postErr) {
+        console.error("Failed to post user-scoped initial state:", postErr);
+      }
+
+    } catch (err) {
+      console.error("Error loading user workspace:", err);
+    } finally {
+      setIsInitialLoadDone(true);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -1295,11 +1636,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           console.warn("Failed to fetch user invitations from Firestore (offline fallback):", e);
         }
+
+        // Load the full isolated user workspace data
+        await loadUserWorkspace(user);
       } else {
+        setIsInitialLoadDone(false);
         setGoogleUser(null);
         setStored('app_google_user', null);
         setUserProfile(null);
         setInvitations([]);
+        
+        // Clear workspace data on logout to completely isolate sessions
+        setProjects([]);
+        setIssues([]);
+        setNotes([]);
+        setCortexSynapses([]);
+        setStored('app_projects', []);
+        setStored('app_issues', []);
+        setStored('app_notes', []);
+        setStored('app_cortex_synapses', []);
+        setIsInitialLoadDone(true);
       }
     });
     return () => unsubscribe();
@@ -1311,6 +1667,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!proj) throw new Error("Project not found");
 
     const id = crypto.randomUUID();
+    const inviteLink = `${window.location.origin}/projects?inviteId=${id}`;
     const newInvitation = {
       id,
       projectId,
@@ -1321,6 +1678,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       receiverEmail: receiverEmail.trim().toLowerCase(),
       status: 'pending',
       role,
+      inviteLink,
       createdAt: Date.now()
     };
 
@@ -1398,15 +1756,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateUserProfile = async (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => {
     if (!auth.currentUser) throw new Error("Must be logged in to update profile");
-    const updatedProfile = {
-      ...(userProfile || {}),
-      ...updates,
-      uid: auth.currentUser.uid,
-      email: auth.currentUser.email || '',
-      updatedAt: Date.now()
-    };
-    await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
-    setUserProfile(updatedProfile);
+    startSync('profile');
+    try {
+      const updatedProfile = {
+        ...(userProfile || {}),
+        ...updates,
+        uid: auth.currentUser.uid,
+        email: auth.currentUser.email || '',
+        updatedAt: Date.now()
+      };
+      await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
+      setUserProfile(updatedProfile);
+      endSync('profile', true);
+      showToast('Profile and workspace settings updated successfully.', 'success', 3000);
+    } catch (e) {
+      console.error("Failed to update profile:", e);
+      endSync('profile', false);
+      showToast('Failed to save profile settings.', 'error', 3000);
+    }
   };
 
   const updateCollaboratorRole = async (projectId: string, email: string, role: 'admin' | 'editor' | 'viewer') => {
@@ -2453,9 +2820,17 @@ Description of fix or enhancement recommendation
       navRoadmapShortcutMouse, setNavRoadmapShortcutMouse,
 
       isAssistantMinimized, setIsAssistantMinimized,
-      isAssistantOpen, setIsAssistantOpen
+      isAssistantOpen, setIsAssistantOpen,
+
+      syncStatus,
+      lastSyncedTime,
+      toasts,
+      showToast,
+      removeToast,
+      triggerFullSync
     }}>
       {children}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </DataContext.Provider>
   );
 }

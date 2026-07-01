@@ -16,9 +16,14 @@ interface StoreState {
   setRightSidebarOpen: (open: boolean) => void;
 }
 
-const initialSidebarOpen = localStorage.getItem('isSidebarOpen') !== 'false';
+const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+const initialSidebarOpen = localStorage.getItem('isSidebarOpen') !== null
+  ? localStorage.getItem('isSidebarOpen') !== 'false'
+  : !isMobile;
 const initialSidebarMinimized = localStorage.getItem('isSidebarMinimized') === 'true';
-const initialRightSidebarOpen = localStorage.getItem('isRightSidebarOpen') !== 'false';
+const initialRightSidebarOpen = localStorage.getItem('isRightSidebarOpen') !== null
+  ? localStorage.getItem('isRightSidebarOpen') !== 'false'
+  : !isMobile;
 
 export const useStore = create<StoreState>((set) => ({
   isCommandPaletteOpen: false,

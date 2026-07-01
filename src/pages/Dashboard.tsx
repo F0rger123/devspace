@@ -1071,7 +1071,7 @@ export function Dashboard() {
             {loading ? (
                <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2 bg-[#121214]/60 backdrop-blur-sm">
                   <Loader2 size={16} className="animate-spin text-indigo-400" />
-                  <span className="text-xs font-mono">Loading telemetry stream...</span>
+                  <span className="text-xs font-mono">Loading activity stream...</span>
                </div>
             ) : (!activeProject?.githubRepos || activeProject.githubRepos.length === 0) ? (
                <div className="absolute inset-0 flex items-center justify-center text-zinc-500">

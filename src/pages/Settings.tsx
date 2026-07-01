@@ -551,14 +551,14 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="flex gap-6 h-full">
+      <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         {/* Settings Navigation */}
-        <div className="w-48 shrink-0 flex flex-col gap-1">
+        <div className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-x-visible shrink-0 pb-2 md:pb-0 w-full md:w-48 border-b md:border-b-0 md:border-r border-zinc-900 md:pr-4">
           {['profile', 'aether', 'voice-triggers', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`text-left px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+              className={`text-left px-3 py-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                 activeTab === tab
                   ? 'bg-[#18181b] border border-zinc-800 text-zinc-100 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
@@ -570,7 +570,7 @@ export function Settings() {
         </div>
 
         {/* Settings Content */}
-        <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl p-6 overflow-y-auto w-full">
+        <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl p-4 md:p-6 overflow-y-auto w-full min-w-0">
           {activeTab === 'aether' && (
             <div className="space-y-6 animate-fade-in text-zinc-300">
               <div>
@@ -586,14 +586,14 @@ export function Settings() {
               <div className="bg-gradient-to-r from-purple-950/20 via-zinc-900 to-zinc-950 border border-purple-500/10 rounded-lg p-5">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
-                    <span className="text-[10px] font-mono tracking-widest text-purple-400 font-bold uppercase">Aether System Matrix</span>
+                    <span className="text-[10px] font-mono tracking-widest text-purple-400 font-bold uppercase">Aether Agent Autonomy</span>
                     <h4 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
-                      Current Agency Class: <span className="text-purple-300 font-mono font-semibold">
+                      Agency Level: <span className="text-purple-300 font-mono font-semibold">
                         {!aetherControlNotes && !aetherControlIssues && !aetherControlAgents && !aetherControlBrainstorm && !aetherControlIntegrations
                           ? "OBSERVER ONLY"
                           : aetherDoubleConfirm
                             ? "GUARDED COPILOT"
-                            : "AUTONOMOUS ORACLE"}
+                            : "AUTONOMOUS COPILOT"}
                       </span>
                     </h4>
                     <p className="text-[11px] text-zinc-400 max-w-xl leading-relaxed mt-1">
@@ -842,30 +842,30 @@ export function Settings() {
               {/* Aether Capabilities Panel */}
               <div className="border border-zinc-800/80 bg-zinc-950/40 p-4 rounded-lg">
                 <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5 mb-2">
-                   🧭 Matrix Intelligence Diagnostics
+                   🧭 Autonomy Scope Information
                 </h4>
                 <div className="space-y-2 text-[11px] text-zinc-400">
                   <p>
-                    Aether runs on Gemini-powered semantic models. When toggles are activated, Aether's contextual intelligence changes the prompt instructions fed into AI routes dynamically, modifying authorization levels across your Obsidian Synaptic brain.
+                    Aether runs on Gemini-powered models. When toggles are activated, the AI's operational boundaries are updated to permit indexing and automation across the requested domains of your workspace.
                   </p>
                   <div className="flex flex-wrap gap-2 pt-2">
                     <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlNotes ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
-                      Notes Daemon Mode
+                      Notes Indexing
                     </span>
                     <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlIssues ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
-                      Sprints Watcher
+                      Sprints Organizer
                     </span>
                     <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlAgents ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
-                      Subagent Commander
+                      Agent Delegation
                     </span>
                     <span className={`px-2 py-0.5 rounded border text-[10px] ${aetherControlBrainstorm ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-zinc-900 border-zinc-850 text-zinc-650"}`}>
-                      Dreamweaver Core
+                      Brainstorm Suggestions
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Aether Personality & Synaptic Memories Panel */}
+              {/* Aether Personality & Settings */}
               <div className="border border-purple-500/20 bg-zinc-950/40 p-5 rounded-lg space-y-4">
                 <div>
                   <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">

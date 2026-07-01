@@ -55,9 +55,11 @@
         "senderName": { "type": "string", "description": "Username/Name of the sender" },
         "receiverEmail": { "type": "string", "description": "Email of the user being invited" },
         "status": { "type": "string", "enum": ["pending", "accepted", "declined"], "description": "Status of the invitation" },
+        "role": { "type": "string", "enum": ["admin", "editor", "viewer"], "description": "Access permission role offered" },
+        "inviteLink": { "type": "string", "description": "Direct URLs/Links to easily accept the invitation" },
         "createdAt": { "type": "number", "description": "Timestamp when the invitation was sent" }
       },
-      "required": ["id", "projectId", "projectName", "senderId", "senderEmail", "senderName", "receiverEmail", "status", "createdAt"]
+      "required": ["id", "projectId", "projectName", "senderId", "senderEmail", "senderName", "receiverEmail", "status", "role", "createdAt"]
     }
   },
   "firestore": {

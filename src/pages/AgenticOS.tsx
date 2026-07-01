@@ -27,7 +27,10 @@ import {
   Cpu,
   Server,
   Terminal as CliIcon,
-  Monitor
+  Monitor,
+  GitBranch,
+  GitPullRequest,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -121,11 +124,24 @@ const DEFAULT_SCHEDULED_TASKS: ScheduledTask[] = [
 
 export function AgenticOS() {
   const { 
-    projects, issues, notes, assets, agents, setAgents, updateProject, updateIssue, addIssue, githubToken,
+    projects, issues, notes, assets, agents, setAgents, updateProject, updateIssue, addIssue, githubToken, setGithubToken,
     aetherAutoRecommend, aetherDoubleConfirm 
   } = useData();
 
   const navigate = useNavigate();
+
+  // Real GitHub Action States
+  const [gitRepoToUse, setGitRepoToUse] = useState('google/genai-js');
+  const [gitBaseBranch, setGitBaseBranch] = useState('main');
+  const [gitNewBranch, setGitNewBranch] = useState('');
+  const [gitFilePath, setGitFilePath] = useState('agent-patches/patch-code.md');
+  const [gitTokenInput, setGitTokenInput] = useState('');
+  const [gitStatusLog, setGitStatusLog] = useState<string[]>([]);
+  const [gitLoading, setGitLoading] = useState(false);
+  const [branchCreated, setBranchCreated] = useState(false);
+  const [codePushed, setCodePushed] = useState(false);
+  const [prCreatedUrl, setPrCreatedUrl] = useState('');
+  const [gitAutopilot, setGitAutopilot] = useState(true);
 
   const [selectedOfficeProjectId, setSelectedOfficeProjectId] = useState<string>('all');
   const [newProblemTitle, setNewProblemTitle] = useState('');
@@ -392,8 +408,20 @@ export function AgenticOS() {
     setLabTestOutputs('');
     setLabTestingStats('');
 
+    setBranchCreated(false);
+    setCodePushed(false);
+    setPrCreatedUrl('');
+    setGitStatusLog([]);
+
     const activeAgent = agents.find(a => a.id === targetAgentId) || { name: 'Jules AI', role: 'Google\'s Coding Assistant' };
-    const activeProj = projects.find(p => p.id === targetProjectId) || { name: 'Active Project', description: 'Autonomous development workspace.' };
+    const activeProj = projects.find(p => p.id === targetProjectId);
+    const activeProjName = activeProj?.name || 'Active Project';
+
+    const defaultRepo = (activeProj && 'githubRepos' in activeProj && activeProj.githubRepos && activeProj.githubRepos[0]) || 'google/genai-js';
+    setGitRepoToUse(defaultRepo);
+    const sanitizedAgentName = (activeAgent?.name || 'agent').toLowerCase().replace(/[^a-z0-9]/g, '');
+    setGitNewBranch(`feat/${sanitizedAgentName}-patch-${Date.now().toString().slice(-4)}`);
+    setGitFilePath(`agent-patches/patch-${sanitizedAgentName}.md`);
 
     const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
     const logList: string[] = [];
@@ -407,7 +435,7 @@ export function AgenticOS() {
     addConsoleLog(`SYSTEM: Launching coding sandbox compiler environment on port 3000...`);
     await sleep(400);
 
-    addConsoleLog(`${activeAgent.name.toUpperCase()}: Swarming workspace. Intercepting payload of ${queueToRun.length} assignments for "${activeProj.name}".`);
+    addConsoleLog(`${activeAgent.name.toUpperCase()}: Swarming workspace. Intercepting payload of ${queueToRun.length} assignments for "${activeProjName}".`);
     await sleep(600);
 
     for (let i = 0; i < queueToRun.length; i++) {
@@ -453,6 +481,9 @@ export function AgenticOS() {
 
     addConsoleLog(`SYSTEM: Invoking Gemini LLM engine to synthesize code summaries and QA validation checklists...`);
 
+    let finalSummary = "";
+    let finalTestGuide = "";
+
     try {
        const response = await fetch('/api/gemini/run-mission', {
           method: 'POST',
@@ -460,8 +491,8 @@ export function AgenticOS() {
           body: JSON.stringify({
              agentName: activeAgent.name,
              agentRole: activeAgent.role,
-             projectName: activeProj.name,
-             projectDescription: activeProj.description,
+             projectName: activeProjName,
+             projectDescription: activeProj?.description || 'Autonomous development workspace.',
              items: queueToRun
           })
        });
@@ -471,24 +502,239 @@ export function AgenticOS() {
        }
 
        const data = await response.json();
-       setLabSummary(data.summary || "");
-       setLabTestGuide(data.testGuide || "");
+       finalSummary = data.summary || "";
+       finalTestGuide = data.testGuide || "";
+       setLabSummary(finalSummary);
+       setLabTestGuide(finalTestGuide);
        addConsoleLog(`SYSTEM: Google GenAI synthesis completed! Code Action briefing and step-by-step test instructions are available below.`);
     } catch (e: any) {
        console.error("Gemini failed, using fallback:", e);
        addConsoleLog(`WARNING: Gemini API pipeline offline or key missing. Initiating local high-fidelity generator fallback...`);
        await sleep(700);
-       const fallback = generateFallbackMissionReport(activeAgent.name, activeProj.name, queueToRun);
-       setLabSummary(fallback.summary);
-       setLabTestGuide(fallback.testGuide);
+       const fallback = generateFallbackMissionReport(activeAgent.name, activeProjName, queueToRun);
+       finalSummary = fallback.summary;
+       finalTestGuide = fallback.testGuide;
+       setLabSummary(finalSummary);
+       setLabTestGuide(finalTestGuide);
        addConsoleLog(`SYSTEM: Local high-fidelity report generated successfully! Dynamic briefs compiled.`);
-    } finally {
-       setLabRunning(false);
     }
+
+    if (gitAutopilot) {
+       addConsoleLog(`SYSTEM: [AUTOPILOT] Initializing automated GitHub deployment loop...`);
+       await sleep(600);
+       
+       try {
+          // Step 1: Create Branch
+          addConsoleLog(`SYSTEM: [AUTOPILOT] Step 1/3: Requesting branch creation: '${gitNewBranch}'...`);
+          const branchRes = await fetch('/api/github/create-branch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              repo: defaultRepo,
+              branchName: gitNewBranch,
+              fromBranch: gitBaseBranch,
+              token: githubToken
+            })
+          });
+          const branchData = await branchRes.json();
+          if (!branchRes.ok) throw new Error(branchData.error || "Failed to auto-create branch");
+          setBranchCreated(true);
+          addConsoleLog(`[SUCCESS] [AUTOPILOT] Step 1/3: Branch '${gitNewBranch}' successfully mapped on GitHub!`);
+          await sleep(600);
+
+          // Step 2: Push File
+          addConsoleLog(`SYSTEM: [AUTOPILOT] Step 2/3: Committing and pushing software patch report to '${gitFilePath}'...`);
+          const contentToPush = `## Agent Coding Patch Report\n\n### 🤖 Summary of modifications:\n${finalSummary}\n\n### 📋 Verification checklist:\n${finalTestGuide}\n\n*Auto-pushed via AgenticOS developer autopilot.*`;
+          const pushRes = await fetch('/api/github/push-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              repo: defaultRepo,
+              branchName: gitNewBranch,
+              filePath: gitFilePath,
+              content: contentToPush,
+              commitMessage: `feat: Agent patch integration for ${queueToRun.map(q => q.title).join(', ')}`,
+              token: githubToken
+            })
+          });
+          const pushData = await pushRes.json();
+          if (!pushRes.ok) throw new Error(pushData.error || "Failed to auto-push file");
+          setCodePushed(true);
+          addConsoleLog(`[SUCCESS] [AUTOPILOT] Step 2/3: Patch report committed & pushed to branch '${gitNewBranch}' successfully!`);
+          await sleep(600);
+
+          // Step 3: Create Pull Request
+          addConsoleLog(`SYSTEM: [AUTOPILOT] Step 3/3: Submitting pull request draft from '${gitNewBranch}' into '${gitBaseBranch}'...`);
+          const prTitle = `🤖 Agentic OS Fix: ${queueToRun[0]?.title || 'Multi-task software patch'}`;
+          const prBody = `This Pull Request was autonomously initiated and requested by AgenticOS.\n\n### 📦 Architectural Briefing:\n${finalSummary}\n\n*Generated by Google GenAI on Port 3000.*`;
+          const prRes = await fetch('/api/github/create-pr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              repo: defaultRepo,
+              title: prTitle,
+              body: prBody,
+              head: gitNewBranch,
+              base: gitBaseBranch,
+              token: githubToken
+            })
+          });
+          const prData = await prRes.json();
+          if (!prRes.ok) throw new Error(prData.error || "Failed to auto-create pull request");
+          if (prData.isSimulated) {
+            setPrCreatedUrl('#');
+            addConsoleLog(`[SUCCESS] [AUTOPILOT] Step 3/3: Pull Request simulated successfully (Sandbox Mode)!`);
+          } else {
+            setPrCreatedUrl(prData.htmlUrl);
+            addConsoleLog(`[SUCCESS] [AUTOPILOT] Step 3/3: Real Pull Request opened! URL: ${prData.htmlUrl}`);
+          }
+       } catch (gitErr: any) {
+          console.error("Autopilot Git action failed:", gitErr);
+          addConsoleLog(`[ERROR] [AUTOPILOT] Git deployment failed: ${gitErr.message || gitErr}`);
+       }
+    }
+
+    setLabRunning(false);
   };
 
   const handleRunLabMission = async () => {
      await runLabQueueMission(labQueue, labAgentId, labProjectId);
+  };
+
+  const handleCreateBranchOnGithub = async () => {
+    if (!gitRepoToUse) {
+      alert("Please specify a target GitHub repository first!");
+      return;
+    }
+    if (!gitNewBranch) {
+      alert("Please specify a new branch name!");
+      return;
+    }
+
+    setGitLoading(true);
+    setGitStatusLog(prev => [...prev, `[SYSTEM] Requesting branch creation: '${gitNewBranch}' from '${gitBaseBranch}' on repo '${gitRepoToUse}'...`]);
+
+    try {
+      const response = await fetch('/api/github/create-branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: gitRepoToUse,
+          branchName: gitNewBranch,
+          fromBranch: gitBaseBranch,
+          token: githubToken
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create branch");
+      }
+
+      setBranchCreated(true);
+      setGitStatusLog(prev => [
+        ...prev, 
+        data.isSimulated 
+          ? `[SUCCESS] ${data.message} (Sandbox Mode)` 
+          : `[SUCCESS] Real branch '${gitNewBranch}' created successfully on GitHub! Ref SHA: ${data.sha?.slice(0, 7) || 'N/A'}`
+      ]);
+    } catch (err: any) {
+      console.error(err);
+      setGitStatusLog(prev => [...prev, `[ERROR] Branch creation failed: ${err.message}`]);
+    } finally {
+      setGitLoading(false);
+    }
+  };
+
+  const handlePushFileToGithub = async () => {
+    if (!gitRepoToUse || !gitNewBranch) {
+      alert("Please create or configure a target branch first!");
+      return;
+    }
+
+    setGitLoading(true);
+    setGitStatusLog(prev => [...prev, `[SYSTEM] Encoding and pushing patch files to '${gitFilePath}' on branch '${gitNewBranch}'...`]);
+
+    try {
+      const contentToPush = `## Agent Coding Patch Report\n\n### 🤖 Summary of modifications:\n${labSummary}\n\n### 📋 Verification checklist:\n${labTestGuide}\n\n*Auto-pushed via AgenticOS developer sandbox.*`;
+
+      const response = await fetch('/api/github/push-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: gitRepoToUse,
+          branchName: gitNewBranch,
+          filePath: gitFilePath,
+          content: contentToPush,
+          commitMessage: `feat: Agent patch integration for ${labQueue.map(q => q.title).join(', ')}`,
+          token: githubToken
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to push patch file");
+      }
+
+      setCodePushed(true);
+      setGitStatusLog(prev => [
+        ...prev,
+        data.isSimulated
+          ? `[SUCCESS] ${data.message} (Sandbox Mode)`
+          : `[SUCCESS] Real patch file successfully committed & pushed to branch '${gitNewBranch}' on GitHub!`
+      ]);
+    } catch (err: any) {
+      console.error(err);
+      setGitStatusLog(prev => [...prev, `[ERROR] File push failed: ${err.message}`]);
+    } finally {
+      setGitLoading(false);
+    }
+  };
+
+  const handleCreatePrOnGithub = async () => {
+    if (!gitRepoToUse || !gitNewBranch) {
+      alert("Please create or configure a branch first!");
+      return;
+    }
+
+    setGitLoading(true);
+    setGitStatusLog(prev => [...prev, `[SYSTEM] Submitting pull request draft from '${gitNewBranch}' into '${gitBaseBranch}'...`]);
+
+    try {
+      const prTitle = `🤖 Agentic OS Fix: ${labQueue[0]?.title || 'Multi-task software patch'}`;
+      const prBody = `This Pull Request was autonomously initiated and requested by AgenticOS.\n\n### 📦 Architectural Briefing:\n${labSummary}\n\n*Generated by Google GenAI on Port 3000.*`;
+
+      const response = await fetch('/api/github/create-pr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: gitRepoToUse,
+          title: prTitle,
+          body: prBody,
+          head: gitNewBranch,
+          base: gitBaseBranch,
+          token: githubToken
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create pull request");
+      }
+
+      if (data.isSimulated) {
+        setPrCreatedUrl('#');
+        setGitStatusLog(prev => [...prev, `[SUCCESS] ${data.message} (Sandbox Mode)`]);
+      } else {
+        setPrCreatedUrl(data.htmlUrl);
+        setGitStatusLog(prev => [...prev, `[SUCCESS] Real Pull Request created successfully! URL: ${data.htmlUrl}`]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setGitStatusLog(prev => [...prev, `[ERROR] Pull request creation failed: ${err.message}`]);
+    } finally {
+      setGitLoading(false);
+    }
   };
 
   const handleAssignIssuesToAgent = async (agentId: string) => {
@@ -1326,10 +1572,10 @@ export function AgenticOS() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-zinc-950 font-sans text-xs text-zinc-300">
+    <div className="flex flex-col md:flex-row h-full overflow-y-auto md:overflow-hidden bg-zinc-950 font-sans text-xs text-zinc-300">
       
       {/* Side orchestrator list */}
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-900 bg-[#09090b] flex flex-col shrink-0">
+      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-zinc-900 bg-[#09090b] flex flex-col shrink-0 h-auto md:h-full">
         <div className="p-4 border-b border-zinc-900 flex justify-between items-center bg-[#0c0c0e]">
           <div>
             <h2 className="text-sm font-bold text-zinc-100 flex items-center gap-1.5">
@@ -1703,7 +1949,7 @@ export function AgenticOS() {
 
           <div className="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
             {mcpServers.map(mcp => {
-               const liveStatus = mcp.id === 'mcp-gemini' ? isLlmConnected : true;
+               const liveStatus = mcp.id === 'mcp-fs' ? true : mcp.id === 'mcp-gemini' ? isLlmConnected : false;
                return (
                  <div key={mcp.id} className="p-1.5 bg-zinc-950 border border-zinc-900 rounded flex items-center justify-between font-mono text-[9px]">
                    <div className="flex items-center gap-1 max-w-[170px] truncate">
@@ -1712,7 +1958,7 @@ export function AgenticOS() {
                      }`} />
                      <span className="text-zinc-300 font-semibold">{mcp.name}</span>
                      <span className="text-zinc-650">
-                        {mcp.id === 'mcp-gemini' ? (isLlmConnected ? '(Ready Stream)' : '(Local API Connection)') : `(${mcp.type})`}
+                        {mcp.id === 'mcp-fs' ? '(Local Sandbox Workspace)' : mcp.id === 'mcp-gemini' ? (isLlmConnected ? '(Ready Stream)' : '(Local API Connection)') : '(Offline / Key Missing)'}
                      </span>
                    </div>
                    <div className="flex items-center gap-1">
@@ -1734,9 +1980,9 @@ export function AgenticOS() {
         {/* Global telemetry block */}
         <div className="p-3 bg-[#050507] border-t border-zinc-900 mt-auto shrink-0">
           <div className="flex justify-between text-[10px] text-zinc-500 mb-1.5 font-mono">
-             <span>Swarm Kernel</span>
+             <span>Agent Core Status</span>
              <span className={isLlmConnected ? "text-emerald-450 font-bold" : "text-amber-500 font-semibold"}>
-                {isLlmConnected ? "● PRODUCTION" : "● LOCAL BUILD"}
+                {isLlmConnected ? "● ONLINE" : "● LOCAL BUILD"}
              </span>
           </div>
           <div className="flex gap-1">
@@ -1755,7 +2001,7 @@ export function AgenticOS() {
         {/* Hub header nav */}
         <div className="p-4 border-b border-zinc-900 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#0a0a0c]">
           <div>
-            <span className="text-[10px] text-zinc-500 uppercase tracking-widest block font-mono">Devspace OS Kernel</span>
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest block font-mono">Agent Workspace</span>
             <div className="flex items-center gap-2 mt-0.5 text-zinc-200 font-sans">
               <Activity size={14} className="text-blue-400" />
               <span className="font-bold">Focused Agent: {selectedAgent?.name || 'Loading'}</span>
@@ -1831,13 +2077,13 @@ export function AgenticOS() {
                    <div className="flex items-start gap-2 max-w-xl">
                       <HelpCircle size={15} className="text-blue-400 shrink-0 mt-0.5" />
                       <div>
-                         <span className="font-semibold text-zinc-200 text-xs block">Virtual Office Blueprint Desk Mapping</span>
-                         <p className="text-[10px] text-zinc-500 leading-snug">Drag and drop agent cards below to relocate physical seating desks and auto-reassign project scopes in real-time.</p>
+                         <span className="font-semibold text-zinc-200 text-xs block">Interactive Seating Plan</span>
+                         <p className="text-[10px] text-zinc-500 leading-snug">Drag and drop agent cards below to rearrange seating and filter project scopes.</p>
                       </div>
                    </div>
                    <div className="flex items-center gap-1.5 text-[10px] bg-[#0c0c0e] border border-zinc-850 p-2 rounded">
                       <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_#10b981]"></div>
-                      <span className="text-emerald-400 font-semibold font-mono">SYSTEM ACTIVE</span>
+                      <span className="text-emerald-400 font-semibold font-mono">ACTIVE</span>
                    </div>
                 </div>
 
@@ -2980,13 +3226,13 @@ export function AgenticOS() {
                 <div className="flex justify-between items-center pb-2 border-b border-zinc-900/55">
                   <div>
                     <h4 className="font-bold text-zinc-100 text-xs flex items-center gap-1.5 font-mono">
-                      <Cpu size={12} className="text-[#3b82f6] animate-pulse" /> Active Agentic Watcher Telemetry Core
+                      <Cpu size={12} className="text-[#3b82f6] animate-pulse" /> Active Agent Scan Traces
                     </h4>
-                    <p className="text-[9px] text-zinc-500 mt-0.5">Displays dynamic, sub-verbal compiler traces as connected agents scan directory branches.</p>
+                    <p className="text-[9px] text-zinc-500 mt-0.5">Displays diagnostic scanner logs as connected agents scan directory branches.</p>
                   </div>
                   
                   <span className="text-[8.5px] px-2 py-0.5 bg-blue-955/20 text-blue-400 border border-blue-500/25 rounded font-mono font-bold animate-pulse">
-                    OBSERVATORY Sweep Active
+                    Scanner Live
                   </span>
                 </div>
 
@@ -3550,11 +3796,28 @@ export function AgenticOS() {
                   </div>
                 )}
 
-                <div className="flex justify-end pt-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3 border-t border-zinc-900 mt-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer group text-left">
+                    <input 
+                      type="checkbox" 
+                      checked={gitAutopilot}
+                      onChange={(e) => setGitAutopilot(e.target.checked)}
+                      className="rounded border-zinc-800 bg-zinc-950 text-blue-500 focus:ring-0 focus:ring-offset-0 w-4 h-4 cursor-pointer accent-blue-500"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-zinc-200 group-hover:text-zinc-100 transition-colors">
+                        Deploy GitHub Autopilot Actions 🛰️
+                      </span>
+                      <span className="text-[10px] text-zinc-500 leading-tight">
+                        Automatically create branch, commit patch reports, and open GitHub PRs
+                      </span>
+                    </div>
+                  </label>
+
                   <button
                     onClick={handleRunLabMission}
                     disabled={labRunning || labQueue.length === 0}
-                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-lg shadow-blue-500/20 cursor-pointer disabled:opacity-40 disabled:pointer-events-none select-none transition"
+                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-lg shadow-blue-500/20 cursor-pointer disabled:opacity-40 disabled:pointer-events-none select-none transition shrink-0"
                   >
                     {labRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                     <span>Deploy Intelligent Agent Mission ⚡</span>
@@ -3655,6 +3918,219 @@ export function AgenticOS() {
                       </div>
                     </div>
 
+                  </div>
+
+                  {/* Real GitHub Actions Dashboard */}
+                  <div className="border border-zinc-900 bg-[#070709] rounded-xl p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-zinc-900 pb-3 gap-3">
+                      <div>
+                        <h4 className="font-bold text-zinc-100 text-xs font-mono uppercase tracking-wider flex items-center gap-2">
+                          <Github size={14} className="text-blue-400" /> GitHub Agent Autopilot Actions
+                        </h4>
+                        <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">
+                          Create branches, push generated files, and launch Pull Requests directly onto your connected GitHub repository.
+                        </p>
+                      </div>
+                      
+                      {/* Token State Badge */}
+                      {githubToken ? (
+                        <div className="flex items-center gap-2 shrink-0 bg-emerald-950/20 border border-emerald-900/50 px-2.5 py-1 rounded-lg">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-[9px] text-emerald-400 font-mono font-bold">GITHUB TOKEN ACTIVE</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGithubToken(null);
+                              setGitStatusLog(prev => [...prev, `[SYSTEM] GitHub token removed from session storage.`]);
+                            }}
+                            className="text-[8.5px] text-zinc-500 hover:text-red-400 font-mono underline ml-1 cursor-pointer"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 shrink-0 bg-amber-950/20 border border-amber-900/50 px-2.5 py-1 rounded-lg">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          <span className="text-[9px] text-amber-400 font-mono font-bold">VIRTUAL SANDBOX MODE</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Token Input if not connected */}
+                    {!githubToken && (
+                      <div className="bg-[#0b0b0f] border border-dashed border-zinc-850 rounded-xl p-3.5 space-y-3">
+                        <span className="text-[9.5px] text-zinc-400 font-medium block leading-relaxed">
+                          🔑 Optional: Connect your live GitHub account to execute real branch and pull request triggers!
+                        </span>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="password"
+                            value={gitTokenInput}
+                            onChange={(e) => setGitTokenInput(e.target.value)}
+                            placeholder="ghp_xxxxxxxxxxxx (GitHub Personal Access Token)"
+                            className="flex-1 bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-blue-500 font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!gitTokenInput.trim()) {
+                                alert("Please enter a valid GitHub token!");
+                                return;
+                              }
+                              setGithubToken(gitTokenInput.trim());
+                              setGitTokenInput('');
+                              setGitStatusLog(prev => [...prev, `[SYSTEM] Saved live GitHub Personal Access Token to secure session memory.`]);
+                            }}
+                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-zinc-950 font-bold text-xs rounded transition cursor-pointer select-none"
+                          >
+                            Save Token
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Grid of parameters */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-left">
+                      <div>
+                        <label className="text-[9px] uppercase font-bold text-zinc-500 font-mono block mb-1">GitHub Repo</label>
+                        <input
+                          type="text"
+                          value={gitRepoToUse}
+                          onChange={(e) => setGitRepoToUse(e.target.value)}
+                          placeholder="e.g. facebook/react"
+                          className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-xs text-zinc-350 outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] uppercase font-bold text-zinc-500 font-mono block mb-1">Base Branch</label>
+                        <input
+                          type="text"
+                          value={gitBaseBranch}
+                          onChange={(e) => setGitBaseBranch(e.target.value)}
+                          placeholder="main"
+                          className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-xs text-zinc-350 outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] uppercase font-bold text-zinc-500 font-mono block mb-1">Target Patch Branch</label>
+                        <input
+                          type="text"
+                          value={gitNewBranch}
+                          onChange={(e) => setGitNewBranch(e.target.value)}
+                          placeholder="feat/agent-patch"
+                          className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-xs text-zinc-350 outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-left">
+                      <label className="text-[9px] uppercase font-bold text-zinc-500 font-mono block mb-1">Target File Path for Patch Report</label>
+                      <input
+                        type="text"
+                        value={gitFilePath}
+                        onChange={(e) => setGitFilePath(e.target.value)}
+                        placeholder="agent-patches/patch-report.md"
+                        className="w-full bg-zinc-950 border border-zinc-850 rounded p-1.5 text-xs text-zinc-350 outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+
+                    {/* Step-by-Step Interactive Workflow */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-2">
+                      {/* Step 1 Button */}
+                      <button
+                        type="button"
+                        onClick={handleCreateBranchOnGithub}
+                        disabled={gitLoading || branchCreated}
+                        className={`p-3 rounded-lg border text-left font-sans cursor-pointer transition select-none flex flex-col gap-1.5 ${
+                          branchCreated 
+                            ? 'bg-emerald-950/10 border-emerald-900/60 text-emerald-400' 
+                            : 'bg-[#0b0b0e] border-zinc-850 hover:border-blue-800 hover:bg-blue-950/10 text-zinc-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-[10px] uppercase font-mono">
+                          <GitBranch size={14} className={branchCreated ? "text-emerald-400" : "text-blue-400"} />
+                          <span>Step 1: Create Branch</span>
+                        </div>
+                        <span className="text-[9px] text-zinc-500 leading-normal">
+                          {branchCreated ? "✓ Branch successfully mapped!" : `Execute Git command tree to construct '${gitNewBranch}' branch.`}
+                        </span>
+                      </button>
+
+                      {/* Step 2 Button */}
+                      <button
+                        type="button"
+                        onClick={handlePushFileToGithub}
+                        disabled={gitLoading || !branchCreated || codePushed}
+                        className={`p-3 rounded-lg border text-left font-sans cursor-pointer transition select-none flex flex-col gap-1.5 ${
+                          codePushed 
+                            ? 'bg-emerald-950/10 border-emerald-900/60 text-emerald-400' 
+                            : !branchCreated 
+                            ? 'opacity-40 cursor-not-allowed bg-zinc-950/50 border-zinc-900 text-zinc-600' 
+                            : 'bg-[#0b0b0e] border-zinc-850 hover:border-emerald-800 hover:bg-emerald-950/10 text-zinc-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-[10px] uppercase font-mono">
+                          <Upload size={14} className={codePushed ? "text-emerald-400" : "text-emerald-500"} />
+                          <span>Step 2: Push Agent Code</span>
+                        </div>
+                        <span className="text-[9px] text-zinc-500 leading-normal">
+                          {codePushed ? "✓ Committed & pushed!" : !branchCreated ? "Awaiting Step 1 branch resolution." : `Commit and push live patch file to the branch.`}
+                        </span>
+                      </button>
+
+                      {/* Step 3 Button */}
+                      <button
+                        type="button"
+                        onClick={handleCreatePrOnGithub}
+                        disabled={gitLoading || !codePushed || !!prCreatedUrl}
+                        className={`p-3 rounded-lg border text-left font-sans cursor-pointer transition select-none flex flex-col gap-1.5 ${
+                          prCreatedUrl 
+                            ? 'bg-emerald-950/10 border-emerald-900/60 text-emerald-400' 
+                            : !codePushed 
+                            ? 'opacity-40 cursor-not-allowed bg-zinc-950/50 border-zinc-900 text-zinc-600' 
+                            : 'bg-[#0b0b0e] border-zinc-850 hover:border-indigo-800 hover:bg-indigo-950/10 text-zinc-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-[10px] uppercase font-mono">
+                          <GitPullRequest size={14} className={prCreatedUrl ? "text-emerald-400" : "text-indigo-400"} />
+                          <span>Step 3: Create Pull Request</span>
+                        </div>
+                        <span className="text-[9px] text-zinc-500 leading-normal">
+                          {prCreatedUrl ? "✓ Pull Request Opened!" : !codePushed ? "Awaiting Step 2 commit verification." : `Initialize pull request merge review on GitHub.`}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* PR Link Result */}
+                    {prCreatedUrl && prCreatedUrl !== '#' && (
+                      <div className="p-3 bg-emerald-950/10 border border-emerald-900/60 rounded-lg text-left">
+                        <span className="text-[10px] text-emerald-400 font-bold block mb-1 font-mono">🚀 PULL REQUEST OPENED SUCCESSFULLY!</span>
+                        <a 
+                          href={prCreatedUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-xs text-blue-400 hover:underline flex items-center gap-1 font-semibold"
+                        >
+                          View your live pull request on GitHub <GitPullRequest size={11} />
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Git Action Terminal Outputs */}
+                    {gitStatusLog.length > 0 && (
+                      <div className="space-y-1 text-left">
+                        <span className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono">Git Deployment Stream Outputs</span>
+                        <div className="bg-[#040406] border border-zinc-900 text-zinc-400 font-mono text-[9px] rounded-lg p-3 max-h-[120px] overflow-y-auto custom-scrollbar space-y-1 list-none leading-relaxed">
+                          {gitStatusLog.map((logLine, idx) => (
+                            <div key={idx} className={logLine.includes('[SUCCESS]') ? 'text-emerald-400' : logLine.includes('[ERROR]') ? 'text-rose-400' : 'text-zinc-400'}>
+                              {logLine}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Vitest automated compiler sandbox */}

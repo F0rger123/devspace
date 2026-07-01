@@ -15,6 +15,7 @@ import {
   Calendar,
   Shield,
   Check,
+  Copy,
   Info,
   ChevronLeft,
   ChevronRight,
@@ -60,6 +61,7 @@ import { ProjectStepper } from "../components/ProjectStepper";
 export function Projects() {
   const [githubReposList, setGithubReposList] = useState<any[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
   const {
     projects,
     addProject,
@@ -1665,22 +1667,53 @@ Description of fix or enhancement recommendation
 
                   <div className="space-y-2 mb-4 max-h-56 overflow-y-auto pr-1">
                     {project.sprints && project.sprints.length > 0 ? (
-                      project.sprints.map((sprint: any) => (
-                        <div
-                          key={sprint.id}
-                          className="flex items-center justify-between bg-zinc-900 border border-zinc-800/60 p-3 rounded-lg hover:border-zinc-700 transition-colors group"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <span className="text-xs font-semibold text-zinc-200">
-                              {sprint.name}
-                            </span>
+                      project.sprints.map((sprint: any) => {
+                        const sprintIssues = issues.filter(
+                          (issue: any) =>
+                            issue.projectId === project.id &&
+                            issue.sprintId === sprint.id
+                        );
+                        const completedIssues = sprintIssues.filter(
+                          (issue: any) => issue.status === "Done"
+                        );
+                        const totalCount = sprintIssues.length;
+                        const completedCount = completedIssues.length;
+                        const percent = totalCount > 0 
+                          ? Math.round((completedCount / totalCount) * 100) 
+                          : 0;
+
+                        return (
+                          <div
+                            key={sprint.id}
+                            className="flex flex-col gap-2 bg-zinc-900 border border-zinc-800/60 p-3 rounded-lg hover:border-zinc-700 transition-colors group"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${percent === 100 ? 'bg-emerald-500' : 'bg-blue-500 animate-pulse'}`} />
+                                <span className="text-xs font-semibold text-zinc-200">
+                                  {sprint.name}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-zinc-500 font-mono">
+                                {percent === 100 ? 'Completed' : totalCount > 0 ? 'In Progress' : 'Planning'}
+                              </span>
+                            </div>
+                            
+                            {/* Visual Progress Bar */}
+                            <div className="w-full bg-zinc-950 h-1 rounded-full overflow-hidden mt-1">
+                              <div 
+                                className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full transition-all duration-500"
+                                style={{ width: `${percent}%` }}
+                              />
+                            </div>
+                            
+                            <div className="flex justify-between items-center text-[9px] text-zinc-500 font-mono mt-0.5">
+                              <span>{completedCount} / {totalCount} tasks completed</span>
+                              <span>{percent}%</span>
+                            </div>
                           </div>
-                          <span className="text-[10px] text-zinc-500 font-mono">
-                            Status: active track
-                          </span>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="text-xs text-zinc-500 italic p-2 bg-[#18181b] rounded-lg border border-zinc-850 text-center">
                         No sprints assigned. Build standard delivery cadence.
@@ -4439,6 +4472,7 @@ Description of fix or enhancement recommendation
                             <th className="py-2.5 font-semibold">Invited As</th>
                             <th className="py-2.5 font-semibold">Sent On</th>
                             <th className="py-2.5 font-semibold text-center">Status</th>
+                            <th className="py-2.5 font-semibold text-right pr-4">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-850 text-zinc-300">
@@ -4457,6 +4491,33 @@ Description of fix or enhancement recommendation
                                 }`}>
                                   {invite.status.toUpperCase()}
                                 </span>
+                              </td>
+                              <td className="py-3 text-right pr-4">
+                                {invite.inviteLink ? (
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(invite.inviteLink);
+                                      setCopiedInviteId(invite.id);
+                                      setTimeout(() => setCopiedInviteId(null), 2000);
+                                    }}
+                                    className="px-2 py-1 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 hover:border-zinc-750 text-zinc-400 hover:text-zinc-250 rounded font-mono text-[9px] font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                                    title="Copy Direct Invitation Link"
+                                  >
+                                    {copiedInviteId === invite.id ? (
+                                      <>
+                                        <Check size={10} className="text-emerald-400" />
+                                        <span className="text-emerald-400 font-bold">COPIED</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy size={10} />
+                                        <span>COPY LINK</span>
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="text-zinc-650 font-mono text-[10px] italic">Legacy</span>
+                                )}
                               </td>
                             </tr>
                           ))}

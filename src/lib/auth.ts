@@ -70,7 +70,12 @@ export const signUpWithEmailPassword = async (email: string, password: string, u
       uid: user.uid,
       email: email,
       username: username,
-      createdAt: Date.now()
+      displayName: username,
+      avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+      title: 'Full-Stack Developer',
+      bio: 'Active DevSpace collaborator and software designer.',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     });
 
     return user;
@@ -113,11 +118,18 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     // Register Google User in users collection if not already there
     try {
       const userDocRef = doc(db, 'users', result.user.uid);
+      const email = result.user.email || '';
+      const username = result.user.displayName || email.split('@')[0] || 'User';
       await setDoc(userDocRef, {
         uid: result.user.uid,
-        email: result.user.email || '',
-        username: result.user.displayName || result.user.email?.split('@')[0] || 'User',
-        createdAt: Date.now()
+        email: email,
+        username: username,
+        displayName: result.user.displayName || username,
+        avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+        title: 'Full-Stack Developer',
+        bio: 'Active DevSpace collaborator and Google authenticated developer.',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
       }, { merge: true });
     } catch (e) {
       console.warn('Could not register Google user in users collection:', e);
@@ -161,11 +173,18 @@ export const githubSignIn = async (): Promise<{ user: User; accessToken: string,
     // Register Github User in users collection if not already there
     try {
       const userDocRef = doc(db, 'users', result.user.uid);
+      const email = result.user.email || '';
+      const finalUsername = username || result.user.displayName || 'GithubUser';
       await setDoc(userDocRef, {
         uid: result.user.uid,
-        email: result.user.email || '',
-        username: username || result.user.displayName || 'GithubUser',
-        createdAt: Date.now()
+        email: email,
+        username: finalUsername,
+        displayName: result.user.displayName || finalUsername,
+        avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+        title: 'Software Engineer',
+        bio: 'Active DevSpace collaborator and GitHub certified developer.',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
       }, { merge: true });
     } catch (e) {
       console.warn('Could not register Github user in users collection:', e);

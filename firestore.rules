@@ -49,6 +49,11 @@ service cloud.firestore {
       return data.uid is string && data.uid.size() <= 128
         && data.email is string && data.email.size() <= 200
         && data.username is string && data.username.size() <= 100
+        && (!('displayName' in data) || data.displayName is string)
+        && (!('avatarColor' in data) || data.avatarColor is string)
+        && (!('title' in data) || data.title is string)
+        && (!('bio' in data) || data.bio is string)
+        && (!('updatedAt' in data) || data.updatedAt is number)
         && data.createdAt is number;
     }
 
@@ -62,6 +67,8 @@ service cloud.firestore {
         && data.senderName is string && data.senderName.size() <= 100
         && data.receiverEmail is string && data.receiverEmail.size() <= 200
         && data.status in ['pending', 'accepted', 'declined']
+        && data.role in ['admin', 'editor', 'viewer']
+        && (!('inviteLink' in data) || (data.inviteLink is string && data.inviteLink.size() <= 1000))
         && data.createdAt is number;
     }
 

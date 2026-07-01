@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useRef } from 'react';
+import React, { ReactNode, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { RightSidebar } from './RightSidebar';
@@ -7,7 +7,11 @@ import { CommandPalette } from '../ui/CommandPalette';
 import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
+import { useStore } from '../../store';
 import { AuthScreen } from '../auth/AuthScreen';
+import { Users } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../lib/auth';
 
 const EMBERS = [
   { left: '4%', size: '3px', delay: '0s', type: 'animate-ember-1', blur: '0.5px' },
@@ -229,11 +233,48 @@ export function CursorAmbers() {
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { isAssistantOpen, isAssistantMinimized, googleUser } = useData();
+  const { isAssistantOpen, isAssistantMinimized, googleUser, acceptInvitation, declineInvitation } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
   const isWhatsAppRoute = location.pathname === '/whatsapp-companion';
+
+  const [activeInvite, setActiveInvite] = useState<any | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteStatusMsg, setInviteStatusMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const inviteId = params.get('inviteId') || params.get('invite');
+    if (inviteId && googleUser) {
+      const fetchInviteFromLink = async () => {
+        try {
+          const inviteRef = doc(db, 'invitations', inviteId);
+          const snap = await getDoc(inviteRef);
+          if (snap.exists()) {
+            const inviteData = snap.data();
+            const myEmail = (googleUser.email || '').trim().toLowerCase();
+            const receiverEmail = (inviteData.receiverEmail || '').trim().toLowerCase();
+            
+            if (myEmail !== receiverEmail) {
+              setInviteError(`This invitation link is for ${inviteData.receiverEmail}, but you are currently signed in as ${googleUser.email}.`);
+            } else if (inviteData.status !== 'pending') {
+              setInviteError(`This invitation has already been ${inviteData.status}.`);
+            } else {
+              setActiveInvite(inviteData);
+              setInviteError(null);
+            }
+          } else {
+            setInviteError("The invitation link is invalid or has expired.");
+          }
+        } catch (err: any) {
+          console.error("Error fetching invitation details:", err);
+          setInviteError("Failed to load invitation details.");
+        }
+      };
+      fetchInviteFromLink();
+    }
+  }, [location.search, googleUser]);
 
   useEffect(() => {
     const handleNavigate = (e: Event) => {
@@ -283,6 +324,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const { isSidebarOpen, toggleSidebar, isRightSidebarOpen, toggleRightSidebar } = useStore();
+
   return (
     <div className="flex flex-col h-screen w-full bg-[#030305] starry-background text-zinc-300 font-sans overflow-hidden select-none selection:bg-yellow-400/30 relative">
       {/* Slow drifting gold-amber embers background */}
@@ -316,6 +359,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <Header />
         <div className="flex flex-grow overflow-hidden relative">
           <Sidebar />
+
+          {/* Mobile Sidebar Backdrop */}
+          {isSidebarOpen && (
+            <div 
+              className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 transition-opacity"
+              onClick={toggleSidebar}
+            />
+          )}
+
           <main className={`flex-grow flex flex-col min-w-0 overflow-hidden bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isAssistantOpen && isAssistantMinimized ? 'mr-[440px]' : ''
           }`}>
@@ -325,11 +377,137 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
           </main>
+
+          {/* Mobile RightSidebar Backdrop */}
+          {isRightSidebarOpen && !isAssistantRoute && !isAssistantOpen && (
+            <div 
+              className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 transition-opacity"
+              onClick={toggleRightSidebar}
+            />
+          )}
+
           {!isAssistantRoute && !isAssistantOpen && <RightSidebar />}
         </div>
         <CommandPalette />
         <VoiceMemoAssistant />
       </div>
+
+      {/* Dynamic Invitation Link Handler Overlay Modal */}
+      {(activeInvite || inviteError) && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="w-full max-w-md bg-[#0a0a0c] border border-zinc-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+          >
+            {/* Elegant Amber Aura inside modal */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-yellow-500/10 blur-[50px] rounded-full pointer-events-none" />
+            
+            {inviteError ? (
+              <div className="text-center space-y-4">
+                <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto border border-red-500/20">
+                  <span className="text-xl font-bold">!</span>
+                </div>
+                <h3 className="text-base font-bold text-zinc-100 font-sans">Invitation Issue</h3>
+                <p className="text-xs text-zinc-400 font-mono leading-relaxed">{inviteError}</p>
+                <button
+                  onClick={() => {
+                    setInviteError(null);
+                    // Clear the URL parameter
+                    const params = new URLSearchParams(location.search);
+                    params.delete('inviteId');
+                    params.delete('invite');
+                    navigate({ search: params.toString() }, { replace: true });
+                  }}
+                  className="w-full py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-semibold font-mono border border-zinc-750 transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                    <Users size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider font-mono">Workspace Invitation</h3>
+                    <p className="text-[11px] text-zinc-500 font-sans">You have been invited to collaborate</p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-xl space-y-3">
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-mono block uppercase">Project to Join</span>
+                    <span className="text-sm font-bold text-zinc-200">📁 {activeInvite.projectName}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 pt-1.5 border-t border-zinc-850">
+                    <div>
+                      <span className="text-[10px] text-zinc-500 font-mono block uppercase">Invited By</span>
+                      <span className="text-xs text-zinc-300 font-mono truncate block">{activeInvite.senderEmail}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-zinc-500 font-mono block uppercase">Offered Role</span>
+                      <span className="text-xs text-yellow-500 font-mono capitalize font-bold">{activeInvite.role || 'editor'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {inviteStatusMsg ? (
+                  <p className="text-center text-xs font-mono text-zinc-400 py-2 animate-pulse">{inviteStatusMsg}</p>
+                ) : (
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setInviteStatusMsg("Accepting invitation...");
+                          await acceptInvitation(activeInvite.id);
+                          setInviteStatusMsg("Successfully joined project!");
+                          setTimeout(() => {
+                            setActiveInvite(null);
+                            setInviteStatusMsg(null);
+                            const params = new URLSearchParams(location.search);
+                            params.delete('inviteId');
+                            params.delete('invite');
+                            navigate('/projects', { replace: true });
+                          }, 1500);
+                        } catch (err) {
+                          setInviteStatusMsg("Failed to accept invitation.");
+                        }
+                      }}
+                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer text-center"
+                    >
+                      Accept & Join
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          setInviteStatusMsg("Declining invitation...");
+                          await declineInvitation(activeInvite.id);
+                          setInviteStatusMsg("Declined successfully.");
+                          setTimeout(() => {
+                            setActiveInvite(null);
+                            setInviteStatusMsg(null);
+                            const params = new URLSearchParams(location.search);
+                            params.delete('inviteId');
+                            params.delete('invite');
+                            navigate({ search: params.toString() }, { replace: true });
+                          }, 1000);
+                        } catch (err) {
+                          setInviteStatusMsg("Failed to decline.");
+                        }
+                      }}
+                      className="py-2 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 font-bold text-xs rounded-lg border border-zinc-800 transition-colors cursor-pointer text-center"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1858,6 +1858,203 @@ Verify the offline simulation parameters as follows:
     }
   });
 
+  // Create a brand new branch on GitHub
+  app.post('/api/github/create-branch', async (req, res) => {
+    try {
+      const { repo, branchName, fromBranch = 'main', token } = req.body;
+      if (!repo || !branchName) {
+        return res.status(400).json({ error: 'Repository name and branch name are required' });
+      }
+
+      if (!token) {
+        return res.json({
+          success: true,
+          isSimulated: true,
+          message: `[Simulated] Branch '${branchName}' created from '${fromBranch}' on ${repo}`
+        });
+      }
+
+      // 1. Get the reference of the base branch
+      const refUrl = `https://api.github.com/repos/${repo}/git/ref/heads/${fromBranch}`;
+      const getRefRes = await fetch(refUrl, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'AgenticOS-Build',
+          'Authorization': `token ${token}`
+        }
+      });
+
+      if (!getRefRes.ok) {
+        const errData = await getRefRes.json().catch(() => ({}));
+        return res.status(getRefRes.status).json({
+          error: `Failed to find base branch '${fromBranch}'`,
+          details: errData
+        });
+      }
+
+      const refData = await getRefRes.json();
+      const sha = refData.object.sha;
+
+      // 2. Create the new branch reference
+      const createRefUrl = `https://api.github.com/repos/${repo}/git/refs`;
+      const createRefRes = await fetch(createRefUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'AgenticOS-Build',
+          'Authorization': `token ${token}`
+        },
+        body: JSON.stringify({
+          ref: `refs/heads/${branchName}`,
+          sha
+        })
+      });
+
+      if (!createRefRes.ok) {
+        const errData = await createRefRes.json().catch(() => ({}));
+        return res.status(createRefRes.status).json({
+          error: `Failed to create branch '${branchName}'`,
+          details: errData
+        });
+      }
+
+      const createData = await createRefRes.json();
+      return res.json({
+        success: true,
+        isSimulated: false,
+        branch: branchName,
+        sha: createData.object?.sha || sha
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Error creating branch' });
+    }
+  });
+
+  // Push or create a file on a specific branch on GitHub
+  app.post('/api/github/push-file', async (req, res) => {
+    try {
+      const { repo, branchName, filePath, content, commitMessage = 'Update file via AgenticOS', token } = req.body;
+      if (!repo || !branchName || !filePath || content === undefined) {
+        return res.status(400).json({ error: 'Repository, branch, file path, and content are required' });
+      }
+
+      if (!token) {
+        return res.json({
+          success: true,
+          isSimulated: true,
+          message: `[Simulated] File '${filePath}' pushed to branch '${branchName}' on ${repo}`
+        });
+      }
+
+      // 1. Check if the file already exists on this branch to get its current SHA
+      const fileUrl = `https://api.github.com/repos/${repo}/contents/${filePath}?ref=${branchName}`;
+      const getFileRes = await fetch(fileUrl, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'AgenticOS-Build',
+          'Authorization': `token ${token}`
+        }
+      });
+
+      let existingSha: string | undefined = undefined;
+      if (getFileRes.ok) {
+        const fileData = await getFileRes.json();
+        existingSha = fileData.sha;
+      }
+
+      // 2. Put the file content (base64 encoded)
+      const base64Content = Buffer.from(content).toString('base64');
+      const putFileRes = await fetch(`https://api.github.com/repos/${repo}/contents/${filePath}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'AgenticOS-Build',
+          'Authorization': `token ${token}`
+        },
+        body: JSON.stringify({
+          message: commitMessage,
+          content: base64Content,
+          branch: branchName,
+          ...(existingSha ? { sha: existingSha } : {})
+        })
+      });
+
+      if (!putFileRes.ok) {
+        const errData = await putFileRes.json().catch(() => ({}));
+        return res.status(putFileRes.status).json({
+          error: `Failed to write file '${filePath}' on branch '${branchName}'`,
+          details: errData
+        });
+      }
+
+      const putData = await putFileRes.json();
+      return res.json({
+        success: true,
+        isSimulated: false,
+        filePath,
+        branch: branchName,
+        commitSha: putData.commit?.sha
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Error pushing file' });
+    }
+  });
+
+  // Create a live Pull Request on GitHub
+  app.post('/api/github/create-pr', async (req, res) => {
+    try {
+      const { repo, title, body = '', head, base = 'main', token } = req.body;
+      if (!repo || !title || !head) {
+        return res.status(400).json({ error: 'Repository, PR title, and head branch are required' });
+      }
+
+      if (!token) {
+        return res.json({
+          success: true,
+          isSimulated: true,
+          message: `[Simulated] Pull Request '${title}' created from '${head}' into '${base}' on ${repo}`
+        });
+      }
+
+      const response = await fetch(`https://api.github.com/repos/${repo}/pulls`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'AgenticOS-Build',
+          'Authorization': `token ${token}`
+        },
+        body: JSON.stringify({
+          title,
+          body,
+          head,
+          base
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        return res.status(response.status).json({
+          error: 'Failed to create pull request on GitHub',
+          details: errData
+        });
+      }
+
+      const prData = await response.json();
+      return res.json({
+        success: true,
+        isSimulated: false,
+        prNumber: prData.number,
+        htmlUrl: prData.html_url,
+        title: prData.title
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Error creating PR' });
+    }
+  });
+
   // Gemini Swarm Debate generator using live model
   app.post('/api/gemini/run-swarm', async (req, res) => {
     try {
@@ -2105,6 +2302,92 @@ CRITICAL RULES:
   let workspaceAiContextRulesCache: string = "";
   let workspaceAetherPersonalityRulesCache: string[] = [];
   let workspacePasscodePinCache: string = "1234";
+
+  function decodeFirebaseToken(token: string) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        let base64Url = parts[1];
+        let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) {
+          base64 += '=';
+        }
+        const payloadBuf = Buffer.from(base64, 'base64');
+        const payload = JSON.parse(payloadBuf.toString('utf-8'));
+        return {
+          uid: payload.user_id || payload.sub,
+          email: payload.email,
+          name: payload.name,
+        };
+      }
+    } catch (e) {
+      console.error("Failed to decode token:", e);
+    }
+    return null;
+  }
+
+  function getUserIdFromRequest(req: express.Request): string {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      if (token.length > 50 && token.includes('.')) {
+        const decoded = decodeFirebaseToken(token);
+        if (decoded && decoded.uid) {
+          return decoded.uid;
+        }
+      }
+      return token;
+    }
+    const xUserUid = req.headers['x-user-uid'];
+    if (xUserUid && typeof xUserUid === 'string') {
+      return xUserUid;
+    }
+    return 'anonymous';
+  }
+
+  interface UserCache {
+    projects: any[];
+    issues: any[];
+    notes: any[];
+    cortexSynapses: any[];
+    phases: any[];
+    agents: any[];
+    aiContextRules: string;
+    aetherPersonalityRules: string[];
+    passcodePin: string;
+  }
+
+  const userCaches: { [uid: string]: UserCache } = {};
+
+  function getUserCache(uid: string): UserCache {
+    if (uid === 'anonymous') {
+      return {
+        projects: workspaceProjectsCache,
+        issues: workspaceIssuesCache,
+        notes: workspaceNotesCache,
+        cortexSynapses: workspaceCortexCache,
+        phases: workspacePhasesCache,
+        agents: workspaceAgentsCache,
+        aiContextRules: workspaceAiContextRulesCache,
+        aetherPersonalityRules: workspaceAetherPersonalityRulesCache,
+        passcodePin: workspacePasscodePinCache
+      };
+    }
+    if (!userCaches[uid]) {
+      userCaches[uid] = {
+        projects: [],
+        issues: [],
+        notes: [],
+        cortexSynapses: [],
+        phases: [],
+        agents: [],
+        aiContextRules: "",
+        aetherPersonalityRules: [],
+        passcodePin: "1234"
+      };
+    }
+    return userCaches[uid];
+  }
 
   // Telegram Bot integration variables
   let telegramBotToken = "";
@@ -2968,27 +3251,37 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         return res.status(500).json({ error: 'GEMINI_API_KEY is not set' });
       }
 
+      const uid = getUserIdFromRequest(req);
+      const cache = getUserCache(uid);
+
       // Synchronize latest active context caches values
       if (Array.isArray(projectContexts)) {
-        workspaceProjectsCache = projectContexts;
+        cache.projects = projectContexts;
+        if (uid === 'anonymous') workspaceProjectsCache = projectContexts;
       }
       if (Array.isArray(issues)) {
-        workspaceIssuesCache = issues;
+        cache.issues = issues;
+        if (uid === 'anonymous') workspaceIssuesCache = issues;
       }
       if (Array.isArray(cortexSynapses)) {
-        workspaceCortexCache = cortexSynapses;
+        cache.cortexSynapses = cortexSynapses;
+        if (uid === 'anonymous') workspaceCortexCache = cortexSynapses;
       }
       if (Array.isArray(notes)) {
-        workspaceNotesCache = notes;
+        cache.notes = notes;
+        if (uid === 'anonymous') workspaceNotesCache = notes;
       }
       if (Array.isArray(phases)) {
-        workspacePhasesCache = phases;
+        cache.phases = phases;
+        if (uid === 'anonymous') workspacePhasesCache = phases;
       }
       if (Array.isArray(agents)) {
-        workspaceAgentsCache = agents;
+        cache.agents = agents;
+        if (uid === 'anonymous') workspaceAgentsCache = agents;
       }
       if (typeof aiContextRules === 'string') {
-        workspaceAiContextRulesCache = aiContextRules;
+        cache.aiContextRules = aiContextRules;
+        if (uid === 'anonymous') workspaceAiContextRulesCache = aiContextRules;
       }
 
       const inputMime = mimeType || (textCommand ? 'text/plain' : 'audio/webm');
@@ -3059,17 +3352,19 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
   // 2. Sync workspace context states
   app.get('/api/voice/sync-cache', (req, res) => {
     try {
+      const uid = getUserIdFromRequest(req);
+      const cache = getUserCache(uid);
       res.json({
         initialized: fs.existsSync(PERSISTENCE_FILE_PATH),
-        projects: workspaceProjectsCache,
-        issues: workspaceIssuesCache,
-        cortexSynapses: workspaceCortexCache,
-        notes: workspaceNotesCache,
-        phases: workspacePhasesCache,
-        agents: workspaceAgentsCache,
-        aiContextRules: workspaceAiContextRulesCache,
-        aetherPersonalityRules: workspaceAetherPersonalityRulesCache,
-        passcodePin: workspacePasscodePinCache
+        projects: cache.projects,
+        issues: cache.issues,
+        cortexSynapses: cache.cortexSynapses,
+        notes: cache.notes,
+        phases: cache.phases,
+        agents: cache.agents,
+        aiContextRules: cache.aiContextRules,
+        aetherPersonalityRules: cache.aetherPersonalityRules,
+        passcodePin: cache.passcodePin
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3078,16 +3373,46 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
 
   app.post('/api/voice/sync-cache', (req, res) => {
     try {
+      const uid = getUserIdFromRequest(req);
+      const cache = getUserCache(uid);
       const { projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin } = req.body;
-      if (Array.isArray(projects)) workspaceProjectsCache = projects;
-      if (Array.isArray(issues)) workspaceIssuesCache = issues;
-      if (Array.isArray(cortexSynapses)) workspaceCortexCache = cortexSynapses;
-      if (Array.isArray(notes)) workspaceNotesCache = notes;
-      if (Array.isArray(phases)) workspacePhasesCache = phases;
-      if (Array.isArray(agents)) workspaceAgentsCache = agents;
-      if (typeof aiContextRules === 'string') workspaceAiContextRulesCache = aiContextRules;
-      if (Array.isArray(aetherPersonalityRules)) workspaceAetherPersonalityRulesCache = aetherPersonalityRules;
-      if (typeof passcodePin === 'string') workspacePasscodePinCache = passcodePin;
+      
+      if (Array.isArray(projects)) {
+        cache.projects = projects;
+        if (uid === 'anonymous') workspaceProjectsCache = projects;
+      }
+      if (Array.isArray(issues)) {
+        cache.issues = issues;
+        if (uid === 'anonymous') workspaceIssuesCache = issues;
+      }
+      if (Array.isArray(cortexSynapses)) {
+        cache.cortexSynapses = cortexSynapses;
+        if (uid === 'anonymous') workspaceCortexCache = cortexSynapses;
+      }
+      if (Array.isArray(notes)) {
+        cache.notes = notes;
+        if (uid === 'anonymous') workspaceNotesCache = notes;
+      }
+      if (Array.isArray(phases)) {
+        cache.phases = phases;
+        if (uid === 'anonymous') workspacePhasesCache = phases;
+      }
+      if (Array.isArray(agents)) {
+        cache.agents = agents;
+        if (uid === 'anonymous') workspaceAgentsCache = agents;
+      }
+      if (typeof aiContextRules === 'string') {
+        cache.aiContextRules = aiContextRules;
+        if (uid === 'anonymous') workspaceAiContextRulesCache = aiContextRules;
+      }
+      if (Array.isArray(aetherPersonalityRules)) {
+        cache.aetherPersonalityRules = aetherPersonalityRules;
+        if (uid === 'anonymous') workspaceAetherPersonalityRulesCache = aetherPersonalityRules;
+      }
+      if (typeof passcodePin === 'string') {
+        cache.passcodePin = passcodePin;
+        if (uid === 'anonymous') workspacePasscodePinCache = passcodePin;
+      }
       
       savePersistentState();
       res.json({ success: true });
