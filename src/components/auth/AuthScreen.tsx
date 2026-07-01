@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   signUpWithEmailPassword, 
   loginWithEmailPassword, 
   sendPasswordReset, 
+  confirmReset,
   googleSignIn, 
   githubSignIn 
 } from '../../lib/auth';
@@ -10,11 +11,24 @@ import { useData } from '../../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, KeyRound, Eye, EyeOff, Loader2, ArrowLeft, Github } from 'lucide-react';
 
-type AuthMode = 'login' | 'register' | 'forgot';
+type AuthMode = 'login' | 'register' | 'forgot' | 'resetPassword';
 
 export function AuthScreen() {
   const { setGoogleUser, setGoogleToken, setGithubUser, setGithubProfile, setGithubToken } = useData();
   const [mode, setMode] = useState<AuthMode>('login');
+  const [oobCode, setOobCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const m = params.get('mode');
+      const code = params.get('oobCode');
+      if (m === 'resetPassword' && code) {
+        setMode('resetPassword');
+        setOobCode(code);
+      }
+    }
+  }, []);
   
   // Form States
   const [email, setEmail] = useState('');
@@ -44,8 +58,43 @@ export function AuthScreen() {
     setSuccessMsg(null);
     
     const cleanEmail = email.trim();
-    if (!cleanEmail) {
+    if (mode !== 'resetPassword' && !cleanEmail) {
       setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (mode === 'resetPassword') {
+      if (!password || password.length < 6) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+      if (!oobCode) {
+        setError('Security code is missing or invalid. Please request a new link.');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        await confirmReset(oobCode, password);
+        setSuccessMsg('Your password has been successfully reset! You can now log in using your new credentials.');
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
+      } catch (err: any) {
+        if (err.code === 'auth/expired-action-code') {
+          setError('This password reset link has expired. Please request a new one.');
+        } else if (err.code === 'auth/invalid-action-code') {
+          setError('This password reset link is invalid or has already been used. Please request a new one.');
+        } else {
+          setError(err.message || 'Failed to update password. Please request a new password reset link.');
+        }
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -78,6 +127,10 @@ export function AuthScreen() {
           setError(
             'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
           );
+        } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+          setError(
+            'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method, or continue in local Sandbox Mode below.'
+          );
         } else {
           setError(err.message || 'An error occurred during registration.');
         }
@@ -101,6 +154,10 @@ export function AuthScreen() {
         } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
           setError(
             'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
+          );
+        } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+          setError(
+            'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method, or continue in local Sandbox Mode below.'
           );
         } else {
           setError(err.message || 'Failed to sign in. Please try again.');
@@ -177,6 +234,43 @@ export function AuthScreen() {
     }
   };
 
+  const handleSandboxBypass = () => {
+    const fallbackEmail = email.trim() || 'developer@devspace.io';
+    const fallbackUsername = username.trim() || fallbackEmail.split('@')[0] || 'SandboxDev';
+    
+    const mockUser = {
+      uid: `sandbox-${crypto.randomUUID()}`,
+      email: fallbackEmail,
+      displayName: fallbackUsername,
+      photoURL: null,
+    };
+
+    const fallbackProfile = {
+      uid: mockUser.uid,
+      email: mockUser.email,
+      username: fallbackUsername,
+      displayName: fallbackUsername,
+      avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+      title: 'Full-Stack Developer (Sandbox)',
+      bio: 'Active DevSpace collaborator and sandbox designer.',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('app_google_user', JSON.stringify(mockUser));
+      window.localStorage.setItem('app_user_profile', JSON.stringify(fallbackProfile));
+      window.localStorage.setItem('app_auth_mode', 'sandbox');
+      
+      // Seed basic sandbox projects if empty to ensure instant dashboard value
+      if (!window.localStorage.getItem('app_projects')) {
+        window.localStorage.setItem('app_projects', JSON.stringify([]));
+      }
+      
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-[#030305] relative overflow-hidden select-none">
       {/* Visual background enhancements */}
@@ -211,7 +305,18 @@ export function AuthScreen() {
               exit={{ opacity: 0, height: 0 }}
               className="mb-4 p-3 bg-red-950/40 border border-red-900/50 rounded text-red-400 text-xs leading-relaxed"
             >
-              {error}
+              <div>{error}</div>
+              {(error.includes("provider not enabled") || error.includes("operation-not-allowed") || error.includes("Auth Error") || error.includes("not enabled")) && (
+                <div className="mt-2.5 pt-2.5 border-t border-red-900/30">
+                  <button
+                    type="button"
+                    onClick={handleSandboxBypass}
+                    className="w-full bg-yellow-500 hover:bg-yellow-450 text-black text-[10px] font-bold py-1.5 px-3 rounded transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    ⚡ Launch local Sandbox Mode (Bypass Setup)
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -254,20 +359,22 @@ export function AuthScreen() {
             )}
           </AnimatePresence>
 
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-              <Mail size={13} className="text-yellow-500/80" /> Email Address
-            </label>
-            <input 
-              type="email" 
-              required
-              placeholder="you@domain.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
-            />
-          </div>
+          {mode !== 'resetPassword' && (
+            <div className="space-y-1.5">
+              <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
+                <Mail size={13} className="text-yellow-500/80" /> Email Address
+              </label>
+              <input 
+                type="email" 
+                required
+                placeholder="you@domain.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+              />
+            </div>
+          )}
 
           <AnimatePresence mode="wait">
             {mode !== 'forgot' && (
@@ -281,7 +388,7 @@ export function AuthScreen() {
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-                      <Lock size={13} className="text-yellow-500/80" /> Password
+                      <Lock size={13} className="text-yellow-500/80" /> {mode === 'resetPassword' ? 'New Password' : 'Password'}
                     </label>
                     {mode === 'login' && (
                       <button 
@@ -313,7 +420,7 @@ export function AuthScreen() {
                   </div>
                 </div>
 
-                {mode === 'register' && (
+                {(mode === 'register' || mode === 'resetPassword') && (
                   <div className="space-y-1.5">
                     <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
                       <KeyRound size={13} className="text-yellow-500/80" /> Confirm Password
@@ -350,15 +457,40 @@ export function AuthScreen() {
                   {mode === 'login' && 'LOG IN TO DEVSPACE'}
                   {mode === 'register' && 'GENERATE ACCOUNT PROFILE'}
                   {mode === 'forgot' && 'SEND PASSWORD RESET DECODE'}
+                  {mode === 'resetPassword' && 'UPDATE PROFILE PASSWORD'}
                 </span>
               </>
             )}
           </button>
         </form>
 
+        {mode === 'forgot' && (
+          <div className="mt-6 p-4 rounded bg-blue-950/20 border border-blue-900/40 text-xs text-blue-300 leading-relaxed space-y-2 font-sans shadow-md">
+            <h4 className="font-semibold text-blue-200 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider">
+              ℹ️ Avoiding Email Link Expiry & Safelinks
+            </h4>
+            <p>
+              Email scanners (such as Microsoft SafeLinks or enterprise firewalls) can automatically pre-fetch links in your incoming mail, which instantly consumes the single-use reset token before you can click it.
+            </p>
+            <p className="font-semibold text-blue-100">
+              To configure a 100% reliable in-app reset experience:
+            </p>
+            <ol className="list-decimal pl-4 space-y-1.5 text-zinc-300 font-mono text-[11px]">
+              <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-yellow-500 hover:underline">Firebase Console</a></li>
+              <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Templates</strong></li>
+              <li>Select <strong>Password reset</strong>, then click the edit pencil icon</li>
+              <li>Click <strong>Customize action URL</strong> at the bottom of the drawer</li>
+              <li>Set the Action URL to: <span className="text-yellow-500 bg-[#101012] px-1 rounded break-all select-all font-sans">{typeof window !== 'undefined' ? window.location.origin : 'https://'}/?mode=resetPassword</span></li>
+            </ol>
+            <p className="text-zinc-400 text-[10px] italic">
+              Once set up, Firebase will route the reset emails directly back to this application, bypassing scanners and letting you safely update your password here.
+            </p>
+          </div>
+        )}
+
         {/* Back and alternative modes toggle links */}
         <div className="mt-6 flex flex-col items-center justify-center gap-2">
-          {mode === 'forgot' ? (
+          {mode === 'forgot' || mode === 'resetPassword' ? (
             <button
               onClick={() => handleModeChange('login')}
               className="text-xs text-zinc-400 hover:text-zinc-250 flex items-center gap-1.5 transition-colors focus:outline-none"
@@ -393,7 +525,7 @@ export function AuthScreen() {
         </div>
 
         {/* Divider & OAuth Integrations */}
-        {mode !== 'forgot' && (
+        {mode !== 'forgot' && mode !== 'resetPassword' && (
           <div className="mt-8 pt-6 border-t border-zinc-850/60">
             <div className="relative flex justify-center text-xs mb-5">
               <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">SECURE SINGLE SIGN-ON OPTIONS</span>
@@ -424,6 +556,18 @@ export function AuthScreen() {
                 GitHub
               </button>
             </div>
+
+            <div className="relative flex justify-center text-xs my-5">
+              <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">OR RUN WITH LOCAL BYPASS</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSandboxBypass}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-yellow-500/10 border border-yellow-500/20 hover:border-yellow-500/50 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 text-xs font-semibold tracking-wide transition-all cursor-pointer shadow-[0_0_15px_rgba(234,179,8,0.02)]"
+            >
+              ⚡ Enter DevSpace Sandbox (Local Bypass)
+            </button>
           </div>
         )}
       </motion.div>

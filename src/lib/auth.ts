@@ -9,7 +9,9 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  updateProfile
+  updateProfile,
+  confirmPasswordReset,
+  verifyPasswordResetCode
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -110,9 +112,27 @@ export const loginWithEmailPassword = async (email: string, password: string): P
 
 export const sendPasswordReset = async (email: string): Promise<void> => {
   try {
-    await sendPasswordResetEmail(auth, email);
+    const actionCodeSettings = {
+      url: `${window.location.origin}/?mode=resetPassword`,
+      handleCodeInApp: true,
+    };
+    await sendPasswordResetEmail(auth, email, actionCodeSettings);
   } catch (error: any) {
-    console.error('Password reset error:', error);
+    if (error.code === 'auth/unauthorized-continue-uri' || error.message?.includes('unauthorized') || error.message?.includes('continue-uri')) {
+      console.warn('Redirect URL not authorized in Firebase Console, falling back to default action handler page.');
+      await sendPasswordResetEmail(auth, email);
+    } else {
+      console.error('Password reset error:', error);
+      throw error;
+    }
+  }
+};
+
+export const confirmReset = async (code: string, newPass: string): Promise<void> => {
+  try {
+    await confirmPasswordReset(auth, code, newPass);
+  } catch (error: any) {
+    console.error('Confirm password reset error:', error);
     throw error;
   }
 };
@@ -228,5 +248,10 @@ export const logout = async () => {
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem('app_google_token');
     window.localStorage.removeItem('app_google_user');
+    window.localStorage.removeItem('app_auth_mode');
+    window.localStorage.removeItem('app_user_profile');
+    window.localStorage.removeItem('app_github_token');
+    window.localStorage.removeItem('app_github_profile');
+    window.localStorage.removeItem('app_last_github_repo');
   }
 };

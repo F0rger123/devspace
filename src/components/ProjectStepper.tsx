@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { githubSignIn } from "../lib/auth";
 import { useData } from "../context/DataProvider";
+import { extractRepoName } from "../lib/utils";
 import {
   X,
   Check,
@@ -215,7 +216,7 @@ export function ProjectStepper({
         ? formData.frameworks.split(",").map((f) => f.trim()).filter((f) => f)
         : undefined,
       githubRepos: formData.githubRepos
-        ? formData.githubRepos.split(",").map((f) => f.trim()).filter((f) => f)
+        ? formData.githubRepos.split(",").map((f) => extractRepoName(f)).filter((f) => f)
         : undefined,
       apiConnections: formData.apiConnections
         ? formData.apiConnections.split(",").map((f) => ({ name: f.trim() })).filter((f) => f.name)

@@ -42,6 +42,9 @@ export function GitHubIntelligence() {
   const [commits, setCommits] = useState<any[]>([]);
   const [prs, setPrs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [backgroundSyncing, setBackgroundSyncing] = useState(false);
+  const [isAutoPullActive, setIsAutoPullActive] = useState(true);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   
   const [showRepoModal, setShowRepoModal] = useState(false);
   const [fetchedRepos, setFetchedRepos] = useState<any[]>([]);
@@ -53,9 +56,13 @@ export function GitHubIntelligence() {
   const [insightContent, setInsightContent] = useState('');
 
   // Fetch commits and PRs for selected repository
-  const syncCommits = async () => {
+  const syncCommits = async (isBackground = false) => {
     if (!repo) return;
-    setLoading(true);
+    if (isBackground) {
+      setBackgroundSyncing(true);
+    } else {
+      setLoading(true);
+    }
     setInsightContent(''); // clear old insights
     try {
       const res = await fetch('/api/github/pull', {
@@ -104,12 +111,14 @@ export function GitHubIntelligence() {
       } else {
          setPrs([]);
       }
+      setLastSyncedAt(new Date());
     } catch (e) {
       console.error(e);
       setCommits([]);
       setPrs([]);
     }
     setLoading(false);
+    setBackgroundSyncing(false);
   };
 
   // List all directories/repositories under custom organization or user profile
@@ -265,6 +274,17 @@ export function GitHubIntelligence() {
   }, [repo]);
 
   useEffect(() => {
+    if (!isAutoPullActive || !repo) return;
+    
+    // Auto-refresh commits and issues in background every 30 seconds
+    const interval = setInterval(() => {
+      syncCommits(true);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [repo, isAutoPullActive]);
+
+  useEffect(() => {
     fetchGithubRepos();
   }, []);
 
@@ -305,9 +325,26 @@ export function GitHubIntelligence() {
             <span className="text-zinc-500 text-[10px] font-mono">Repo:</span>
             <span className="text-[11px] text-zinc-200 ml-2 font-semibold truncate max-w-[150px]">{repo}</span>
           </div>
+
+          <div 
+            onClick={() => setIsAutoPullActive(prev => !prev)}
+            className="flex items-center bg-[#121214] border border-zinc-800/80 hover:border-zinc-700 rounded-md px-3 py-1.5 cursor-pointer transition-colors"
+            title="Toggle background real-time sync (30s interval)"
+          >
+            <span className="relative flex h-2 w-2 mr-2">
+              {isAutoPullActive && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${isAutoPullActive ? 'bg-emerald-500' : 'bg-zinc-650'}`}></span>
+            </span>
+            <span className="text-[10px] font-mono text-zinc-400 select-none">
+              {isAutoPullActive ? 'Live Syncing' : 'Sync Paused'}
+            </span>
+            {backgroundSyncing && <Loader2 size={10} className="animate-spin text-emerald-400 ml-1.5" />}
+          </div>
           
           <button 
-            onClick={syncCommits}
+            onClick={() => syncCommits(false)}
             disabled={loading || !repo}
             className="px-3 py-1.5 text-[11px] font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-md transition-colors flex items-center gap-1.5"
           >

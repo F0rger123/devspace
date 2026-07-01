@@ -32,6 +32,7 @@ interface FirestoreErrorInfo {
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const firebaseAuth = getAuth();
+  const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -49,7 +50,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  if (!isSandbox) {
+    throw new Error(JSON.stringify(errInfo));
+  }
 }
 
 export function sanitizeForFirestore(obj: any): any {
@@ -1257,9 +1260,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (firstRepo && firstRepo !== githubRepo) {
           setGithubRepo(firstRepo);
         }
+      } else {
+        if (githubRepo !== null) {
+          setGithubRepo(null);
+        }
       }
     }
-  }, [activeProjectId, projects, isInitialLoadDone]);
+  }, [activeProjectId, projects, isInitialLoadDone, githubRepo]);
 
   // Post issues to Firestore on updates (debounced by 450ms)
   useEffect(() => {
@@ -1666,6 +1673,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
+      if (isSandbox) {
+        const localUser = getStored<any>('app_google_user', null);
+        if (localUser) {
+          setGoogleUser(localUser);
+          const cachedProfile = getStored<any>('app_user_profile', null) || {
+            uid: localUser.uid,
+            email: localUser.email,
+            username: localUser.displayName || 'SandboxDev',
+            displayName: localUser.displayName || 'SandboxDev',
+            avatarColor: '#eab308',
+            title: 'Full-Stack Developer (Sandbox)',
+            bio: 'Active DevSpace collaborator and sandbox designer.',
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          setUserProfile(cachedProfile);
+          
+          // Load local workspace data
+          const localProjects = getStored<Project[]>('app_projects', []);
+          const localIssues = getStored<Issue[]>('app_issues', []);
+          const localNotes = getStored<Note[]>('app_notes', []);
+          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+          setProjects(localProjects);
+          setIssues(localIssues);
+          setNotes(localNotes);
+          setCortexSynapses(localSynapses);
+          
+          setIsInitialLoadDone(true);
+          return;
+        }
+      }
+
       if (user) {
         const cleanUser = {
           uid: user.uid,
@@ -1915,18 +1955,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const updateUserProfile = async (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => {
-    if (!auth.currentUser) throw new Error("Must be logged in to update profile");
+    const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
+    const activeUid = auth.currentUser?.uid || googleUser?.uid;
+    const activeEmail = auth.currentUser?.email || googleUser?.email || '';
+    if (!activeUid) throw new Error("Must be logged in to update profile");
+    
     startSync('profile');
     try {
       const updatedProfile = {
         ...(userProfile || {}),
         ...updates,
-        uid: auth.currentUser.uid,
-        email: auth.currentUser.email || '',
+        uid: activeUid,
+        email: activeEmail,
         updatedAt: Date.now()
       };
-      await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
+      
+      if (!isSandbox && auth.currentUser) {
+        await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
+      }
+      
       setUserProfile(updatedProfile);
+      setStored('app_user_profile', updatedProfile);
       endSync('profile', true);
       showToast('Profile and workspace settings updated successfully.', 'success', 3000);
     } catch (e) {
@@ -2011,8 +2060,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const addProject = (p: Omit<Project, 'id' | 'createdAt'>): string => {
     const id = crypto.randomUUID();
-    const ownerId = auth.currentUser?.uid || 'anonymous';
-    const email = auth.currentUser?.email || '';
+    const ownerId = auth.currentUser?.uid || googleUser?.uid || 'anonymous';
+    const email = auth.currentUser?.email || googleUser?.email || '';
     const newProj = { 
       ...p, 
       id, 

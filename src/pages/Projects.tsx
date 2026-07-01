@@ -59,6 +59,7 @@ import { useData } from "../context/DataProvider";
 import { ProjectStepper } from "../components/ProjectStepper";
 import { InviteUserWizard } from "../components/ui/InviteUserWizard";
 import { RepoTreeVisualizer } from "../components/ui/RepoTreeVisualizer";
+import { extractRepoName } from "../lib/utils";
 
 export function Projects() {
   const [githubReposList, setGithubReposList] = useState<any[]>([]);
@@ -430,7 +431,7 @@ Then, suggest ONE concrete feature suggestion that we can add to the brainstorm 
     updateProject(editingProject.id, {
       name: editFormData.name,
       description: editFormData.description,
-      githubRepos: editFormData.githubRepo ? [editFormData.githubRepo] : [],
+      githubRepos: editFormData.githubRepo ? [extractRepoName(editFormData.githubRepo)] : [],
       status: editFormData.status,
     });
     
@@ -3693,8 +3694,9 @@ Description of fix or enhancement recommendation
                         onClick={() => {
                           const customRepo = prompt("Enter Github repository full name to map (e.g. user/my-custom-repo):");
                           if (customRepo) {
-                            updateProject(project.id, { githubRepos: [customRepo] });
-                            alert(`Repository bound to ${customRepo}!`);
+                            const normalized = extractRepoName(customRepo);
+                            updateProject(project.id, { githubRepos: [normalized] });
+                            alert(`Repository bound to ${normalized}!`);
                           }
                         }}
                         className="text-[10px] text-blue-400 hover:text-blue-300 hover:underline font-semibold"
@@ -3954,12 +3956,13 @@ Description of fix or enhancement recommendation
                             <button
                               type="button"
                               onClick={() => {
-                                if (!inlineDirectRepo.includes('/')) {
-                                  alert('Please enter repository name in format: owner/repo');
+                                const normalized = extractRepoName(inlineDirectRepo);
+                                if (!normalized || !normalized.includes('/')) {
+                                  alert('Please enter repository name or URL in format: owner/repo');
                                   return;
                                 }
-                                updateProject(project.id, { githubRepos: [inlineDirectRepo] });
-                                alert(`✓ Repository bound to ${inlineDirectRepo}`);
+                                updateProject(project.id, { githubRepos: [normalized] });
+                                alert(`✓ Repository bound to ${normalized}`);
                               }}
                               className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-bold transition-all shrink-0"
                             >
