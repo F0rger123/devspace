@@ -1,4 +1,4 @@
-import { Bot, Network, Workflow, Zap, MemoryStick, Database, Sparkles, Loader2, GitPullRequest, X, FileText, ChevronRight, ChevronDown, Folder, File, LayoutGrid, ListTree, FolderGit2, Mic, Volume2, Cpu, Clock, Trash2, Play, Check, AlertTriangle, Filter, Plus } from 'lucide-react';
+import { Bot, Network, Workflow, Zap, MemoryStick, Database, Sparkles, Loader2, GitPullRequest, X, FileText, ChevronRight, ChevronDown, Folder, File, LayoutGrid, ListTree, FolderGit2, Mic, Volume2, Cpu, Clock, Trash2, Play, Check, AlertTriangle, Filter, Plus, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -76,6 +76,7 @@ export function Brain() {
   
   const [selectedFile, setSelectedFile] = useState<{name: string, content: string, path: string} | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Obsidian Brain and Speech Memory States
   const [memoryVoiceActive, setMemoryVoiceActive] = useState(false);
@@ -356,8 +357,12 @@ export function Brain() {
         setFileTree([treeRoot]);
         }
       }
-    } catch (e) {
-      console.error('Failed to fetch tree');
+    } catch (e: any) {
+      if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+        console.debug('Failed to fetch tree (network/offline):', e.message);
+      } else {
+        console.error('Failed to fetch tree:', e);
+      }
     }
     setLoading(false);
   };
@@ -367,7 +372,7 @@ export function Brain() {
   }, [graphType]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden pb-4">
+    <div className="flex flex-col h-full overflow-y-auto lg:overflow-hidden pb-4">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
@@ -469,7 +474,7 @@ export function Brain() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
         {viewMode === 'both' && graphType === 'github' && (
           <div className="w-full lg:w-64 h-48 lg:h-auto border border-zinc-800 bg-[#121214] rounded-xl flex flex-col flex-shrink-0 overflow-hidden relative">
             <div className="flex items-center gap-2 p-3 border-b border-zinc-800 bg-[#09090b]">
@@ -496,7 +501,21 @@ export function Brain() {
         )}
 
         {/* SW SYNAPSTICS ROUTE MARKER */}
-        <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl relative overflow-hidden flex items-center justify-center">
+        <div className={`border border-zinc-800 bg-[#121214] rounded-xl relative overflow-hidden flex items-center justify-center transition-all duration-300 ${
+          isFullscreen 
+            ? 'fixed inset-0 z-50 p-4 m-0 rounded-none bg-[#0c0c0f]' 
+            : 'flex-1 min-h-[460px] lg:min-h-0'
+        }`}>
+          {/* Fullscreen control button */}
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="absolute top-3 right-3 z-30 p-1.5 bg-zinc-950/80 hover:bg-zinc-900 text-zinc-300 hover:text-white rounded-lg border border-zinc-800 shadow-lg transition-all flex items-center gap-1.5 text-[11px] font-medium"
+            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Graph"}
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span className="hidden sm:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
+          </button>
+
           {graphType === 'dreams' ? (
              <DreamLogView 
                 projects={projects as any}

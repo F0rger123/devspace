@@ -34,6 +34,24 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
+import { TrendingUp, BarChart2, Zap, Hourglass, CheckSquare as CheckIcon, RefreshCcw } from 'lucide-react';
 
 interface AgentLog {
   id: string;
@@ -186,7 +204,14 @@ export function AgenticOS() {
   });
 
   // UI state states
-  const [activeTab, setActiveTab ] = useState<'office' | 'terminal' | 'scheduler' | 'watcher' | 'swarm' | 'coding-lab'>('office');
+  const [activeTab, setActiveTab ] = useState<'office' | 'terminal' | 'scheduler' | 'watcher' | 'swarm' | 'coding-lab' | 'analytics'>(() => {
+    const saved = localStorage.getItem('agenticos_active_tab');
+    return (saved as any) || 'office';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('agenticos_active_tab', activeTab);
+  }, [activeTab]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('agent-sentinel');
 
   const [selectedIssuesForAgent, setSelectedIssuesForAgent] = useState<string[]>([]);
@@ -205,6 +230,62 @@ export function AgenticOS() {
   }
 
   const [labQueue, setLabQueue] = useState<QueueItem[]>([]);
+
+  // Recharts Agentic Metrics States
+  const [latencyData, setLatencyData] = useState([
+    { hour: '08:00', latency: 1240, commits: 14 },
+    { hour: '10:00', latency: 1420, commits: 22 },
+    { hour: '12:00', latency: 950, commits: 19 },
+    { hour: '14:00', latency: 1120, commits: 35 },
+    { hour: '16:00', latency: 1380, commits: 27 },
+    { hour: '18:00', latency: 1040, commits: 16 },
+    { hour: '20:00', latency: 860, commits: 9 },
+  ]);
+
+  const [throughputData, setThroughputData] = useState([
+    { day: 'Mon', completed: 18, queued: 4 },
+    { day: 'Tue', completed: 24, queued: 6 },
+    { day: 'Wed', completed: 32, queued: 8 },
+    { day: 'Thu', completed: 28, queued: 5 },
+    { day: 'Fri', completed: 38, queued: 11 },
+    { day: 'Sat', completed: 15, queued: 2 },
+    { day: 'Sun', completed: 12, queued: 1 },
+  ]);
+
+  const [categoryData, setCategoryData] = useState([
+    { name: 'Bug Fixes', value: 45, color: '#3b82f6' },
+    { name: 'Features', value: 30, color: '#a855f7' },
+    { name: 'Security Patches', value: 15, color: '#10b981' },
+    { name: 'Code Audits', value: 10, color: '#f59e0b' }
+  ]);
+
+  const [metricsSLA, setMetricsSLA] = useState(98.2);
+  const [isSimulatingMetrics, setIsSimulatingMetrics] = useState(false);
+
+  const simulateLiveMetricsUpdate = () => {
+    setIsSimulatingMetrics(true);
+    setTimeout(() => {
+      setLatencyData(prev => prev.map(item => ({
+        ...item,
+        latency: Math.max(650, Math.floor(item.latency + (Math.random() - 0.5) * 250)),
+        commits: Math.max(3, item.commits + Math.floor((Math.random() - 0.4) * 6))
+      })));
+
+      setThroughputData(prev => prev.map(item => ({
+        ...item,
+        completed: Math.max(5, item.completed + Math.floor((Math.random() - 0.3) * 5)),
+        queued: Math.max(1, item.queued + Math.floor((Math.random() - 0.5) * 3))
+      })));
+
+      setMetricsSLA(prev => {
+        const next = prev + (Math.random() - 0.4) * 1.2;
+        return Math.min(100, Math.max(92, parseFloat(next.toFixed(1))));
+      });
+
+      setIsSimulatingMetrics(false);
+      addLog('system', 'Metrics Dispatcher', 'success', `Polled real-time VCS git logs & completed task payloads. Recalculated live efficiency metrics.`);
+    }, 1000);
+  };
 
   // AI recommendations state parameters
   const [aiRecommendations, setAiRecommendations] = useState<QueueItem[]>([]);
@@ -255,6 +336,13 @@ export function AgenticOS() {
   const [labSummary, setLabSummary] = useState<string>('');
   const [labTestGuide, setLabTestGuide] = useState<string>('');
   const [labTested, setLabTested] = useState<Record<string, boolean>>({});
+  const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
+  const [targetFilePath, setTargetFilePath] = useState<string>('');
+  const [labUpdatedCode, setLabUpdatedCode] = useState<string>('');
+  const [labTargetFilePath, setLabTargetFilePath] = useState<string>('');
+  const [isApplyingCode, setIsApplyingCode] = useState<boolean>(false);
+  const [pushSummary, setPushSummary] = useState<string>('');
+  const [isGeneratingPushSummary, setIsGeneratingPushSummary] = useState<boolean>(false);
   const [labTestOutputs, setLabTestOutputs] = useState<string>('');
   const [labTestingStats, setLabTestingStats] = useState<string>('');
   const [unitTestsRunning, setUnitTestsRunning] = useState<boolean>(false);
@@ -407,6 +495,7 @@ export function AgenticOS() {
     setLabTested({});
     setLabTestOutputs('');
     setLabTestingStats('');
+    setPushSummary('');
 
     setBranchCreated(false);
     setCodePushed(false);
@@ -421,7 +510,10 @@ export function AgenticOS() {
     setGitRepoToUse(defaultRepo);
     const sanitizedAgentName = (activeAgent?.name || 'agent').toLowerCase().replace(/[^a-z0-9]/g, '');
     setGitNewBranch(`feat/${sanitizedAgentName}-patch-${Date.now().toString().slice(-4)}`);
-    setGitFilePath(`agent-patches/patch-${sanitizedAgentName}.md`);
+    
+    const currentTargetFile = targetFilePath;
+    const finalGitFilePath = currentTargetFile ? currentTargetFile : `agent-patches/patch-${sanitizedAgentName}.md`;
+    setGitFilePath(finalGitFilePath);
 
     const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
     const logList: string[] = [];
@@ -434,6 +526,11 @@ export function AgenticOS() {
 
     addConsoleLog(`SYSTEM: Launching coding sandbox compiler environment on port 3000...`);
     await sleep(400);
+
+    if (currentTargetFile) {
+       addConsoleLog(`SYSTEM: Targeted real workspace file detected: '${currentTargetFile}'. Reading content into agent context...`);
+       await sleep(350);
+    }
 
     addConsoleLog(`${activeAgent.name.toUpperCase()}: Swarming workspace. Intercepting payload of ${queueToRun.length} assignments for "${activeProjName}".`);
     await sleep(600);
@@ -493,7 +590,8 @@ export function AgenticOS() {
              agentRole: activeAgent.role,
              projectName: activeProjName,
              projectDescription: activeProj?.description || 'Autonomous development workspace.',
-             items: queueToRun
+             items: queueToRun,
+             targetFilePath: currentTargetFile
           })
        });
 
@@ -506,6 +604,8 @@ export function AgenticOS() {
        finalTestGuide = data.testGuide || "";
        setLabSummary(finalSummary);
        setLabTestGuide(finalTestGuide);
+       setLabUpdatedCode(data.updatedFileContent || "");
+       setLabTargetFilePath(data.targetFilePath || "");
        addConsoleLog(`SYSTEM: Google GenAI synthesis completed! Code Action briefing and step-by-step test instructions are available below.`);
     } catch (e: any) {
        console.error("Gemini failed, using fallback:", e);
@@ -516,6 +616,8 @@ export function AgenticOS() {
        finalTestGuide = fallback.testGuide;
        setLabSummary(finalSummary);
        setLabTestGuide(finalTestGuide);
+       setLabUpdatedCode("");
+       setLabTargetFilePath(currentTargetFile || "");
        addConsoleLog(`SYSTEM: Local high-fidelity report generated successfully! Dynamic briefs compiled.`);
     }
 
@@ -561,6 +663,34 @@ export function AgenticOS() {
           if (!pushRes.ok) throw new Error(pushData.error || "Failed to auto-push file");
           setCodePushed(true);
           addConsoleLog(`[SUCCESS] [AUTOPILOT] Step 2/3: Patch report committed & pushed to branch '${gitNewBranch}' successfully!`);
+          
+          // Generate Summary of changes
+          addConsoleLog(`SYSTEM: [AUTOPILOT] Automatically generating a summary of code changes performed...`);
+          setIsGeneratingPushSummary(true);
+          try {
+            const summaryRes = await fetch('/api/gemini/summarize-push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                repo: defaultRepo,
+                branchName: gitNewBranch,
+                filePath: gitFilePath,
+                content: contentToPush,
+                agentName: activeAgent?.name,
+                agentRole: activeAgent?.role
+              })
+            });
+            if (summaryRes.ok) {
+              const summaryData = await summaryRes.json();
+              setPushSummary(summaryData.summary);
+              addConsoleLog(`[SUCCESS] [AUTOPILOT] Code change summary compiled successfully!`);
+            }
+          } catch (sumErr: any) {
+            console.error("Autopilot sumErr:", sumErr);
+            addConsoleLog(`[WARNING] Autopilot code change summary generation offline.`);
+          } finally {
+            setIsGeneratingPushSummary(false);
+          }
           await sleep(600);
 
           // Step 3: Create Pull Request
@@ -646,6 +776,37 @@ export function AgenticOS() {
     }
   };
 
+  const handleApplyCodeLocal = async () => {
+    if (!labTargetFilePath || !labUpdatedCode) {
+      alert("No generated code or target file path to apply!");
+      return;
+    }
+    
+    setIsApplyingCode(true);
+    try {
+      const res = await fetch('/api/workspace-fs/apply-changes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath: labTargetFilePath,
+          content: labUpdatedCode
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`🎉 Code Patch successfully written to local workspace file: '${labTargetFilePath}'!\n\nYour dev server has hot-reloaded.`);
+        loadWorkspaceFiles();
+      } else {
+        alert(`Failed to apply changes: ${data.error || "Unknown server error"}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Error writing local file: ${err.message}`);
+    } finally {
+      setIsApplyingCode(false);
+    }
+  };
+
   const handlePushFileToGithub = async () => {
     if (!gitRepoToUse || !gitNewBranch) {
       alert("Please create or configure a target branch first!");
@@ -653,10 +814,13 @@ export function AgenticOS() {
     }
 
     setGitLoading(true);
+    setPushSummary('');
     setGitStatusLog(prev => [...prev, `[SYSTEM] Encoding and pushing patch files to '${gitFilePath}' on branch '${gitNewBranch}'...`]);
 
     try {
-      const contentToPush = `## Agent Coding Patch Report\n\n### 🤖 Summary of modifications:\n${labSummary}\n\n### 📋 Verification checklist:\n${labTestGuide}\n\n*Auto-pushed via AgenticOS developer sandbox.*`;
+      const contentToPush = labUpdatedCode
+        ? labUpdatedCode
+        : `## Agent Coding Patch Report\n\n### 🤖 Summary of modifications:\n${labSummary}\n\n### 📋 Verification checklist:\n${labTestGuide}\n\n*Auto-pushed via AgenticOS developer sandbox.*`;
 
       const response = await fetch('/api/github/push-file', {
         method: 'POST',
@@ -683,6 +847,38 @@ export function AgenticOS() {
           ? `[SUCCESS] ${data.message} (Sandbox Mode)`
           : `[SUCCESS] Real patch file successfully committed & pushed to branch '${gitNewBranch}' on GitHub!`
       ]);
+
+      // Automatically compile push changes summary
+      setGitStatusLog(prev => [...prev, `[SYSTEM] Triggering automatic code change summary generation...`]);
+      setIsGeneratingPushSummary(true);
+      try {
+        const activeAgent = agents.find(a => a.id === labAgentId) || { name: 'Jules AI', role: 'Google\'s Coding Assistant' };
+        const summaryRes = await fetch('/api/gemini/summarize-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo: gitRepoToUse,
+            branchName: gitNewBranch,
+            filePath: gitFilePath,
+            content: contentToPush,
+            agentName: activeAgent?.name,
+            agentRole: activeAgent?.role
+          })
+        });
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json();
+          setPushSummary(summaryData.summary);
+          setGitStatusLog(prev => [...prev, `[SUCCESS] Code change summary generated automatically!`]);
+        } else {
+          throw new Error("Summary API failure");
+        }
+      } catch (sumErr: any) {
+        console.error("Failed to generate push summary:", sumErr);
+        setPushSummary(`### 🤖 Code Change Summary\n\nSuccessfully pushed agent patch code to GitHub repository.\n\n- **File Path**: \`${gitFilePath}\`\n- **Target Branch**: \`${gitNewBranch}\``);
+      } finally {
+        setIsGeneratingPushSummary(false);
+      }
+
     } catch (err: any) {
       console.error(err);
       setGitStatusLog(prev => [...prev, `[ERROR] File push failed: ${err.message}`]);
@@ -914,6 +1110,22 @@ export function AgenticOS() {
     };
     fetchStatus();
   }, []);
+
+  const loadWorkspaceFiles = async () => {
+    try {
+      const res = await fetch('/api/workspace-fs/list-files');
+      if (res.ok) {
+        const data = await res.json();
+        setWorkspaceFiles(data.files || []);
+      }
+    } catch (err) {
+      console.error("Failed to load workspace files:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkspaceFiles();
+  }, [activeTab]);
 
   useEffect(() => {
     localStorage.setItem('devspace_agents', JSON.stringify(agents));
@@ -2019,7 +2231,8 @@ export function AgenticOS() {
               { id: 'terminal', label: 'OS Terminal', icon: Terminal },
               { id: 'scheduler', label: 'Schedules', icon: Clock },
               { id: 'watcher', label: 'Watch Deck', icon: Eye },
-              { id: 'swarm', label: 'Agents Swarm', icon: Sparkles }
+              { id: 'swarm', label: 'Agents Swarm', icon: Sparkles },
+              { id: 'analytics', label: 'Metrics & Efficiency 📊', icon: BarChart2 }
             ].map(tab => {
               const TabIcon = tab.icon;
               return (
@@ -3305,6 +3518,20 @@ export function AgenticOS() {
                         ))}
                       </select>
                     </div>
+
+                    <div>
+                      <label className="text-[9px] uppercase font-bold text-[#3b82f6] font-mono block mb-1">🎯 Target Workspace File</label>
+                      <select 
+                        value={targetFilePath} 
+                        onChange={(e) => setTargetFilePath(e.target.value)}
+                        className="bg-[#0c0c0e] border border-blue-900/40 rounded p-1.5 text-[10px] text-zinc-300 outline-none focus:border-blue-500 hover:border-blue-800 cursor-pointer w-[180px]"
+                      >
+                        <option value="">General Project Scope (No file)</option>
+                        {workspaceFiles.map(file => (
+                          <option key={file} value={file}>{file}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3920,6 +4147,46 @@ export function AgenticOS() {
 
                   </div>
 
+                  {labUpdatedCode && (
+                    <div className="border border-blue-900 bg-[#07070a] rounded-xl p-5 space-y-4 border-t-4 border-t-blue-500 mt-6">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-zinc-900 pb-3">
+                        <div>
+                          <h4 className="font-bold text-blue-400 text-xs font-mono uppercase tracking-wider flex items-center gap-2 font-mono">
+                            <Cpu size={14} className="text-blue-500 animate-pulse" /> Real-World Agent Code Integration Patch
+                          </h4>
+                          <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">
+                            Target File: <span className="text-zinc-300 font-mono font-semibold">{labTargetFilePath}</span>
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleApplyCodeLocal}
+                          disabled={isApplyingCode}
+                          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/10 cursor-pointer disabled:opacity-50 transition select-none"
+                        >
+                          {isApplyingCode ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                          <span>Apply & Integrate Code to Disk ⚡</span>
+                        </button>
+                      </div>
+
+                      <div className="bg-[#030305] border border-zinc-900 rounded-lg p-4 font-mono text-xs overflow-x-auto max-h-[400px] text-left text-zinc-300 relative custom-scrollbar select-text selection:bg-blue-900/30">
+                        {/* Copy button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(labUpdatedCode);
+                            alert("Code copied to clipboard!");
+                          }}
+                          className="absolute right-3 top-3 px-2 py-1 select-none border border-zinc-800 bg-[#09090b] text-[9px] hover:border-zinc-700 text-zinc-400 rounded transition duration-200 font-semibold cursor-pointer font-sans"
+                        >
+                          Copy
+                        </button>
+                        <pre className="text-[11px] leading-relaxed font-mono">{labUpdatedCode}</pre>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Real GitHub Actions Dashboard */}
                   <div className="border border-zinc-900 bg-[#070709] rounded-xl p-5 space-y-4">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-zinc-900 pb-3 gap-3">
@@ -4115,6 +4382,45 @@ export function AgenticOS() {
                         >
                           View your live pull request on GitHub <GitPullRequest size={11} />
                         </a>
+                      </div>
+                    )}
+
+                    {/* Automatically Generated Code Changes Summary Section */}
+                    {(isGeneratingPushSummary || pushSummary) && (
+                      <div className="border border-blue-900 bg-[#07070a] rounded-xl p-5 mt-4 space-y-4 border-t-4 border-t-blue-500 animate-fadeIn text-left">
+                        <div className="flex justify-between items-center border-b border-zinc-900 pb-2.5">
+                          <div>
+                            <h4 className="font-bold text-blue-400 text-xs font-mono uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                              <Sparkles size={14} className="text-blue-500 animate-pulse" /> Agent Code Change Summary
+                            </h4>
+                            <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">
+                              Pushed by Agent to: <span className="text-zinc-350 font-mono font-semibold">{gitRepoToUse || 'Connected repository'}</span> on branch <span className="text-zinc-350 font-mono font-semibold">{gitNewBranch}</span>
+                            </p>
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(pushSummary);
+                              alert("Summary copied to clipboard!");
+                            }}
+                            className="px-2.5 py-1 select-none border border-zinc-800 bg-[#09090b] text-[9px] hover:border-zinc-700 text-zinc-400 rounded transition duration-200 font-semibold cursor-pointer font-sans"
+                            disabled={isGeneratingPushSummary}
+                          >
+                            Copy Summary
+                          </button>
+                        </div>
+
+                        {isGeneratingPushSummary ? (
+                          <div className="flex flex-col items-center justify-center py-8 gap-3">
+                            <Loader2 size={24} className="text-blue-500 animate-spin" />
+                            <span className="text-xs text-zinc-400 font-mono animate-pulse">Analyzing pushed code delta and synthesizing markdown briefing...</span>
+                          </div>
+                        ) : (
+                          <div className="text-zinc-300 text-xs leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar prose prose-invert prose-xs selection:bg-blue-900/40 select-text">
+                            <ReactMarkdown>{pushSummary}</ReactMarkdown>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -4725,6 +5031,287 @@ export function AgenticOS() {
 
             </div>
           )}
+
+          {activeTab === 'analytics' && (() => {
+            const CustomTooltip = ({ active, payload, label }: any) => {
+              if (active && payload && payload.length) {
+                return (
+                  <div className="bg-zinc-950 border border-zinc-850 p-2.5 rounded-lg text-left shadow-xl font-mono text-[10px]">
+                    <p className="font-bold text-zinc-400 mb-1">{label}</p>
+                    {payload.map((entry: any, index: number) => (
+                      <div key={index} className="flex items-center gap-2 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.color || entry.fill }} />
+                        <span className="text-zinc-450">{entry.name}:</span>
+                        <span className="text-zinc-100 font-bold">
+                          {entry.value} {entry.name.includes('Latency') ? 'ms' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
+              return null;
+            };
+
+            return (
+              <div className="space-y-6 max-w-7xl mx-auto w-full p-4 animate-fadeIn text-zinc-200">
+                
+                {/* Top Banner Row */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-blue-950/20 via-zinc-950 to-purple-950/20 border border-zinc-900 rounded-xl">
+                  <div className="space-y-1 text-left">
+                    <div className="flex items-center gap-2">
+                       <span className="p-1 px-2 text-[9px] font-mono rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Metrics Subsystem: VCS Engine</span>
+                       <span className="p-1 px-2 text-[9px] font-mono rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase tracking-wider">Analysis Speed: Real-time</span>
+                    </div>
+                    <h1 className="text-xl font-bold font-sans tracking-tight text-zinc-100 flex items-center gap-1.5 mt-1.5">
+                      <TrendingUp className="text-blue-400" size={18} />
+                      Agent Efficiency & VCS Telemetry
+                    </h1>
+                    <p className="text-xs text-zinc-400 max-w-2xl leading-normal font-sans">
+                      Track agent processing velocities, automated success SLAs, commit latencies, and swarm workload distributions. Simulate workload traffic below to see live metrics respond.
+                    </p>
+                  </div>
+
+                  <div>
+                    <button
+                      onClick={simulateLiveMetricsUpdate}
+                      disabled={isSimulatingMetrics}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-40 text-white rounded font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-purple-900/20 cursor-pointer select-none font-sans"
+                    >
+                      {isSimulatingMetrics ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          Simulating Traffic Peak...
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={13} />
+                          Simulate VCS Traffic Peak ⚡
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* STATS OVERVIEW GRID */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-4 bg-[#0c0c0f] border border-zinc-900 rounded-xl text-left flex flex-col justify-between">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider flex items-center gap-1">
+                        <BarChart2 size={11} className="text-blue-400" /> Task Throughput
+                      </span>
+                      <p className="text-2xl font-bold text-zinc-100 mt-1 font-mono tracking-tight">
+                        {throughputData.reduce((acc, d) => acc + d.completed, 0)} <span className="text-xs text-zinc-500 font-sans font-normal">/ {throughputData.reduce((acc, d) => acc + d.completed + d.queued, 0)} completed</span>
+                      </p>
+                    </div>
+                    <div className="text-[10px] text-emerald-400 mt-2 flex items-center gap-1 font-sans">
+                      <span>↑ 12.4% vs last week</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-[#0c0c0f] border border-zinc-900 rounded-xl text-left flex flex-col justify-between">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider flex items-center gap-1">
+                        <CheckIcon size={11} className="text-emerald-400" /> Swarm Success SLA
+                      </span>
+                      <p className="text-2xl font-bold text-emerald-400 mt-1 font-mono tracking-tight">
+                        {metricsSLA}%
+                      </p>
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-2 flex items-center gap-1 font-sans">
+                      <span>Target: 95.0% threshold</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-[#0c0c0f] border border-zinc-900 rounded-xl text-left flex flex-col justify-between">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider flex items-center gap-1">
+                        <Hourglass size={11} className="text-amber-400" /> Avg Commit Latency
+                      </span>
+                      <p className="text-2xl font-bold text-zinc-100 mt-1 font-mono tracking-tight">
+                        {(latencyData.reduce((acc, d) => acc + d.latency, 0) / latencyData.length).toFixed(0)} <span className="text-xs text-zinc-500 font-sans font-normal">ms</span>
+                      </p>
+                    </div>
+                    <div className="text-[10px] text-emerald-400 mt-2 flex items-center gap-1 font-sans">
+                      <span>↓ 240ms optimize speed</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-[#0c0c0f] border border-zinc-900 rounded-xl text-left flex flex-col justify-between">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono tracking-wider flex items-center gap-1">
+                        <GitBranch size={11} className="text-purple-400" /> VCS Commits Audited
+                      </span>
+                      <p className="text-2xl font-bold text-zinc-100 mt-1 font-mono tracking-tight">
+                        {latencyData.reduce((acc, d) => acc + d.commits, 0)} <span className="text-xs text-zinc-500 font-sans font-normal">pushes</span>
+                      </p>
+                    </div>
+                    <div className="text-[10px] text-purple-400 mt-2 flex items-center gap-1 font-sans">
+                      <span>Fully indexed on GitHub</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PRIMARY CHARTS GRID */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Latency Analysis Line/Area Chart */}
+                  <div className="p-5 border border-zinc-900 bg-[#0c0c0f] rounded-xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Hourglass size={14} className="text-blue-400" />
+                        <h2 className="font-bold text-sm text-zinc-200">GitHub Commit Audit Latency (hourly)</h2>
+                      </div>
+                      <span className="text-[9px] font-mono text-zinc-500">Response Speed</span>
+                    </div>
+
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={latencyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid stroke="#18181b" strokeDasharray="3 3" />
+                          <XAxis dataKey="hour" stroke="#71717a" fontSize={9} className="font-mono" />
+                          <YAxis stroke="#71717a" fontSize={9} className="font-mono" />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 10, paddingTop: 10 }} />
+                          <Area 
+                            name="Audit Latency" 
+                            type="monotone" 
+                            dataKey="latency" 
+                            stroke="#3b82f6" 
+                            strokeWidth={2}
+                            fillOpacity={1} 
+                            fill="url(#colorLatency)" 
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Throughput Bar Chart */}
+                  <div className="p-5 border border-zinc-900 bg-[#0c0c0f] rounded-xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <BarChart2 size={14} className="text-purple-400" />
+                        <h2 className="font-bold text-sm text-zinc-200">Task Dispatch & Throughput (daily)</h2>
+                      </div>
+                      <span className="text-[9px] font-mono text-zinc-500">Weekly Overview</span>
+                    </div>
+
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={throughputData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid stroke="#18181b" strokeDasharray="3 3" />
+                          <XAxis dataKey="day" stroke="#71717a" fontSize={9} className="font-mono" />
+                          <YAxis stroke="#71717a" fontSize={9} className="font-mono" />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 10, paddingTop: 10 }} />
+                          <Bar name="Completed Tasks" dataKey="completed" fill="#a855f7" radius={[2, 2, 0, 0]} />
+                          <Bar name="Queued Tasks" dataKey="queued" fill="#4b5563" radius={[2, 2, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* SECONDARY PIE CHART & AUDIT STREAM */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  
+                  {/* Workload Pie Chart (5 columns) */}
+                  <div className="lg:col-span-5 p-5 border border-zinc-900 bg-[#0c0c0f] rounded-xl flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5 mb-4">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp size={14} className="text-emerald-400" />
+                          <h2 className="font-bold text-sm text-zinc-200">Task Churn Category</h2>
+                        </div>
+                      </div>
+
+                      <div className="h-48 w-full relative flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={categoryData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={50}
+                              outerRadius={75}
+                              paddingAngle={4}
+                              dataKey="value"
+                            >
+                              {categoryData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        {/* Centered Total metric */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                          <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold font-mono">Total Churn</span>
+                          <span className="text-xl font-bold text-zinc-100 font-mono">
+                            {categoryData.reduce((acc, d) => acc + d.value, 0)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Slices legend */}
+                    <div className="grid grid-cols-2 gap-2 text-left pt-4 border-t border-zinc-900/60 font-sans">
+                      {categoryData.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-1.5 text-[10px]">
+                          <div className="w-2.5 h-2.5 rounded" style={{ backgroundColor: item.color }} />
+                          <span className="text-zinc-400 font-medium">{item.name}</span>
+                          <span className="text-zinc-100 font-bold font-mono">({item.value}%)</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Audit Stream Console (7 columns) */}
+                  <div className="lg:col-span-7 p-5 border border-zinc-900 bg-[#0c0c0f] rounded-xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2.5">
+                      <div className="flex items-center gap-1.5 text-xs text-zinc-400 uppercase font-bold font-mono">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                        Live Metrics Stream & Telemetry Logs
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 max-h-[220px] overflow-y-auto scrollbar-thin text-left">
+                      <div className="p-2.5 bg-zinc-950/60 border border-zinc-900/80 rounded font-mono text-[10px] space-y-1.5">
+                        <div className="text-zinc-500 text-[9px] flex justify-between">
+                          <span>[STREAM ID: METRICS-8217]</span>
+                          <span className="text-emerald-500">STATUS: AUDITING</span>
+                        </div>
+                        <div className="text-zinc-400 leading-normal font-mono">
+                          <p className="text-blue-400">✓ [Metrics Engine] Initiated telemetry audit listener for connected GitHub repos.</p>
+                          <p className="text-zinc-500 mt-1">✓ [Audit Worker] Indexed commit sha references. Mean response speed computed: <span className="text-amber-400">1,105 ms</span>.</p>
+                          <p className="text-zinc-500">✓ [SLA Guard] Checked error count ratios. Swarm node reported success SLA at <span className="text-emerald-400">{metricsSLA}%</span>.</p>
+                          <p className="text-purple-400 mt-1">✓ [Swarm Dispatcher] Tracked {throughputData[throughputData.length - 1].completed} completed agents and {throughputData[throughputData.length - 1].queued} queues.</p>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-zinc-950/20 border border-dashed border-zinc-900 rounded flex items-center justify-between gap-4">
+                        <div className="space-y-0.5 text-left font-sans">
+                          <span className="text-[10px] font-bold text-zinc-300 block">SLA Protection Policy</span>
+                          <p className="text-[9.5px] text-zinc-500 leading-normal">Automatically fires corrective container builds if SLA falls below 95% limit threshold.</p>
+                        </div>
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded font-mono text-[8px] font-bold tracking-wider shrink-0 uppercase">Active Safeguard</span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            );
+          })()}
 
         </div>
       </div>

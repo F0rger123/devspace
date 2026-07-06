@@ -1,10 +1,401 @@
-import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
+import { logout, auth, linkProvider, unlinkProvider } from '../lib/auth';
 import { WakeWordEngine } from '../components/ui/WakeWordEngine';
+import { useStore, KineticGesture } from '../store';
+
+function KineticSandboxVisualizer() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [simulatedType, setSimulatedType] = useState<'off' | 'swipe-left' | 'swipe-right' | 'swipe-up' | 'wave' | 'pose-2' | 'pose-5' | 'circle'>('off');
+  const { showToast, addNote } = useData();
+
+  useEffect(() => {
+    let active = true;
+    
+    const draw = () => {
+      if (!active) return;
+      
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          // Dark background with cyber grid matrix
+          ctx.fillStyle = '#060608';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // Draw coordinates grid lines
+          ctx.strokeStyle = '#111115';
+          ctx.lineWidth = 1;
+          for (let i = 0; i < canvas.width; i += 30) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, canvas.height);
+            ctx.stroke();
+          }
+          for (let j = 0; j < canvas.height; j += 30) {
+            ctx.beginPath();
+            ctx.moveTo(0, j);
+            ctx.lineTo(canvas.width, j);
+            ctx.stroke();
+          }
+
+          // Simulated centroid calculations
+          let simulatedCentroid: { x: number; y: number } | null = null;
+          let simulatedTrail: { x: number; y: number }[] = [];
+          let simulatedFingers: { name: string; x: number; y: number }[] = [];
+
+          const t = (Date.now() / 15) % 100; // loop 0 to 99
+
+          if (simulatedType === 'swipe-left') {
+            // Moves from right (110) to left (10)
+            const x = 110 - (t * 1) % 110;
+            const y = 45;
+            simulatedCentroid = { x, y };
+            for (let i = 0; i < 8; i++) {
+              const tx = x + i * 8;
+              if (tx <= 110) simulatedTrail.push({ x: tx, y });
+            }
+            simulatedFingers = [
+              { name: 'INDEX FINGER', x: x - 4, y: y - 15 },
+              { name: 'MIDDLE FINGER', x: x + 2, y: y - 14 }
+            ];
+          } else if (simulatedType === 'swipe-right') {
+            // Moves from left (10) to right (110)
+            const x = 10 + (t * 1) % 110;
+            const y = 45;
+            simulatedCentroid = { x, y };
+            for (let i = 0; i < 8; i++) {
+              const tx = x - i * 8;
+              if (tx >= 10) simulatedTrail.push({ x: tx, y });
+            }
+            simulatedFingers = [
+              { name: 'INDEX FINGER', x: x - 4, y: y - 15 },
+              { name: 'MIDDLE FINGER', x: x + 2, y: y - 14 }
+            ];
+          } else if (simulatedType === 'swipe-up') {
+            // Moves from bottom (80) to top (10)
+            const y = 80 - (t * 0.7) % 70;
+            const x = 60;
+            simulatedCentroid = { x, y };
+            for (let i = 0; i < 8; i++) {
+              const ty = y + i * 8;
+              if (ty <= 80) simulatedTrail.push({ x, y: ty });
+            }
+            simulatedFingers = [
+              { name: 'INDEX FINGER', x: x - 2, y: y - 18 }
+            ];
+          } else if (simulatedType === 'wave') {
+            // Waving back and forth
+            const x = 60 + Math.sin(Date.now() / 120) * 45;
+            const y = 45 + Math.cos(Date.now() / 300) * 10;
+            simulatedCentroid = { x, y };
+            for (let i = 0; i < 12; i++) {
+              const historicalX = 60 + Math.sin((Date.now() - i * 40) / 120) * 45;
+              const historicalY = 45 + Math.cos((Date.now() - i * 40) / 300) * 10;
+              simulatedTrail.push({ x: historicalX, y: historicalY });
+            }
+            simulatedFingers = [
+              { name: 'THUMB', x: x - 18, y: y - 5 },
+              { name: 'INDEX FINGER', x: x - 12, y: y - 20 },
+              { name: 'MIDDLE FINGER', x: x - 2, y: y - 22 },
+              { name: 'RING FINGER', x: x + 8, y: y - 18 },
+              { name: 'PINKY FINGER', x: x + 16, y: y - 10 }
+            ];
+          } else if (simulatedType === 'pose-2') {
+            // Static 2 fingers
+            const x = 60;
+            const y = 45;
+            simulatedCentroid = { x, y };
+            simulatedFingers = [
+              { name: 'INDEX FINGER', x: x - 10, y: y - 24 },
+              { name: 'MIDDLE FINGER', x: x + 10, y: y - 26 }
+            ];
+          } else if (simulatedType === 'pose-5') {
+            // Static 5 fingers open wide
+            const x = 60;
+            const y = 45;
+            simulatedCentroid = { x, y };
+            simulatedFingers = [
+              { name: 'THUMB', x: x - 22, y: y - 3 },
+              { name: 'INDEX FINGER', x: x - 15, y: y - 25 },
+              { name: 'MIDDLE FINGER', x: x - 2, y: y - 28 },
+              { name: 'RING FINGER', x: x + 11, y: y - 23 },
+              { name: 'PINKY FINGER', x: x + 21, y: y - 11 }
+            ];
+          } else if (simulatedType === 'circle') {
+            // Traces circular template
+            const angle = (Date.now() / 250) % (Math.PI * 2);
+            const x = 60 + Math.cos(angle) * 35;
+            const y = 45 + Math.sin(angle) * 28;
+            simulatedCentroid = { x, y };
+            for (let i = 0; i < 24; i++) {
+              const pastAngle = (Date.now() / 250 - i * 0.12) % (Math.PI * 2);
+              simulatedTrail.push({
+                x: 60 + Math.cos(pastAngle) * 35,
+                y: 45 + Math.sin(pastAngle) * 28
+              });
+            }
+            simulatedFingers = [
+              { name: 'INDEX FINGER', x: x + Math.cos(angle) * 5, y: y + Math.sin(angle) * 5 }
+            ];
+          }
+
+          // Fetch live feed info from unified kinetic tracking state
+          const feed = window.__kineticEngine?.getLiveFeed();
+          const isTracking = (feed && feed.isTracking) || simulatedType !== 'off';
+          const activeCentroid = simulatedType !== 'off' ? simulatedCentroid : (feed?.centroid);
+          const activeTrail = simulatedType !== 'off' ? simulatedTrail : (feed?.trail);
+          const activeFingers = simulatedType !== 'off' ? simulatedFingers : (feed?.fingers);
+
+          if (isTracking) {
+            // Draw radial focal grid lines
+            ctx.strokeStyle = '#18181b';
+            ctx.beginPath();
+            ctx.arc(canvas.width / 2, canvas.height / 2, 45, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(canvas.width / 2, canvas.height / 2, 10, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Trace glowing centroid motion path
+            if (activeTrail && activeTrail.length > 1) {
+              ctx.strokeStyle = simulatedType !== 'off' ? '#3b82f6' : '#10b981';
+              ctx.lineWidth = 3.5;
+              ctx.lineCap = 'round';
+              ctx.lineJoin = 'round';
+              ctx.shadowColor = simulatedType !== 'off' ? '#3b82f6' : '#10b981';
+              ctx.shadowBlur = 4;
+              ctx.beginPath();
+              activeTrail.forEach((p, idx) => {
+                const px = (p.x / 120) * canvas.width;
+                const py = (p.y / 90) * canvas.height;
+                if (idx === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+              });
+              ctx.stroke();
+              ctx.shadowBlur = 0; // reset shadow
+            }
+            
+            // Draw the hand position dot
+            if (activeCentroid) {
+              const cx = (activeCentroid.x / 120) * canvas.width;
+              const cy = (activeCentroid.y / 90) * canvas.height;
+              
+              // Pulsing sonar rings
+              const cycle = (Date.now() / 400) % 1;
+              ctx.strokeStyle = simulatedType !== 'off' ? `rgba(59, 130, 246, ${1 - cycle})` : `rgba(16, 185, 129, ${1 - cycle})`;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.arc(cx, cy, cycle * 30, 0, Math.PI * 2);
+              ctx.stroke();
+              
+              // Main point
+              ctx.fillStyle = simulatedType !== 'off' ? '#3b82f6' : '#10b981';
+              ctx.shadowColor = simulatedType !== 'off' ? '#3b82f6' : '#10b981';
+              ctx.shadowBlur = 8;
+              ctx.beginPath();
+              ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.shadowBlur = 0; // reset shadow
+            }
+
+            // Trace glowing finger positions and skeleton
+            if (activeFingers && activeFingers.length > 0 && activeCentroid) {
+              const cx = (activeCentroid.x / 120) * canvas.width;
+              const cy = (activeCentroid.y / 90) * canvas.height;
+
+              // Draw skeleton lines to fingers
+              ctx.strokeStyle = simulatedType !== 'off' ? 'rgba(59, 130, 246, 0.45)' : 'rgba(245, 158, 11, 0.45)';
+              ctx.lineWidth = 1.2;
+              ctx.setLineDash([2, 2]);
+              activeFingers.forEach(f => {
+                const fx = (f.x / 120) * canvas.width;
+                const fy = (f.y / 90) * canvas.height;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(fx, fy);
+                ctx.stroke();
+              });
+              ctx.setLineDash([]); // Reset dashed state
+
+              // Draw finger target circles & text labels
+              activeFingers.forEach(f => {
+                const fx = (f.x / 120) * canvas.width;
+                const fy = (f.y / 90) * canvas.height;
+
+                // Outer glowing circle
+                ctx.fillStyle = simulatedType !== 'off' ? '#2563eb' : '#f59e0b';
+                ctx.strokeStyle = simulatedType !== 'off' ? '#60a5fa' : '#fbbf24';
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = simulatedType !== 'off' ? '#2563eb' : '#f59e0b';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.shadowBlur = 0; // Reset shadow
+
+                // Finger labels
+                ctx.fillStyle = '#fef3c7';
+                ctx.font = '7px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(f.name.toUpperCase().replace(' FINGER', ''), fx, fy - 8);
+              });
+            }
+          } else {
+            // Idle / Wait notification
+            ctx.fillStyle = '#3f3f46';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('👁️ AWAITING KINETIC CAMERA CONNECTION', canvas.width / 2, canvas.height / 2);
+            ctx.font = '8px monospace';
+            ctx.fillText('(OR LAUNCH AN INTERACTIVE SIMULATION BELOW)', canvas.width / 2, canvas.height / 2 + 15);
+          }
+        }
+      }
+      requestAnimationFrame(draw);
+    };
+    
+    requestAnimationFrame(draw);
+    
+    return () => {
+      active = false;
+    };
+  }, [simulatedType]);
+
+  const handleSimulateDemo = (type: typeof simulatedType) => {
+    setSimulatedType(type);
+    if (type === 'off') {
+      showToast('Interactive simulation paused.', 'info', 1500);
+      return;
+    }
+
+    // Trigger state or toast
+    const store = useStore.getState();
+    const mockNames: Record<string, string> = {
+      'swipe-left': 'Swipe Left',
+      'swipe-right': 'Swipe Right',
+      'swipe-up': 'Swipe Up',
+      'wave': 'Wave Gesture',
+      'pose-2': '2-Finger Peace Sign',
+      'pose-5': '5-Finger High Five',
+      'circle': 'Circular Custom Path'
+    };
+
+    showToast(`🤖 Simulating: ${mockNames[type]} on Sandbox radar...`, 'info', 2000);
+
+    // Apply the action after a tiny delay to mimic visual completion
+    setTimeout(() => {
+      if (type === 'swipe-left' || type === 'swipe-right') {
+        store.toggleSidebar();
+        showToast('👉 Sidebar Toggled via Simulated Gesture!', 'success', 2500);
+      } else if (type === 'swipe-up') {
+        store.toggleCommandPalette();
+        showToast('☝️ Command Palette Opened via Simulated Gesture!', 'success', 2500);
+      } else if (type === 'wave') {
+        store.toggleRightSidebar();
+        showToast('👋 Workspace Assistant Toggled via Simulated Gesture!', 'success', 2500);
+      } else if (type === 'pose-2') {
+        showToast('✌️ Peace Sign: Custom Zen notification active!', 'success', 2500);
+      } else if (type === 'pose-5') {
+        addNote({
+          projectId: 'default',
+          title: '📝 Simulated Quick Note',
+          content: '## Hands-Free Captured Note\n\nCaptured via simulated 5-Finger High Five gesture in Sandbox mode.',
+          tags: ['kinetic', 'simulated']
+        });
+        showToast('🖐️ Created Quick Note via Simulated Posture!', 'success', 2500);
+      } else if (type === 'circle') {
+        store.toggleSidebar();
+        setTimeout(() => {
+          store.toggleRightSidebar();
+        }, 450);
+        showToast('🌀 Multi-Step Macro Chain completed hands-free!', 'success', 3000);
+      }
+    }, 1500);
+  };
+  
+  return (
+    <div className="relative space-y-3">
+      <canvas 
+        ref={canvasRef} 
+        width={400} 
+        height={220} 
+        className="w-full h-48 sm:h-56 rounded-xl border border-zinc-900 bg-zinc-950/40 shadow-inner"
+      />
+      <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-950/80 border border-zinc-900 text-[8px] font-mono text-zinc-500">
+        <span>{simulatedType !== 'off' ? 'DEMO_STREAM_SIM_ACTIVE' : 'SNDBX_RADAR_v1.0'}</span>
+      </div>
+
+      {/* Interactive Simulation Dashboard Row */}
+      <div className="bg-[#0b0b0d] border border-zinc-900 rounded-lg p-2.5 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] font-mono text-zinc-400 font-bold tracking-wider uppercase flex items-center gap-1">
+            <Activity size={10} className="text-blue-400" /> Interactive Simulation Deck (No Camera Needed)
+          </span>
+          {simulatedType !== 'off' && (
+            <button 
+              onClick={() => handleSimulateDemo('off')}
+              className="text-[8.5px] font-mono text-red-400 hover:text-red-300 font-bold uppercase transition-colors"
+            >
+              [ Stop Simulation ]
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => handleSimulateDemo('swipe-left')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'swipe-left' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            👈 Swipe Left
+          </button>
+          <button
+            onClick={() => handleSimulateDemo('swipe-right')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'swipe-right' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            👉 Swipe Right
+          </button>
+          <button
+            onClick={() => handleSimulateDemo('swipe-up')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'swipe-up' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            ☝️ Swipe Up
+          </button>
+          <button
+            onClick={() => handleSimulateDemo('wave')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'wave' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            👋 Wave Hand
+          </button>
+          <button
+            onClick={() => handleSimulateDemo('pose-2')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'pose-2' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            ✌️ Peace Sign
+          </button>
+          <button
+            onClick={() => handleSimulateDemo('pose-5')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'pose-5' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            🖐️ High Five
+          </button>
+          <button
+            onClick={() => handleSimulateDemo('circle')}
+            className={`px-2 py-1 text-[9px] font-mono rounded border transition-all ${simulatedType === 'circle' ? 'bg-blue-500 text-black border-blue-400 font-bold' : 'bg-zinc-950 border-zinc-850 hover:bg-zinc-900 text-zinc-300'}`}
+          >
+            🌀 Circle Macro
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function Settings() {
+  const navigate = useNavigate();
   const { 
     userProfile, updateUserProfile,
     aiContextRules, setAiContextRules, 
@@ -45,15 +436,123 @@ export function Settings() {
     aetherPersonalityRules, setAetherPersonalityRules,
     aetherModel, setAetherModel,
     aetherConciseness, setAetherConciseness,
-    aetherThinkingLevel, setAetherThinkingLevel
+    aetherThinkingLevel, setAetherThinkingLevel,
+    macroRegistry,
+    toggleMacroMapping,
+    testMacroMapping,
+    showToast,
+    backupKineticConfig,
+    restoreKineticConfig,
+    isSyncingConfig,
+    sharedMacros,
+    publishMacro,
+    deleteSharedMacro,
+    likeSharedMacro,
+    incrementDownloadsSharedMacro
   } = useData();
-  const [activeTab, setActiveTab] = useState('profile'); // Default to profile to showcase first-class user profiles
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('settings_active_tab') || 'profile'); // Default to profile to showcase first-class user profiles
+
+  useEffect(() => {
+    localStorage.setItem('settings_active_tab', activeTab);
+  }, [activeTab]);
+  
+  // Kinetic Gestures Local State
+  const [newGestureName, setNewGestureName] = useState('');
+  const [newGestureAction, setNewGestureAction] = useState<string>('toggle-sidebar');
+  const [customActionText, setCustomActionText] = useState('');
+  const [macroActions, setMacroActions] = useState<string[]>([]);
+  const [macroDelay, setMacroDelay] = useState<number>(400);
+
+  // Editing existing gesture states
+  const [editingGestureId, setEditingGestureId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editAction, setEditAction] = useState<string>('toggle-sidebar');
+  const [editCustomText, setEditCustomText] = useState('');
+  const [editMacroActions, setEditMacroActions] = useState<string[]>([]);
+  const [editMacroDelay, setEditMacroDelay] = useState<number>(400);
+
+  // Publishing shared macros state variables
+  const [isPublishingModalOpen, setIsPublishingModalOpen] = useState(false);
+  const [publishTitle, setPublishTitle] = useState('');
+  const [publishDescription, setPublishDescription] = useState('');
+  const [publishSelectedGestureIds, setPublishSelectedGestureIds] = useState<string[]>([]);
+  const [sharedMacroSearch, setSharedMacroSearch] = useState('');
+  const [sharedMacroFilter, setSharedMacroFilter] = useState<'all' | 'mine'>('all');
+  const [isTraining, setIsTraining] = useState(false);
+  const [trainingCountdown, setTrainingCountdown] = useState(0);
+  const [trainingProgress, setTrainingProgress] = useState(0);
+  const [trainSuccess, setTrainSuccess] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<string | null>(null);
+  const [gestureConflict, setGestureConflict] = useState<{
+    type: 'name' | 'shape';
+    conflictWith: string;
+    points: { x: number; y: number }[];
+  } | null>(null);
+
+  // AI-driven suggestions state
+  const [isAnalyzingPatterns, setIsAnalyzingPatterns] = useState(false);
+  const [macroSuggestions, setMacroSuggestions] = useState<{
+    name: string;
+    description: string;
+    actions: string[];
+    confidence: number;
+  }[]>([]);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [adoptedId, setAdoptedId] = useState<string | null>(null);
+  const [gestureType, setGestureType] = useState<'path' | 'finger-pose'>('path');
+  const [targetFingerCount, setTargetFingerCount] = useState<number>(2);
+  
+  // Pre-configured presets states
+  const [presetActions, setPresetActions] = useState<Record<number, string>>({
+    1: 'toggle-sidebar',
+    2: 'toggle-right-sidebar',
+    3: 'toggle-command-palette',
+    4: 'toggle-sidebar-minimize',
+    5: 'custom-alert'
+  });
+  const [presetTexts, setPresetTexts] = useState<Record<number, string>>({
+    1: 'Index finger pointing detected.',
+    2: 'Peace gesture recognized.',
+    3: 'Tri-claw system trigger invoked.',
+    4: 'Four-finger flat hand gesture active.',
+    5: 'Quantum high-five! Metric engine calibrated.'
+  });
+  const [presetAssignedCount, setPresetAssignedCount] = useState<number | null>(null);
   
   const [profileName, setProfileName] = useState('');
+  const [isCalibrationOpen, setIsCalibrationOpen] = useState(false);
+
+  const isKineticEnabled = useStore((state) => state.isKineticEnabled);
+  const showFloatingCamera = useStore((state) => state.showFloatingCamera);
+  const kineticGestures = useStore((state) => state.kineticGestures);
+  const commandHistory = useStore((state) => state.commandHistory);
+  const kineticLogs = useStore((state) => state.kineticLogs);
+  const kineticHandsMode = useStore((state) => state.kineticHandsMode);
+  const setKineticHandsMode = useStore((state) => state.setKineticHandsMode);
+
+  // Store calibration sensitivity parameters & setters
+  const swipeSensitivity = useStore((state) => state.swipeSensitivity);
+  const setSwipeSensitivity = useStore((state) => state.setSwipeSensitivity);
+  const customPathMatchPrecision = useStore((state) => state.customPathMatchPrecision);
+  const setCustomPathMatchPrecision = useStore((state) => state.setCustomPathMatchPrecision);
+  const waveSensitivity = useStore((state) => state.waveSensitivity);
+  const setWaveSensitivity = useStore((state) => state.setWaveSensitivity);
+  const fingerPoseStabilityFrames = useStore((state) => state.fingerPoseStabilityFrames);
+  const setFingerPoseStabilityFrames = useStore((state) => state.setFingerPoseStabilityFrames);
+  const gestureCooldownDuration = useStore((state) => state.gestureCooldownDuration);
+  const setGestureCooldownDuration = useStore((state) => state.setGestureCooldownDuration);
   const [profileTitle, setProfileTitle] = useState('');
   const [profileBio, setProfileBio] = useState('');
   const [profileAvatarColor, setProfileAvatarColor] = useState('#3b82f6');
+  const [profileIsPrivate, setProfileIsPrivate] = useState(false);
+  const [profileGithubUrl, setProfileGithubUrl] = useState('');
+  const [profileWebsiteUrl, setProfileWebsiteUrl] = useState('');
+  const [profileTechStack, setProfileTechStack] = useState('');
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
+
+  // States for Macro Sequence Builder drag and drop reordering and adding
+  const [isDraggingOverChain, setIsDraggingOverChain] = useState(false);
+  const [draggedActionIndex, setDraggedActionIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (userProfile) {
@@ -61,6 +560,10 @@ export function Settings() {
       setProfileTitle(userProfile.title || '');
       setProfileBio(userProfile.bio || '');
       setProfileAvatarColor(userProfile.avatarColor || '#3b82f6');
+      setProfileIsPrivate(userProfile.isPrivate || false);
+      setProfileGithubUrl(userProfile.githubUrl || '');
+      setProfileWebsiteUrl(userProfile.websiteUrl || '');
+      setProfileTechStack(userProfile.techStack || '');
     }
   }, [userProfile]);
   
@@ -73,12 +576,117 @@ export function Settings() {
         title: profileTitle,
         bio: profileBio,
         avatarColor: profileAvatarColor,
+        isPrivate: profileIsPrivate,
+        githubUrl: profileGithubUrl,
+        websiteUrl: profileWebsiteUrl,
+        techStack: profileTechStack,
       });
       setProfileMessage('✓ Profile updated successfully in Cloud Firestore!');
       setTimeout(() => setProfileMessage(null), 4000);
     } catch (err: any) {
       setProfileMessage(`❌ Failed to update profile: ${err?.message || 'Unknown error'}`);
     }
+  };
+
+  const handleDeployPresetPack = (packType: 'developer' | 'navigator' | 'automation' | 'presentation') => {
+    const currentGestures = [...useStore.getState().kineticGestures];
+    // Remove any existing pose-1 to pose-5 gestures to avoid collision
+    let filteredGestures = currentGestures.filter(g => !g.direction?.startsWith('pose-'));
+
+    let newPresets: KineticGesture[] = [];
+
+    if (packType === 'developer') {
+      newPresets = [
+        { id: 'dev-preset-1', name: '☝️ Command Portal Pointer', action: 'toggle-command-palette', direction: 'pose-1' },
+        { id: 'dev-preset-2', name: '✌️ Sidebar Dock Toggle', action: 'toggle-sidebar', direction: 'pose-2' },
+        { id: 'dev-preset-3', name: '🤟 Space Assistant Summon', action: 'toggle-right-sidebar', direction: 'pose-3' },
+        { id: 'dev-preset-4', name: '✋ Nav Bar Minimize Claw', action: 'toggle-sidebar-minimize', direction: 'pose-4' },
+        { id: 'dev-preset-5', name: '🖐️ Instant Note Capture', action: 'create-quick-note', direction: 'pose-5' }
+      ];
+      setPresetActions({
+        1: 'toggle-command-palette',
+        2: 'toggle-sidebar',
+        3: 'toggle-right-sidebar',
+        4: 'toggle-sidebar-minimize',
+        5: 'create-quick-note'
+      });
+    } else if (packType === 'navigator') {
+      newPresets = [
+        { id: 'nav-preset-1', name: '☝️ Dashboard Router Pointer', action: 'nav-dashboard', direction: 'pose-1' },
+        { id: 'nav-preset-2', name: '✌️ Active Projects Router', action: 'nav-projects', direction: 'pose-2' },
+        { id: 'nav-preset-3', name: '🤟 Notes Manager Router', action: 'nav-notes', direction: 'pose-3' },
+        { id: 'nav-preset-4', name: '✋ Specification Docs Router', action: 'nav-docs', direction: 'pose-4' },
+        { id: 'nav-preset-5', name: '🖐️ System Control Router', action: 'nav-settings', direction: 'pose-5' }
+      ];
+      setPresetActions({
+        1: 'nav-dashboard',
+        2: 'nav-projects',
+        3: 'nav-notes',
+        4: 'nav-docs',
+        5: 'nav-settings'
+      });
+    } else if (packType === 'automation') {
+      newPresets = [
+        { 
+          id: 'auto-preset-1', 
+          name: '☝️ Dual Dashboard Portal', 
+          action: 'macro', 
+          direction: 'pose-1', 
+          macroActions: ['toggle-sidebar', 'toggle-command-palette'] as any, 
+          macroDelay: 450 
+        },
+        { 
+          id: 'auto-preset-2', 
+          name: '✌️ Companion Summon Duo', 
+          action: 'macro', 
+          direction: 'pose-2', 
+          macroActions: ['toggle-command-palette', 'toggle-right-sidebar'] as any, 
+          macroDelay: 500 
+        },
+        { 
+          id: 'auto-preset-3', 
+          name: '🤟 Quick Capture & Sync', 
+          action: 'macro', 
+          direction: 'pose-3', 
+          macroActions: ['create-quick-note', 'trigger-sync'] as any, 
+          macroDelay: 400 
+        },
+        { id: 'auto-preset-4', name: '✋ Reset Dialogue Memory', action: 'clear-chat', direction: 'pose-4' },
+        { id: 'auto-preset-5', name: '🖐️ Purge Factory Workspace', action: 'reset-system-data', direction: 'pose-5' }
+      ];
+      setPresetActions({
+        1: 'macro',
+        2: 'macro',
+        3: 'macro',
+        4: 'clear-chat',
+        5: 'reset-system-data'
+      });
+    } else if (packType === 'presentation') {
+      newPresets = [
+        { id: 'pres-preset-1', name: '☝️ Dynamic Laser Accent', action: 'custom-alert', direction: 'pose-1', customText: '🎯 Presentation Laser Pointer Accent Active!' },
+        { id: 'pres-preset-2', name: '✌️ Speedrun System Accent', action: 'custom-alert', direction: 'pose-2', customText: '🚀 Rocketing Aether System Processing Speed!' },
+        { id: 'pres-preset-3', name: '🤟 DevSpace Team Accent', action: 'custom-alert', direction: 'pose-3', customText: '👏 Applauding Team DevSpace Achievements!' },
+        { id: 'pres-preset-4', name: '✋ Slide Switcher Accent', action: 'custom-alert', direction: 'pose-4', customText: '📢 Attention: Hands-Free Presentation Deck Active.' },
+        { id: 'pres-preset-5', name: '🖐️ High Five Showcase', action: 'custom-alert', direction: 'pose-5', customText: '🌟 High Five! Thank you for watching our presentation.' }
+      ];
+      setPresetActions({
+        1: 'custom-alert',
+        2: 'custom-alert',
+        3: 'custom-alert',
+        4: 'custom-alert',
+        5: 'custom-alert'
+      });
+      setPresetTexts({
+        1: '🎯 Presentation Laser Pointer Accent Active!',
+        2: '🚀 Rocketing Aether System Processing Speed!',
+        3: '👏 Applauding Team DevSpace Achievements!',
+        4: '📢 Attention: Hands-Free Presentation Deck Active.',
+        5: '🌟 High Five! Thank you for watching our presentation.'
+      });
+    }
+
+    useStore.getState().setKineticGestures([...filteredGestures, ...newPresets]);
+    showToast(`🚀 Deployed Preset Pack successfully!`, 'success', 3000);
   };
   const [newTriggerPhrase, setNewTriggerPhrase] = useState('');
   const [newTriggerPath, setNewTriggerPath] = useState('/');
@@ -538,6 +1146,316 @@ export function Settings() {
     { id: 'supabase', name: 'Supabase', icon: Database, description: 'Postgres database, auth, and edge functions.', connected: true, color: 'text-emerald-500' },
   ];
 
+  const normalizePoints = (pts: { x: number; y: number }[]) => {
+    const xs = pts.map(p => p.x);
+    const ys = pts.map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+
+    return pts.map(p => ({
+      x: spanX > 0 ? (p.x - minX) / spanX : 0.5,
+      y: spanY > 0 ? (p.y - minY) / spanY : 0.5
+    }));
+  };
+
+  const resamplePoints = (pts: { x: number; y: number }[], count: number) => {
+    if (pts.length === 0) return Array(count).fill({ x: 0.5, y: 0.5 });
+    if (pts.length === 1) return Array(count).fill(pts[0]);
+
+    const resampled: { x: number; y: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const indexFloat = (i / (count - 1)) * (pts.length - 1);
+      const indexLower = Math.floor(indexFloat);
+      const indexUpper = Math.ceil(indexFloat);
+      const t = indexFloat - indexLower;
+
+      const p1 = pts[indexLower];
+      const p2 = pts[indexUpper];
+
+      resampled.push({
+        x: p1.x * (1 - t) + p2.x * t,
+        y: p1.y * (1 - t) + p2.y * t
+      });
+    }
+    return resampled;
+  };
+
+  const checkGestureConflicts = (
+    newName: string,
+    newPoints: { x: number; y: number }[],
+    existingGestures: KineticGesture[],
+    direction?: string
+  ): { type: 'name' | 'shape'; conflictWith: string } | null => {
+    // 1. Name Conflict Check (case-insensitive)
+    const nameConflict = existingGestures.find(
+      g => g.name.trim().toLowerCase() === newName.trim().toLowerCase()
+    );
+    if (nameConflict) {
+      return { type: 'name', conflictWith: nameConflict.name };
+    }
+
+    // 2. Posture/Direction Conflict Check
+    if (direction && direction.startsWith('pose-')) {
+      const poseConflict = existingGestures.find(g => g.direction === direction);
+      if (poseConflict) {
+        return { type: 'shape', conflictWith: poseConflict.name };
+      }
+      return null;
+    }
+
+    // 3. Shape Similarity Conflict Check
+    if (newPoints.length < 5) return null;
+    const normNew = normalizePoints(newPoints);
+    const keyPointsCount = 10;
+    const resampledNew = resamplePoints(normNew, keyPointsCount);
+
+    for (const gesture of existingGestures) {
+      if (!gesture.points || gesture.points.length < 5) continue;
+
+      const normExisting = normalizePoints(gesture.points);
+      const resampledExisting = resamplePoints(normExisting, keyPointsCount);
+
+      let totalDist = 0;
+      for (let i = 0; i < keyPointsCount; i++) {
+        const dX = resampledNew[i].x - resampledExisting[i].x;
+        const dY = resampledNew[i].y - resampledExisting[i].y;
+        totalDist += Math.sqrt(dX * dX + dY * dY);
+      }
+
+      const avgDist = totalDist / keyPointsCount;
+      // An average distance threshold < 0.28 represents highly overlapping gesture paths
+      if (avgDist < 0.28) {
+        return { type: 'shape', conflictWith: gesture.name };
+      }
+    }
+
+    return null;
+  };
+
+  const saveNewGesture = (name: string, action: typeof newGestureAction, text: string, points: { x: number; y: number }[], direction?: string) => {
+    const newGesture: KineticGesture = {
+      id: 'gesture-' + Math.random().toString(36).substring(7),
+      name: name,
+      action: action as any,
+      customText: action === 'custom-alert' ? text : undefined,
+      points: points,
+      direction: direction as any,
+      macroActions: action === 'macro' ? macroActions as any : undefined,
+      macroDelay: action === 'macro' ? macroDelay : undefined
+    };
+
+    const currentGestures = useStore.getState().kineticGestures;
+    useStore.getState().setKineticGestures([...currentGestures, newGesture]);
+
+    setTrainSuccess(true);
+    setIsTraining(false);
+    setNewGestureName('');
+    setCustomActionText('');
+    setMacroActions([]);
+    setMacroDelay(400);
+    setGestureConflict(null);
+    setTimeout(() => setTrainSuccess(false), 3000);
+  };
+
+  const handleAnalyzePatterns = async () => {
+    setIsAnalyzingPatterns(true);
+    setSuggestionError(null);
+    setAdoptedId(null);
+    try {
+      const history = useStore.getState().commandHistory;
+      const res = await fetch('/api/gemini/suggest-macros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history })
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch macro suggestions from AI engine');
+      }
+      const data = await res.json();
+      if (data.success && data.suggestions) {
+        setMacroSuggestions(data.suggestions);
+      } else {
+        throw new Error(data.error || 'Invalid response from AI engine');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSuggestionError(err.message || 'An error occurred during pattern analysis.');
+    } finally {
+      setIsAnalyzingPatterns(false);
+    }
+  };
+
+  const handleConfigureAndTrain = (suggestion: any) => {
+    setNewGestureName(suggestion.name);
+    setNewGestureAction('macro');
+    setMacroActions(suggestion.actions);
+    setMacroDelay(400);
+    // Scroll smoothly to training section
+    const trainerElement = document.getElementById('gesture-trainer-section');
+    if (trainerElement) {
+      trainerElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleInstantActivate = (suggestion: any) => {
+    const nextGesture: KineticGesture = {
+      id: 'gesture-' + Math.random().toString(36).substring(7),
+      name: suggestion.name,
+      action: 'macro',
+      points: [
+        { x: 100, y: 100 },
+        { x: 150, y: 150 },
+        { x: 200, y: 100 }
+      ],
+      macroActions: suggestion.actions,
+      macroDelay: 400
+    };
+    const currentGestures = useStore.getState().kineticGestures;
+    useStore.getState().setKineticGestures([...currentGestures, nextGesture]);
+    setAdoptedId(suggestion.name);
+    setTimeout(() => setAdoptedId(null), 3000);
+  };
+
+  const handleSaveAnyway = () => {
+    if (!gestureConflict) return;
+    const direction = gestureType === 'finger-pose' ? `pose-${targetFingerCount}` : undefined;
+    saveNewGesture(newGestureName, newGestureAction, customActionText, gestureConflict.points, direction);
+  };
+
+  const handleOverwrite = () => {
+    if (!gestureConflict) return;
+    const currentGestures = useStore.getState().kineticGestures;
+    const filtered = currentGestures.filter(
+      g => g.name.trim().toLowerCase() !== gestureConflict.conflictWith.trim().toLowerCase()
+    );
+    useStore.getState().setKineticGestures(filtered);
+    const direction = gestureType === 'finger-pose' ? `pose-${targetFingerCount}` : undefined;
+    saveNewGesture(newGestureName, newGestureAction, customActionText, gestureConflict.points, direction);
+  };
+
+  const handleCancelTraining = () => {
+    setGestureConflict(null);
+    setIsTraining(false);
+  };
+
+  const handleStartTraining = () => {
+    if (!newGestureName) return;
+
+    if (gestureType === 'finger-pose') {
+      const currentGestures = useStore.getState().kineticGestures;
+      const direction = `pose-${targetFingerCount}`;
+      const conflict = checkGestureConflicts(newGestureName, [], currentGestures, direction);
+
+      if (conflict) {
+        setGestureConflict({
+          type: conflict.type,
+          conflictWith: conflict.conflictWith,
+          points: []
+        });
+      } else {
+        saveNewGesture(newGestureName, newGestureAction, customActionText, [], direction);
+      }
+      return;
+    }
+
+    setIsTraining(true);
+    setTrainSuccess(false);
+    setTrainingCountdown(3);
+
+    // 3 Second Countdown before capturing
+    const countdownInterval = window.setInterval(() => {
+      setTrainingCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval);
+          // Start actual capturing
+          startRecordingPath();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleAssignPreset = (fingerCount: number) => {
+    const action = presetActions[fingerCount] || 'toggle-sidebar';
+    const text = presetTexts[fingerCount] || 'Action detected!';
+    const direction = `pose-${fingerCount}`;
+    
+    const presetNames: Record<number, string> = {
+      1: 'Index Pointer Preset',
+      2: 'Peace Sign Preset',
+      3: 'Tri-Claw Gesture Preset',
+      4: 'Flat Hand Sign Preset',
+      5: 'High Five Gesture Preset'
+    };
+    
+    const label = `${presetNames[fingerCount]}`;
+    
+    const currentGestures = useStore.getState().kineticGestures;
+    // Overwrite any existing pose gesture with the same finger count
+    const filteredGestures = currentGestures.filter(g => g.direction !== direction);
+    
+    const newGesture: KineticGesture = {
+      id: 'gesture-preset-' + fingerCount + '-' + Math.random().toString(36).substring(7),
+      name: label,
+      action: action as any,
+      customText: action === 'custom-alert' ? text : undefined,
+      points: [],
+      direction: direction,
+    };
+    
+    useStore.getState().setKineticGestures([...filteredGestures, newGesture]);
+    
+    setPresetAssignedCount(fingerCount);
+    setTimeout(() => {
+      setPresetAssignedCount(null);
+    }, 2500);
+  };
+
+  const startRecordingPath = () => {
+    // Notify unified kinetic helper
+    window.__kineticEngine?.startRecordingCustom((points) => {
+      // Completed capturing points
+      if (points.length < 5) {
+        // Not enough points recorded
+        setIsTraining(false);
+        alert("Not enough motion detected during recording! Please try again and move your hand wider.");
+        return;
+      }
+
+      const currentGestures = useStore.getState().kineticGestures;
+      const conflict = checkGestureConflicts(newGestureName, points, currentGestures);
+
+      if (conflict) {
+        setGestureConflict({
+          type: conflict.type,
+          conflictWith: conflict.conflictWith,
+          points: points
+        });
+        setIsTraining(false);
+      } else {
+        saveNewGesture(newGestureName, newGestureAction, customActionText, points);
+      }
+    });
+
+    // Animate the progression bar over 2.5 seconds (2500ms)
+    let progress = 0;
+    const progressInterval = window.setInterval(() => {
+      progress += 4;
+      setTrainingProgress(progress);
+      if (progress >= 100) {
+        clearInterval(progressInterval);
+        setTrainingProgress(0);
+        // Unified engine will auto-trigger callback
+      }
+    }, 100);
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
@@ -554,7 +1472,7 @@ export function Settings() {
       <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         {/* Settings Navigation */}
         <div className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-x-visible shrink-0 pb-2 md:pb-0 w-full md:w-48 border-b md:border-b-0 md:border-r border-zinc-900 md:pr-4">
-          {['profile', 'aether', 'voice-triggers', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
+          {['profile', 'aether', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -564,9 +1482,19 @@ export function Settings() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Kinetic Gestures 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
+          <div className="hidden md:block my-2 border-t border-zinc-900" />
+          <button
+            onClick={async () => {
+              await logout();
+              navigate('/');
+            }}
+            className="text-left px-3 py-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap text-red-400 hover:text-red-300 hover:bg-red-950/25 flex items-center gap-1.5 border border-transparent hover:border-red-900/30 cursor-pointer"
+          >
+            <LogOut size={12} /> Log Out
+          </button>
         </div>
 
         {/* Settings Content */}
@@ -2031,6 +2959,2029 @@ export function Settings() {
             </div>
           )}
 
+          {activeTab === 'kinetic-gestures' && (
+            <div className="space-y-6 animate-fade-in text-zinc-300">
+              {/* Conflict Notification Overlay Modal */}
+              {gestureConflict && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                  <div className="w-full max-w-md p-6 border border-amber-500/30 bg-[#0c0c0e] rounded-2xl shadow-2xl space-y-4">
+                    <div className="flex items-center gap-3 text-amber-400">
+                      <AlertCircle size={24} className="animate-pulse" />
+                      <h4 className="text-sm font-bold uppercase tracking-wider font-mono">
+                        Kinetic Conflict Detected
+                      </h4>
+                    </div>
+
+                    <div className="space-y-2 text-xs text-zinc-300">
+                      {gestureConflict.type === 'name' ? (
+                        <p className="leading-relaxed">
+                          A spatial gesture pattern named <span className="font-bold text-amber-400 font-mono">"{gestureConflict.conflictWith}"</span> already exists. Saving will result in duplicate name lookup conflicts.
+                        </p>
+                      ) : (
+                        <p className="leading-relaxed">
+                          The recorded spatial path is mathematically highly similar (overlap signature &gt; 75%) to the existing custom gesture <span className="font-bold text-amber-400 font-mono">"{gestureConflict.conflictWith}"</span>. Using highly similar gestures will lead to execution triggers colliding.
+                        </p>
+                      )}
+                      <p className="text-[10px] text-zinc-500 italic">
+                        How would you like to proceed with the newly captured signal?
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
+                      <button
+                        onClick={handleCancelTraining}
+                        className="px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-lg border border-zinc-800 transition-colors"
+                      >
+                        Cancel & Retrain
+                      </button>
+                      <button
+                        onClick={handleSaveAnyway}
+                        className="px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg border border-zinc-750 transition-colors"
+                      >
+                        Save as Duplicate
+                      </button>
+                      <button
+                        onClick={handleOverwrite}
+                        className="px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors"
+                      >
+                        Overwrite "{gestureConflict.conflictWith}"
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Community Publishing Modal */}
+              {isPublishingModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in text-xs">
+                  <div className="w-full max-w-lg p-6 border border-zinc-800 bg-[#0c0c0e] rounded-2xl shadow-2xl space-y-5">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Share2 size={18} className="text-amber-400 animate-pulse" />
+                        <h4 className="text-sm font-bold uppercase tracking-wider font-mono text-zinc-100">
+                          Publish Gesture Library Bundle
+                        </h4>
+                      </div>
+                      <button
+                        onClick={() => setIsPublishingModalOpen(false)}
+                        className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-zinc-500">Library Title</label>
+                        <input
+                          type="text"
+                          value={publishTitle}
+                          onChange={(e) => setPublishTitle(e.target.value)}
+                          placeholder="e.g. Navigation Masterclass"
+                          className="w-full bg-[#111113] border border-zinc-850 rounded-lg px-3 py-2 text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-zinc-700 font-medium"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-zinc-500">Library Description</label>
+                        <textarea
+                          rows={3}
+                          value={publishDescription}
+                          onChange={(e) => setPublishDescription(e.target.value)}
+                          placeholder="Explain what these gestures do, what macros are executed, and how to use them..."
+                          className="w-full bg-[#111113] border border-zinc-850 rounded-lg px-3 py-2 text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-zinc-700 font-mono leading-relaxed"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] uppercase font-mono tracking-wider text-zinc-500 block">Select Gestures to Bundle</label>
+                        <div className="max-h-48 overflow-y-auto border border-zinc-900 bg-black/40 rounded-lg p-2.5 space-y-1.5 custom-scrollbar">
+                          {macroRegistry.length === 0 ? (
+                            <p className="text-zinc-650 italic text-[10px] py-4 text-center">No local custom gestures available to bundle.</p>
+                          ) : (
+                            macroRegistry.map((gest) => {
+                              const isChecked = publishSelectedGestureIds.includes(gest.id);
+                              return (
+                                <div
+                                  key={gest.id}
+                                  onClick={() => {
+                                    if (isChecked) {
+                                      setPublishSelectedGestureIds(prev => prev.filter(id => id !== gest.id));
+                                    } else {
+                                      setPublishSelectedGestureIds(prev => [...prev, gest.id]);
+                                    }
+                                  }}
+                                  className={`flex items-center justify-between p-2 rounded-md border transition-all cursor-pointer select-none ${
+                                    isChecked 
+                                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' 
+                                      : 'bg-zinc-950/60 border-zinc-900 text-zinc-400 hover:border-zinc-800'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 bg-zinc-900 border border-zinc-850 rounded text-zinc-500 shrink-0">
+                                      {gest.direction || 'custom'}
+                                    </span>
+                                    <span className="font-bold text-[10.5px] truncate max-w-[200px]">{gest.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-mono text-zinc-650">{gest.action}</span>
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {}} // handled by click
+                                      className="accent-amber-500"
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 border-t border-zinc-900 pt-3.5">
+                      <button
+                        onClick={() => setIsPublishingModalOpen(false)}
+                        className="px-4 py-2 text-xs font-bold font-mono uppercase bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!publishTitle.trim()) {
+                            showToast('Please specify a title for your shared library.', 'error', 3000);
+                            return;
+                          }
+                          if (publishSelectedGestureIds.length === 0) {
+                            showToast('Please select at least one gesture to package.', 'error', 3000);
+                            return;
+                          }
+
+                          const selectedGestures = macroRegistry.filter(g => publishSelectedGestureIds.includes(g.id));
+
+                          const ok = await publishMacro(publishTitle.trim(), publishDescription.trim(), selectedGestures);
+                          if (ok) {
+                            setIsPublishingModalOpen(false);
+                            setPublishTitle('');
+                            setPublishDescription('');
+                            setPublishSelectedGestureIds([]);
+                          }
+                        }}
+                        disabled={publishSelectedGestureIds.length === 0 || !publishTitle.trim()}
+                        className="px-4 py-2 text-xs font-bold font-mono uppercase tracking-tight bg-amber-500 hover:bg-amber-400 text-black disabled:opacity-45 disabled:cursor-not-allowed rounded-lg transition-all cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+                      >
+                        Publish to Gallery
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Kinetic Calibration Overlay Modal */}
+              {isCalibrationOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+                  <div className="w-full max-w-4xl p-6 border border-zinc-800 bg-[#09090b] rounded-2xl shadow-2xl space-y-5 my-8">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                          <Settings2 size={18} />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold uppercase tracking-wider font-mono text-zinc-100 flex items-center gap-1.5">
+                            Kinetic Calibration & Tuning Console
+                          </h4>
+                          <p className="text-[10px] text-zinc-500 mt-0.5">
+                            Fine-tune computer-vision sensitivity parameters, minimum threshold velocities, static posture frame locks, and path matching thresholds.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setIsCalibrationOpen(false)}
+                        className="p-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                        title="Close Calibration Console"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    {/* Split Layout: Visual Feedback + Sensitivity Sliders */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      
+                      {/* Left: Real-time Radar Test area */}
+                      <div className="lg:col-span-5 space-y-3">
+                        <div className="border border-zinc-900 bg-black/60 p-4 rounded-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider font-bold">Live Tracking Radar</span>
+                            {isKineticEnabled ? (
+                              <span className="flex items-center gap-1 text-[9px] font-mono text-emerald-400 bg-emerald-950/45 border border-emerald-900/30 px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                                <span className="w-1 h-1 rounded-full bg-emerald-400" /> ACTIVE
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-[9px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded-full font-bold">
+                                <span className="w-1 h-1 rounded-full bg-zinc-500" /> INACTIVE
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="relative border border-zinc-900 rounded-lg overflow-hidden bg-[#060608]">
+                            <KineticSandboxVisualizer />
+                          </div>
+
+                          <div className="space-y-1.5 text-[10px] text-zinc-500 leading-normal">
+                            <p>• Move your hand inside the camera frame to test adjustments live.</p>
+                            <p>• Check if the tracking trail coordinates match and trigger gestures cleanly with your updated thresholds.</p>
+                            {!isKineticEnabled && (
+                              <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-amber-500 text-[9.5px] mt-2 flex items-start gap-1.5">
+                                <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                                <span>Note: The camera tracker is currently <strong>disabled</strong>. Enable it via the main panel toggles to see real-time calibration radar feedback.</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: The Sensitivity Sliders */}
+                      <div className="lg:col-span-7 space-y-4">
+                        <h5 className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider font-mono border-b border-zinc-900/60 pb-1.5">
+                          Tuning Sliders
+                        </h5>
+
+                        <div className="space-y-3.5">
+                          {/* Slider 1: Swipe Sensitivity */}
+                          <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-zinc-900">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-200 block">Swipe Distance Sensitivity</span>
+                                <span className="text-[9px] text-zinc-500 block">Min pixel distance required for a swipe gesture.</span>
+                              </div>
+                              <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
+                                {swipeSensitivity}px
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={15}
+                              max={60}
+                              value={swipeSensitivity}
+                              onChange={(e) => setSwipeSensitivity(Number(e.target.value))}
+                              className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                              <span>15px (Sensitive)</span>
+                              <span className="text-[9px] text-zinc-400 font-medium">
+                                {swipeSensitivity < 25 
+                                  ? "⚡ Fast (Tiny rapid hand sweep)" 
+                                  : swipeSensitivity <= 42 
+                                    ? "⚖️ Balanced (Recommended default)" 
+                                    : "🔒 Deliberate (Large sweeps only)"}
+                              </span>
+                              <span>60px (Strict)</span>
+                            </div>
+                          </div>
+
+                          {/* Slider 2: Custom Path Correlation Match Precision */}
+                          <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-zinc-900">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-200 block">Path Similarity Tolerance (Custom Gestures)</span>
+                                <span className="text-[9px] text-zinc-500 block">Deviation allowance between real-time trail and trained shape.</span>
+                              </div>
+                              <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
+                                {customPathMatchPrecision.toFixed(2)}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0.10}
+                              max={0.40}
+                              step={0.01}
+                              value={customPathMatchPrecision}
+                              onChange={(e) => setCustomPathMatchPrecision(Number(e.target.value))}
+                              className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                              <span>0.10 (Rigid/Perfect Match)</span>
+                              <span className="text-[9px] text-zinc-400 font-medium">
+                                {customPathMatchPrecision < 0.18 
+                                  ? "🎯 Perfect Form (Requires precise path replication)" 
+                                  : customPathMatchPrecision <= 0.28 
+                                    ? "⚖️ Generous (Optimal for human deviations)" 
+                                    : "⚠️ Loose (High overlap error risk)"}
+                              </span>
+                              <span>0.40 (Flexible Match)</span>
+                            </div>
+                          </div>
+
+                          {/* Slider 3: Wave Sensitivity */}
+                          <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-zinc-900">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-200 block">Wave Swing Amplitude</span>
+                                <span className="text-[9px] text-zinc-500 block">Minimum horizontal width required for waves.</span>
+                              </div>
+                              <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
+                                {waveSensitivity}px
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={15}
+                              max={60}
+                              value={waveSensitivity}
+                              onChange={(e) => setWaveSensitivity(Number(e.target.value))}
+                              className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                              <span>15px (Sensitive)</span>
+                              <span className="text-[9px] text-zinc-400 font-medium">
+                                {waveSensitivity < 22 
+                                  ? "⚡ Tiny Wave (Light wiggle triggers)" 
+                                  : waveSensitivity <= 38 
+                                    ? "⚖️ Normal Wave (Standard default)" 
+                                    : "🔒 Broad Wave (Wide sweep waves required)"}
+                              </span>
+                              <span>60px (Broad Swings)</span>
+                            </div>
+                          </div>
+
+                          {/* Slider 4: Static Hold Frame Count */}
+                          <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-zinc-900">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-200 block">Finger Posture Stability Hold Time</span>
+                                <span className="text-[9px] text-zinc-500 block">Consecutive video frames a hand pose must stay locked.</span>
+                              </div>
+                              <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
+                                {fingerPoseStabilityFrames} frames
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={5}
+                              max={25}
+                              value={fingerPoseStabilityFrames}
+                              onChange={(e) => setFingerPoseStabilityFrames(Number(e.target.value))}
+                              className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                              <span>5 frames (~80ms)</span>
+                              <span className="text-[9px] text-zinc-400 font-medium">
+                                {fingerPoseStabilityFrames < 8 
+                                  ? "⚡ Rapid (Instantaneous registration)" 
+                                  : fingerPoseStabilityFrames <= 14 
+                                    ? "⚖️ Stable Hold (~160ms, standard)" 
+                                    : "🔒 Deliberate Hold (Hold frozen to trigger)"}
+                              </span>
+                              <span>25 frames (~400ms)</span>
+                            </div>
+                          </div>
+
+                          {/* Slider 5: Gesture Trigger Cooldown */}
+                          <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-zinc-900">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="text-[10px] font-bold text-zinc-200 block">Gesture Trigger Cooldown</span>
+                                <span className="text-[9px] text-zinc-500 block">Min wait time between sequential macro/gesture triggers.</span>
+                              </div>
+                              <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.05)]">
+                                {gestureCooldownDuration} ms
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={300}
+                              max={4000}
+                              step={100}
+                              value={gestureCooldownDuration}
+                              onChange={(e) => setGestureCooldownDuration(Number(e.target.value))}
+                              className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                              <span>300ms (Rapid)</span>
+                              <span className="text-[9px] text-zinc-400 font-medium">
+                                {gestureCooldownDuration < 1000 
+                                  ? "⚡ Rapid Fire (Prone to duplicate triggers)" 
+                                  : gestureCooldownDuration <= 2200 
+                                    ? "⚖️ Balanced Cooldown (Recommended)" 
+                                    : "🔒 Deliberate (Safe from duplicate triggers)"}
+                              </span>
+                              <span>4000ms (Strict Gap)</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Reset Buttons */}
+                        <div className="flex justify-between items-center pt-3 border-t border-zinc-900/60">
+                          <button
+                            onClick={() => {
+                              setSwipeSensitivity(32);
+                              setCustomPathMatchPrecision(0.23);
+                              setWaveSensitivity(30);
+                              setFingerPoseStabilityFrames(10);
+                              setGestureCooldownDuration(1500);
+                            }}
+                            className="text-[10px] font-mono text-zinc-500 hover:text-emerald-400 flex items-center gap-1 transition-colors bg-transparent border-0 cursor-pointer"
+                          >
+                            <RefreshCw size={10} /> Reset to Defaults
+                          </button>
+                          
+                          <button
+                            onClick={() => setIsCalibrationOpen(false)}
+                            className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black rounded-lg text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Save & Exit Calibration
+                          </button>
+                        </div>
+
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
+              {/* Header */}
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                  <Activity size={16} className="text-emerald-400" /> Aether Kinetic Spatial Gesture Engine
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  Enable camera-based computer vision hand gestures. Train custom motion vectors to control your developer environment hands-free.
+                </p>
+              </div>
+
+              {/* Toggles Card */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div 
+                  onClick={() => {
+                    const isKin = useStore.getState().isKineticEnabled;
+                    useStore.getState().setKineticEnabled(!isKin);
+                  }}
+                  className={`border p-4 rounded-xl cursor-pointer transition-all ${
+                    isKineticEnabled
+                      ? 'bg-emerald-950/10 border-emerald-500/20 hover:border-emerald-500/40'
+                      : 'bg-[#09090b] border-zinc-850 hover:border-zinc-750'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                        <SettingsIcon size={14} className={isKineticEnabled ? 'text-emerald-400 animate-pulse' : 'text-zinc-500'} />
+                        Kinetic Camera Tracker
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
+                        Toggle real-time video stream analysis. When enabled, your local web-camera acts as an active motion receiver.
+                      </p>
+                    </div>
+                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors shrink-0 ml-4 ${isKineticEnabled ? 'bg-emerald-500' : 'bg-zinc-800'}`}>
+                      <div className={`w-3 h-3 rounded-full bg-white transition-transform ${isKineticEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </div>
+                  </div>
+                </div>
+
+                <div 
+                  onClick={() => {
+                    const isShow = useStore.getState().showFloatingCamera;
+                    useStore.getState().setShowFloatingCamera(!isShow);
+                  }}
+                  className={`border p-4 rounded-xl cursor-pointer transition-all ${
+                    showFloatingCamera
+                      ? 'bg-emerald-950/10 border-emerald-500/20 hover:border-emerald-500/40'
+                      : 'bg-[#09090b] border-zinc-850 hover:border-zinc-750'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                        <Eye size={14} className={showFloatingCamera ? 'text-emerald-400' : 'text-zinc-500'} />
+                        Floating Tracking HUD Overlay
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
+                        Show a transparent holographic video bubble in the bottom right corner showing live skeleton tracking paths.
+                      </p>
+                    </div>
+                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors shrink-0 ml-4 ${showFloatingCamera ? 'bg-emerald-500' : 'bg-zinc-800'}`}>
+                      <div className={`w-3 h-3 rounded-full bg-white transition-transform ${showFloatingCamera ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </div>
+                  </div>
+                </div>
+
+                <div 
+                  className="border p-4 rounded-xl transition-all bg-[#09090b] border-zinc-850"
+                >
+                  <div className="flex flex-col h-full justify-between">
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5 mb-1">
+                        <Activity size={14} className="text-emerald-400" />
+                        Tracking Mode Profile
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 leading-normal mb-3">
+                        Switch between ergonomic single-hand tracking and full double-hand spatial capture modes.
+                      </p>
+                    </div>
+                    <div className="flex bg-[#121214] border border-zinc-800 p-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKineticHandsMode('one');
+                          showToast('🖐️ Ergonomic One-Hand Tracking profile activated.', 'success', 2500);
+                        }}
+                        className={`flex-1 py-1 text-[10px] font-mono rounded-md font-bold transition-all cursor-pointer ${
+                          kineticHandsMode === 'one'
+                            ? 'bg-emerald-500 text-black shadow-sm'
+                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                        }`}
+                      >
+                        Single Hand
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKineticHandsMode('two');
+                          showToast('🙌 Immersive Two-Hand Spatial tracking profile activated.', 'success', 2500);
+                        }}
+                        className={`flex-1 py-1 text-[10px] font-mono rounded-md font-bold transition-all cursor-pointer ${
+                          kineticHandsMode === 'two'
+                            ? 'bg-emerald-500 text-black shadow-sm'
+                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                        }`}
+                      >
+                        Two Hands
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Calibration Banner */}
+              <div className="bg-gradient-to-r from-emerald-950/20 to-zinc-950 border border-emerald-500/20 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                    <Settings2 size={14} className="text-emerald-400" />
+                    Kinetic Calibration & Tuning Center
+                  </h4>
+                  <p className="text-[10px] text-zinc-500 leading-normal">
+                    Adjust motion thresholds, path similarity requirements, and static hand posture stability variables with a live diagnostic radar.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsCalibrationOpen(true)}
+                  className="px-3.5 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0 self-start sm:self-center cursor-pointer"
+                >
+                  <Activity size={13} />
+                  Open Calibration Console
+                </button>
+              </div>
+
+              {/* Main Workspace split: Sandbox/Train & List of Gestures */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+                
+                {/* Visualizer & Training Sandbox */}
+                <div className="xl:col-span-7 space-y-4">
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                      <div>
+                        <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                          <Activity size={13} className="text-emerald-400" /> Kinetic Sandbox & Tracking Radar
+                        </h4>
+                        <p className="text-[10px] text-zinc-500">
+                          Verify frame analysis, trace raw coordinates, and test gestures live.
+                        </p>
+                      </div>
+                      {isKineticEnabled && (
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold animate-pulse">
+                          LIVE STREAM ACTIVE
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Rendering the custom canvas-tracker */}
+                    <div className="relative">
+                      <KineticSandboxVisualizer />
+                      
+                      {/* Interactive alerts or countdowns */}
+                      {isTraining && (
+                        <div className="absolute inset-0 bg-black/85 rounded-xl flex flex-col items-center justify-center text-center p-4">
+                          {trainingCountdown > 0 ? (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-mono tracking-widest text-zinc-500 uppercase">GET READY...</p>
+                              <p className="text-4xl font-extrabold text-emerald-400 animate-ping font-mono">{trainingCountdown}</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4 w-full max-w-xs">
+                              <p className="text-[11px] font-bold font-mono tracking-widest text-emerald-400 animate-pulse">RECORDING GESTURE PATH NOW...</p>
+                              <div className="w-full h-1 bg-zinc-850 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-emerald-500 transition-all duration-100" 
+                                  style={{ width: `${trainingProgress}%` }}
+                                />
+                              </div>
+                              <p className="text-[9px] text-zinc-500 font-mono">Perform your hand movement inside the camera frame.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Not enabled warning */}
+                      {!isKineticEnabled && (
+                        <div className="absolute inset-0 bg-black/75 rounded-xl flex flex-col items-center justify-center text-center p-4">
+                          <Camera size={24} className="text-zinc-600 mb-2" />
+                          <p className="text-xs font-bold text-zinc-300">Camera Tracker Standby</p>
+                          <p className="text-[10px] text-zinc-500 max-w-xs mt-1 leading-normal mb-3">
+                            Turn on the Kinetic Camera Tracker to launch your webcam and see live spatial tracking overlays.
+                          </p>
+                          <button 
+                            onClick={() => useStore.getState().setKineticEnabled(true)}
+                            className="px-3 py-1.5 bg-emerald-500 text-black text-xs font-bold rounded-lg hover:bg-emerald-400 transition-colors"
+                          >
+                            Turn On Camera Engine
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sandbox feedback console */}
+                    <div className="p-3 bg-zinc-950/60 border border-zinc-900 rounded-lg flex items-center justify-between text-[10px]">
+                      <span className="text-zinc-500 font-mono uppercase">Last gesture signature detected:</span>
+                      <span className="font-bold font-mono text-emerald-400 px-2 py-0.5 bg-emerald-950/40 border border-emerald-500/20 rounded">
+                        {sandboxResult || 'AWAITING INPUT_'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Teach/Train Custom Gesture Form */}
+                  <div id="gesture-trainer-section" className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-200">
+                        Teach Aether New Custom Gesture
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">
+                        Design custom motion signatures or finger counts and bind them to any global action.
+                      </p>
+                    </div>
+
+                    {/* Gesture Type Chooser */}
+                    <div className="bg-[#121214]/60 p-3 rounded-lg border border-zinc-900 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Recognition Mode</label>
+                        <div className="flex bg-black/40 p-1 rounded-md border border-zinc-800">
+                          <button
+                            type="button"
+                            onClick={() => setGestureType('path')}
+                            className={`flex-1 py-1 px-2.5 text-[10px] font-medium rounded transition-colors ${gestureType === 'path' ? 'bg-emerald-500 text-black font-bold' : 'text-zinc-400 hover:text-zinc-200'}`}
+                          >
+                            Kinetic Path (Move)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGestureType('finger-pose')}
+                            className={`flex-1 py-1 px-2.5 text-[10px] font-medium rounded transition-colors ${gestureType === 'finger-pose' ? 'bg-emerald-500 text-black font-bold' : 'text-zinc-400 hover:text-zinc-200'}`}
+                          >
+                            Finger Posture (Static)
+                          </button>
+                        </div>
+                      </div>
+
+                      {gestureType === 'finger-pose' ? (
+                        <div className="space-y-1.5 animate-fade-in">
+                          <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Target Finger Count</label>
+                          <select
+                            value={targetFingerCount}
+                            onChange={(e) => setTargetFingerCount(parseInt(e.target.value))}
+                            className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-350 focus:outline-none focus:border-emerald-500/50"
+                          >
+                            <option value={1}>1 Finger (Pointing Index)</option>
+                            <option value={2}>2 Fingers (Peace / Scissors)</option>
+                            <option value={3}>3 Fingers (Tri-claw)</option>
+                            <option value={4}>4 Fingers (Flat Palm)</option>
+                            <option value={5}>5 Fingers (Full Hand Open)</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 flex flex-col justify-center text-[10px] text-zinc-500 leading-tight">
+                          <span>• Sweeping motion patterns are tracked by a moving centroid stream.</span>
+                          <span className="mt-1">• Keep hand visible in camera frame while moving.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Gesture Label</label>
+                        <input 
+                          type="text" 
+                          value={newGestureName}
+                          onChange={(e) => setNewGestureName(e.target.value)}
+                          placeholder="e.g. Circular Motion, Drawn Letter V"
+                          className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Trigger Action Mapping</label>
+                        <select 
+                          value={newGestureAction}
+                          onChange={(e: any) => setNewGestureAction(e.target.value)}
+                          className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/50"
+                        >
+                          <optgroup label="System Controls" className="text-zinc-400 bg-[#121214]">
+                            <option value="toggle-sidebar">Toggle Left Navigation Panel</option>
+                            <option value="toggle-right-sidebar">Toggle Workspace Assistant</option>
+                            <option value="toggle-sidebar-minimize">Minimize Left Sidebar</option>
+                            <option value="toggle-command-palette">Launch Central Command Palette</option>
+                            <option value="trigger-sync">Synchronize Sync Engine</option>
+                          </optgroup>
+                          <optgroup label="Workspace Routing" className="text-zinc-400 bg-[#121214]">
+                            <option value="nav-dashboard">Route to Dashboard</option>
+                            <option value="nav-assistant">Route to AI Assistant</option>
+                            <option value="nav-notes">Route to Notes Manager</option>
+                            <option value="nav-projects">Route to Projects Explorer</option>
+                            <option value="nav-automations">Route to Automations Core</option>
+                            <option value="nav-docs">Route to Workspace Docs</option>
+                            <option value="nav-settings">Route to System Settings</option>
+                            <option value="nav-agents">Route to Agentic OS</option>
+                          </optgroup>
+                          <optgroup label="Quick Productivity" className="text-zinc-400 bg-[#121214]">
+                            <option value="create-quick-note">Create Quick Flow Note (Instantly)</option>
+                          </optgroup>
+                          <optgroup label="Sensitive / Dangerous Actions (Double Confirm)" className="text-rose-500 bg-[#121214]">
+                            <option value="clear-chat">🧹 Reset Dialogue History (Double Confirm)</option>
+                            <option value="delete-all-notifications">❌ Reject/Purge Workspace Invitations (Double Confirm)</option>
+                            <option value="reset-system-data">⚠️ Purge All Configuration State (Double Confirm)</option>
+                          </optgroup>
+                          <optgroup label="Custom & Advanced" className="text-zinc-400 bg-[#121214]">
+                            <option value="custom-alert">Custom System Workspace Notification</option>
+                            <option value="macro">Macro Sequence (Chain Multiple Actions)</option>
+                            <option value="none">Register Only (No System Action)</option>
+                          </optgroup>
+                        </select>
+                      </div>
+                    </div>
+
+                    {newGestureAction === 'custom-alert' && (
+                      <div className="space-y-1.5 animate-fade-in">
+                        <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">Notification Text</label>
+                        <input 
+                          type="text" 
+                          value={customActionText}
+                          onChange={(e) => setCustomActionText(e.target.value)}
+                          placeholder="e.g. Zen Focus Level High! Resetting desktop space..."
+                          className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    {newGestureAction === 'macro' && (
+                      <div className="space-y-4 p-4 rounded-xl border border-zinc-800 bg-[#0d0d0f]/50 animate-fade-in text-[11px]">
+                        <div>
+                          <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block mb-1">
+                            Aether Macro Sequence Builder
+                          </label>
+                          <p className="text-[10px] text-zinc-500 mb-3 leading-normal">
+                            Drag commands from the pool below and drop them into the sequence flow, or drag sequence items to reorder them. Multi-step macros execute sequentially hands-free! <span className="block sm:hidden text-amber-400 font-medium mt-1">📱 Mobile Optimization: Simply tap any command card in the library below to append it instantly. Use the ▲ / ▼ buttons to arrange steps.</span>
+                          </p>
+                        </div>
+
+                        {/* List of currently selected steps (Drop Zone) */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block flex items-center justify-between">
+                            <span>Execution Sequence Flow ({macroActions.length} steps)</span>
+                            <span className="text-[9px] text-zinc-500 font-normal">Drag handles ⠿ to reorder</span>
+                          </label>
+                          
+                          <div 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDraggingOverChain(true);
+                            }}
+                            onDragLeave={() => setIsDraggingOverChain(false)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setIsDraggingOverChain(false);
+                              const actionType = e.dataTransfer.getData('actionType');
+                              if (actionType) {
+                                setMacroActions([...macroActions, actionType as any]);
+                              }
+                            }}
+                            className={`min-h-[90px] p-3 rounded-xl transition-all duration-200 flex flex-col justify-center space-y-2 relative border ${
+                              isDraggingOverChain 
+                                ? 'border-dashed border-emerald-500 bg-emerald-950/10 scale-[1.01] shadow-[0_0_15px_rgba(16,185,129,0.05)]' 
+                                : macroActions.length === 0 
+                                  ? 'border-dashed border-zinc-800 bg-black/40' 
+                                  : 'border-zinc-900 bg-black/20'
+                            }`}
+                          >
+                            {macroActions.length === 0 ? (
+                              <div className="text-center py-4 text-zinc-500 italic text-[10px] pointer-events-none space-y-1">
+                                <p className="font-semibold text-zinc-400">Drag actions here to build sequence</p>
+                                <p className="text-[9px] text-zinc-600">Or tap the buttons in the action library below</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                                {macroActions.map((act, index) => {
+                                  // Visual settings based on action type
+                                  const config: Record<string, { label: string, color: string, icon: any }> = {
+                                    'toggle-sidebar': { label: 'Left Navigation', color: 'text-indigo-400 border-indigo-500/20 bg-indigo-950/20', icon: <Compass size={11} /> },
+                                    'toggle-right-sidebar': { label: 'Assistant Panel', color: 'text-purple-400 border-purple-500/20 bg-purple-950/20', icon: <Bot size={11} /> },
+                                    'toggle-sidebar-minimize': { label: 'Minimize Sidebar', color: 'text-blue-400 border-blue-500/20 bg-blue-950/20', icon: <Eye size={11} /> },
+                                    'toggle-command-palette': { label: 'Command Palette', color: 'text-amber-400 border-amber-500/20 bg-amber-950/20', icon: <Terminal size={11} /> },
+                                    'custom-alert': { label: 'Workspace Alert', color: 'text-rose-400 border-rose-500/20 bg-rose-950/20', icon: <AlertCircle size={11} /> },
+                                    'create-quick-note': { label: 'Quick Note Capture', color: 'text-emerald-400 border-emerald-500/20 bg-emerald-950/20', icon: <Notebook size={11} /> },
+                                    'trigger-sync': { label: 'Sync Workspace', color: 'text-sky-400 border-sky-500/20 bg-sky-950/20', icon: <RefreshCw size={11} /> },
+                                    'nav-dashboard': { label: 'Go to Dashboard', color: 'text-teal-400 border-teal-500/20 bg-teal-950/20', icon: <Home size={11} /> },
+                                    'nav-projects': { label: 'Go to Projects', color: 'text-cyan-400 border-cyan-500/20 bg-cyan-950/20', icon: <Cpu size={11} /> },
+                                    'nav-notes': { label: 'Go to Notes', color: 'text-pink-400 border-pink-500/20 bg-pink-950/20', icon: <Notebook size={11} /> },
+                                    'nav-automations': { label: 'Go to Automations', color: 'text-orange-400 border-orange-500/20 bg-orange-950/20', icon: <Zap size={11} /> },
+                                    'nav-docs': { label: 'Go to Docs', color: 'text-violet-400 border-violet-500/20 bg-violet-950/20', icon: <FileText size={11} /> },
+                                    'nav-settings': { label: 'Go to Settings', color: 'text-zinc-300 border-zinc-500/20 bg-zinc-800/20', icon: <Settings2 size={11} /> },
+                                    'nav-agents': { label: 'Go to Agentic OS', color: 'text-fuchsia-400 border-fuchsia-500/20 bg-fuchsia-950/20', icon: <Cpu size={11} /> },
+                                    'clear-chat': { label: 'Clear Chat Dialogue', color: 'text-red-400 border-red-500/20 bg-red-950/20', icon: <Trash2 size={11} /> },
+                                    'delete-all-notifications': { label: 'Purge Invites', color: 'text-rose-500 border-rose-500/20 bg-rose-950/20', icon: <X size={11} /> },
+                                    'reset-system-data': { label: 'Reset Factory Settings', color: 'text-amber-500 border-amber-500/20 bg-amber-950/20', icon: <AlertTriangle size={11} /> }
+                                  };
+                                  const itemConf = config[act] || { label: act, color: 'text-zinc-400 border-zinc-800 bg-zinc-900/40', icon: <Activity size={11} /> };
+
+                                  return (
+                                    <div 
+                                      key={index} 
+                                      draggable="true"
+                                      onDragStart={(e) => {
+                                        setDraggedActionIndex(index);
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('text/plain', String(index));
+                                      }}
+                                      onDragOver={(e) => {
+                                        e.preventDefault();
+                                      }}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        if (draggedActionIndex !== null && draggedActionIndex !== index) {
+                                          const next = [...macroActions];
+                                          const [draggedItem] = next.splice(draggedActionIndex, 1);
+                                          next.splice(index, 0, draggedItem);
+                                          setMacroActions(next);
+                                        }
+                                        setDraggedActionIndex(null);
+                                      }}
+                                      onDragEnd={() => setDraggedActionIndex(null)}
+                                      className={`group flex items-center justify-between p-2 bg-[#0a0a0c] border rounded-lg transition-all cursor-grab active:cursor-grabbing ${
+                                        draggedActionIndex === index 
+                                          ? 'border-dashed border-emerald-500 bg-emerald-950/5 opacity-40 scale-95' 
+                                          : 'border-zinc-850 hover:border-zinc-700 hover:bg-[#111113]'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex items-center text-zinc-600 group-hover:text-zinc-400 cursor-move" title="Drag to Reorder">
+                                          <GripVertical size={11} className="mr-0.5 shrink-0" />
+                                          <span className="w-4 h-4 rounded bg-zinc-950 border border-zinc-900 flex items-center justify-center text-[9px] font-mono text-zinc-500 font-bold">
+                                            {index + 1}
+                                          </span>
+                                        </div>
+
+                                        <div className={`px-2 py-0.5 rounded border text-[10px] font-medium flex items-center gap-1.5 ${itemConf.color}`}>
+                                          {itemConf.icon}
+                                          <span>{itemConf.label}</span>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        {/* Fallback ordering buttons for absolute control */}
+                                        {index > 0 && (
+                                          <button 
+                                            type="button"
+                                            onClick={() => {
+                                              const next = [...macroActions];
+                                              const temp = next[index];
+                                              next[index] = next[index - 1];
+                                              next[index - 1] = temp;
+                                              setMacroActions(next);
+                                            }}
+                                            className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                                            title="Move Up"
+                                          >
+                                            ▲
+                                          </button>
+                                        )}
+                                        {index < macroActions.length - 1 && (
+                                          <button 
+                                            type="button"
+                                            onClick={() => {
+                                              const next = [...macroActions];
+                                              const temp = next[index];
+                                              next[index] = next[index + 1];
+                                              next[index + 1] = temp;
+                                              setMacroActions(next);
+                                            }}
+                                            className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                                            title="Move Down"
+                                          >
+                                            ▼
+                                          </button>
+                                        )}
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setMacroActions(macroActions.filter((_, i) => i !== index));
+                                          }}
+                                          className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer ml-1"
+                                          title="Remove Step"
+                                        >
+                                          <Trash2 size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {isDraggingOverChain && (
+                              <div className="absolute inset-0 bg-emerald-500/5 rounded-xl border border-emerald-500/20 pointer-events-none flex items-center justify-center">
+                                <span className="text-[10px] font-mono text-emerald-400 font-bold animate-pulse">
+                                  + DROP TO ADD STEP TO SEQUENCE
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Drag and Drop Action Pool library */}
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">
+                            Action Command Library (Draggable Cards)
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {[
+                              { id: 'toggle-sidebar', label: 'Left Navigation', desc: 'Toggle main nav panel', icon: <Compass size={12} className="text-indigo-400" /> },
+                              { id: 'toggle-right-sidebar', label: 'AI Assistant', desc: 'Toggle chat companion', icon: <Bot size={12} className="text-purple-400" /> },
+                              { id: 'toggle-sidebar-minimize', label: 'Minimize Sidebar', desc: 'Collapse nav rail', icon: <Eye size={12} className="text-blue-400" /> },
+                              { id: 'toggle-command-palette', label: 'Command Palette', desc: 'Summon workspace search', icon: <Terminal size={12} className="text-amber-400" /> },
+                              { id: 'trigger-sync', label: 'Sync Workspace', desc: 'Synchronize project files', icon: <RefreshCw size={12} className="text-sky-400" /> },
+                              { id: 'create-quick-note', label: 'Quick Note', desc: 'Create quick flow note', icon: <Notebook size={12} className="text-emerald-400" /> },
+                              { id: 'nav-dashboard', label: 'Go to Dashboard', desc: 'Route to central hub', icon: <Home size={12} className="text-teal-400" /> },
+                              { id: 'nav-assistant', label: 'Go to Assistant', desc: 'Route to AI core interface', icon: <Bot size={12} className="text-violet-400" /> },
+                              { id: 'nav-notes', label: 'Go to Notes', desc: 'Route to note manager', icon: <Notebook size={12} className="text-pink-400" /> },
+                              { id: 'nav-projects', label: 'Go to Projects', desc: 'Route to active projects', icon: <Cpu size={12} className="text-cyan-400" /> },
+                              { id: 'nav-settings', label: 'Go to Settings', desc: 'Route to control center', icon: <Settings2 size={12} className="text-zinc-400" /> },
+                              { id: 'nav-agents', label: 'Go to Agentic OS', desc: 'Route to agents cockpit', icon: <Cpu size={12} className="text-fuchsia-400" /> },
+                              { id: 'clear-chat', label: 'Clear Chat', desc: 'Reset dialogue core (Confirm)', icon: <Trash2 size={12} className="text-red-400" /> },
+                              { id: 'delete-all-notifications', label: 'Purge Invites', desc: 'Purge invitations (Confirm)', icon: <X size={12} className="text-rose-500" /> },
+                              { id: 'reset-system-data', label: 'System Purge', desc: 'Reset all configuration (Confirm)', icon: <AlertTriangle size={12} className="text-amber-500" /> }
+                            ].map((command) => (
+                              <div
+                                key={command.id}
+                                draggable="true"
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('actionType', command.id);
+                                  e.dataTransfer.effectAllowed = 'copy';
+                                }}
+                                onClick={() => setMacroActions([...macroActions, command.id as any])}
+                                className="p-2.5 bg-zinc-950 hover:bg-[#111113] border border-zinc-850 hover:border-zinc-700 rounded-lg transition-all cursor-grab active:cursor-grabbing select-none flex items-start gap-2 text-left group active:scale-95 animate-fade-in"
+                                title="Drag this command to drop zone, or simple tap to append"
+                              >
+                                <div className="p-1.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 group-hover:text-zinc-200">
+                                  {command.icon}
+                                </div>
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-zinc-300 text-[10px] block group-hover:text-emerald-400 transition-colors flex items-center gap-1">
+                                    {command.label} <span className="text-[8px] text-zinc-600 font-mono font-normal">⋮⋮</span>
+                                  </span>
+                                  <span className="text-[8.5px] text-zinc-500 block leading-tight">{command.desc}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Delay config */}
+                        <div className="grid grid-cols-2 gap-4 pt-3 border-t border-zinc-900">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block">
+                              Step Intermission Delay (ms)
+                            </label>
+                            <input 
+                              type="number"
+                              min={100}
+                              max={3000}
+                              step={50}
+                              value={macroDelay}
+                              onChange={(e) => setMacroDelay(Math.max(100, Math.min(3000, parseInt(e.target.value) || 400)))}
+                              className="w-full bg-[#121214] border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-700"
+                            />
+                          </div>
+                          <div className="flex flex-col justify-end text-[10px] text-zinc-500 italic pb-1">
+                            Total execution: {Math.round(macroActions.length * macroDelay)}ms
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between border-t border-zinc-900 pt-4">
+                      {trainSuccess && (
+                        <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={12} /> Pattern Trained and Saved!
+                        </span>
+                      )}
+                      <div className="ml-auto flex gap-2">
+                        <button 
+                          onClick={() => {
+                            setNewGestureName('');
+                            setNewGestureAction('toggle-sidebar');
+                            setCustomActionText('');
+                            setMacroActions([]);
+                            setMacroDelay(400);
+                          }}
+                          className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+                        >
+                          Reset Fields
+                        </button>
+                        <button 
+                          disabled={
+                            !newGestureName || 
+                            !isKineticEnabled || 
+                            (newGestureAction === 'macro' && macroActions.length === 0)
+                          }
+                          onClick={() => handleStartTraining()}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 ${
+                            (!newGestureName || !isKineticEnabled || (newGestureAction === 'macro' && macroActions.length === 0))
+                              ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-800/40'
+                              : 'bg-emerald-500 text-black hover:bg-emerald-400'
+                          }`}
+                        >
+                          <Sparkles size={12} />
+                          {gestureType === 'finger-pose' ? 'Register Finger Posture' : 'Start Training Sequence'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Centralized Macro Registry & Kinetic Activity Logs */}
+                <div className="xl:col-span-5 space-y-4">
+                  
+                  {/* DevSpace Cloud-Sync Panel */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                          <Cloud size={14} />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-semibold text-zinc-200">DevSpace Cloud Sync</h4>
+                          <p className="text-[9.5px] text-zinc-500">Persist custom gestures and tuning values to the cloud.</p>
+                        </div>
+                      </div>
+                      {isSyncingConfig ? (
+                        <span className="flex items-center gap-1 text-[9px] font-mono text-amber-400 bg-amber-950/20 px-1.5 py-0.5 rounded animate-pulse">
+                          <RefreshCw size={9} className="animate-spin" /> SYNCING
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-mono text-zinc-600">SECURE ENDPOINT</span>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-zinc-400 leading-relaxed bg-[#0d0d0f] p-3 rounded-lg border border-zinc-900">
+                      Backup your custom gesture pathways, sensitivity tuning thresholds, static hold values, and cooldown metrics. Sign in to any machine and restore your workspace instantly.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        onClick={backupKineticConfig}
+                        disabled={isSyncingConfig}
+                        className="py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-tight bg-emerald-500 hover:bg-emerald-400 text-black rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Upload size={12} />
+                        Backup Config
+                      </button>
+                      <button
+                        onClick={restoreKineticConfig}
+                        disabled={isSyncingConfig}
+                        className="py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-tight bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-350 hover:text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw size={12} className={isSyncingConfig ? 'animate-spin' : ''} />
+                        Restore Cloud
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Community Shared Macros Gallery */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                          <Share2 size={14} />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-semibold text-zinc-200">Shared Community Macros</h4>
+                          <p className="text-[9.5px] text-zinc-500">Test and adopt custom gesture macros uploaded by other users.</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setPublishTitle('');
+                          setPublishDescription('');
+                          setPublishSelectedGestureIds([]);
+                          setIsPublishingModalOpen(true);
+                        }}
+                        className="px-2 py-1 text-[9.5px] font-mono font-bold uppercase tracking-tight bg-amber-500 hover:bg-amber-400 text-black rounded transition-colors cursor-pointer"
+                      >
+                        + Publish
+                      </button>
+                    </div>
+
+                    {/* Controls: Search and filter tabs */}
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2 text-zinc-600" size={12} />
+                        <input
+                          type="text"
+                          value={sharedMacroSearch}
+                          onChange={(e) => setSharedMacroSearch(e.target.value)}
+                          placeholder="Search shared macros or libraries..."
+                          className="w-full bg-black/40 border border-zinc-900 rounded-lg pl-8 pr-3 py-1.5 text-[10px] text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-zinc-850"
+                        />
+                      </div>
+
+                      <div className="flex bg-[#121214] border border-zinc-900 p-0.5 rounded-md text-[9px] font-mono">
+                        <button
+                          onClick={() => setSharedMacroFilter('all')}
+                          className={`flex-1 py-1 rounded font-bold transition-all ${
+                            sharedMacroFilter === 'all'
+                              ? 'bg-zinc-900 text-zinc-100 shadow-sm'
+                              : 'text-zinc-500 hover:text-zinc-300'
+                          }`}
+                        >
+                          All Public Gallery
+                        </button>
+                        <button
+                          onClick={() => setSharedMacroFilter('mine')}
+                          className={`flex-1 py-1 rounded font-bold transition-all ${
+                            sharedMacroFilter === 'mine'
+                              ? 'bg-zinc-900 text-zinc-100 shadow-sm'
+                              : 'text-zinc-500 hover:text-zinc-300'
+                          }`}
+                        >
+                          My Shared Items
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Shared Items Gallery List */}
+                    <div className="space-y-3 max-h-[350px] overflow-y-auto custom-scrollbar pr-1">
+                      {(() => {
+                        const user = auth?.currentUser;
+                        const filtered = sharedMacros.filter((macro) => {
+                          const queryMatch = 
+                            macro.title.toLowerCase().includes(sharedMacroSearch.toLowerCase()) ||
+                            macro.description.toLowerCase().includes(sharedMacroSearch.toLowerCase()) ||
+                            macro.creatorName.toLowerCase().includes(sharedMacroSearch.toLowerCase());
+                          
+                          if (sharedMacroFilter === 'mine') {
+                            return queryMatch && user && macro.creatorId === user.uid;
+                          }
+                          return queryMatch;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="text-center py-8 bg-[#0d0d0f]/40 border border-dashed border-zinc-850 rounded-lg text-zinc-600 text-[10px]">
+                              No community shared macros match the current filter.
+                            </div>
+                          );
+                        }
+
+                        return filtered.map((macro) => {
+                          const isMine = user && macro.creatorId === user.uid;
+                          
+                          return (
+                            <div
+                              key={macro.id}
+                              className="p-3 bg-[#111113] border border-zinc-850 rounded-lg space-y-2.5 hover:border-zinc-800 transition-all text-xs"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-0.5">
+                                  <h5 className="font-bold text-zinc-200 text-[11px] leading-tight flex items-center gap-1.5">
+                                    {macro.title}
+                                  </h5>
+                                  <span className="text-[9px] text-zinc-500 block">
+                                    By <span className="text-zinc-400 font-mono font-medium">{macro.creatorName}</span> • {new Date(macro.createdAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                {isMine && (
+                                  <button
+                                    onClick={() => deleteSharedMacro(macro.id)}
+                                    className="p-1 hover:bg-zinc-850 rounded text-zinc-500 hover:text-red-400 transition-colors"
+                                    title="Remove this sharing post"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                )}
+                              </div>
+
+                              <p className="text-[10px] text-zinc-400 leading-normal bg-black/40 p-2 rounded border border-zinc-900 font-mono">
+                                {macro.description}
+                              </p>
+
+                              {/* Included Gestures Preview */}
+                              <div className="space-y-1.5 bg-[#0d0d0f] p-2 rounded border border-zinc-900">
+                                <span className="text-[8.5px] font-mono text-zinc-500 uppercase tracking-wider block">Included Gesture Bundle:</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {macro.gestures.map((gest, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="px-1.5 py-0.5 bg-zinc-900/80 border border-zinc-800 rounded text-[9.5px] text-zinc-350 font-mono flex items-center gap-1"
+                                    >
+                                      <span className="text-amber-500">●</span>
+                                      <span>{gest.name}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Interaction Buttons */}
+                              <div className="flex items-center justify-between border-t border-zinc-900 pt-2.5 mt-1 text-[10px] font-mono">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => likeSharedMacro(macro.id)}
+                                    className="flex items-center gap-1 text-zinc-400 hover:text-red-400 transition-colors"
+                                    title="Like this shared configuration"
+                                  >
+                                    <Heart size={11} className="fill-current text-red-500/20 hover:text-red-500" />
+                                    <span>{macro.likesCount || 0}</span>
+                                  </button>
+                                  <span className="text-zinc-650">|</span>
+                                  <span className="text-zinc-500 flex items-center gap-1" title="Active installations">
+                                    <Download size={10} className="text-zinc-600" />
+                                    <span>{macro.downloadsCount || 0}</span>
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  {/* Test shared macro chain */}
+                                  <button
+                                    onClick={() => {
+                                      showToast(`Testing community macro sequence: "${macro.title}"`, 'info', 2500);
+                                      // Trigger simulation for each gesture in bundle
+                                      macro.gestures.forEach((gest, i) => {
+                                        setTimeout(() => {
+                                          window.dispatchEvent(new CustomEvent('kinetic-simulate-gesture', { detail: gest }));
+                                        }, i * 1500); // 1.5s sequence gap for testing
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 text-[9px] font-medium rounded border border-zinc-850 bg-[#0d0d0f] hover:bg-zinc-850 text-zinc-400 hover:text-amber-400 transition-colors"
+                                  >
+                                    Test Live
+                                  </button>
+                                  
+                                  {/* Adopt bundle */}
+                                  <button
+                                    onClick={async () => {
+                                      const currentLocal = [...useStore.getState().kineticGestures];
+                                      let importedCount = 0;
+                                      const updatedLocal = [...currentLocal];
+                                      
+                                      macro.gestures.forEach((gest) => {
+                                        const suffix = Math.random().toString(36).substring(7);
+                                        const newId = `${gest.id}-imported-${suffix}`;
+                                        updatedLocal.push({
+                                          ...gest,
+                                          id: newId,
+                                          name: `${gest.name} (Imported)`
+                                        });
+                                        importedCount++;
+                                      });
+
+                                      useStore.getState().setKineticGestures(updatedLocal);
+                                      await incrementDownloadsSharedMacro(macro.id);
+                                      showToast(`Adopted "${macro.title}" successfully! Added ${importedCount} gestures to library.`, 'success', 3500);
+                                    }}
+                                    className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-500 hover:bg-emerald-400 text-black transition-colors"
+                                  >
+                                    Save to Library
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Centralized Macro Registry */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                          <span className="inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Centralized Macro Registry
+                        </h4>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">
+                          Toggle or test kinetic gestures and sequential action paths.
+                        </p>
+                      </div>
+                      <span className="text-[9px] font-mono px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-400">
+                        {macroRegistry.filter(g => !g.disabled).length}/{macroRegistry.length} Active
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
+                      {macroRegistry.map((gesture) => {
+                        const isMacro = gesture.action === 'macro';
+                        const isCustom = !gesture.direction || gesture.direction === 'custom';
+                        const isPose = gesture.direction?.startsWith('pose-') || false;
+                        
+                        // Calculate some aesthetic stability/accuracy score
+                        let stability = '98% Accuracy';
+                        if (isPose) stability = '99% Hand Stability';
+                        else if (isMacro) stability = '95% Seq Precision';
+                        else if (isCustom) stability = '92% Correlation';
+
+                        const isEditing = editingGestureId === gesture.id;
+
+                        return (
+                          <div 
+                            key={gesture.id}
+                            className={`p-3 rounded-lg border transition-all duration-200 flex flex-col gap-2 ${
+                              gesture.disabled 
+                                ? 'bg-[#0b0b0c]/40 border-zinc-900/60 opacity-60' 
+                                : isEditing
+                                  ? 'bg-[#0a0a0c] border-emerald-500/30 ring-1 ring-emerald-500/15'
+                                  : 'bg-[#111113] border-zinc-850 hover:border-zinc-800'
+                            }`}
+                          >
+                            {isEditing ? (
+                              <div className="space-y-3.5 text-xs">
+                                <div className="flex justify-between items-center pb-2 border-b border-zinc-900">
+                                  <span className="font-bold text-zinc-200 text-[11px] flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    Configure Mapping: {gesture.name}
+                                  </span>
+                                  <button 
+                                    onClick={() => setEditingGestureId(null)}
+                                    className="text-[9px] text-zinc-500 hover:text-zinc-350 font-mono transition-colors"
+                                  >
+                                    CANCEL
+                                  </button>
+                                </div>
+                                
+                                <div className="space-y-3">
+                                  {/* 1. Edit Name */}
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider block">Gesture Name</label>
+                                    <input 
+                                      type="text" 
+                                      value={editName}
+                                      onChange={(e) => setEditName(e.target.value)}
+                                      className="w-full bg-[#121214] border border-zinc-850 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+                                      placeholder="Gesture identifier"
+                                    />
+                                  </div>
+
+                                  {/* 2. Edit Action */}
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider block">Trigger Action Mapping</label>
+                                    <select 
+                                      value={editAction}
+                                      onChange={(e: any) => setEditAction(e.target.value)}
+                                      className="w-full bg-[#121214] border border-zinc-850 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/50"
+                                    >
+                                      <optgroup label="System Controls" className="text-zinc-400 bg-[#121214]">
+                                        <option value="toggle-sidebar">Toggle Left Navigation Panel</option>
+                                        <option value="toggle-right-sidebar">Toggle Workspace Assistant</option>
+                                        <option value="toggle-sidebar-minimize">Minimize Left Sidebar</option>
+                                        <option value="toggle-command-palette">Launch Central Command Palette</option>
+                                        <option value="trigger-sync">Synchronize Sync Engine</option>
+                                      </optgroup>
+                                      <optgroup label="Workspace Routing" className="text-zinc-400 bg-[#121214]">
+                                        <option value="nav-dashboard">Route to Dashboard</option>
+                                        <option value="nav-assistant">Route to AI Assistant</option>
+                                        <option value="nav-notes">Route to Notes Manager</option>
+                                        <option value="nav-projects">Route to Projects Explorer</option>
+                                        <option value="nav-automations">Route to Automations Core</option>
+                                        <option value="nav-docs">Route to Workspace Docs</option>
+                                        <option value="nav-settings">Route to System Settings</option>
+                                        <option value="nav-agents">Route to Agentic OS</option>
+                                      </optgroup>
+                                      <optgroup label="Quick Productivity" className="text-zinc-400 bg-[#121214]">
+                                        <option value="create-quick-note">Create Quick Flow Note (Instantly)</option>
+                                      </optgroup>
+                                      <optgroup label="Sensitive / Dangerous Actions (Confirm)" className="text-rose-500 bg-[#121214]">
+                                        <option value="clear-chat">🧹 Reset Dialogue History (Double Confirm)</option>
+                                        <option value="delete-all-notifications">❌ Reject/Purge Workspace Invitations (Double Confirm)</option>
+                                        <option value="reset-system-data">⚠️ Purge All Configuration State (Double Confirm)</option>
+                                      </optgroup>
+                                      <optgroup label="Custom & Advanced" className="text-zinc-400 bg-[#121214]">
+                                        <option value="custom-alert">Custom System Workspace Notification</option>
+                                        <option value="macro">Macro Sequence (Chain Multiple Actions)</option>
+                                        <option value="none">Register Only (No System Action)</option>
+                                      </optgroup>
+                                    </select>
+                                  </div>
+
+                                  {/* 3. Custom System Alert Text */}
+                                  {editAction === 'custom-alert' && (
+                                    <div className="space-y-1 animate-fade-in">
+                                      <label className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider block">Notification Text</label>
+                                      <input 
+                                        type="text" 
+                                        value={editCustomText}
+                                        onChange={(e) => setEditCustomText(e.target.value)}
+                                        placeholder="Custom toast alert text"
+                                        className="w-full bg-[#121214] border border-zinc-850 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none"
+                                      />
+                                    </div>
+                                  )}
+
+                                  {/* 4. Macro step editor */}
+                                  {editAction === 'macro' && (
+                                    <div className="space-y-3.5 p-3 rounded-xl border border-zinc-900 bg-[#0c0c0e] animate-fade-in text-[10px]">
+                                      <div className="flex justify-between items-center">
+                                        <span className="font-bold text-zinc-300">Macro Chain ({editMacroActions.length} steps)</span>
+                                        <button 
+                                          type="button" 
+                                          onClick={() => setEditMacroActions([])}
+                                          className="text-[9px] text-red-400 hover:text-red-300 font-mono"
+                                        >
+                                          Clear Steps
+                                        </button>
+                                      </div>
+
+                                      {/* Current Macro Steps Flow */}
+                                      <div className="flex flex-wrap gap-1.5 min-h-10 p-2 bg-[#121214] border border-zinc-850 rounded-lg items-center">
+                                        {editMacroActions.length === 0 ? (
+                                          <span className="text-zinc-600 italic m-auto text-[9px]">Select quick commands below to chain</span>
+                                        ) : (
+                                          editMacroActions.map((act, idx) => (
+                                            <div 
+                                              key={idx}
+                                              onClick={() => setEditMacroActions(editMacroActions.filter((_, i) => i !== idx))}
+                                              className="bg-[#1b1b1f] hover:bg-red-950/20 border border-zinc-800 hover:border-red-500/30 text-zinc-300 hover:text-red-400 px-2 py-1 rounded-md flex items-center gap-1 cursor-pointer transition-all active:scale-95 text-[9px] font-medium"
+                                              title="Click to remove"
+                                            >
+                                              <span>{idx + 1}. {act.replace('toggle-', '')}</span>
+                                              <span className="text-zinc-600 font-bold">×</span>
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+
+                                      {/* Quick Click-to-Add commands */}
+                                      <div className="space-y-1">
+                                        <span className="text-[8.5px] font-mono text-zinc-500 uppercase tracking-wider block">Tap to append step:</span>
+                                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1.5 bg-[#121214] rounded-lg border border-zinc-850">
+                                          {[
+                                            { id: 'toggle-sidebar', label: 'Left Nav' },
+                                            { id: 'toggle-right-sidebar', label: 'AI Companion' },
+                                            { id: 'toggle-sidebar-minimize', label: 'Minimize Nav' },
+                                            { id: 'toggle-command-palette', label: 'Cmd Palette' },
+                                            { id: 'trigger-sync', label: 'Sync' },
+                                            { id: 'create-quick-note', label: 'Quick Note' },
+                                            { id: 'nav-dashboard', label: 'Dashboard' },
+                                            { id: 'nav-assistant', label: 'Assistant' },
+                                            { id: 'nav-notes', label: 'Notes' },
+                                            { id: 'nav-projects', label: 'Projects' },
+                                            { id: 'nav-settings', label: 'Settings' }
+                                          ].map(cmd => (
+                                            <button
+                                              key={cmd.id}
+                                              type="button"
+                                              onClick={() => setEditMacroActions([...editMacroActions, cmd.id])}
+                                              className="px-2 py-0.5 bg-zinc-900 hover:bg-zinc-800 hover:text-emerald-450 border border-zinc-800 text-zinc-350 rounded text-[9px] transition-colors"
+                                            >
+                                              + {cmd.label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* Macro Delay */}
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between items-center">
+                                          <label className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider block">Intermission delay between steps</label>
+                                          <span className="text-amber-500 font-mono font-bold">{editMacroDelay}ms</span>
+                                        </div>
+                                        <input 
+                                          type="range" 
+                                          min={150} 
+                                          max={1500} 
+                                          step={50}
+                                          value={editMacroDelay}
+                                          onChange={(e) => setEditMacroDelay(Number(e.target.value))}
+                                          className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2 border-t border-zinc-900">
+                                  <button 
+                                    onClick={() => setEditingGestureId(null)}
+                                    className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-medium transition-all"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      const currentGestures = useStore.getState().kineticGestures;
+                                      const updated = currentGestures.map(g => {
+                                        if (g.id === gesture.id) {
+                                          return { 
+                                            ...g, 
+                                            name: editName,
+                                            action: editAction,
+                                            customText: editAction === 'custom-alert' ? editCustomText : g.customText,
+                                            macroActions: editAction === 'macro' ? editMacroActions : g.macroActions,
+                                            macroDelay: editAction === 'macro' ? editMacroDelay : g.macroDelay
+                                          };
+                                        }
+                                        return g;
+                                      });
+                                      useStore.getState().setKineticGestures(updated);
+                                      setEditingGestureId(null);
+                                      showToast(`Updated "${editName}" mappings successfully!`, 'success', 3000);
+                                    }}
+                                    className="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded text-[10px] transition-all"
+                                  >
+                                    Save Config
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-start justify-between">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`font-bold text-[11px] ${gesture.disabled ? 'text-zinc-500 line-through' : 'text-zinc-200'}`}>
+                                        {gesture.name}
+                                      </span>
+                                      <span className={`px-1 text-[8px] font-mono rounded ${
+                                        gesture.disabled 
+                                          ? 'bg-zinc-900 text-zinc-600' 
+                                          : 'bg-zinc-800 text-zinc-400'
+                                      }`}>
+                                        {stability}
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="text-[9px] font-mono text-zinc-500 flex flex-wrap items-center gap-1.5">
+                                      {isMacro && gesture.macroActions ? (
+                                        <span className="text-amber-500/90 font-medium flex items-center gap-1">
+                                          <span className="inline-block w-1 h-1 bg-amber-500 rounded-full" />
+                                          Macro Chain: {gesture.macroActions.map(a => a.replace('toggle-', '')).join(' → ')}
+                                        </span>
+                                      ) : (
+                                        <span className={gesture.disabled ? 'text-zinc-600' : 'text-zinc-400'}>
+                                          Action: {gesture.action.replace('-', ' ')}
+                                        </span>
+                                      )}
+                                      {gesture.customText && (
+                                        <span className="text-zinc-600 italic">
+                                          ("{gesture.customText.slice(0, 24)}...")
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5">
+                                    {/* Toggle switch */}
+                                    <button
+                                      onClick={() => toggleMacroMapping(gesture.id)}
+                                      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        gesture.disabled ? 'bg-zinc-800' : 'bg-emerald-500'
+                                      }`}
+                                      title={gesture.disabled ? "Enable Gesture Pathway" : "Disable Gesture Pathway"}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                          gesture.disabled ? 'translate-x-0' : 'translate-x-3'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between border-t border-zinc-900 pt-2 mt-1">
+                                  <span className={`px-1.5 py-0.5 text-[8px] font-mono uppercase tracking-wide rounded ${
+                                    gesture.disabled 
+                                      ? 'bg-zinc-900 border border-zinc-850 text-zinc-600'
+                                      : gesture.direction?.startsWith('pose-') 
+                                        ? 'bg-amber-950/40 border border-amber-900/30 text-amber-450 font-bold' 
+                                        : gesture.direction 
+                                          ? 'bg-blue-950/40 border border-blue-900/30 text-blue-400' 
+                                          : 'bg-emerald-950/40 border border-emerald-900/30 text-emerald-400 font-bold'
+                                  }`}>
+                                    {gesture.direction?.startsWith('pose-') 
+                                      ? `${gesture.direction.replace('pose-', '')}-FINGER POSE` 
+                                      : gesture.direction 
+                                        ? 'BUILT-IN' 
+                                        : 'CUSTOM PATH'}
+                                  </span>
+
+                                  <div className="flex items-center gap-1.5">
+                                    {/* Edit Button */}
+                                    <button
+                                      onClick={() => {
+                                        setEditingGestureId(gesture.id);
+                                        setEditName(gesture.name);
+                                        setEditAction(gesture.action);
+                                        setEditCustomText(gesture.customText || '');
+                                        setEditMacroActions(gesture.macroActions || []);
+                                        setEditMacroDelay(gesture.macroDelay || 400);
+                                      }}
+                                      className="px-2 py-1 text-[9px] font-medium rounded border bg-zinc-900/60 hover:bg-zinc-800 text-zinc-300 border-zinc-800 hover:text-emerald-400 hover:border-emerald-500/20 flex items-center gap-1 transition-all"
+                                      title="Edit Mapping Configuration"
+                                    >
+                                      <Edit2 size={10} className="text-emerald-400" />
+                                      Edit
+                                    </button>
+
+                                    <button
+                                      onClick={() => testMacroMapping(gesture.id)}
+                                      disabled={gesture.disabled}
+                                      className={`px-2 py-1 text-[9px] font-medium rounded border flex items-center gap-1 transition-all ${
+                                        gesture.disabled 
+                                          ? 'bg-zinc-950 text-zinc-600 border-zinc-900 cursor-not-allowed'
+                                          : 'bg-zinc-900/60 hover:bg-zinc-800 active:bg-zinc-750 text-zinc-300 border-zinc-800 hover:text-amber-400 hover:border-amber-500/20'
+                                      }`}
+                                      title="Test Action Pathway"
+                                    >
+                                      <Sparkles size={10} className={gesture.disabled ? "text-zinc-600" : "text-amber-400"} />
+                                      Test Mapping
+                                    </button>
+
+                                    {(!gesture.direction || gesture.direction.startsWith('pose-')) && (
+                                      <button 
+                                        onClick={() => {
+                                          const currentG = useStore.getState().kineticGestures;
+                                          useStore.getState().setKineticGestures(currentG.filter(g => g.id !== gesture.id));
+                                        }}
+                                        className="p-1 hover:bg-zinc-850 rounded text-zinc-500 hover:text-red-400 transition-colors"
+                                        title="Remove Gesture Pattern"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Finger Tracking Gesture Preset Library */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                        <Settings2 size={14} className="text-emerald-400" />
+                        Finger Posture Preset Library
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">
+                        Instantly deploy hand-posture mappings for DevSpace navigation without recording path data.
+                      </p>
+                    </div>
+
+                    {/* Thematic Preset Packs Launcher */}
+                    <div className="bg-[#0c0c0e]/80 border border-zinc-900 rounded-xl p-4 space-y-3">
+                      <div>
+                        <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest block font-bold">Featured Automation Bundles</span>
+                        <h5 className="text-[11px] font-bold text-zinc-300 mt-0.5">Deploy Complete Spatial Preset Packs</h5>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-black/40 border border-zinc-900 hover:border-zinc-800 p-3 rounded-lg flex flex-col justify-between space-y-2.5 transition-colors">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs">🖥️</span>
+                              <span className="text-[11.5px] font-bold text-zinc-200">Dev Productivity</span>
+                            </div>
+                            <p className="text-[9px] text-zinc-500 leading-normal">
+                              Maps gestures to command console, quick notes, and sidebar toggles.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeployPresetPack('developer')}
+                            className="w-full py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-emerald-400 text-[9px] font-mono font-bold uppercase rounded transition-all cursor-pointer"
+                          >
+                            Deploy Dev Pack
+                          </button>
+                        </div>
+
+                        <div className="bg-black/40 border border-zinc-900 hover:border-zinc-800 p-3 rounded-lg flex flex-col justify-between space-y-2.5 transition-colors">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs">🧭</span>
+                              <span className="text-[11.5px] font-bold text-zinc-200">Space Navigator</span>
+                            </div>
+                            <p className="text-[9px] text-zinc-500 leading-normal">
+                              Hands-free routing to Projects, Notes, Docs, Dashboard, and Settings.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeployPresetPack('navigator')}
+                            className="w-full py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-emerald-400 text-[9px] font-mono font-bold uppercase rounded transition-all cursor-pointer"
+                          >
+                            Deploy Nav Pack
+                          </button>
+                        </div>
+
+                        <div className="bg-black/40 border border-zinc-900 hover:border-zinc-800 p-3 rounded-lg flex flex-col justify-between space-y-2.5 transition-colors">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs">⚡</span>
+                              <span className="text-[11.5px] font-bold text-zinc-200">Workflow Macros</span>
+                            </div>
+                            <p className="text-[9px] text-zinc-500 leading-normal">
+                              Chains dual toggles, note syncs, and quick chat memory wipes.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeployPresetPack('automation')}
+                            className="w-full py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-emerald-400 text-[9px] font-mono font-bold uppercase rounded transition-all cursor-pointer"
+                          >
+                            Deploy Macro Pack
+                          </button>
+                        </div>
+
+                        <div className="bg-black/40 border border-zinc-900 hover:border-zinc-800 p-3 rounded-lg flex flex-col justify-between space-y-2.5 transition-colors">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs">🎭</span>
+                              <span className="text-[11.5px] font-bold text-zinc-200">Presentation Deck</span>
+                            </div>
+                            <p className="text-[9px] text-zinc-500 leading-normal">
+                              Fires custom visual accents like laser pointer and rocket processing.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeployPresetPack('presentation')}
+                            className="w-full py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-emerald-400 text-[9px] font-mono font-bold uppercase rounded transition-all cursor-pointer"
+                          >
+                            Deploy Showcase Pack
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {[1, 2, 3, 4, 5].map((count) => {
+                        const existing = kineticGestures.find(g => g.direction === `pose-${count}`);
+                        const presetNames: Record<number, string> = {
+                          1: 'Index Pointer (1 Finger)',
+                          2: 'Peace Sign (2 Fingers)',
+                          3: 'Tri-Claw Sign (3 Fingers)',
+                          4: 'Flat Hand (4 Fingers)',
+                          5: 'High Five (5 Fingers)'
+                        };
+                        const presetIcons: Record<number, string> = {
+                          1: '☝️',
+                          2: '✌️',
+                          3: '🤟',
+                          4: '✋',
+                          5: '🖐️'
+                        };
+                        const presetDescs: Record<number, string> = {
+                          1: 'Point your index finger up/forward.',
+                          2: 'Hold up a classic peace/victory sign.',
+                          3: 'Extend three fingers (Tri-claw gesture).',
+                          4: 'Extend four fingers to clear space.',
+                          5: 'Open your full palm towards the camera.'
+                        };
+
+                        return (
+                          <div 
+                            key={count}
+                            className={`p-3 bg-[#111113]/70 border rounded-lg transition-all space-y-2.5 ${
+                              existing 
+                                ? 'border-emerald-500/10 bg-emerald-950/2' 
+                                : 'border-zinc-850 hover:border-zinc-800'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base select-none">{presetIcons[count]}</span>
+                                <div>
+                                  <span className="font-bold text-zinc-200 text-[11px] block">{presetNames[count]}</span>
+                                  <span className="text-[9.5px] text-zinc-500 block leading-tight mt-0.5">{presetDescs[count]}</span>
+                                </div>
+                              </div>
+                              {existing && (
+                                <span className="px-1.5 py-0.5 text-[8px] font-mono uppercase bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 font-black rounded-md flex items-center gap-1 shrink-0">
+                                  <CheckCircle2 size={8} /> Active
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-2 border-t border-zinc-900/60 items-center">
+                              <div className="sm:col-span-8 space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">Action:</span>
+                                  <select
+                                    value={presetActions[count] || 'toggle-sidebar'}
+                                    onChange={(e) => setPresetActions(prev => ({ ...prev, [count]: e.target.value }))}
+                                    className="bg-[#121214] border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-350 focus:outline-none focus:border-emerald-500/30 font-medium"
+                                  >
+                                    <option value="toggle-sidebar">Toggle Left Navigation Panel</option>
+                                    <option value="toggle-right-sidebar">Toggle Workspace Assistant</option>
+                                    <option value="toggle-sidebar-minimize">Minimize Left Sidebar</option>
+                                    <option value="toggle-command-palette">Launch Central Command Palette</option>
+                                    <option value="custom-alert">Custom Workspace Notification</option>
+                                  </select>
+                                </div>
+                                {presetActions[count] === 'custom-alert' && (
+                                  <input
+                                    type="text"
+                                    value={presetTexts[count] || ''}
+                                    onChange={(e) => setPresetTexts(prev => ({ ...prev, [count]: e.target.value }))}
+                                    placeholder="e.g. Workspace Calibrated!"
+                                    className="w-full bg-black/40 border border-zinc-900 rounded px-2 py-1 text-[9.5px] text-zinc-400 placeholder-zinc-700 focus:outline-none"
+                                  />
+                                )}
+                              </div>
+
+                              <div className="sm:col-span-4 flex justify-end">
+                                <button
+                                  onClick={() => handleAssignPreset(count)}
+                                  className={`w-full sm:w-auto px-3 py-1.5 text-[10px] font-bold font-mono tracking-tight rounded-md transition-all cursor-pointer ${
+                                    presetAssignedCount === count
+                                      ? 'bg-emerald-500 text-black shadow-[0_0_10px_#10b981]'
+                                      : existing
+                                        ? 'bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300'
+                                        : 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                                  }`}
+                                >
+                                  {presetAssignedCount === count ? '✓ Deployed' : existing ? 'Update Preset' : 'Quick Deploy'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* AI-Driven Macro Suggestions Card */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
+                      <div>
+                        <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                          <Sparkles size={14} className="text-amber-400 animate-pulse" />
+                          AI Macro Recommender
+                        </h4>
+                        <p className="text-[10px] text-zinc-500">
+                          Gemini analyzes your environment interaction pattern history to compose automation macros.
+                        </p>
+                      </div>
+                      <button 
+                        disabled={isAnalyzingPatterns}
+                        onClick={handleAnalyzePatterns}
+                        className={`text-[9px] font-mono border px-2 py-1 rounded transition-colors uppercase tracking-tight font-bold cursor-pointer flex items-center gap-1.5 ${
+                          isAnalyzingPatterns 
+                            ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed' 
+                            : 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50'
+                        }`}
+                      >
+                        {isAnalyzingPatterns ? (
+                          <>
+                            <RefreshCw size={10} className="animate-spin" />
+                            Analyzing...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={10} />
+                            Generate Proposals
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {suggestionError && (
+                      <div className="p-3 bg-red-950/20 border border-red-900/30 text-red-400 rounded-lg text-[10px] leading-relaxed">
+                        {suggestionError}
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      {macroSuggestions.length === 0 ? (
+                        <div className="text-center py-6 bg-[#0d0d0f]/60 border border-dashed border-zinc-850 rounded-lg text-zinc-500 text-[10px] space-y-2">
+                          <p className="italic">
+                            No active suggestions compiled yet. Click the button above to run spatial sequence analysis.
+                          </p>
+                          <div className="text-[9px] font-mono text-zinc-600 bg-black/40 px-2 py-1 rounded inline-block">
+                            Logged sequence steps: {commandHistory.length} / 50
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {macroSuggestions.map((suggestion, index) => (
+                            <div 
+                              key={index} 
+                              className="p-3 bg-[#0d0d0f]/80 border border-zinc-850 rounded-lg space-y-2.5 hover:border-zinc-750 transition-colors"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-zinc-200 text-[11px] block">{suggestion.name}</span>
+                                  <span className="text-[9px] text-amber-500 font-mono tracking-wider font-semibold">
+                                    {(suggestion.confidence * 100).toFixed(0)}% AI Pattern Match
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleConfigureAndTrain(suggestion)}
+                                    className="px-2 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded text-[9px] text-zinc-300 font-mono tracking-tight transition-colors cursor-pointer"
+                                    title="Tweak actions and draw custom spatial pattern"
+                                  >
+                                    Configure & Train
+                                  </button>
+                                  <button
+                                    onClick={() => handleInstantActivate(suggestion)}
+                                    className={`px-2 py-1 rounded text-[9px] font-bold font-mono tracking-tight transition-all cursor-pointer ${
+                                      adoptedId === suggestion.name
+                                        ? 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-400'
+                                        : 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                                    }`}
+                                  >
+                                    {adoptedId === suggestion.name ? (
+                                      <span className="flex items-center gap-0.5">✓ Activated</span>
+                                    ) : (
+                                      'Instant Adopt'
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <p className="text-[10px] text-zinc-400 leading-normal bg-black/40 p-2 rounded border border-zinc-900">
+                                {suggestion.description}
+                              </p>
+
+                              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider mr-1">Steps:</span>
+                                {suggestion.actions.map((act, i) => (
+                                  <span key={i} className="flex items-center gap-1">
+                                    <span className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] text-zinc-300 font-medium">
+                                      {act.replace('toggle-', '').replace('-minimize', ' min')}
+                                    </span>
+                                    {i < suggestion.actions.length - 1 && (
+                                      <span className="text-zinc-650 font-bold text-[10px]">→</span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dynamic Detection Activity Logs */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
+                      <div>
+                        <h4 className="text-xs font-semibold text-zinc-200">
+                          Kinetic Detection Logs
+                        </h4>
+                        <p className="text-[10px] text-zinc-500">
+                          Trace active spatial recognitions in real-time.
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          useStore.setState({ kineticLogs: [] });
+                        }}
+                        className="text-[9px] font-mono text-zinc-500 hover:text-zinc-300 uppercase tracking-tight font-bold"
+                      >
+                        Clear History
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar font-mono text-[9px]">
+                      {kineticLogs.length === 0 ? (
+                        <p className="text-center text-zinc-600 py-4">No spatial actions triggered yet.</p>
+                      ) : (
+                        kineticLogs.map((log) => (
+                          <div key={log.id} className="flex items-center justify-between py-1 border-b border-zinc-900/50">
+                            <span className="text-emerald-400">● {log.name}</span>
+                            <span className="text-zinc-500">→ {log.action}</span>
+                            <span className="text-zinc-600">({new Date(log.timestamp).toLocaleTimeString()})</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+          )}
+
           {activeTab === 'api-keys' && (
             <div className="space-y-6">
               <div>
@@ -2134,6 +5085,60 @@ export function Settings() {
                       rows={3}
                       className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors resize-none leading-relaxed"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 font-medium mb-1">GitHub Profile Link</label>
+                      <input
+                        type="url"
+                        placeholder="e.g. https://github.com/username"
+                        value={profileGithubUrl}
+                        onChange={(e) => setProfileGithubUrl(e.target.value)}
+                        className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 font-medium mb-1">Personal Website / Portfolio Link</label>
+                      <input
+                        type="url"
+                        placeholder="e.g. https://myportfolio.dev"
+                        value={profileWebsiteUrl}
+                        onChange={(e) => setProfileWebsiteUrl(e.target.value)}
+                        className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-zinc-400 font-medium mb-1">Tech Stack & Skills (Comma-separated)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. React, TypeScript, Tailwind, Python, Gemini API"
+                      value={profileTechStack}
+                      onChange={(e) => setProfileTechStack(e.target.value)}
+                      className="w-full bg-[#121214] border border-zinc-850 hover:border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                    />
+                    <p className="text-[9px] text-zinc-500 mt-1 pl-1">
+                      List your primary languages, frameworks, or tools separated by commas. These will render as beautiful skill badges on your public profile.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={profileIsPrivate}
+                        onChange={(e) => setProfileIsPrivate(e.target.checked)}
+                        className="rounded bg-[#121214] border-zinc-850 text-yellow-500 focus:ring-0 focus:ring-offset-0 h-4 w-4 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-zinc-350 group-hover:text-white transition-colors">
+                        Keep Profile Private (Requires friend requests to message or follow)
+                      </span>
+                    </label>
+                    <p className="text-[10px] text-zinc-500 mt-0.5 pl-6">
+                      If private, other developers must send a friend request to see your profile details and open message chats.
+                    </p>
                   </div>
 
                   <div>
@@ -2321,6 +5326,137 @@ export function Settings() {
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100 mb-1">Security & Access Management</h3>
                 <p className="text-xs text-zinc-400">Control platform session parameters, configure SSH keys, and enforce sandboxing firewalls.</p>
+              </div>
+
+              {/* Connected Identities Section */}
+              <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-5 space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-zinc-200 mb-1 flex items-center gap-2">
+                    <ShieldCheck size={14} className="text-yellow-500" /> Connected Identities & Workspace Sync
+                  </h4>
+                  <p className="text-[10px] text-zinc-400 max-w-md leading-relaxed">
+                    Link multiple authentication methods to your single account. This consolidates all your projects, settings, notes, and activity logs so you can sign in with any provider.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  {/* Google Connection Card */}
+                  <div className="flex items-center justify-between p-3.5 bg-zinc-950/40 rounded-lg border border-zinc-850">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-[#4285F4]/10 rounded-md">
+                        <svg className="w-4 h-4 text-[#4285F4]" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="currentColor" />
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="currentColor" />
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="currentColor" />
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6-4.52z" fill="currentColor" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-200">Google Credentials</p>
+                        <p className="text-[10px] text-zinc-500 font-mono truncate max-w-[180px]">
+                          {auth?.currentUser?.providerData.some(p => p.providerId === 'google.com') 
+                            ? (auth.currentUser.providerData.find(p => p.providerId === 'google.com')?.email || 'Active Synapse')
+                            : 'Unlinked'}
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      {auth?.currentUser?.providerData.some(p => p.providerId === 'google.com') ? (
+                        <button
+                          onClick={async () => {
+                            if (auth?.currentUser?.providerData.filter(p => p.providerId !== 'custom').length <= 1) {
+                              alert("Safety Protocol: You cannot unlink your only authentication provider as you would lock yourself out of your account!");
+                              return;
+                            }
+                            if (confirm("Disconnect Google Credentials? You will no longer be able to log in using Google.")) {
+                              try {
+                                await unlinkProvider(auth.currentUser!, 'google.com');
+                                alert("Google Credentials unlinked successfully.");
+                                window.location.reload();
+                              } catch (err: any) {
+                                alert(err.message || "Failed to unlink Google credentials.");
+                              }
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase text-red-400 bg-red-950/20 border border-red-900/30 hover:bg-red-950/40 rounded transition-colors"
+                        >
+                          Unlink
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await linkProvider(auth.currentUser!, 'google');
+                              alert("Successfully linked Google Credentials!");
+                              window.location.reload();
+                            } catch (err: any) {
+                              alert(err.message || "Failed to link Google Credentials.");
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors"
+                        >
+                          Link
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* GitHub Connection Card */}
+                  <div className="flex items-center justify-between p-3.5 bg-zinc-950/40 rounded-lg border border-zinc-850">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-zinc-800 rounded-md">
+                        <Github size={15} className="text-zinc-100" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-200">GitHub Credentials</p>
+                        <p className="text-[10px] text-zinc-500 font-mono truncate max-w-[180px]">
+                          {auth?.currentUser?.providerData.some(p => p.providerId === 'github.com') 
+                            ? (auth.currentUser.providerData.find(p => p.providerId === 'github.com')?.email || 'Active Synapse')
+                            : 'Unlinked'}
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      {auth?.currentUser?.providerData.some(p => p.providerId === 'github.com') ? (
+                        <button
+                          onClick={async () => {
+                            if (auth?.currentUser?.providerData.filter(p => p.providerId !== 'custom').length <= 1) {
+                              alert("Safety Protocol: You cannot unlink your only authentication provider as you would lock yourself out of your account!");
+                              return;
+                            }
+                            if (confirm("Disconnect GitHub Credentials? You will no longer be able to log in using GitHub.")) {
+                              try {
+                                await unlinkProvider(auth.currentUser!, 'github.com');
+                                alert("GitHub Credentials unlinked successfully.");
+                                window.location.reload();
+                              } catch (err: any) {
+                                alert(err.message || "Failed to unlink GitHub credentials.");
+                              }
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase text-red-400 bg-red-950/20 border border-red-900/30 hover:bg-red-950/40 rounded transition-colors"
+                        >
+                          Unlink
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await linkProvider(auth.currentUser!, 'github');
+                              alert("Successfully linked GitHub Credentials!");
+                              window.location.reload();
+                            } catch (err: any) {
+                              alert(err.message || "Failed to link GitHub Credentials.");
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors"
+                        >
+                          Link
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Multi Factor Block */}

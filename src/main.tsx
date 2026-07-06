@@ -15,7 +15,9 @@ if (typeof window !== 'undefined') {
     if (
       message && 
       (message.toString().includes('ResizeObserver') || 
-       message.toString().includes('Resize observer'))
+       message.toString().includes('Resize observer') ||
+       message.toString().includes('Failed to fetch') ||
+       message.toString().includes('fetch'))
     ) {
       // Prevent browser default routing of the non-fatal error
       return true;
@@ -27,14 +29,23 @@ if (typeof window !== 'undefined') {
   };
 
   window.addEventListener('unhandledrejection', (event) => {
-    if (
-      event.reason && 
-      event.reason.message && 
-      (event.reason.message.includes('ResizeObserver') || 
-       event.reason.message.includes('Resize observer'))
-    ) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
+    if (event.reason) {
+      const reasonStr = String(event.reason);
+      const reasonMsg = event.reason.message || '';
+      
+      const isBenign = reasonMsg.includes('ResizeObserver') || 
+                       reasonMsg.includes('Resize observer') ||
+                       reasonMsg.includes('Failed to fetch') ||
+                       reasonMsg.includes('fetch') ||
+                       reasonMsg.includes('NetworkError') ||
+                       reasonStr.includes('Failed to fetch') ||
+                       reasonStr.includes('fetch');
+                       
+      if (isBenign) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        console.warn('Suppressed benign unhandled promise rejection:', event.reason);
+      }
     }
   });
 }

@@ -1,0 +1,2119 @@
+import { motion, AnimatePresence } from 'motion/react';
+import { Camera, CameraOff, Move, Settings2, Activity, Sparkles, X, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Check, Trash2, RefreshCw, Home, Bot, Notebook, Zap, FileText, Cpu, Play, Pause, HelpCircle, Award, Eye } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useStore, KineticGesture } from '../../store';
+import { useData } from '../../context/DataProvider';
+
+// Extend window interface to support unified kinetic engine communications and MediaPipe integration
+declare global {
+  interface Window {
+    Hands?: any;
+    Camera?: any;
+    __kineticEngine?: {
+      isRecordingCustom: boolean;
+      startRecordingCustom: (onComplete: (points: { x: number; y: number }[]) => void) => void;
+      stopRecordingCustom: () => void;
+      getLiveFeed: () => {
+        isTracking: boolean;
+        centroid: { x: number; y: number } | null;
+        fps: number;
+        motionAmount: number;
+        trail: { x: number; y: number }[];
+        fingers?: { name: string; x: number; y: number; angle: number; dist: number }[];
+      };
+    };
+  }
+}
+
+const loadMediaPipe = () => {
+  return new Promise<void>((resolve, reject) => {
+    if (window.Hands && window.Camera) {
+      resolve();
+      return;
+    }
+
+    const existingHands = document.querySelector('script[src*="hands.js"]');
+    if (existingHands) {
+      const interval = setInterval(() => {
+        if (window.Hands && window.Camera) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 50);
+      return;
+    }
+
+    // Load camera utils first to avoid dependency race conditions
+    const cameraScript = document.createElement('script');
+    cameraScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
+    cameraScript.crossOrigin = 'anonymous';
+    cameraScript.async = true;
+
+    const handsScript = document.createElement('script');
+    handsScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js';
+    handsScript.crossOrigin = 'anonymous';
+    handsScript.async = true;
+
+    cameraScript.onload = () => {
+      document.head.appendChild(handsScript);
+    };
+
+    handsScript.onload = () => {
+      resolve();
+    };
+
+    cameraScript.onerror = (e) => reject(new Error('Failed to load MediaPipe camera_utils: ' + e));
+    handsScript.onerror = (e) => reject(new Error('Failed to load MediaPipe hands: ' + e));
+
+    document.head.appendChild(cameraScript);
+  });
+};
+
+interface GestureSimulatorAnimProps {
+  gesture: KineticGesture;
+}
+
+function GestureSimulatorAnim({ gesture }: GestureSimulatorAnimProps) {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick((t) => (t + 1) % 100);
+    }, 30);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isPose = gesture.direction?.startsWith('pose-') || false;
+  const isSwipeLeft = gesture.id === 'swipe-left' || gesture.direction === 'left';
+  const isSwipeRight = gesture.id === 'swipe-right' || gesture.direction === 'right';
+  const isSwipeUp = gesture.id === 'swipe-up' || gesture.direction === 'up';
+  const isSwipeDown = gesture.direction === 'down';
+  const isWave = gesture.id === 'wave' || gesture.direction === 'wave';
+  const isCustomPath = !!gesture.points;
+
+  const wrist = { x: 150, y: 170 };
+  const palm = { x: 150, y: 120 };
+
+  let activeFingersCount = 5;
+  if (isPose && gesture.direction) {
+    activeFingersCount = parseInt(gesture.direction.replace('pose-', '')) || 0;
+  }
+
+  let swipeOffset = 0;
+  if (isSwipeLeft) {
+    swipeOffset = 220 - (tick * 3.5) % 220;
+  } else if (isSwipeRight) {
+    swipeOffset = (tick * 3.5) % 220;
+  } else if (isSwipeUp) {
+    swipeOffset = 180 - (tick * 2.8) % 180;
+  } else if (isSwipeDown) {
+    swipeOffset = (tick * 2.8) % 180;
+  } else if (isWave) {
+    swipeOffset = Math.sin(tick * 0.25) * 55;
+  }
+
+  const fingerAngles = [-60, -30, 0, 30, 60];
+
+  return (
+    <div className="relative w-full aspect-[4/3] bg-zinc-950/80 border border-zinc-800 rounded-xl overflow-hidden flex flex-col items-center justify-center">
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f2937_1px,transparent_1px),linear-gradient(to_bottom,#1f2937_1px,transparent_1px)] bg-[size:16px_16px] opacity-15" />
+      <div className="absolute left-0 right-0 h-[2px] bg-emerald-500/20 blur-[1px] animate-pulse" style={{ top: `${(tick * 1.2) % 100}%` }} />
+
+      <svg width="100%" height="100%" viewBox="0 0 300 200" className="relative z-10 select-none">
+        {isCustomPath && gesture.points && gesture.points.length > 0 && (
+          <>
+            <path
+              d={`M ${gesture.points.map(p => `${p.x * 300},${p.y * 200}`).join(' L ')}`}
+              fill="none"
+              stroke="#059669"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="opacity-40"
+              strokeDasharray="4 4"
+            />
+            {(() => {
+              const ptIndex = Math.floor((tick / 100) * gesture.points.length) % gesture.points.length;
+              const activePt = gesture.points[ptIndex] || gesture.points[0];
+              return (
+                <g>
+                  <circle cx={activePt.x * 300} cy={activePt.y * 200} r="12" fill="#10b981" className="opacity-20 animate-ping" />
+                  <circle cx={activePt.x * 300} cy={activePt.y * 200} r="6" fill="#34d399" />
+                  <text x={activePt.x * 300 + 10} y={activePt.y * 200 + 4} fill="#34d399" className="text-[9px] font-bold font-mono">Finger Tracing</text>
+                </g>
+              );
+            })()}
+          </>
+        )}
+
+        {(isSwipeLeft || isSwipeRight || isSwipeUp || isSwipeDown || isWave) && (
+          <g>
+            {Array.from({ length: 5 }).map((_, idx) => {
+              const xPos = isSwipeLeft ? swipeOffset + idx * 12 : isSwipeRight ? swipeOffset - idx * 12 : isWave ? 150 + swipeOffset - idx * (swipeOffset > 0 ? 8 : -8) : 150;
+              const yPos = isSwipeUp ? swipeOffset + idx * 12 : isSwipeDown ? swipeOffset - idx * 12 : 100;
+              const opacity = (5 - idx) * 0.18;
+              return (
+                <circle
+                  key={idx}
+                  cx={xPos}
+                  cy={yPos}
+                  r={Math.max(2, 12 - idx * 1.5)}
+                  fill="#10b981"
+                  style={{ opacity }}
+                />
+              );
+            })}
+          </g>
+        )}
+
+        {!isCustomPath && (
+          <g>
+            <line x1={wrist.x} y1={wrist.y} x2={palm.x} y2={palm.y} stroke="#1f2937" strokeWidth="4" />
+            <circle cx={palm.x} cy={palm.y} r="14" fill="#18181b" stroke="#3f3f46" strokeWidth="2" />
+            
+            {fingerAngles.map((angle, idx) => {
+              const rad = (angle * Math.PI) / 180;
+              const isExtended = idx < activeFingersCount;
+              
+              const fingerLength = isExtended ? 45 : 20;
+              const tipX = palm.x + Math.sin(rad) * fingerLength + (isSwipeLeft || isSwipeRight || isWave ? swipeOffset - 110 : 0);
+              const tipY = palm.y - Math.cos(rad) * fingerLength + (isSwipeUp || isSwipeDown ? swipeOffset - 90 : 0);
+
+              return (
+                <g key={idx}>
+                  <line
+                    x1={palm.x}
+                    y1={palm.y}
+                    x2={tipX}
+                    y2={tipY}
+                    stroke={isExtended ? '#10b981' : '#3f3f46'}
+                    strokeWidth={isExtended ? '4' : '2'}
+                    className="transition-all duration-300"
+                  />
+                  <circle
+                    cx={(palm.x + tipX) / 2}
+                    cy={(palm.y + tipY) / 2}
+                    r="4"
+                    fill={isExtended ? '#059669' : '#27272a'}
+                  />
+                  <circle
+                    cx={tipX}
+                    cy={tipY}
+                    r={isExtended ? '6' : '3.5'}
+                    fill={isExtended ? '#34d399' : '#3f3f46'}
+                  />
+                  {isExtended && (
+                    <circle
+                      cx={tipX}
+                      cy={tipY}
+                      r="12"
+                      fill="none"
+                      stroke="#34d399"
+                      strokeWidth="1"
+                      className="opacity-40 animate-ping"
+                      style={{ animationDuration: '2s' }}
+                    />
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+      </svg>
+
+      <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-lg border border-zinc-850">
+        <span className="text-[9px] text-zinc-400 font-mono flex items-center gap-1.5">
+          <Activity size={10} className="text-emerald-500 animate-pulse" />
+          {isPose ? 'Static Posture Scanner' : isCustomPath ? 'Point Signature Matcher' : 'Dynamic Sweeper Matcher'}
+        </span>
+        <span className="text-[8px] text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-900/30 px-1 rounded uppercase tracking-wider">
+          SIMULATION
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function KineticController() {
+  const { 
+    isKineticEnabled, 
+    setKineticEnabled, 
+    kineticHandsMode,
+    setKineticHandsMode,
+    showFloatingCamera, 
+    setShowFloatingCamera,
+    kineticGestures,
+    addKineticLog,
+    toggleSidebar,
+    setSidebarOpen,
+    setRightSidebarOpen,
+    setSidebarMinimized,
+    toggleRightSidebar,
+    toggleSidebarMinimized,
+    toggleCommandPalette,
+    swipeSensitivity,
+    customPathMatchPrecision,
+    waveSensitivity,
+    fingerPoseStabilityFrames,
+    gestureCooldownDuration,
+    kineticInteractionMode,
+    setKineticInteractionMode,
+    isPinchDragging,
+    setIsPinchDragging,
+    virtualCursorPos,
+    setVirtualCursorPos,
+    isPinching,
+    setIsPinching
+  } = useStore();
+
+  const navigate = useNavigate();
+  const { addNote, showToast, triggerFullSync, declineInvitation, invitations } = useData();
+
+  // State
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [detectedGesture, setDetectedGesture] = useState<string | null>(null);
+  const [gestureCooldown, setGestureCooldown] = useState(false);
+  const gestureCooldownRef = useRef(false);
+
+  const setCooldown = (val: boolean) => {
+    gestureCooldownRef.current = val;
+    setGestureCooldown(val);
+  };
+
+  const triggerHaptic = (pattern: number | number[]) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(pattern);
+      } catch (e) {
+        console.warn('Haptic vibration feedback not supported or blocked:', e);
+      }
+    }
+  };
+
+  const storeRef = useRef({
+    kineticGestures,
+    swipeSensitivity,
+    waveSensitivity,
+    fingerPoseStabilityFrames,
+    gestureCooldownDuration,
+    customPathMatchPrecision,
+    kineticHandsMode
+  });
+
+  useEffect(() => {
+    storeRef.current = {
+      kineticGestures,
+      swipeSensitivity,
+      waveSensitivity,
+      fingerPoseStabilityFrames,
+      gestureCooldownDuration,
+      customPathMatchPrecision,
+      kineticHandsMode
+    };
+  }, [kineticGestures, swipeSensitivity, waveSensitivity, fingerPoseStabilityFrames, gestureCooldownDuration, customPathMatchPrecision, kineticHandsMode]);
+
+  // Dynamically adapt MediaPipe tracker's tracking capacity when mode switches
+  useEffect(() => {
+    if (handsRef.current) {
+      handsRef.current.setOptions({
+        maxNumHands: kineticHandsMode === 'two' ? 2 : 1
+      });
+    }
+  }, [kineticHandsMode]);
+
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    name: string;
+    action: string;
+    description: string;
+    onConfirm: () => void;
+  } | null>(null);
+  const [fps, setFps] = useState(60);
+  const [motionAmount, setMotionAmount] = useState(0);
+  const [isMediaPipeLoading, setIsMediaPipeLoading] = useState(false);
+  const [mediaPipeError, setMediaPipeError] = useState<string | null>(null);
+
+  // First time popup and Simulation preview states
+  const [learningGesture, setLearningGesture] = useState<KineticGesture | null>(null);
+  const [learningCountdown, setLearningCountdown] = useState(5);
+  const [isInteractivePractice, setIsInteractivePractice] = useState(false);
+  const [isFirstTimeDiscovery, setIsFirstTimeDiscovery] = useState(false);
+
+  // Persisted triggered gestures storage
+  const getTriggeredGestures = (): string[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const val = localStorage.getItem('triggeredGestures');
+      return val ? JSON.parse(val) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveTriggeredGesture = (gestureId: string) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const list = getTriggeredGestures();
+      if (!list.includes(gestureId)) {
+        list.push(gestureId);
+        localStorage.setItem('triggeredGestures', JSON.stringify(list));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const getTriggerDetails = (g: any) => {
+    if (g.id === 'swipe-left') {
+      return {
+        type: 'swipe-left' as const,
+        detail: 'Swift horizontal swipe gesture to the left across the camera sensor.'
+      };
+    }
+    if (g.id === 'swipe-right') {
+      return {
+        type: 'swipe-right' as const,
+        detail: 'Swift horizontal swipe gesture to the right across the camera sensor.'
+      };
+    }
+    if (g.id === 'swipe-up') {
+      return {
+        type: 'swipe-up' as const,
+        detail: 'Swift upward vertical swipe gesture across the camera sensor.'
+      };
+    }
+    if (g.id === 'wave') {
+      return {
+        type: 'wave' as const,
+        detail: 'Rapid back-and-forth waving movement across the camera frame.'
+      };
+    }
+    if (g.direction?.startsWith('pose-')) {
+      const fingers = g.direction.replace('pose-', '');
+      return {
+        type: 'pose' as const,
+        detail: `Stable finger pose posture showing exactly ${fingers} extended finger(s) on screen.`
+      };
+    }
+    return {
+      type: 'path' as const,
+      detail: 'Spatial stroke trail matching a recorded path template with high cosine shape-signature similarity.'
+    };
+  };
+
+  // Listen for simulation triggers from Settings
+  useEffect(() => {
+    const handleSimulate = (e: Event) => {
+      const gesture = (e as CustomEvent).detail;
+      if (gesture) {
+        setLearningGesture(gesture);
+        setIsFirstTimeDiscovery(false);
+        setIsInteractivePractice(false);
+        setCooldown(true); // prevent other gestures while previewing
+        // Cascade physical pulse pattern indicating simulation HUD activated
+        triggerHaptic([50, 30, 50, 30, 80]);
+      }
+    };
+    window.addEventListener('kinetic-simulate-gesture', handleSimulate);
+    return () => window.removeEventListener('kinetic-simulate-gesture', handleSimulate);
+  }, []);
+
+  // First-time trigger countdown
+  useEffect(() => {
+    if (!learningGesture || !isFirstTimeDiscovery) return;
+    setLearningCountdown(6);
+    const interval = setInterval(() => {
+      setLearningCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setLearningGesture(null);
+          setIsFirstTimeDiscovery(false);
+          setCooldown(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [learningGesture, isFirstTimeDiscovery]);
+
+  // Synchronize practice mode cooldown state
+  useEffect(() => {
+    if (learningGesture) {
+      if (isFirstTimeDiscovery) {
+        setCooldown(true);
+      } else {
+        setCooldown(!isInteractivePractice);
+      }
+    }
+  }, [learningGesture, isInteractivePractice, isFirstTimeDiscovery]);
+
+  // Position for dragging the floating window
+  const [position, setPosition] = useState({ x: 20, y: 100 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+
+  // Element Refs
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // CV Tracking variables
+  const prevFrameRef = useRef<ImageData | null>(null);
+  const handColorRef = useRef<{ r: number; g: number; b: number } | null>(null);
+  const centroidRef = useRef<{ x: number; y: number } | null>(null);
+  const trailRef = useRef<{ x: number; y: number; time: number }[]>([]);
+  const isTrackingRef = useRef(false);
+  const isProcessingFrameRef = useRef(false);
+  const lastActiveRef = useRef<number>(0);
+  const handsRef = useRef<any>(null);
+
+  // Finger Tracking Refs
+  const fingersRef = useRef<{ name: string; x: number; y: number; angle: number; dist: number }[]>([]);
+  const fingerCountHistoryRef = useRef<number[]>([]);
+  const fingers2Ref = useRef<{ name: string; x: number; y: number; angle: number; dist: number }[]>([]);
+  const fingerCountHistory2Ref = useRef<number[]>([]);
+  const centroid2Ref = useRef<{ x: number; y: number } | null>(null);
+  const trail2Ref = useRef<{ x: number; y: number; time: number }[]>([]);
+  const lastPoseTriggeredRef = useRef<{ [key: string]: number }>({});
+
+  // Custom Training state
+  const isRecordingCustomRef = useRef(false);
+  const customRecordingPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const customRecordingTimerRef = useRef<number | null>(null);
+  const onCustomCompleteRef = useRef<((points: { x: number; y: number }[]) => void) | null>(null);
+
+  // Hand-dragging camera, virtual cursor, scroll & mode-switching Refs
+  const isHandDraggingCameraRef = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const lastIsPinchingRef = useRef(false);
+  const lastScrollYRef = useRef<number | null>(null);
+  const shakaStartRef = useRef<number | null>(null);
+
+  // Load and unload video stream
+  useEffect(() => {
+    if (isKineticEnabled) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+
+    return () => {
+      stopCamera();
+    };
+  }, [isKineticEnabled]);
+
+  // Hook up window interface so settings page can coordinate
+  useEffect(() => {
+    window.__kineticEngine = {
+      isRecordingCustom: isRecordingCustomRef.current,
+      startRecordingCustom: (onComplete) => {
+        isRecordingCustomRef.current = true;
+        customRecordingPointsRef.current = [];
+        onCustomCompleteRef.current = onComplete;
+        
+        // Auto-stop recording after 2.5 seconds
+        if (customRecordingTimerRef.current) {
+          window.clearTimeout(customRecordingTimerRef.current);
+        }
+        customRecordingTimerRef.current = window.setTimeout(() => {
+          window.__kineticEngine?.stopRecordingCustom();
+        }, 2500);
+      },
+      stopRecordingCustom: () => {
+        isRecordingCustomRef.current = false;
+        if (customRecordingTimerRef.current) {
+          window.clearTimeout(customRecordingTimerRef.current);
+          customRecordingTimerRef.current = null;
+        }
+        if (onCustomCompleteRef.current && customRecordingPointsRef.current.length > 0) {
+          onCustomCompleteRef.current(customRecordingPointsRef.current);
+        }
+        onCustomCompleteRef.current = null;
+      },
+      getLiveFeed: () => ({
+        isTracking: isTrackingRef.current,
+        centroid: centroidRef.current,
+        centroid2: centroid2Ref.current,
+        fps,
+        motionAmount,
+        trail: trailRef.current.map(p => ({ x: p.x, y: p.y })),
+        trail2: (trail2Ref.current || []).map(p => ({ x: p.x, y: p.y })),
+        fingers: fingersRef.current,
+        fingers2: fingers2Ref.current || []
+      })
+    };
+
+    return () => {
+      delete window.__kineticEngine;
+    };
+  }, [fps, motionAmount]);
+
+  const startCamera = async () => {
+    try {
+      if (streamRef.current) {
+        stopCamera();
+      }
+
+      setIsMediaPipeLoading(true);
+      setMediaPipeError(null);
+
+      // Load MediaPipe dynamically via CDN to bypass Vite bundler CJS dependency bugs
+      await loadMediaPipe();
+
+      if (!handsRef.current) {
+        // @ts-ignore
+        const hands = new window.Hands({
+          locateFile: (file: string) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+          }
+        });
+
+        hands.setOptions({
+          maxNumHands: storeRef.current.kineticHandsMode === 'two' ? 2 : 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.55,
+          minTrackingConfidence: 0.55
+        });
+
+        handsRef.current = hands;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          facingMode: "user"
+        },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().then(() => {
+            setIsCameraActive(true);
+            setHasPermission(true);
+            setIsMediaPipeLoading(false);
+            startTrackingLoop();
+          });
+        };
+      }
+    } catch (err: any) {
+      const isPermissionErr = err?.name === "NotAllowedError" || 
+                             err?.message?.toLowerCase().includes("permission") || 
+                             err?.message?.toLowerCase().includes("notallowed");
+      if (isPermissionErr) {
+        console.warn("Kinetic tracker camera access denied or unavailable:", err);
+      } else {
+        console.error("Kinetic tracker initialization failed:", err);
+      }
+      setMediaPipeError(err?.message || "Check network connection");
+      setIsMediaPipeLoading(false);
+      setHasPermission(false);
+      setKineticEnabled(false);
+    }
+  };
+
+  const stopCamera = () => {
+    setIsCameraActive(false);
+    isTrackingRef.current = false;
+    isProcessingFrameRef.current = false;
+    
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    prevFrameRef.current = null;
+    centroidRef.current = null;
+    trailRef.current = [];
+    fingersRef.current = [];
+  };
+
+  // Perform hand kinetic calculations
+  const startTrackingLoop = () => {
+    let lastTime = performance.now();
+    let frameCount = 0;
+    isTrackingRef.current = true;
+
+    // MediaPipe Results Handler
+    const onMediaPipeResults = (results: any) => {
+      if (!isTrackingRef.current) return;
+
+      // Calculate FPS
+      const now = performance.now();
+      frameCount++;
+      if (now - lastTime >= 1000) {
+        setFps(Math.round((frameCount * 1000) / (now - lastTime)));
+        frameCount = 0;
+        lastTime = now;
+      }
+
+      const handsMode = storeRef.current.kineticHandsMode || 'one';
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        // Hand 1 (Always the first detected hand)
+        const landmarks1 = results.multiHandLandmarks[0];
+
+        // Robust hand centroid calculation: average wrist (0) and knuckle joints (5, 9, 13, 17)
+        const stableCentroidX1 = (landmarks1[0].x + landmarks1[5].x + landmarks1[9].x + landmarks1[13].x + landmarks1[17].x) / 5;
+        const stableCentroidY1 = (landmarks1[0].y + landmarks1[5].y + landmarks1[9].y + landmarks1[13].y + landmarks1[17].y) / 5;
+
+        // Mirror X coordinate so the on-screen glowing joints match natural user mirror feedback perfectly!
+        const rawCentroidX1 = (1 - stableCentroidX1) * 120;
+        const rawCentroidY1 = stableCentroidY1 * 90;
+
+        // Low-pass Exponential Moving Average (EMA) filter to eliminate hand jitter
+        if (!centroidRef.current) {
+          centroidRef.current = { x: rawCentroidX1, y: rawCentroidY1 };
+        } else {
+          const dx1 = rawCentroidX1 - centroidRef.current.x;
+          const dy1 = rawCentroidY1 - centroidRef.current.y;
+          const movementDist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+          
+          // Adaptive Alpha: smaller for stillness to remove jitter, larger for speed to reduce lag
+          const minAlpha = 0.16;
+          const maxAlpha = 0.60;
+          const alpha1 = Math.min(maxAlpha, minAlpha + (movementDist1 / 12) * (maxAlpha - minAlpha));
+
+          centroidRef.current = {
+            x: centroidRef.current.x * (1 - alpha1) + rawCentroidX1 * alpha1,
+            y: centroidRef.current.y * (1 - alpha1) + rawCentroidY1 * alpha1
+          };
+        }
+
+        lastActiveRef.current = Date.now();
+
+        // Detect extended fingers based on joint angles and positions
+        const isIndexExtended1 = landmarks1[8].y < landmarks1[6].y;
+        const isMiddleExtended1 = landmarks1[12].y < landmarks1[10].y;
+        const isRingExtended1 = landmarks1[16].y < landmarks1[14].y;
+        const isPinkyExtended1 = landmarks1[20].y < landmarks1[18].y;
+        
+        // Thumb extended if tip x-distance is far from index MCP or tip is above IP
+        const isThumbExtended1 = Math.abs(landmarks1[4].x - landmarks1[5].x) > 0.11 || landmarks1[4].y < landmarks1[3].y;
+
+        const fingersList1: any[] = [];
+        const addFinger1 = (name: string, tipIdx: number) => {
+          const tip = landmarks1[tipIdx];
+          const fx = (1 - tip.x) * 120;
+          const fy = tip.y * 90;
+          
+          const dx = fx - centroidRef.current!.x;
+          const dy = fy - centroidRef.current!.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx);
+
+          fingersList1.push({ name, x: fx, y: fy, angle, dist });
+        };
+
+        if (isThumbExtended1) addFinger1("Thumb Finger", 4);
+        if (isIndexExtended1) addFinger1("Index Finger", 8);
+        if (isMiddleExtended1) addFinger1("Middle Finger", 12);
+        if (isRingExtended1) addFinger1("Ring Finger", 16);
+        if (isPinkyExtended1) addFinger1("Pinky Finger", 20);
+
+        fingersRef.current = fingersList1;
+
+        // Process Hand 2 if active and mode is two-hands
+        let processedHand2 = false;
+        if (handsMode === 'two' && results.multiHandLandmarks.length > 1) {
+          const landmarks2 = results.multiHandLandmarks[1];
+          const stableCentroidX2 = (landmarks2[0].x + landmarks2[5].x + landmarks2[9].x + landmarks2[13].x + landmarks2[17].x) / 5;
+          const stableCentroidY2 = (landmarks2[0].y + landmarks2[5].y + landmarks2[9].y + landmarks2[13].y + landmarks2[17].y) / 5;
+
+          const rawCentroidX2 = (1 - stableCentroidX2) * 120;
+          const rawCentroidY2 = stableCentroidY2 * 90;
+
+          if (!centroid2Ref.current) {
+            centroid2Ref.current = { x: rawCentroidX2, y: rawCentroidY2 };
+          } else {
+            const dx2 = rawCentroidX2 - centroid2Ref.current.x;
+            const dy2 = rawCentroidY2 - centroid2Ref.current.y;
+            const movementDist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            
+            const minAlpha = 0.16;
+            const maxAlpha = 0.60;
+            const alpha2 = Math.min(maxAlpha, minAlpha + (movementDist2 / 12) * (maxAlpha - minAlpha));
+
+            centroid2Ref.current = {
+              x: centroid2Ref.current.x * (1 - alpha2) + rawCentroidX2 * alpha2,
+              y: centroid2Ref.current.y * (1 - alpha2) + rawCentroidY2 * alpha2
+            };
+          }
+
+          // Fingers 2
+          const isIndexExtended2 = landmarks2[8].y < landmarks2[6].y;
+          const isMiddleExtended2 = landmarks2[12].y < landmarks2[10].y;
+          const isRingExtended2 = landmarks2[16].y < landmarks2[14].y;
+          const isPinkyExtended2 = landmarks2[20].y < landmarks2[18].y;
+          const isThumbExtended2 = Math.abs(landmarks2[4].x - landmarks2[5].x) > 0.11 || landmarks2[4].y < landmarks2[3].y;
+
+          const fingersList2: any[] = [];
+          const addFinger2 = (name: string, tipIdx: number) => {
+            const tip = landmarks2[tipIdx];
+            const fx = (1 - tip.x) * 120;
+            const fy = tip.y * 90;
+            const dx = fx - centroid2Ref.current!.x;
+            const dy = fy - centroid2Ref.current!.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx);
+            fingersList2.push({ name, x: fx, y: fy, angle, dist });
+          };
+
+          if (isThumbExtended2) addFinger2("Thumb Finger", 4);
+          if (isIndexExtended2) addFinger2("Index Finger", 8);
+          if (isMiddleExtended2) addFinger2("Middle Finger", 12);
+          if (isRingExtended2) addFinger2("Ring Finger", 16);
+          if (isPinkyExtended2) addFinger2("Pinky Finger", 20);
+
+          fingers2Ref.current = fingersList2;
+          processedHand2 = true;
+        } else {
+          centroid2Ref.current = null;
+          fingers2Ref.current = [];
+        }
+
+        // Static Posture stable evaluation
+        const currentCount = fingersList1.length;
+        const currentCount2 = fingers2Ref.current.length;
+
+        fingerCountHistoryRef.current.push(currentCount);
+        fingerCountHistory2Ref.current.push(currentCount2);
+
+        const maxWindowSize = storeRef.current.fingerPoseStabilityFrames + 5;
+        if (fingerCountHistoryRef.current.length > maxWindowSize) {
+          fingerCountHistoryRef.current.shift();
+        }
+        if (fingerCountHistory2Ref.current.length > maxWindowSize) {
+          fingerCountHistory2Ref.current.shift();
+        }
+
+        if (fingerCountHistoryRef.current.length >= storeRef.current.fingerPoseStabilityFrames) {
+          const counts = fingerCountHistoryRef.current.slice(-storeRef.current.fingerPoseStabilityFrames);
+          const isStable = counts.every(c => c === currentCount);
+          
+          if (processedHand2) {
+            const counts2 = fingerCountHistory2Ref.current.slice(-storeRef.current.fingerPoseStabilityFrames);
+            const isStable2 = counts2.every(c => c === currentCount2);
+
+            if (isStable && isStable2 && (currentCount > 0 || currentCount2 > 0)) {
+              // Both stable -> trigger combined spatial command!
+              const minCount = Math.min(currentCount, currentCount2);
+              const maxCount = Math.max(currentCount, currentCount2);
+              const doublePoseKey = `double-pose-${minCount}-${maxCount}`;
+              const lastTrigger = lastPoseTriggeredRef.current[doublePoseKey] || 0;
+
+              if (Date.now() - lastTrigger > 3500) {
+                const matchedGesture = storeRef.current.kineticGestures.find(g => g.direction === doublePoseKey && !g.disabled);
+                if (matchedGesture) {
+                  triggerGesture(matchedGesture.name, matchedGesture.id);
+                  lastPoseTriggeredRef.current[doublePoseKey] = Date.now();
+                }
+              }
+            }
+          } else {
+            // Single hand stable trigger
+            if (isStable && currentCount > 0) {
+              const poseKey = `pose-${currentCount}`;
+              const lastTrigger = lastPoseTriggeredRef.current[poseKey] || 0;
+              
+              if (Date.now() - lastTrigger > 2500) {
+                const matchedPoseGesture = storeRef.current.kineticGestures.find(g => g.direction === poseKey && !g.disabled);
+                if (matchedPoseGesture) {
+                  triggerGesture(matchedPoseGesture.name, matchedPoseGesture.id);
+                  lastPoseTriggeredRef.current[poseKey] = Date.now();
+                }
+              }
+            }
+          }
+        }
+
+        // Add to path trail queue
+        trailRef.current.push({
+          x: centroidRef.current.x,
+          y: centroidRef.current.y,
+          time: Date.now()
+        });
+
+        if (processedHand2 && centroid2Ref.current) {
+          trail2Ref.current.push({
+            x: centroid2Ref.current.x,
+            y: centroid2Ref.current.y,
+            time: Date.now()
+          });
+        }
+
+        // Record custom path training gesture
+        if (isRecordingCustomRef.current) {
+          customRecordingPointsRef.current.push({
+            x: centroidRef.current.x / 120,
+            y: centroidRef.current.y / 90
+          });
+        }
+
+        // Velocity tracking for motion stats
+        if (trailRef.current.length > 1) {
+          const lastPt = trailRef.current[trailRef.current.length - 1];
+          const prevPt = trailRef.current[trailRef.current.length - 2];
+          const dx = lastPt.x - prevPt.x;
+          const dy = lastPt.y - prevPt.y;
+          const speed = Math.sqrt(dx * dx + dy * dy);
+          setMotionAmount(Math.min(1.0, speed / 15));
+        }
+      } else {
+        setMotionAmount(0);
+        fingersRef.current = [];
+        fingers2Ref.current = [];
+        if (centroidRef.current && Date.now() - lastActiveRef.current > 300) {
+          centroidRef.current = null;
+        }
+        centroid2Ref.current = null;
+      }
+
+      // Trim old trail elements
+      trailRef.current = trailRef.current.filter(t => Date.now() - t.time < 800);
+      trail2Ref.current = trail2Ref.current.filter(t => Date.now() - t.time < 800);
+
+      // Sync real-time tracking metrics to Zustand store for on-screen HUD overlay
+      try {
+        const store = useStore.getState();
+        const detectedCount = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+        const activeCount = handsMode === 'two' ? Math.min(2, detectedCount) : Math.min(1, detectedCount);
+        
+        if (store.activeHandsDetected !== activeCount) {
+          store.setActiveHandsDetected(activeCount);
+        }
+
+        const h1Fingers = fingersRef.current.map(f => f.name.replace(' Finger', ''));
+        const h2Fingers = (handsMode === 'two' && fingers2Ref.current) ? fingers2Ref.current.map(f => f.name.replace(' Finger', '')) : [];
+
+        const prevH1 = store.hand1Fingers;
+        const prevH2 = store.hand2Fingers;
+        const h1Changed = prevH1.length !== h1Fingers.length || h1Fingers.some((f, idx) => prevH1[idx] !== f);
+        const h2Changed = prevH2.length !== h2Fingers.length || h2Fingers.some((f, idx) => prevH2[idx] !== f);
+
+        if (h1Changed || h2Changed) {
+          store.setHandFingers(h1Fingers, h2Fingers);
+        }
+      } catch (err) {
+        console.error('Error syncing real-time kinetic states:', err);
+      }
+
+      // --- EXTRA MULTI-MODE & GESTURE HUD EXTRACTIONS ---
+      try {
+        const store = useStore.getState();
+        const hasHand = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+        
+        if (hasHand) {
+          const landmarks1 = results.multiHandLandmarks[0];
+          const thumbTip = landmarks1[4];
+          const indexTip = landmarks1[8];
+          
+          // Calculate pinch / grab (2D/3D distance between thumb tip and index tip)
+          const pDx = thumbTip.x - indexTip.x;
+          const pDy = thumbTip.y - indexTip.y;
+          const pDz = thumbTip.z - indexTip.z;
+          const pinchDist = Math.sqrt(pDx * pDx + pDy * pDy + pDz * pDz);
+          const isPinchingNow = pinchDist < 0.055;
+          
+          if (store.isPinching !== isPinchingNow) {
+            store.setIsPinching(isPinchingNow);
+          }
+
+          // Screen Coordinates mapping
+          const handX = (1 - indexTip.x) * window.innerWidth;
+          const handY = indexTip.y * window.innerHeight;
+          const handRightDist = window.innerWidth - handX;
+          const handBottomDist = window.innerHeight - handY;
+
+          // Sync Virtual Cursor coordinate to store
+          store.setVirtualCursorPos({ x: handX, y: handY });
+
+          // 1. PINCH/GRAB DRAGGING CAMERA ANYWHERE ON SCREEN
+          const camWidth = isMinimized ? 160 : 192;
+          const camHeight = isMinimized ? 44 : 240;
+          
+          const isCloseToCamera = 
+            handRightDist >= position.x - 60 && 
+            handRightDist <= position.x + camWidth + 60 && 
+            handBottomDist >= position.y - 60 && 
+            handBottomDist <= position.y + camHeight + 60;
+
+          if (isPinchingNow) {
+            if (isCloseToCamera && !isHandDraggingCameraRef.current) {
+              isHandDraggingCameraRef.current = true;
+              store.setIsPinchDragging(true);
+              dragOffsetRef.current = {
+                x: handRightDist - position.x,
+                y: handBottomDist - position.y
+              };
+            }
+          } else {
+            if (isHandDraggingCameraRef.current) {
+              isHandDraggingCameraRef.current = false;
+              store.setIsPinchDragging(false);
+            }
+          }
+
+          if (isHandDraggingCameraRef.current && isPinchingNow) {
+            const targetRight = handRightDist - dragOffsetRef.current.x;
+            const targetBottom = handBottomDist - dragOffsetRef.current.y;
+            // Clamped within screen borders
+            const clampedX = Math.max(10, Math.min(window.innerWidth - camWidth - 10, targetRight));
+            const clampedY = Math.max(10, Math.min(window.innerHeight - camHeight - 10, targetBottom));
+            setPosition({ x: clampedX, y: clampedY });
+          }
+
+          // 2. VIRTUAL MOUSE / CLICK / SCROLL LOGIC (Only active when in 'cursor' mode)
+          if (store.kineticInteractionMode === 'cursor') {
+            // Track Click trigger (Transition from NOT pinching to PINCHING)
+            if (isPinchingNow && !lastIsPinchingRef.current) {
+              // Click dispatcher
+              const element = document.elementFromPoint(handX, handY);
+              if (element) {
+                // Focus input elements, or just dispatch click on any element
+                const clickEvent = new MouseEvent('click', {
+                  view: window,
+                  bubbles: true,
+                  cancelable: true,
+                  clientX: handX,
+                  clientY: handY
+                });
+                element.dispatchEvent(clickEvent);
+                
+                if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLButtonElement) {
+                  element.focus();
+                }
+              }
+            }
+            lastIsPinchingRef.current = isPinchingNow;
+
+            // Track Scrolling: if Index & Middle are extended, others are folded
+            const isIndexExtended1 = landmarks1[8].y < landmarks1[6].y;
+            const isMiddleExtended1 = landmarks1[12].y < landmarks1[10].y;
+            const isRingExtended1 = landmarks1[16].y < landmarks1[14].y;
+            const isPinkyExtended1 = landmarks1[20].y < landmarks1[18].y;
+            const isScrollGesture = isIndexExtended1 && isMiddleExtended1 && !isRingExtended1 && !isPinkyExtended1;
+
+            if (isScrollGesture) {
+              if (lastScrollYRef.current !== null) {
+                const scrollDy = handY - lastScrollYRef.current;
+                // Move scroll window or scrollable container
+                window.scrollBy({
+                  top: scrollDy * 4.5,
+                  behavior: 'auto'
+                });
+              }
+              lastScrollYRef.current = handY;
+            } else {
+              lastScrollYRef.current = null;
+            }
+          } else {
+            // Reset state refs when not in cursor mode
+            lastIsPinchingRef.current = false;
+            lastScrollYRef.current = null;
+          }
+
+          // 3. SHAKA POSTURE MODE TOGGLE SWITCH (Thumb + Pinky extended, others folded)
+          const isIndexExtended1 = landmarks1[8].y < landmarks1[6].y;
+          const isMiddleExtended1 = landmarks1[12].y < landmarks1[10].y;
+          const isRingExtended1 = landmarks1[16].y < landmarks1[14].y;
+          const isPinkyExtended1 = landmarks1[20].y < landmarks1[18].y;
+          const isThumbExtended1 = Math.abs(landmarks1[4].x - landmarks1[5].x) > 0.11 || landmarks1[4].y < landmarks1[3].y;
+          
+          const isShakaPose = isThumbExtended1 && isPinkyExtended1 && !isIndexExtended1 && !isMiddleExtended1 && !isRingExtended1;
+          
+          if (isShakaPose) {
+            if (!shakaStartRef.current) {
+              shakaStartRef.current = Date.now();
+            } else if (Date.now() - shakaStartRef.current > 1200) {
+              const nextMode = store.kineticInteractionMode === 'gesture' ? 'cursor' : 'gesture';
+              store.setKineticInteractionMode(nextMode);
+              showToast(
+                nextMode === 'cursor' 
+                  ? '🖱️ Virtual Mouse Mode Activated! Index finger tracks cursor, pinch to click, index+middle to scroll!' 
+                  : '🖐️ Kinetic Gesture Mode Activated! Swipes and custom pose macros active.', 
+                'info', 
+                3000
+              );
+              // Avoid spamming mode changes
+              shakaStartRef.current = Date.now() + 2000;
+            }
+          } else {
+            // Only clear if not in cooling down state
+            if (shakaStartRef.current === null || Date.now() > shakaStartRef.current) {
+              shakaStartRef.current = null;
+            }
+          }
+        } else {
+          // No hand detected, reset temporary tracking refs
+          if (store.isPinching) store.setIsPinching(false);
+          if (store.isPinchDragging) store.setIsPinchDragging(false);
+          isHandDraggingCameraRef.current = false;
+          lastScrollYRef.current = null;
+          lastIsPinchingRef.current = false;
+          shakaStartRef.current = null;
+        }
+      } catch (err) {
+        console.error('Error executing custom interaction layer math:', err);
+      }
+
+      // Perform Gesture matching from trail history
+      analyzeTrail();
+
+      // Trigger overlay rendering in sync with tracker update
+      drawOverlay();
+    };
+
+    if (handsRef.current) {
+      handsRef.current.onResults(onMediaPipeResults);
+    }
+
+    const processFrame = async () => {
+      if (!isTrackingRef.current || !videoRef.current) return;
+      if (isProcessingFrameRef.current) {
+        requestAnimationFrame(processFrame);
+        return;
+      }
+
+      const video = videoRef.current;
+      if (
+        video.paused || 
+        video.ended || 
+        video.readyState < 2 || 
+        video.videoWidth === 0 || 
+        video.videoHeight === 0
+      ) {
+        requestAnimationFrame(processFrame);
+        return;
+      }
+
+      if (handsRef.current) {
+        try {
+          isProcessingFrameRef.current = true;
+          await handsRef.current.send({ image: video });
+        } catch (err) {
+          console.error("MediaPipe prediction error:", err);
+        } finally {
+          isProcessingFrameRef.current = false;
+        }
+      }
+
+      requestAnimationFrame(processFrame);
+    };
+
+    requestAnimationFrame(processFrame);
+  };
+
+  // Draw high-performance hardware-accelerated overlays on Canvas instead of layout-expensive DOM elements
+  const drawOverlay = () => {
+    const overlay = overlayCanvasRef.current;
+    if (!overlay) return;
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
+
+    // Sync client layout size avoiding layout thrashing
+    const rect = overlay.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = rect.width;
+    const height = rect.height;
+
+    if (overlay.width !== Math.floor(width * dpr) || overlay.height !== Math.floor(height * dpr)) {
+      overlay.width = Math.floor(width * dpr);
+      overlay.height = Math.floor(height * dpr);
+    }
+
+    ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, height);
+
+    const centroid1 = centroidRef.current;
+    const centroid2 = centroid2Ref.current;
+
+    if (!centroid1 && !centroid2) return;
+
+    // Coordinate mapping calculations: map [120, 90] to [width, height] accounting for object-cover cropping!
+    const R_video = 120 / 90;
+    const R_container = width / height;
+    let S = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (R_container > R_video) {
+      // Container is wider than video (cropped vertically)
+      S = width / 120;
+      offsetY = (height - 90 * S) / 2;
+    } else {
+      // Container is taller than video (cropped horizontally)
+      S = height / 90;
+      offsetX = (width - 120 * S) / 2;
+    }
+
+    const mapCoords = (vx: number, vy: number) => {
+      const rx = vx;
+      const screenX = rx * S + offsetX;
+      const screenY = vy * S + offsetY;
+      return { x: screenX, y: screenY };
+    };
+
+    const drawSingleHand = (
+      centroid: { x: number; y: number } | null,
+      fingers: typeof fingersRef.current,
+      trail: typeof trailRef.current,
+      primaryColor: string,
+      secondaryColor: string,
+      labelColor: string,
+      boneColor: string
+    ) => {
+      if (!centroid) return;
+
+      // Draw glowing trail
+      if (trail && trail.length > 1) {
+        ctx.strokeStyle = primaryColor;
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        ctx.shadowColor = primaryColor;
+        ctx.shadowBlur = 8;
+        
+        ctx.beginPath();
+        trail.forEach((p, idx) => {
+          const pt = mapCoords(p.x, p.y);
+          if (idx === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.stroke();
+        ctx.shadowBlur = 0; // reset shadow
+      }
+
+      // Draw skeleton lines from centroid to finger tips
+      if (fingers && fingers.length > 0) {
+        ctx.strokeStyle = boneColor;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 3]);
+        const centerPt = mapCoords(centroid.x, centroid.y);
+
+        fingers.forEach(f => {
+          const fingerPt = mapCoords(f.x, f.y);
+          ctx.beginPath();
+          ctx.moveTo(centerPt.x, centerPt.y);
+          ctx.lineTo(fingerPt.x, fingerPt.y);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]); // Reset
+      }
+
+      // Draw centroid joint (hand center)
+      const centerPt = mapCoords(centroid.x, centroid.y);
+
+      // Pulsing cyber sonar ring on centroid
+      const cycle = (Date.now() / 450) % 1;
+      ctx.strokeStyle = secondaryColor.replace('0.6', String(1 - cycle));
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(centerPt.x, centerPt.y, cycle * 28, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Central solid tracker dot
+      ctx.fillStyle = primaryColor;
+      ctx.shadowColor = primaryColor;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(centerPt.x, centerPt.y, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Core white dot for high visual precision
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(centerPt.x, centerPt.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw Finger Joints with names
+      if (fingers) {
+        fingers.forEach(f => {
+          const fingerPt = mapCoords(f.x, f.y);
+
+          // Glowing dot for finger tip joint
+          ctx.fillStyle = labelColor;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = labelColor;
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(fingerPt.x, fingerPt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.shadowBlur = 0; // reset shadow
+
+          // Render precise text tag HUD box for zero overlap and high legibility
+          const text = f.name.replace(' Finger', '').toUpperCase();
+          ctx.font = '900 8px monospace';
+          const textWidth = ctx.measureText(text).width;
+          
+          const boxW = textWidth + 6;
+          const boxH = 11;
+          const bx = fingerPt.x - boxW / 2;
+          const by = fingerPt.y - 18;
+
+          // HUD solid background label card
+          ctx.fillStyle = 'rgba(6, 6, 8, 0.9)';
+          ctx.fillRect(bx, by, boxW, boxH);
+          
+          // HUD frame accent
+          ctx.strokeStyle = secondaryColor;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bx, by, boxW, boxH);
+
+          // HUD label text
+          ctx.fillStyle = labelColor;
+          ctx.textAlign = 'center';
+          ctx.fillText(text, fingerPt.x, by + 8);
+        });
+      }
+    };
+
+    // Draw first hand
+    drawSingleHand(centroid1, fingersRef.current, trailRef.current, '#10b981', 'rgba(16, 185, 129, 0.6)', '#fbbf24', 'rgba(245, 158, 11, 0.6)');
+    
+    // Draw second hand if configured and active
+    if (storeRef.current.kineticHandsMode === 'two' && centroid2) {
+      drawSingleHand(centroid2, fingers2Ref.current, trail2Ref.current, '#3b82f6', 'rgba(59, 130, 246, 0.6)', '#a855f7', 'rgba(168, 85, 247, 0.6)');
+    }
+  };
+
+  // Analyze trail patterns to trigger corresponding commands
+  const analyzeTrail = () => {
+    if (gestureCooldownRef.current || trailRef.current.length < 4) return;
+
+    const points = trailRef.current;
+    const now = Date.now();
+    
+    // We filter the points to look at a highly responsive 350ms window for swipes
+    const swipePoints = points.filter(p => now - p.time < 350);
+    if (swipePoints.length < 3) return;
+
+    const start = swipePoints[0];
+    const end = swipePoints[swipePoints.length - 1];
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+
+    const xs = swipePoints.map(p => p.x);
+    const ys = swipePoints.map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+
+    const duration = end.time - start.time;
+    if (duration < 80 || duration > 400) return;
+
+    // Check Custom gestures first!
+    if (checkCustomGestures()) {
+      return;
+    }
+
+    // Velocity checks for standard built-in gestures
+    const minSwipeDistance = storeRef.current.swipeSensitivity * 0.65; // Make it significantly more responsive and snappy!
+    const horizontalRatio = 1.35; // slightly more forgiving to allow comfortable, natural swipe curves
+
+    // SWIPE RIGHT (Hand moves rightward on screen -> Swipe Right!)
+    if (dx > minSwipeDistance && spanX > spanY * horizontalRatio) {
+      triggerGesture('Swipe Right', 'swipe-right');
+    }
+    // SWIPE LEFT
+    else if (dx < -minSwipeDistance && spanX > spanY * horizontalRatio) {
+      triggerGesture('Swipe Left', 'swipe-left');
+    }
+    // SWIPE UP
+    else if (dy < -minSwipeDistance && spanY > spanX * horizontalRatio) {
+      triggerGesture('Swipe Up', 'swipe-up');
+    }
+    // SWIPE DOWN
+    else if (dy > minSwipeDistance && spanY > spanX * horizontalRatio) {
+      triggerGesture('Swipe Down', 'swipe-down');
+    }
+    // DETECT WAVE (alternating horizontal swings)
+    else {
+      // Analyze wave in a slightly longer window (last 700ms)
+      const wavePoints = points.filter(p => now - p.time < 700);
+      let turns = 0;
+      let lastDir = 0;
+      for (let i = 2; i < wavePoints.length; i++) {
+        const step = wavePoints[i].x - wavePoints[i-1].x;
+        if (Math.abs(step) > 1.5) {
+          const dir = Math.sign(step);
+          if (lastDir !== 0 && dir !== lastDir) {
+            turns++;
+          }
+          lastDir = dir;
+        }
+      }
+      
+      const waveSpanX = Math.max(...wavePoints.map(p => p.x)) - Math.min(...wavePoints.map(p => p.x));
+      if (turns >= 2 && waveSpanX > storeRef.current.waveSensitivity * 0.75) {
+        triggerGesture('Wave Gesture', 'wave');
+      }
+    }
+  };
+
+  // Match current trail against user custom gestures
+  const checkCustomGestures = (): boolean => {
+    if (trailRef.current.length < 10) return false;
+
+    // Normalize current trail path to 0-1 range
+    const trailXs = trailRef.current.map(p => p.x);
+    const trailYs = trailRef.current.map(p => p.y);
+    const minX = Math.min(...trailXs);
+    const maxX = Math.max(...trailXs);
+    const minY = Math.min(...trailYs);
+    const maxY = Math.max(...trailYs);
+
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+
+    if (spanX < 12 && spanY < 12) return false; // not enough motion
+
+    const normTrail = trailRef.current.map(p => ({
+      x: spanX > 0 ? (p.x - minX) / spanX : 0.5,
+      y: spanY > 0 ? (p.y - minY) / spanY : 0.5
+    }));
+
+    // Check each custom gesture in the list
+    for (const gesture of storeRef.current.kineticGestures) {
+      if (gesture.disabled) continue;
+      if (!gesture.points || gesture.points.length < 5) continue;
+
+      // Simple Shape Correlation Match (Procrustes-like path matching)
+      // Resample both to 10 key points and compute average distance
+      const keyPointsCount = 10;
+      const resampledTrail = resamplePoints(normTrail, keyPointsCount);
+      const resampledGesture = resamplePoints(gesture.points, keyPointsCount);
+
+      let totalDist = 0;
+      for (let i = 0; i < keyPointsCount; i++) {
+        const dX = resampledTrail[i].x - resampledGesture[i].x;
+        const dY = resampledTrail[i].y - resampledGesture[i].y;
+        totalDist += Math.sqrt(dX*dX + dY*dY);
+      }
+
+      const avgDist = totalDist / keyPointsCount;
+
+      // If average point distance is very low (below customPathMatchPrecision threshold), it's a direct match!
+      if (avgDist < storeRef.current.customPathMatchPrecision) {
+        triggerGesture(gesture.name, gesture.id);
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Helper to resample any series of points to exact N count for comparative matching
+  const resamplePoints = (pts: { x: number; y: number }[], count: number) => {
+    if (pts.length === 0) return Array(count).fill({ x: 0.5, y: 0.5 });
+    if (pts.length === 1) return Array(count).fill(pts[0]);
+
+    const resampled: { x: number; y: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const indexFloat = (i / (count - 1)) * (pts.length - 1);
+      const indexLower = Math.floor(indexFloat);
+      const indexUpper = Math.ceil(indexFloat);
+      const t = indexFloat - indexLower;
+
+      const p1 = pts[indexLower];
+      const p2 = pts[indexUpper];
+
+      resampled.push({
+        x: p1.x * (1 - t) + p2.x * t,
+        y: p1.y * (1 - t) + p2.y * t
+      });
+    }
+    return resampled;
+  };
+
+  const handleCancelConfirm = () => {
+    setPendingConfirm(null);
+    setCooldown(false);
+  };
+
+  // Execute associated system actions for a recognized gesture
+  const triggerGesture = (name: string, id: string) => {
+    if (gestureCooldownRef.current) return;
+    const gestureObj = storeRef.current.kineticGestures.find(g => g.id === id);
+    if (!gestureObj) return;
+    if (gestureObj.disabled) return;
+
+    // Dispatch real-time last-triggered event to store for HUD notification
+    try {
+      useStore.getState().setLastTriggeredGesture({ name, timestamp: Date.now() });
+    } catch (e) {
+      console.error('Error updating last triggered gesture in store:', e);
+    }
+
+    // Check if first time triggered
+    const triggeredList = getTriggeredGestures();
+    if (!triggeredList.includes(id)) {
+      saveTriggeredGesture(id);
+      setLearningGesture(gestureObj);
+      setIsFirstTimeDiscovery(true);
+      setLearningCountdown(6);
+      setCooldown(true);
+    }
+
+    const action = gestureObj.action as string;
+    const macroActions = gestureObj.macroActions || [];
+    const macroDelay = gestureObj.macroDelay || 400;
+
+    // Check if there are any dangerous actions being triggered (requiring double-confirm popup)
+    const dangerousActions = ['clear-chat', 'delete-all-notifications', 'reset-system-data'];
+    const isPrimaryDangerous = dangerousActions.includes(action);
+    const hasDangerousMacroStep = action === 'macro' && macroActions.some(act => dangerousActions.includes(act));
+    const isDangerous = isPrimaryDangerous || hasDangerousMacroStep;
+
+    const runActionSequence = () => {
+      setCooldown(true);
+      setDetectedGesture(name);
+
+      if (action === 'macro' && macroActions.length > 0) {
+        triggerHaptic([60, 50, 60]); // energetic double pulse for macro start
+        addKineticLog(name, `macro: [${macroActions.join(' → ')}]`);
+      } else {
+        triggerHaptic(80); // crisp single pulse for normal gesture
+        addKineticLog(name, action);
+      }
+
+      const executeAction = (act: string) => {
+        if (action === 'macro') {
+          triggerHaptic(35); // dynamic tick buzz on sequential step execution
+        }
+        if (act === 'toggle-sidebar') {
+          toggleSidebar();
+        } else if (act === 'toggle-right-sidebar') {
+          toggleRightSidebar();
+        } else if (act === 'toggle-sidebar-minimize') {
+          toggleSidebarMinimized();
+        } else if (act === 'toggle-command-palette') {
+          toggleCommandPalette();
+        } else if (act === 'custom-alert') {
+          const text = gestureObj.customText || 'Aether Kinetic Wave Activated!';
+          showToast(text, 'success', 4000);
+        } else if (act === 'create-quick-note') {
+          addNote({
+            projectId: 'default',
+            title: '📝 Kinetic Capture Note',
+            content: '## Hands-Free Kinetic Note\n\nCaptured via gesture: **' + name + '** on ' + new Date().toLocaleString() + '.\n\nIdeas & thoughts logged during flow state...',
+            tags: ['kinetic', 'brainstorm']
+          });
+          showToast('📝 Instantly captured kinetic flow note!', 'success', 3000);
+        } else if (act === 'trigger-sync') {
+          triggerFullSync();
+        } else if (act === 'nav-dashboard') {
+          navigate('/');
+          showToast('Routed to Dashboard via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-assistant') {
+          navigate('/assistant');
+          showToast('Routed to AI Assistant via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-notes') {
+          navigate('/notes');
+          showToast('Routed to Notes via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-projects') {
+          navigate('/projects');
+          showToast('Routed to Projects via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-automations') {
+          navigate('/automations');
+          showToast('Routed to Automations via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-docs') {
+          navigate('/docs');
+          showToast('Routed to Workspace Docs via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-settings') {
+          navigate('/settings');
+          showToast('Routed to System Settings via Kinetic command', 'success', 2500);
+        } else if (act === 'nav-agents') {
+          navigate('/agents');
+          showToast('Routed to Agentic OS via Kinetic command', 'success', 2500);
+        } else if (act === 'clear-chat') {
+          window.dispatchEvent(new CustomEvent('aether-clear-chat'));
+          showToast('🧹 Dialogue history successfully cleared.', 'success', 3000);
+        } else if (act === 'delete-all-notifications') {
+          const pending = invitations.filter((inv: any) => inv.status === 'pending');
+          if (pending.length > 0) {
+            pending.forEach((invite: any) => {
+              declineInvitation(invite.id);
+            });
+            showToast(`❌ Purged ${pending.length} pending project invitations.`, 'success', 3000);
+          } else {
+            showToast('No pending invitations to purge.', 'info', 2500);
+          }
+        } else if (act === 'reset-system-data') {
+          localStorage.clear();
+          showToast('Resetting all configurations to default. Reloading...', 'error', 2000);
+          setTimeout(() => {
+            window.location.reload();
+          }, 1500);
+        } else if (act === 'zen-mode') {
+          // Zen Mode: Minimized sidebar, closed right sidebar
+          setSidebarOpen(false);
+          setRightSidebarOpen(false);
+          setSidebarMinimized(true);
+          showToast('🧘 Zen Flow State Locked. All panels minimized and workspace silenced.', 'success', 3500);
+        } else if (act === 'ai-summary-capture') {
+          // AI Summary Capture Note
+          addNote({
+            projectId: 'default',
+            title: '✨ Unified AI Workspace Summary',
+            content: `## Intelligent Spatial Capture\n\n- Captured via: **Double-Hand Combo** on ${new Date().toLocaleString()}\n- **Workspace Status**: Synchronized and locked.\n- **Focus Metrics**: Active flow state validated.\n\n### Spatial Intelligence Insights\nThis note represents a spatial intelligence freeze-frame of your workspace state, automatically categorized as an active developmental milestone.`,
+            tags: ['ai-capture', 'milestone', 'kinetic']
+          });
+          showToast('✨ Captured intelligent workspace summary note!', 'success', 3000);
+        } else if (act === 'copy-active-note') {
+          // Copy current active notes or workspace description to clipboard
+          const summaryText = `Aether Workspace Milestone\nDate: ${new Date().toLocaleString()}\nStatus: Active Kinetic Development State\nCore VM: Sandboxed & Compiled`;
+          navigator.clipboard.writeText(summaryText).then(() => {
+            showToast('📋 Copied workspace state snapshot directly to clipboard!', 'success', 3000);
+          }).catch(() => {
+            showToast('📋 Copied workspace state summary!', 'success', 3000);
+          });
+        }
+      };
+
+      if (action === 'macro' && macroActions.length > 0) {
+        macroActions.forEach((act, index) => {
+          setTimeout(() => {
+            executeAction(act);
+          }, index * macroDelay);
+        });
+      } else {
+        executeAction(action);
+      }
+
+      const userCooldown = storeRef.current.gestureCooldownDuration || 1500;
+      const totalDuration = action === 'macro' && macroActions.length > 0
+        ? Math.max(userCooldown, macroActions.length * macroDelay)
+        : userCooldown;
+
+      // Visual Flash Feedback on the bubble
+      setTimeout(() => {
+        setDetectedGesture(null);
+      }, totalDuration);
+
+      // Reset cooldown after duration
+      setTimeout(() => {
+        setCooldown(false);
+      }, totalDuration);
+    };
+
+    if (isDangerous) {
+      // Pause tracks and open modal
+      setCooldown(true);
+      
+      let actionDesc = "";
+      if (action === 'macro') {
+        actionDesc = `Execute Macro Sequence containing sensitive operations: [${macroActions.join(' → ')}]`;
+      } else {
+        if (action === 'clear-chat') actionDesc = "Permanently clear your AI chat memory and conversation log history.";
+        if (action === 'delete-all-notifications') actionDesc = "Reject and purge all pending workspace project invitations.";
+        if (action === 'reset-system-data') actionDesc = "Completely reset all system configuration settings and local workspace database state to defaults (this will log you out and refresh the page).";
+      }
+
+      setPendingConfirm({
+        name: name,
+        action: action,
+        description: actionDesc,
+        onConfirm: () => {
+          setPendingConfirm(null);
+          runActionSequence();
+        }
+      });
+      return;
+    }
+
+    // Default immediate run if not dangerous
+    runActionSequence();
+  };
+
+  // Handle Dragging
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.no-drag')) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if ((e.target as HTMLElement).closest('.no-drag')) return;
+    setIsDragging(true);
+    const touch = e.touches[0];
+    dragStartRef.current = {
+      x: touch.clientX - position.x,
+      y: touch.clientY - position.y
+    };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const newX = Math.max(10, Math.min(window.innerWidth - 180, e.clientX - dragStartRef.current.x));
+      const newY = Math.max(10, Math.min(window.innerHeight - 180, e.clientY - dragStartRef.current.y));
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      const newX = Math.max(10, Math.min(window.innerWidth - 180, touch.clientX - dragStartRef.current.x));
+      const newY = Math.max(10, Math.min(window.innerHeight - 180, touch.clientY - dragStartRef.current.y));
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchmove', handleTouchMove, { passive: true });
+      window.addEventListener('touchend', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  return (
+    <>
+      {isKineticEnabled && showFloatingCamera && (
+        <div 
+          style={{ right: position.x, bottom: position.y }}
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+          className={`fixed z-50 rounded-2xl border bg-zinc-950/90 backdrop-blur-md shadow-2xl transition-all duration-150 select-none ${
+            isPinchDragging
+              ? 'border-amber-400 shadow-amber-400/20 scale-[1.02] ring-2 ring-amber-500/20'
+              : detectedGesture 
+                ? 'border-emerald-500 shadow-emerald-500/10' 
+                : 'border-zinc-800 hover:border-zinc-700'
+          } ${isMinimized ? 'w-40 h-11' : 'w-48 h-60'} flex flex-col overflow-hidden cursor-grab active:cursor-grabbing`}
+        >
+      {/* Top Header Controls */}
+      <div className="h-10 px-3 bg-zinc-950 border-b border-zinc-900/60 flex items-center justify-between">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="relative flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+              isPinchDragging ? 'bg-amber-400' : (kineticInteractionMode === 'cursor' ? 'bg-cyan-500' : (isCameraActive ? 'bg-emerald-500' : 'bg-red-500'))
+            }`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${
+              isPinchDragging ? 'bg-amber-400' : (kineticInteractionMode === 'cursor' ? 'bg-cyan-500' : (isCameraActive ? 'bg-emerald-500' : 'bg-red-500'))
+            }`}></span>
+          </span>
+          <span className={`text-[9px] font-mono font-bold tracking-wider uppercase truncate ${
+            isPinchDragging ? 'text-amber-400' : (kineticInteractionMode === 'cursor' ? 'text-cyan-400' : 'text-zinc-400')
+          }`}>
+            {isPinchDragging ? 'GRABBED' : (kineticInteractionMode === 'cursor' ? 'V-MOUSE MODE' : 'KINETIC OS')}
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-1 no-drag">
+          <button 
+            onClick={() => setIsMinimized(!isMinimized)}
+            className="p-1 hover:bg-zinc-900 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            {isMinimized ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+          <button 
+            onClick={() => setShowFloatingCamera(false)}
+            className="p-1 hover:bg-zinc-900 rounded-md text-zinc-500 hover:text-red-400 transition-colors"
+            title="Hide Floating Bubble"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+
+      {/* Camera Stream and Skeleton HUD */}
+      {!isMinimized && (
+        <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+          <video 
+            ref={videoRef}
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover scale-x-[-1] opacity-40 mix-blend-screen saturate-150 contrast-125"
+          />
+          
+          <canvas 
+            ref={canvasRef}
+            className="hidden"
+          />
+
+          {/* High-Performance Canvas Overlay mapping joints in real-time */}
+          <canvas 
+            ref={overlayCanvasRef}
+            className="absolute inset-0 w-full h-full pointer-events-none z-10"
+          />
+
+          {/* Virtual Hud text and stats layer */}
+          <div className="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-2">
+            {/* Realtime stats ticker */}
+            <div className="flex justify-between items-center text-[8px] font-mono text-zinc-500">
+              <span>FPS: {fps}</span>
+              <span>MOTION: {Math.round(motionAmount * 100)}%</span>
+            </div>
+
+            {/* Gesture predicted notification flash */}
+            {detectedGesture && (
+              <div className="absolute inset-x-2 top-10 z-20 py-1.5 px-2 bg-emerald-950/90 border border-emerald-500/50 rounded-lg text-center animate-bounce shadow-lg">
+                <p className="text-[10px] font-bold text-emerald-400 font-mono flex items-center justify-center gap-1">
+                  <Sparkles size={10} className="animate-spin" />
+                  {detectedGesture.toUpperCase()}
+                </p>
+                <p className="text-[7px] text-zinc-400 uppercase tracking-widest font-mono">
+                  Trigger Executed
+                </p>
+              </div>
+            )}
+
+            {/* Bottom hud branding */}
+            <div className="flex justify-between items-end mt-auto text-[7px] font-mono text-emerald-500/60 uppercase tracking-wider">
+              <span>TRK_SENS: HI</span>
+              <span className="flex items-center gap-0.5">
+                <Activity size={8} className="animate-pulse text-emerald-400" />
+                SYSTEM READY
+              </span>
+            </div>
+          </div>
+
+          {/* MediaPipe Loading/Error states overlay */}
+          {isMediaPipeLoading && (
+            <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center p-3 text-center z-30">
+              <Activity size={18} className="text-emerald-500 animate-pulse mb-1.5" />
+              <p className="text-[9px] text-emerald-400 font-mono tracking-wider animate-bounce uppercase">Initializing Neural Tracker</p>
+              <p className="text-[7px] text-zinc-500 font-mono mt-0.5">Downloading deep-learning models...</p>
+            </div>
+          )}
+
+          {mediaPipeError && (
+            <div className="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center p-3 text-center z-30">
+              <AlertCircle size={18} className="text-red-500 mb-1" />
+              <p className="text-[9px] text-zinc-300 font-semibold mb-1">AI Init Failed</p>
+              <p className="text-[7px] text-zinc-500 leading-normal">{mediaPipeError}</p>
+            </div>
+          )}
+
+          {/* Fallback Permission Error Message */}
+          {hasPermission === false && !isMediaPipeLoading && !mediaPipeError && (
+            <div className="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center p-3 text-center z-30">
+              <AlertCircle size={18} className="text-red-500 mb-1" />
+              <p className="text-[9px] text-zinc-300 font-semibold mb-1">Camera Denied</p>
+              <p className="text-[8px] text-zinc-500 leading-normal mb-2">Enable camera access in settings to use hand gestures.</p>
+              <button 
+                onClick={startCamera}
+                className="px-2 py-1 bg-zinc-900 border border-zinc-800 text-[8px] rounded hover:bg-zinc-850 text-zinc-300 transition-all no-drag"
+              >
+                Retry Stream
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Floating control toolbar */}
+      {!isMinimized && (
+        <div className="h-10 px-2 bg-zinc-950 border-t border-zinc-900/60 flex items-center justify-between text-[10px] no-drag">
+          <button 
+            onClick={() => {
+              navigate('/settings');
+              // Expose event trigger or query to settings
+              setTimeout(() => {
+                const tabBtn = document.querySelector('button[key="kinetic-gestures"]') as HTMLButtonElement;
+                if (tabBtn) tabBtn.click();
+              }, 100);
+            }}
+            className="flex items-center gap-1 py-1 px-1.5 hover:bg-zinc-900 rounded-md text-zinc-400 hover:text-white transition-colors"
+          >
+            <Settings2 size={11} />
+            <span>Manage</span>
+          </button>
+          
+          <button 
+            onClick={() => setKineticEnabled(false)}
+            className="flex items-center gap-1 py-1 px-1.5 hover:bg-red-950/40 rounded-md text-zinc-500 hover:text-red-400 transition-colors"
+          >
+            <CameraOff size={11} />
+            <span>Turn Off</span>
+          </button>
+        </div>
+      )}
+
+      {/* Compact Mini bar display */}
+      {isMinimized && (
+        <div className="flex-grow flex items-center justify-between px-3 text-[10px]">
+          <span className="text-[8px] text-zinc-500 font-mono">TRACKING IN BG</span>
+          <button 
+            onClick={() => {
+              navigate('/settings');
+            }}
+            className="text-[8px] text-emerald-400 font-semibold uppercase hover:underline no-drag"
+          >
+            Settings
+          </button>
+        </div>
+      )}
+    </div>
+  )}
+
+    {/* High-Fidelity Double Confirmation Pop-Up for Important/Dangerous Actions */}
+    <AnimatePresence>
+      {pendingConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10000] p-3 sm:p-4 font-sans select-none no-drag">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-[#0a0a0c]/95 border border-red-500/30 rounded-2xl p-4 sm:p-6 shadow-[0_0_50px_rgba(239,68,68,0.15)] relative custom-scrollbar"
+          >
+            {/* Decorative Red Laser Aura at the top */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-20 bg-red-500/10 blur-[30px] rounded-full pointer-events-none" />
+            
+            <div className="space-y-4 sm:space-y-5 relative z-10">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-red-500/10 text-red-500 border border-red-500/25">
+                  <AlertTriangle size={22} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider font-mono">Confirm Sensitive Gesture</h3>
+                  <p className="text-[10px] text-red-400 font-mono">Safety Intercept Engaged</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-red-950/10 border border-red-950/40 rounded-xl space-y-3">
+                <div>
+                  <span className="text-[9px] text-zinc-500 font-mono block uppercase tracking-wider">Triggered Gesture</span>
+                  <span className="text-xs font-bold text-zinc-200">✨ {pendingConfirm.name}</span>
+                </div>
+                <div className="pt-2.5 border-t border-zinc-900">
+                  <span className="text-[9px] text-zinc-500 font-mono block uppercase tracking-wider">Associated Action</span>
+                  <span className="text-xs text-red-400 font-mono font-bold block mt-0.5 capitalize">
+                    {pendingConfirm.action.replace(/-/g, ' ')}
+                  </span>
+                  <p className="text-[10.5px] text-zinc-400 mt-1.5 leading-relaxed font-sans font-normal">
+                    {pendingConfirm.description}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2.5">
+                <button
+                  onClick={() => pendingConfirm.onConfirm()}
+                  className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-lg transition-all shadow-lg hover:shadow-red-600/20 active:scale-98 cursor-pointer text-center"
+                >
+                  Confirm & Execute
+                </button>
+                <button
+                  onClick={handleCancelConfirm}
+                  className="flex-1 py-2 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-zinc-200 font-bold text-xs rounded-lg border border-zinc-800 transition-colors active:scale-98 cursor-pointer text-center"
+                >
+                  Cancel Action
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* High-Fidelity Kinetic Educational / Simulation HUD Overlay */}
+    <AnimatePresence>
+      {learningGesture && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-lg flex items-center justify-center z-[10001] p-3 sm:p-4 font-sans select-none no-drag">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 30 }}
+            className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-[#070709] border border-emerald-500/30 rounded-2xl p-4 sm:p-6 shadow-[0_0_50px_rgba(16,185,129,0.15)] relative space-y-4 sm:space-y-5 custom-scrollbar"
+          >
+            {/* Cybernetic glowing aura backdrops */}
+            <div className="absolute -top-12 -left-12 w-48 h-48 bg-emerald-500/10 blur-[40px] rounded-full pointer-events-none" />
+            <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-emerald-500/5 blur-[40px] rounded-full pointer-events-none" />
+
+            {/* Header with Title and Mode status */}
+            <div className="flex items-start justify-between relative z-10 border-b border-zinc-900 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-xl border ${
+                  isFirstTimeDiscovery 
+                    ? 'bg-amber-950/40 border-amber-500/30 text-amber-400' 
+                    : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400'
+                }`}>
+                  {isFirstTimeDiscovery ? <Award size={22} className="animate-bounce" /> : <Eye size={22} className="animate-pulse" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wider font-mono">
+                    {isFirstTimeDiscovery ? '✨ Kinetic Discovery!' : '🤖 Gesture Simulator HUD'}
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 font-mono">
+                    {isFirstTimeDiscovery 
+                      ? 'You triggered this action sequence for the first time!' 
+                      : 'Interactive Walkthrough & Demonstration'}
+                  </p>
+                </div>
+              </div>
+
+              {!isFirstTimeDiscovery && (
+                <button
+                  onClick={() => {
+                    setLearningGesture(null);
+                    setCooldown(false);
+                  }}
+                  className="p-1.5 hover:bg-zinc-900 border border-zinc-850 hover:border-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-all cursor-pointer"
+                  title="Close Simulation HUD"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Sub details */}
+            <div className="space-y-4 relative z-10">
+              <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                <div>
+                  <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider block">Physical Gesture Signature</span>
+                  <span className="text-base font-bold text-zinc-200 block mt-0.5">✨ {learningGesture.name}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 text-[8.5px] font-mono font-bold rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-450 uppercase tracking-wider">
+                    {getTriggerDetails(learningGesture).type.replace('-', ' ')}
+                  </span>
+                  <span className="px-2 py-0.5 text-[8.5px] font-mono font-semibold rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    ID: {learningGesture.id}
+                  </span>
+                </div>
+              </div>
+
+              {/* Physical description box */}
+              <div className="p-3 bg-zinc-950 border border-zinc-900 rounded-xl">
+                <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider block mb-1">Trigger Combination & Motion</span>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  {getTriggerDetails(learningGesture).detail}
+                </p>
+              </div>
+
+              {/* Real-time Hand Mimic simulator panel */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider block font-semibold text-emerald-400">Live Gesture Replication Guide</span>
+                <GestureSimulatorAnim gesture={learningGesture} />
+              </div>
+
+              {/* System action executed */}
+              <div className="p-3 bg-zinc-950/60 border border-zinc-900 rounded-xl">
+                <span className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider block">Associated Action Pipeline</span>
+                <div className="mt-1.5">
+                  {learningGesture.action === 'macro' && learningGesture.macroActions ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1 text-[10px] text-amber-450 font-mono font-bold uppercase tracking-wider">
+                        <Zap size={11} className="text-amber-400 animate-pulse" />
+                        <span>Multi-Step Macro Chain</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {learningGesture.macroActions.map((act: string, idx: number) => (
+                          <div key={idx} className="flex items-center gap-1.5">
+                            {idx > 0 && <span className="text-zinc-600 font-mono text-[10px]">→</span>}
+                            <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 text-[10px] font-mono rounded text-zinc-300 capitalize">
+                              {act.replace(/-/g, ' ')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 rounded bg-emerald-950/40 border border-emerald-900/30 text-emerald-400">
+                        <Cpu size={12} />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-zinc-300 font-mono capitalize">
+                          {learningGesture.action.replace(/-/g, ' ')}
+                        </span>
+                        {learningGesture.customText && (
+                          <p className="text-[10px] text-zinc-400 font-mono mt-0.5 italic">"{learningGesture.customText}"</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="relative z-10 pt-2 border-t border-zinc-900 flex flex-col sm:flex-row gap-3 items-center justify-between">
+              {isFirstTimeDiscovery ? (
+                <>
+                  <div className="flex items-center gap-2 text-[10.5px] font-mono text-amber-400">
+                    <span className="animate-ping h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    <span>Auto-resuming tracker context in <span className="font-bold text-sm text-zinc-100">{learningCountdown}</span> seconds...</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setLearningGesture(null);
+                      setCooldown(false);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-lg hover:shadow-emerald-600/10 cursor-pointer text-center animate-pulse"
+                  >
+                    Got It, Continue
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsInteractivePractice(!isInteractivePractice)}
+                      className={`px-3 py-1.5 rounded-lg border text-[10.5px] font-bold font-mono transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isInteractivePractice 
+                          ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400' 
+                          : 'bg-zinc-900 hover:bg-zinc-850 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <Camera size={12} />
+                      <span>{isInteractivePractice ? '🔴 Live Practice Mode: Active' : 'Practice with Camera'}</span>
+                    </button>
+                    {isInteractivePractice && (
+                      <span className="text-[9px] text-zinc-500 font-mono animate-pulse">Perform motion in front of camera!</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setLearningGesture(null);
+                      setCooldown(false);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 text-zinc-300 hover:text-white font-bold text-xs rounded-xl transition-colors cursor-pointer text-center"
+                  >
+                    Exit Simulator
+                  </button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+    </>
+  );
+}

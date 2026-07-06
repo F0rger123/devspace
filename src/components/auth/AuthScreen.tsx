@@ -5,11 +5,13 @@ import {
   sendPasswordReset, 
   confirmReset,
   googleSignIn, 
-  githubSignIn 
+  githubSignIn,
+  linkWithPendingCredential
 } from '../../lib/auth';
 import { useData } from '../../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, User, KeyRound, Eye, EyeOff, Loader2, ArrowLeft, Github } from 'lucide-react';
+import { Mail, Lock, User, KeyRound, Eye, EyeOff, Loader2, ArrowLeft, Github, Copy, ExternalLink, Check, ShieldAlert } from 'lucide-react';
+import firebaseConfig from '../../../firebase-applet-config.json';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'resetPassword';
 
@@ -41,10 +43,27 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [authErrorType, setAuthErrorType] = useState<'unauthorized-domain' | 'operation-not-allowed' | null>(null);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+
+  // Account Linking/Consolidation States
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [pendingCredential, setPendingCredential] = useState<any>(null);
+  const [pendingProviderName, setPendingProviderName] = useState('');
+  const [consolidationPassword, setConsolidationPassword] = useState('');
+  const [consolidationMode, setConsolidationMode] = useState<'options' | 'password'>('options');
+
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(label);
+    setTimeout(() => setCopiedText(null), 2000);
+  };
 
   const handleModeChange = (newMode: AuthMode) => {
     setMode(newMode);
     setError(null);
+    setAuthErrorType(null);
     setSuccessMsg(null);
     setEmail('');
     setPassword('');
@@ -55,6 +74,7 @@ export function AuthScreen() {
   const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setAuthErrorType(null);
     setSuccessMsg(null);
     
     const cleanEmail = email.trim();
@@ -124,10 +144,12 @@ export function AuthScreen() {
         } else if (err.code === 'auth/invalid-email') {
           setError('The email address format is invalid.');
         } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+          setAuthErrorType('unauthorized-domain');
           setError(
             'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
           );
         } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+          setAuthErrorType('operation-not-allowed');
           setError(
             'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method, or continue in local Sandbox Mode below.'
           );
@@ -152,10 +174,12 @@ export function AuthScreen() {
         if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
           setError('Invalid email or password combination.');
         } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+          setAuthErrorType('unauthorized-domain');
           setError(
             'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
           );
         } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+          setAuthErrorType('operation-not-allowed');
           setError(
             'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method, or continue in local Sandbox Mode below.'
           );
@@ -176,6 +200,7 @@ export function AuthScreen() {
         if (err.code === 'auth/user-not-found') {
           setError('No user profile found with this email address.');
         } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+          setAuthErrorType('unauthorized-domain');
           setError(
             'Firebase Auth Error: This domain is not authorized. Please go to your Firebase Console -> Authentication -> Settings -> Authorized Domains and add this website\'s domain to authorize it.'
           );
@@ -190,6 +215,7 @@ export function AuthScreen() {
 
   const handleOAuthGoogle = async () => {
     setError(null);
+    setAuthErrorType(null);
     setLoading(true);
     try {
       const result = await googleSignIn();
@@ -198,9 +224,21 @@ export function AuthScreen() {
         setGoogleToken(result.accessToken);
       }
     } catch (err: any) {
-      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+      if (err.code === 'auth/account-exists-with-different-credential') {
+        setPendingEmail(err.email || '');
+        setPendingCredential(err.credential);
+        setPendingProviderName('Google');
+        setConsolidationMode('options');
+        setError(null);
+      } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setAuthErrorType('unauthorized-domain');
         setError(
           'Firebase Auth Error: This domain is not authorized. Please add this app\'s development and shared domains to your "Authorized Domains" list under Authentication -> Settings -> Authorized Domains in your Firebase console.'
+        );
+      } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+        setAuthErrorType('operation-not-allowed');
+        setError(
+          'Firebase Auth Error: Google Sign-in provider is not enabled. Please enable Google in your Firebase Console under Authentication -> Sign-in method.'
         );
       } else {
         setError(err.message || 'Google sign-in was unsuccessful.');
@@ -212,6 +250,7 @@ export function AuthScreen() {
 
   const handleOAuthGithub = async () => {
     setError(null);
+    setAuthErrorType(null);
     setLoading(true);
     try {
       const result = await githubSignIn();
@@ -222,13 +261,104 @@ export function AuthScreen() {
         setGithubProfile({ name: result.username, login: result.username });
       }
     } catch (err: any) {
-      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+      if (err.code === 'auth/account-exists-with-different-credential') {
+        setPendingEmail(err.email || '');
+        setPendingCredential(err.credential);
+        setPendingProviderName('GitHub');
+        setConsolidationMode('options');
+        setError(null);
+      } else if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setAuthErrorType('unauthorized-domain');
         setError(
           'Firebase Auth Error: This domain is not authorized. Please add this app\'s development and shared domains to your "Authorized Domains" list under Authentication -> Settings -> Authorized Domains in your Firebase console.'
+        );
+      } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
+        setAuthErrorType('operation-not-allowed');
+        setError(
+          'Firebase Auth Error: GitHub Sign-in provider is not enabled. Please enable GitHub in your Firebase Console under Authentication -> Sign-in method.'
         );
       } else {
         setError(err.message || 'GitHub sign-in was unsuccessful.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConsolidationGoogle = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await googleSignIn();
+      if (result && pendingCredential) {
+        const linkedUser = await linkWithPendingCredential(result.user, pendingCredential);
+        setGoogleUser(linkedUser);
+        setGoogleToken(result.accessToken);
+        setSuccessMsg(`✓ Successfully consolidated your Google and ${pendingProviderName} accounts! You can now log in using either method.`);
+        setPendingCredential(null);
+        setPendingEmail('');
+        setPendingProviderName('');
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setError('Firebase Auth Error: This domain is not authorized.');
+      } else {
+        setError(err.message || 'Verification failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConsolidationGithub = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await githubSignIn();
+      if (result && pendingCredential) {
+        const linkedUser = await linkWithPendingCredential(result.user, pendingCredential);
+        setGoogleUser(linkedUser);
+        setGithubUser(result.username);
+        setGithubToken(result.accessToken);
+        setGithubProfile({ name: result.username, login: result.username });
+        setSuccessMsg(`✓ Successfully consolidated your GitHub and ${pendingProviderName} accounts! You can now log in using either method.`);
+        setPendingCredential(null);
+        setPendingEmail('');
+        setPendingProviderName('');
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/unauthorized-domain' || err.message?.includes('unauthorized-domain')) {
+        setError('Firebase Auth Error: This domain is not authorized.');
+      } else {
+        setError(err.message || 'Verification failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConsolidationEmailPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!consolidationPassword) {
+      setError('Please enter your password to authorize linking.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const user = await loginWithEmailPassword(pendingEmail, consolidationPassword);
+      if (user && pendingCredential) {
+        const linkedUser = await linkWithPendingCredential(user, pendingCredential);
+        setGoogleUser(linkedUser);
+        setSuccessMsg(`✓ Successfully consolidated your email/password and ${pendingProviderName} accounts! You can now log in using either method.`);
+        setPendingCredential(null);
+        setPendingEmail('');
+        setPendingProviderName('');
+        setConsolidationPassword('');
+        setConsolidationMode('options');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Incorrect password or linking failed.');
     } finally {
       setLoading(false);
     }
@@ -289,10 +419,14 @@ export function AuthScreen() {
             <span className="text-black font-extrabold text-xl font-mono">D</span>
           </div>
           <h1 className="text-zinc-100 text-lg font-bold tracking-tight">DEVSPACE / CORE</h1>
-          <p className="text-zinc-500 text-xs mt-1 text-center font-mono">
-            {mode === 'login' && 'DEVELOPER WORKSPACE SYNC ENGINE'}
-            {mode === 'register' && 'CREATE A SECURE CREDENTIAL SYNAPSE'}
-            {mode === 'forgot' && 'INITIATE PASSWORD RESET LOOP'}
+          <p className="text-zinc-500 text-xs mt-1 text-center font-mono animate-pulse">
+            {pendingCredential ? 'CONSOLIDATING DUPLICATE IDENTITY SYNAPSES' : (
+              <>
+                {mode === 'login' && 'DEVELOPER WORKSPACE SYNC ENGINE'}
+                {mode === 'register' && 'CREATE A SECURE CREDENTIAL SYNAPSE'}
+                {mode === 'forgot' && 'INITIATE PASSWORD RESET LOOP'}
+              </>
+            )}
           </p>
         </div>
 
@@ -332,243 +466,498 @@ export function AuthScreen() {
           )}
         </AnimatePresence>
 
-        {/* Main Authentication Forms */}
-        <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
-          <AnimatePresence mode="wait">
-            {mode === 'register' && (
-              <motion.div
-                key="username"
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="space-y-1.5"
-              >
-                <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-                  <User size={13} className="text-yellow-500/80" /> Username
-                </label>
-                <input 
-                  type="text" 
-                  required
-                  placeholder="e.g. cyber_architect"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  disabled={loading}
-                  className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {mode !== 'resetPassword' && (
-            <div className="space-y-1.5">
-              <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-                <Mail size={13} className="text-yellow-500/80" /> Email Address
-              </label>
-              <input 
-                type="email" 
-                required
-                placeholder="you@domain.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
-                className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
-              />
+        {pendingCredential ? (
+          <div className="space-y-6 animate-fade-in">
+            <div className="p-3.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-400 text-xs flex gap-2.5">
+              <ShieldAlert size={18} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold uppercase tracking-wider font-mono mb-1 text-[11px]">Identity Conflict Detected</p>
+                <p className="text-zinc-300 font-sans">An existing user account was found associated with the email <strong className="text-white font-mono select-all break-all">{pendingEmail}</strong>.</p>
+              </div>
             </div>
-          )}
 
-          <AnimatePresence mode="wait">
-            {mode !== 'forgot' && (
-              <motion.div
-                key="passwords"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-4"
-              >
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-zinc-100 font-sans">Consolidate & Sync Credentials</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+                To link your <span className="text-yellow-400 font-semibold">{pendingProviderName === 'Google' ? 'GitHub' : 'Google'}</span> profile with <span className="text-yellow-400 font-semibold">{pendingProviderName}</span> and share all projects, logs, and settings under a single secure workspace, verify your identity by authenticating with your original provider:
+              </p>
+            </div>
+
+            {consolidationMode === 'options' ? (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={handleConsolidationGoogle}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
+                >
+                  <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6-4.52z" fill="#EA4335" />
+                  </svg>
+                  Verify using Google Account
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConsolidationGithub}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
+                >
+                  <Github size={15} className="mr-1" />
+                  Verify using GitHub Account
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConsolidationMode('password')}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
+                >
+                  <KeyRound size={15} className="mr-1 text-yellow-500/85" />
+                  Verify using Email & Password
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleConsolidationEmailPassword} className="space-y-4">
                 <div className="space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-                      <Lock size={13} className="text-yellow-500/80" /> {mode === 'resetPassword' ? 'New Password' : 'Password'}
-                    </label>
-                    {mode === 'login' && (
-                      <button 
-                        type="button" 
-                        onClick={() => handleModeChange('forgot')}
-                        className="text-[11px] text-yellow-500/70 hover:text-yellow-500 hover:underline transition-colors focus:outline-none"
-                      >
-                        Forgot?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <input 
-                      type={showPassword ? 'text' : 'password'} 
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={loading}
-                      className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 pl-3 pr-10 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-3 flex items-center text-zinc-550 hover:text-zinc-300 transition-colors"
-                    >
-                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
+                  <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
+                    <Lock size={13} className="text-yellow-500/80" /> Password for {pendingEmail}
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={consolidationPassword}
+                    onChange={(e) => setConsolidationPassword(e.target.value)}
+                    disabled={loading}
+                    className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                  />
                 </div>
 
-                {(mode === 'register' || mode === 'resetPassword') && (
-                  <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConsolidationMode('options')}
+                    disabled={loading}
+                    className="w-1/2 py-2 px-4 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 text-xs transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-1/2 py-2 px-4 rounded bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-semibold text-xs transition-colors cursor-pointer shadow-[0_4px_12px_rgba(234,179,8,0.15)]"
+                  >
+                    {loading ? 'Verifying...' : 'Verify & Link'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="pt-4 border-t border-zinc-850/60 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingCredential(null);
+                  setPendingEmail('');
+                  setPendingProviderName('');
+                  setError(null);
+                }}
+                disabled={loading}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer font-mono"
+              >
+                ✕ Cancel & Back to Log In
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Main Authentication Forms */}
+            <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
+              <AnimatePresence mode="wait">
+                {mode === 'register' && (
+                  <motion.div
+                    key="username"
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="space-y-1.5"
+                  >
                     <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-                      <KeyRound size={13} className="text-yellow-500/80" /> Confirm Password
+                      <User size={13} className="text-yellow-500/80" /> Username
                     </label>
                     <input 
-                      type="password" 
+                      type="text" 
                       required
-                      placeholder="••••••••"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="e.g. cyber_architect"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
                       disabled={loading}
                       className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
                     />
-                  </div>
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </AnimatePresence>
 
-          {/* Submit Action Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-semibold rounded py-2.5 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_12px_rgba(234,179,8,0.15)] hover:shadow-[0_4px_16px_rgba(234,179,8,0.3)]"
-          >
-            {loading ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                <span>PROCESSING SECURE TRANSMISSION...</span>
-              </>
-            ) : (
-              <>
-                <span>
-                  {mode === 'login' && 'LOG IN TO DEVSPACE'}
-                  {mode === 'register' && 'GENERATE ACCOUNT PROFILE'}
-                  {mode === 'forgot' && 'SEND PASSWORD RESET DECODE'}
-                  {mode === 'resetPassword' && 'UPDATE PROFILE PASSWORD'}
-                </span>
-              </>
-            )}
-          </button>
-        </form>
+              {mode !== 'resetPassword' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
+                    <Mail size={13} className="text-yellow-500/80" /> Email Address
+                  </label>
+                  <input 
+                    type="email" 
+                    required
+                    placeholder="you@domain.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
+                    className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                  />
+                </div>
+              )}
 
-        {mode === 'forgot' && (
-          <div className="mt-6 p-4 rounded bg-blue-950/20 border border-blue-900/40 text-xs text-blue-300 leading-relaxed space-y-2 font-sans shadow-md">
-            <h4 className="font-semibold text-blue-200 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider">
-              ℹ️ Avoiding Email Link Expiry & Safelinks
-            </h4>
-            <p>
-              Email scanners (such as Microsoft SafeLinks or enterprise firewalls) can automatically pre-fetch links in your incoming mail, which instantly consumes the single-use reset token before you can click it.
-            </p>
-            <p className="font-semibold text-blue-100">
-              To configure a 100% reliable in-app reset experience:
-            </p>
-            <ol className="list-decimal pl-4 space-y-1.5 text-zinc-300 font-mono text-[11px]">
-              <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-yellow-500 hover:underline">Firebase Console</a></li>
-              <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Templates</strong></li>
-              <li>Select <strong>Password reset</strong>, then click the edit pencil icon</li>
-              <li>Click <strong>Customize action URL</strong> at the bottom of the drawer</li>
-              <li>Set the Action URL to: <span className="text-yellow-500 bg-[#101012] px-1 rounded break-all select-all font-sans">{typeof window !== 'undefined' ? window.location.origin : 'https://'}/?mode=resetPassword</span></li>
-            </ol>
-            <p className="text-zinc-400 text-[10px] italic">
-              Once set up, Firebase will route the reset emails directly back to this application, bypassing scanners and letting you safely update your password here.
-            </p>
-          </div>
-        )}
-
-        {/* Back and alternative modes toggle links */}
-        <div className="mt-6 flex flex-col items-center justify-center gap-2">
-          {mode === 'forgot' || mode === 'resetPassword' ? (
-            <button
-              onClick={() => handleModeChange('login')}
-              className="text-xs text-zinc-400 hover:text-zinc-250 flex items-center gap-1.5 transition-colors focus:outline-none"
-            >
-              <ArrowLeft size={13} /> Back to Sign In
-            </button>
-          ) : (
-            <div className="text-xs text-zinc-500 text-center">
-              {mode === 'login' ? (
-                <>
-                  Don't have an account?{' '}
-                  <button
-                    onClick={() => handleModeChange('register')}
-                    className="text-yellow-500 hover:underline hover:text-yellow-400 font-medium transition-colors focus:outline-none"
+              <AnimatePresence mode="wait">
+                {mode !== 'forgot' && (
+                  <motion.div
+                    key="passwords"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-4"
                   >
-                    Create credential profile
-                  </button>
-                </>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
+                          <Lock size={13} className="text-yellow-500/80" /> {mode === 'resetPassword' ? 'New Password' : 'Password'}
+                        </label>
+                        {mode === 'login' && (
+                          <button 
+                            type="button" 
+                            onClick={() => handleModeChange('forgot')}
+                            className="text-[11px] text-yellow-500/70 hover:text-yellow-500 hover:underline transition-colors focus:outline-none"
+                          >
+                            Forgot?
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input 
+                          type={showPassword ? 'text' : 'password'} 
+                          required
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          disabled={loading}
+                          className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 pl-3 pr-10 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute inset-y-0 right-3 flex items-center text-zinc-550 hover:text-zinc-300 transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {(mode === 'register' || mode === 'resetPassword') && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
+                          <KeyRound size={13} className="text-yellow-500/80" /> Confirm Password
+                        </label>
+                        <input 
+                          type="password" 
+                          required
+                          placeholder="••••••••"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          disabled={loading}
+                          className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                        />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Submit Action Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full mt-2 bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-semibold rounded py-2.5 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_12px_rgba(234,179,8,0.15)] hover:shadow-[0_4px_16px_rgba(234,179,8,0.3)]"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>PROCESSING SECURE TRANSMISSION...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {mode === 'login' && 'LOG IN TO DEVSPACE'}
+                      {mode === 'register' && 'GENERATE ACCOUNT PROFILE'}
+                      {mode === 'forgot' && 'SEND PASSWORD RESET DECODE'}
+                      {mode === 'resetPassword' && 'UPDATE PROFILE PASSWORD'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {mode === 'forgot' && (
+              <div className="mt-6 p-4 rounded bg-blue-950/20 border border-blue-900/40 text-xs text-blue-300 leading-relaxed space-y-2 font-sans shadow-md">
+                <h4 className="font-semibold text-blue-200 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider">
+                  ℹ️ Avoiding Email Link Expiry & Safelinks
+                </h4>
+                <p>
+                  Email scanners (such as Microsoft SafeLinks or enterprise firewalls) can automatically pre-fetch links in your incoming mail, which instantly consumes the single-use reset token before you can click it.
+                </p>
+                <p className="font-semibold text-blue-100">
+                  To configure a 100% reliable in-app reset experience:
+                </p>
+                <ol className="list-decimal pl-4 space-y-1.5 text-zinc-300 font-mono text-[11px]">
+                  <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-yellow-500 hover:underline">Firebase Console</a></li>
+                  <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Templates</strong></li>
+                  <li>Select <strong>Password reset</strong>, then click the edit pencil icon</li>
+                  <li>Click <strong>Customize action URL</strong> at the bottom of the drawer</li>
+                  <li>Set the Action URL to: <span className="text-yellow-500 bg-[#101012] px-1 rounded break-all select-all font-sans">{typeof window !== 'undefined' ? window.location.origin : 'https://'}/?mode=resetPassword</span></li>
+                </ol>
+                <p className="text-zinc-400 text-[10px] italic">
+                  Once set up, Firebase will route the reset emails directly back to this application, bypassing scanners and letting you safely update your password here.
+                </p>
+              </div>
+            )}
+
+            {/* Back and alternative modes toggle links */}
+            <div className="mt-6 flex flex-col items-center justify-center gap-2">
+              {mode === 'forgot' || mode === 'resetPassword' ? (
+                <button
+                  onClick={() => handleModeChange('login')}
+                  className="text-xs text-zinc-400 hover:text-zinc-250 flex items-center gap-1.5 transition-colors focus:outline-none"
+                >
+                  <ArrowLeft size={13} /> Back to Sign In
+                </button>
               ) : (
-                <>
-                  Already registered?{' '}
-                  <button
-                    onClick={() => handleModeChange('login')}
-                    className="text-yellow-500 hover:underline hover:text-yellow-400 font-medium transition-colors focus:outline-none"
-                  >
-                    Log in with password
-                  </button>
-                </>
+                <div className="text-xs text-zinc-500 text-center">
+                  {mode === 'login' ? (
+                    <>
+                      Don't have an account?{' '}
+                      <button
+                        onClick={() => handleModeChange('register')}
+                        className="text-yellow-500 hover:underline hover:text-yellow-400 font-medium transition-colors focus:outline-none"
+                      >
+                        Create credential profile
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      Already registered?{' '}
+                      <button
+                        onClick={() => handleModeChange('login')}
+                        className="text-yellow-500 hover:underline hover:text-yellow-400 font-medium transition-colors focus:outline-none"
+                      >
+                        Log in with password
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* Divider & OAuth Integrations */}
-        {mode !== 'forgot' && mode !== 'resetPassword' && (
-          <div className="mt-8 pt-6 border-t border-zinc-850/60">
-            <div className="relative flex justify-center text-xs mb-5">
-              <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">SECURE SINGLE SIGN-ON OPTIONS</span>
-            </div>
+            {/* Divider & OAuth Integrations */}
+            {mode !== 'forgot' && mode !== 'resetPassword' && (
+              <div className="mt-8 pt-6 border-t border-zinc-850/60">
+                <div className="relative flex justify-center text-xs mb-5">
+                  <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">SECURE SINGLE SIGN-ON OPTIONS</span>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={handleOAuthGoogle}
-                disabled={loading}
-                className="flex items-center justify-center gap-2 py-2 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer"
-              >
-                <svg className="w-3.5 h-3.5 mr-1" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6-4.52z" fill="#EA4335" />
-                </svg>
-                Google
-              </button>
-              <button
-                type="button"
-                onClick={handleOAuthGithub}
-                disabled={loading}
-                className="flex items-center justify-center gap-2 py-2 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer"
-              >
-                <Github size={14} className="mr-1" />
-                GitHub
-              </button>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={handleOAuthGoogle}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 py-2 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer"
+                  >
+                    <svg className="w-3.5 h-3.5 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6-4.52z" fill="#EA4335" />
+                    </svg>
+                    Google
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOAuthGithub}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 py-2 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer"
+                  >
+                    <Github size={14} className="mr-1" />
+                    GitHub
+                  </button>
+                </div>
 
-            <div className="relative flex justify-center text-xs my-5">
-              <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">OR RUN WITH LOCAL BYPASS</span>
-            </div>
+                <div className="relative flex justify-center text-xs my-5">
+                  <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">OR RUN WITH LOCAL BYPASS</span>
+                </div>
 
-            <button
-              type="button"
-              onClick={handleSandboxBypass}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-yellow-500/10 border border-yellow-500/20 hover:border-yellow-500/50 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 text-xs font-semibold tracking-wide transition-all cursor-pointer shadow-[0_0_15px_rgba(234,179,8,0.02)]"
-            >
-              ⚡ Enter DevSpace Sandbox (Local Bypass)
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={handleSandboxBypass}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-yellow-500/10 border border-yellow-500/20 hover:border-yellow-500/50 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 text-xs font-semibold tracking-wide transition-all cursor-pointer shadow-[0_0_15px_rgba(234,179,8,0.02)]"
+                >
+                  ⚡ Enter DevSpace Sandbox (Local Bypass)
+                </button>
+
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowSetupGuide(!showSetupGuide)}
+                    className="text-[11px] text-zinc-500 hover:text-yellow-500 font-mono transition-colors flex items-center justify-center gap-1.5 mx-auto"
+                  >
+                    🛠️ {showSetupGuide ? "Hide Auth Connection Config" : "Show Firebase Auth Setup Guide"}
+                  </button>
+                </div>
+
+                {/* Firebase Connection / Authorization Setup Guide */}
+                <AnimatePresence>
+                  {(showSetupGuide || authErrorType) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className={`mt-6 pt-5 border-t ${authErrorType ? 'border-red-900/30' : 'border-zinc-800'} space-y-4`}
+                    >
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider font-mono">
+                        {authErrorType ? (
+                          <span className="text-red-400 flex items-center gap-1.5">
+                            <ShieldAlert size={14} className="text-red-500 animate-pulse" /> Domain Error Resolution Required
+                          </span>
+                        ) : (
+                          <span className="text-zinc-300">🛠️ Firebase Auth Connection Details</span>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+                        {authErrorType === 'unauthorized-domain' 
+                          ? 'To authorize this environment to sign in with GitHub or Google, please register your active domain as an Authorized Domain in your Firebase Console.' 
+                          : 'To enable OAuth sign-ins, configure the OAuth providers in your Firebase console and map their callback URIs appropriately.'}
+                      </p>
+
+                      <div className="space-y-3">
+                        {/* Section 1: Authorized Domains */}
+                        <div className="bg-[#0c0c0e] rounded p-3 border border-zinc-850 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-zinc-300 font-mono">1. AUTHORIZE ACTIVE DOMAINS</span>
+                            <a 
+                              href={`https://console.firebase.google.com/project/${firebaseConfig.projectId || 'project-id'}/authentication/settings`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-yellow-500 hover:underline flex items-center gap-1 font-mono"
+                            >
+                              Console <ExternalLink size={10} />
+                            </a>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 font-sans">
+                            Add these domains to your Firebase Console under: <br />
+                            <strong>Authentication &rarr; Settings &rarr; Authorized domains &rarr; Add domain</strong>
+                          </p>
+                          
+                          <div className="space-y-1.5 pt-1">
+                            {/* Active Host */}
+                            <div className="flex items-center justify-between bg-[#121215] py-1.5 px-2 rounded border border-zinc-800 text-[10px] font-mono">
+                              <span className="text-zinc-400 truncate pr-2">
+                                {typeof window !== 'undefined' ? window.location.hostname : 'localhost'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(
+                                  typeof window !== 'undefined' ? window.location.hostname : 'localhost',
+                                  'domain-active'
+                                )}
+                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium"
+                              >
+                                {copiedText === 'domain-active' ? (
+                                  <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
+                                ) : (
+                                  <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* Shared Host */}
+                            <div className="flex items-center justify-between bg-[#121215] py-1.5 px-2 rounded border border-zinc-800 text-[10px] font-mono">
+                              <span className="text-zinc-400 truncate pr-2">
+                                ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(
+                                  'ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app',
+                                  'domain-shared'
+                                )}
+                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium"
+                              >
+                                {copiedText === 'domain-shared' ? (
+                                  <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
+                                ) : (
+                                  <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section 2: GitHub Sign-in provider */}
+                        <div className="bg-[#0c0c0e] rounded p-3 border border-zinc-850 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-zinc-300 font-mono font-sans">2. GITHUB OAUTH REDIRECT URI</span>
+                            <a 
+                              href="https://github.com/settings/developers" 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-yellow-500 hover:underline flex items-center gap-1 font-mono"
+                            >
+                              GitHub Developer <ExternalLink size={10} />
+                            </a>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 font-sans">
+                            Copy the Firebase OAuth Callback URL below and paste it as the <strong>Authorization callback URL</strong> in your GitHub Developer Settings OAuth App:
+                          </p>
+
+                          <div className="flex items-center justify-between bg-[#121215] py-1.5 px-2 rounded border border-zinc-800 text-[10px] font-mono">
+                            <span className="text-zinc-400 truncate pr-2 text-[9px]">
+                              {`https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(
+                                `https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`,
+                                'redirect-uri'
+                              )}
+                              className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium"
+                            >
+                              {copiedText === 'redirect-uri' ? (
+                                <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
+                              ) : (
+                                <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
+                              )}
+                            </button>
+                          </div>
+                          <div className="text-[9px] text-zinc-500 flex flex-col gap-1 list-none font-sans mt-1">
+                            <span className="flex items-start gap-1">📌 <strong>Firebase Console Settings</strong>: Enter Authentication &rarr; Sign-in method &rarr; Add new provider &rarr; select <strong>GitHub</strong>, toggle to enable, paste client ID and client secret, then copy/verify this same redirect URI.</span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </>
         )}
       </motion.div>
     </div>

@@ -197,6 +197,7 @@ export function VoiceMemoAssistant() {
   }, [isHubOpen, isAssistantOpen, setIsAssistantOpen]);
   const [isUltraCompact, setIsUltraCompact] = useState(false);
   const [hudTab, setHudTab] = useState<'speak' | 'notepad'>('speak');
+  const [mobilePanel, setMobilePanel] = useState<'control' | 'summary'>('control');
   const [isWakeWordListening, setIsWakeWordListening] = useState(false);
   const [isMicPermissionBlocked, setIsMicPermissionBlocked] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -3254,6 +3255,38 @@ export function VoiceMemoAssistant() {
         navigate('/agents');
         break;
       }
+
+      case 'github_autopilot_deploy': {
+        const projName = parsedData.projectNameMentioned || '';
+        let matchedProj = projects.find(p => p.id === activeProjectId) || projects[0];
+        if (projName && projects.length > 0) {
+          const match = projects.find(p => {
+            const pName = p.name.toLowerCase().trim();
+            return pName === projName.toLowerCase().trim() || pName.includes(projName.toLowerCase().trim()) || projName.toLowerCase().trim().includes(pName);
+          });
+          if (match) matchedProj = match;
+        }
+
+        const title = parsedData.title || 'Autonomous Optimization';
+        const details = parsedData.details || 'Autopilot directed work order.';
+
+        // Call the backend endpoint to add to queue and trigger active autopilot engine
+        fetch('/api/github/autopilot/queue/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: matchedProj?.id || 'temp-proj',
+            projectName: matchedProj?.name || 'General Workspace',
+            title,
+            details,
+            type: 'custom'
+          })
+        }).catch(err => console.error("Failed to enqueue via voice assistant:", err));
+
+        actionTriggeredDisplay = `🚀 Enqueued Autopilot Task on "${matchedProj?.name || 'Workspace'}": "${title}"`;
+        navigate('/github');
+        break;
+      }
     }
 
     setAetherFeedback({
@@ -3983,10 +4016,10 @@ export function VoiceMemoAssistant() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.1, ease: "easeOut" }}
-              className={`fixed transition-all duration-200 ease-out ${
+              className={`fixed transition-all duration-200 ease-out select-none selection:bg-yellow-500/30 flex items-center justify-center ${
                 isAssistantMinimized 
-                  ? "right-4 bottom-[108px] top-4 w-[420px] max-w-[95vw] z-[90] flex items-center justify-center selection:bg-yellow-500/30" 
-                  : "inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 selection:bg-yellow-500/30"
+                  ? "inset-0 w-full h-full z-[100] bg-black/85 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none sm:right-4 sm:bottom-[108px] sm:top-4 sm:w-[420px] sm:max-w-[95vw] sm:inset-auto sm:z-[90]" 
+                  : "inset-0 z-[100] bg-black/85 backdrop-blur-md p-0 sm:p-4"
               }`}
               onClick={(e) => {
                 if (isSpeechActive) {
@@ -4009,10 +4042,10 @@ export function VoiceMemoAssistant() {
                 ease: "easeOut",
                 layout: { duration: 0.1, ease: "easeOut" }
               }}
-              className={`transition-all duration-200 ease-out ${
+              className={`transition-all duration-200 ease-out flex flex-col relative ${
                 isAssistantMinimized
-                  ? "w-full h-full bg-[#0c0c0e]/95 border border-zinc-805 rounded-3xl overflow-hidden flex flex-col shadow-[0_0_40px_rgba(245,158,11,0.22)] relative"
-                  : "w-full max-w-6xl h-[85vh] bg-[#0c0c0e] border border-zinc-800 rounded-3xl overflow-hidden flex flex-col shadow-[0_0_50px_rgba(245,158,11,0.12)] relative"
+                  ? "w-full h-full bg-[#0c0c0e]/95 border-0 sm:border border-zinc-805 rounded-none sm:rounded-3xl overflow-hidden shadow-[0_0_40px_rgba(245,158,11,0.22)]"
+                  : "w-full sm:max-w-6xl h-full sm:h-[85vh] bg-[#0c0c0e] border-0 sm:border border-zinc-800 rounded-none sm:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(245,158,11,0.12)]"
               }`}
               onClick={(e) => {
                 if (isSpeechActive) {
@@ -4192,11 +4225,42 @@ export function VoiceMemoAssistant() {
                 </div>
               )}
 
+              {/* Mobile Main Panel Tabs Selector */}
+              {!isAssistantMinimized && (
+                <div className="flex md:hidden bg-[#0a0a0c] p-1.5 border-b border-zinc-850 shrink-0 justify-around select-none">
+                  <button
+                    onClick={() => setMobilePanel('control')}
+                    className={`flex-1 py-2 text-xs font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-2 ${
+                      mobilePanel === 'control'
+                        ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.1)]'
+                        : 'text-zinc-500 hover:text-zinc-350 bg-transparent border border-transparent'
+                    }`}
+                  >
+                    <MessageSquare size={13} /> Dialogue
+                  </button>
+                  <button
+                    onClick={() => setMobilePanel('summary')}
+                    className={`flex-1 py-2 text-xs font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-2 relative ${
+                      mobilePanel === 'summary'
+                        ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.1)]'
+                        : 'text-zinc-500 hover:text-zinc-350 bg-transparent border border-transparent'
+                    }`}
+                  >
+                    <FileText size={13} /> Sheets
+                    {sessionItems.length > 0 && (
+                      <span className="absolute top-1 right-2 w-4 h-4 bg-yellow-500 text-black text-[9px] font-black rounded-full flex items-center justify-center">
+                        {sessionItems.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+
               {/* Main Content Area Split Panel */}
               <div className="flex-grow flex flex-col md:flex-row h-full overflow-hidden min-h-0 divide-y md:divide-y-0 md:divide-x divide-zinc-900">
-                <div className={`flex flex-col p-5 overflow-hidden h-full relative space-y-4 ${
+                <div className={`flex flex-col p-4 sm:p-5 overflow-hidden h-full relative space-y-4 ${
                   isAssistantMinimized ? 'w-full' : 'w-full md:w-1/2'
-                }`}>
+                } ${!isAssistantMinimized && mobilePanel !== 'control' ? 'hidden md:flex' : 'flex'}`}>
                   <div className="flex items-center justify-between shrink-0 select-none">
                     <span className="text-[10px] uppercase font-black text-yellow-400 tracking-widest font-mono flex items-center gap-1">
                       <MessageSquare size={12} className="text-yellow-450 animate-pulse" />
@@ -4846,7 +4910,9 @@ export function VoiceMemoAssistant() {
 
                 {/* RIGHT PANELS: Workspace Summary note grid and Inline Edits */}
                 {!isAssistantMinimized && (
-                  <div className="w-full md:w-1/2 flex flex-col p-5 bg-[#09090b]/80 h-full overflow-hidden space-y-4">
+                  <div className={`w-full md:w-1/2 flex flex-col p-4 sm:p-5 bg-[#09090b]/80 h-full overflow-hidden space-y-4 ${
+                    mobilePanel !== 'summary' ? 'hidden md:flex' : 'flex'
+                  }`}>
                   <div className="flex items-center justify-between shrink-0">
                     <span className="text-[10px] uppercase font-black text-yellow-400 tracking-widest font-mono flex items-center gap-1">
                       <FileText size={12} className="text-yellow-450" />

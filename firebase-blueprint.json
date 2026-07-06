@@ -11,7 +11,10 @@
         "status": { "type": "string", "enum": ["Active", "Paused", "Completed", "Planning"], "description": "Current state of the project" },
         "createdAt": { "type": "number", "description": "Unix epoch timestamp when the project was created" },
         "ownerId": { "type": "string", "description": "UID of the project owner" },
-        "collaborators": { "type": "array", "description": "Array of user emails collaborating on the project" }
+        "collaborators": { "type": "array", "description": "Array of user emails collaborating on the project" },
+        "isPublic": { "type": "boolean", "description": "Whether the project is visible to other community members" },
+        "tags": { "type": "array", "description": "Hashtags for categorization" },
+        "starsCount": { "type": "number", "description": "Number of upvotes or stars" }
       },
       "required": ["id", "name", "description", "status", "createdAt"]
     },
@@ -38,6 +41,16 @@
         "uid": { "type": "string", "description": "Unique Firebase Auth user ID" },
         "email": { "type": "string", "description": "Email address of the user" },
         "username": { "type": "string", "description": "Username of the user" },
+        "displayName": { "type": "string", "description": "Full name or alias" },
+        "avatarColor": { "type": "string", "description": "Theme color for avatars" },
+        "title": { "type": "string", "description": "Professional title" },
+        "bio": { "type": "string", "description": "Developer bio" },
+        "isPrivate": { "type": "boolean", "description": "If user profile is kept private or public" },
+        "followersCount": { "type": "number", "description": "Follower count" },
+        "followingCount": { "type": "number", "description": "Following count" },
+        "githubUrl": { "type": "string", "description": "Link to GitHub profile" },
+        "websiteUrl": { "type": "string", "description": "Link to personal portfolio website" },
+        "techStack": { "type": "string", "description": "Comma-separated tech stack or skills" },
         "createdAt": { "type": "number", "description": "Unix epoch timestamp when user registered" }
       },
       "required": ["uid", "email", "username", "createdAt"]
@@ -60,12 +73,144 @@
         "createdAt": { "type": "number", "description": "Timestamp when the invitation was sent" }
       },
       "required": ["id", "projectId", "projectName", "senderId", "senderEmail", "senderName", "receiverEmail", "status", "role", "createdAt"]
+    },
+    "KineticConfig": {
+      "title": "KineticConfig",
+      "description": "User's customized gesture control sensitivities and key mappings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "kineticGestures": { "type": "array", "description": "Array of customized gestures and macros mappings" },
+        "swipeSensitivity": { "type": "number", "description": "Custom swipe gesture detection distance" },
+        "waveSensitivity": { "type": "number", "description": "Custom wave gesture motion threshold" },
+        "customPathMatchPrecision": { "type": "number", "description": "Custom hand path mathematical overlay precision" },
+        "fingerPoseStabilityFrames": { "type": "number", "description": "Number of stable frames needed to trigger a posture" },
+        "gestureCooldownDuration": { "type": "number", "description": "Intermission delay in ms before next activation" },
+        "updatedAt": { "type": "number", "description": "Timestamp when configuration was backed up" }
+      },
+      "required": ["userId", "kineticGestures"]
+    },
+    "SharedMacro": {
+      "title": "SharedMacro",
+      "description": "A shared gesture/macro chain published by a user to the community macro library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique shared macro identifier" },
+        "title": { "type": "string", "description": "Name/Title of the shared macro or library bundle" },
+        "description": { "type": "string", "description": "Description detailing how it works and what it triggers" },
+        "creatorId": { "type": "string", "description": "UID of the user who published it" },
+        "creatorName": { "type": "string", "description": "Display name/username/email of the author" },
+        "gestures": { "type": "array", "description": "List of gestures/macro structures included in this bundle" },
+        "likesCount": { "type": "number", "description": "Number of community likes" },
+        "downloadsCount": { "type": "number", "description": "Number of active library installations" },
+        "createdAt": { "type": "number", "description": "Timestamp when this was shared to the public library" }
+      },
+      "required": ["id", "title", "description", "creatorId", "creatorName", "gestures", "likesCount", "downloadsCount", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment left by a developer on a public project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "projectId", "userId", "username", "text", "createdAt"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "A friend connection request between developers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "senderId", "receiverId", "senderName", "receiverName", "status", "createdAt"]
+    },
+    "Follow": {
+      "title": "Follow",
+      "description": "A developer following another developer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "followerId": { "type": "string" },
+        "followingId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "followerId", "followingId", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A messaging conversation session or message request between two developers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "participantIds": { "type": "array" },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "requestedBy": { "type": "string" }
+      },
+      "required": ["id", "participantIds", "updatedAt", "createdAt", "status"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "An individual chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "chatId", "senderId", "senderName", "text", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification sent to a developer inside DevSpace",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["star", "comment", "friend_request", "message", "collab_request", "collab_accept"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "type", "title", "description", "read", "createdAt"]
     }
   },
   "firestore": {
     "/projects/{projectId}": {
       "schema": "Project",
       "description": "Collection of projects defined in the workspace"
+    },
+    "/projects/{projectId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on a public project"
+    },
+    "/projects/{projectId}/stars/{userId}": {
+      "schema": "Star",
+      "description": "Upvotes or stars for a public project"
     },
     "/issues/{issueId}": {
       "schema": "Issue",
@@ -78,6 +223,34 @@
     "/invitations/{invitationId}": {
       "schema": "Invitation",
       "description": "Collaboration invitations for projects"
+    },
+    "/kinetic_configs/{userId}": {
+      "schema": "KineticConfig",
+      "description": "Individual users' kinetic motion camera preferences and configurations"
+    },
+    "/shared_macros/{macroId}": {
+      "schema": "SharedMacro",
+      "description": "Public gallery of shared community custom gestures and macros"
+    },
+    "/friend_requests/{requestId}": {
+      "schema": "FriendRequest",
+      "description": "Developer friend requests"
+    },
+    "/follows/{followId}": {
+      "schema": "Follow",
+      "description": "Following graph among devs"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Conversations between developers"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Direct messages inside a chat conversation"
+    },
+    "/notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "Notifications dispatched for stars, comments, collaboration requests, friends, etc."
     }
   }
 }

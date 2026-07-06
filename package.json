@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/hands": "^0.4.1675469240",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.1.14",
     "@types/d3": "^7.4.3",

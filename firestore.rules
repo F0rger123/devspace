@@ -9,7 +9,7 @@ service cloud.firestore {
 
     // Helper functions
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function isSignedIn() {
@@ -20,17 +20,16 @@ service cloud.firestore {
       return request.resource.data;
     }
 
-    function existing() {
-      return resource.data;
-    }
-
     // Validation for Projects
     function isValidProject(data) {
       return data.id is string && data.id.size() <= 128
         && data.name is string && data.name.size() <= 200
         && data.description is string && data.description.size() <= 2000
         && data.status in ['Active', 'Paused', 'Completed', 'Planning']
-        && data.createdAt is number;
+        && data.createdAt is number
+        && (!('isPublic' in data) || data.isPublic is bool)
+        && (!('tags' in data) || data.tags is list)
+        && (!('starsCount' in data) || data.starsCount is number);
     }
 
     // Validation for Issues
@@ -53,7 +52,38 @@ service cloud.firestore {
         && (!('avatarColor' in data) || data.avatarColor is string)
         && (!('title' in data) || data.title is string)
         && (!('bio' in data) || data.bio is string)
+        && (!('isPrivate' in data) || data.isPrivate is bool)
+        && (!('followersCount' in data) || data.followersCount is number)
+        && (!('followingCount' in data) || data.followingCount is number)
+        && (!('githubUrl' in data) || data.githubUrl is string)
+        && (!('websiteUrl' in data) || data.websiteUrl is string)
+        && (!('techStack' in data) || data.techStack is string)
         && (!('updatedAt' in data) || data.updatedAt is number)
+        && data.createdAt is number;
+    }
+
+    // Validation for KineticConfig
+    function isValidKineticConfig(data) {
+      return data.userId is string && data.userId.size() <= 128
+        && data.kineticGestures is list && data.kineticGestures.size() <= 40
+        && (!('swipeSensitivity' in data) || data.swipeSensitivity is number)
+        && (!('waveSensitivity' in data) || data.waveSensitivity is number)
+        && (!('customPathMatchPrecision' in data) || data.customPathMatchPrecision is number)
+        && (!('fingerPoseStabilityFrames' in data) || data.fingerPoseStabilityFrames is number)
+        && (!('gestureCooldownDuration' in data) || data.gestureCooldownDuration is number)
+        && (!('updatedAt' in data) || data.updatedAt is number);
+    }
+
+    // Validation for SharedMacro
+    function isValidSharedMacro(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 100 && data.title.size() >= 3
+        && data.description is string && data.description.size() <= 1000
+        && data.creatorId is string && data.creatorId.size() <= 128
+        && data.creatorName is string && data.creatorName.size() <= 200
+        && data.gestures is list && data.gestures.size() <= 20
+        && data.likesCount is number
+        && data.downloadsCount is number
         && data.createdAt is number;
     }
 
@@ -72,13 +102,81 @@ service cloud.firestore {
         && data.createdAt is number;
     }
 
+    // Validation for Comments
+    function isValidComment(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.projectId is string && data.projectId.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.username is string && data.username.size() <= 200
+        && data.text is string && data.text.size() <= 1000
+        && data.createdAt is number
+        && (!('displayName' in data) || data.displayName is string)
+        && (!('avatarColor' in data) || data.avatarColor is string);
+    }
+
+    // Validation for Chats
+    function isValidChat(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.participantIds is list && data.participantIds.size() == 2
+        && data.createdAt is number
+        && data.updatedAt is number
+        && data.status in ['pending', 'accepted']
+        && (!('lastMessage' in data) || data.lastMessage is string)
+        && (!('requestedBy' in data) || data.requestedBy is string);
+    }
+
+    // Validation for Messages
+    function isValidMessage(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.chatId is string && data.chatId.size() <= 128
+        && data.senderId is string && data.senderId.size() <= 128
+        && data.senderName is string && data.senderName.size() <= 200
+        && data.text is string && data.text.size() <= 2000
+        && data.createdAt is number;
+    }
+
+    // Validation for FriendRequests
+    function isValidFriendRequest(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.senderId is string && data.senderId.size() <= 128
+        && data.receiverId is string && data.receiverId.size() <= 128
+        && data.senderName is string && data.senderName.size() <= 200
+        && data.receiverName is string && data.receiverName.size() <= 200
+        && data.status in ['pending', 'accepted', 'declined']
+        && data.createdAt is number;
+    }
+
+    // Validation for Follows
+    function isValidFollow(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.followerId is string && data.followerId.size() <= 128
+        && data.followingId is string && data.followingId.size() <= 128
+        && data.createdAt is number;
+    }
+
+    // Validation for Notifications
+    function isValidNotification(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.type in ['star', 'comment', 'friend_request', 'message', 'collab_request', 'collab_accept']
+        && data.title is string && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 1000
+        && (!('senderId' in data) || (data.senderId is string && data.senderId.size() <= 128))
+        && (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 200))
+        && (!('projectId' in data) || (data.projectId is string && data.projectId.size() <= 128))
+        && (!('projectName' in data) || (data.projectName is string && data.projectName.size() <= 200))
+        && data.read is bool
+        && data.createdAt is number;
+    }
+
     // Rules for projects
     match /projects/{projectId} {
       allow read: if isSignedIn() && (
-        existing() == null || 
-        !('ownerId' in existing()) || 
-        existing().ownerId == request.auth.uid || 
-        (request.auth.token.email != null && existing().collaborators is list && request.auth.token.email in existing().collaborators)
+        resource == null || 
+        !('ownerId' in resource.data) || 
+        resource.data.ownerId == request.auth.uid || 
+        (resource.data.isPublic == true) ||
+        (request.auth.token.email != null && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
       );
       
       allow create: if isSignedIn() 
@@ -88,22 +186,38 @@ service cloud.firestore {
         
       allow update: if isSignedIn() 
         && isValidId(projectId)
-        && isValidProject(incoming())
-        && incoming().id == projectId
         && (
-          existing() == null || 
-          !('ownerId' in existing()) || 
-          existing().ownerId == request.auth.uid || 
-          (request.auth.token.email != null && existing().collaborators is list && request.auth.token.email in existing().collaborators)
+          // Owner/collaborator full update
+          (isValidProject(incoming()) && incoming().id == projectId && (
+            resource == null || 
+            !('ownerId' in resource.data) || 
+            resource.data.ownerId == request.auth.uid || 
+            (request.auth.token.email != null && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
+          )) ||
+          // Community upvote / star action
+          (incoming().diff(resource.data).affectedKeys().hasOnly(['starsCount']) && incoming().starsCount is number)
         );
         
       allow delete: if isSignedIn() 
         && isValidId(projectId)
         && (
-          existing() == null || 
-          !('ownerId' in existing()) || 
-          existing().ownerId == request.auth.uid
+          resource == null || 
+          !('ownerId' in resource.data) || 
+          resource.data.ownerId == request.auth.uid
         );
+
+      // Subcollection comments
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(commentId) && isValidComment(incoming()) && incoming().id == commentId && incoming().userId == request.auth.uid;
+        allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      }
+
+      // Subcollection stars
+      match /stars/{userId} {
+        allow read: if isSignedIn();
+        allow create, delete: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     // Rules for issues
@@ -112,14 +226,13 @@ service cloud.firestore {
       allow create: if isSignedIn() 
         && isValidId(issueId) 
         && isValidIssue(incoming())
-        && incoming().id == issueId
-        && exists(/databases/$(database)/documents/projects/$(incoming().projectId));
+        && incoming().id == issueId;
       allow update: if isSignedIn() 
         && isValidId(issueId)
         && isValidIssue(incoming())
         && incoming().id == issueId
-        && incoming().projectId == existing().projectId
-        && incoming().createdAt == existing().createdAt;
+        && incoming().projectId == resource.data.projectId
+        && incoming().createdAt == resource.data.createdAt;
       allow delete: if isSignedIn() && isValidId(issueId);
     }
 
@@ -153,9 +266,9 @@ service cloud.firestore {
     // Rules for invitations
     match /invitations/{invitationId} {
       allow read: if isSignedIn() && (
-        existing() == null || 
-        existing().senderId == request.auth.uid || 
-        (request.auth.token.email != null && existing().receiverEmail == request.auth.token.email)
+        resource == null || 
+        resource.data.senderId == request.auth.uid || 
+        (request.auth.token.email != null && resource.data.receiverEmail == request.auth.token.email)
       );
       allow create: if isSignedIn() 
         && isValidId(invitationId)
@@ -167,15 +280,93 @@ service cloud.firestore {
         && isValidInvitation(incoming())
         && incoming().id == invitationId
         && (
-          existing().senderId == request.auth.uid || 
-          (request.auth.token.email != null && existing().receiverEmail == request.auth.token.email)
+          resource.data.senderId == request.auth.uid || 
+          (request.auth.token.email != null && resource.data.receiverEmail == request.auth.token.email)
         );
       allow delete: if isSignedIn() 
         && isValidId(invitationId)
         && (
-          existing().senderId == request.auth.uid || 
-          (request.auth.token.email != null && existing().receiverEmail == request.auth.token.email)
+          resource.data.senderId == request.auth.uid || 
+          (request.auth.token.email != null && resource.data.receiverEmail == request.auth.token.email)
         );
+    }
+
+    // Rules for user kinetic configs (backup / cloud sync)
+    match /kinetic_configs/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update: if isSignedIn() 
+        && request.auth.uid == userId 
+        && isValidKineticConfig(incoming());
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Rules for community shared macros & libraries
+    match /shared_macros/{macroId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() 
+        && isValidId(macroId)
+        && incoming().id == macroId
+        && incoming().creatorId == request.auth.uid
+        && isValidSharedMacro(incoming());
+      allow update: if isSignedIn() 
+        && isValidId(macroId)
+        && incoming().id == macroId
+        && (
+          // Creator can edit their macro
+          (resource.data.creatorId == request.auth.uid && incoming().creatorId == request.auth.uid && isValidSharedMacro(incoming())) ||
+          // Anyone signed in can increment likes/downloads without editing core contents
+          (incoming().diff(resource.data).affectedKeys().hasOnly(['likesCount', 'downloadsCount']) && incoming().likesCount is number && incoming().downloadsCount is number)
+        );
+      allow delete: if isSignedIn() && isValidId(macroId) && resource.data.creatorId == request.auth.uid;
+    }
+
+    // Rules for friend requests
+    match /friend_requests/{requestId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(requestId) && isValidFriendRequest(incoming()) && incoming().senderId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(requestId) && isValidFriendRequest(incoming()) && incoming().id == requestId && (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid);
+      allow delete: if isSignedIn() && isValidId(requestId) && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+
+    // Rules for follows
+    match /follows/{followId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(followId) && isValidFollow(incoming()) && incoming().followerId == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(followId) && resource.data.followerId == request.auth.uid;
+    }
+
+    // Rules for chats
+    match /chats/{chatId} {
+      allow read: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participantIds);
+      allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming()) && incoming().id == chatId && (request.auth.uid in incoming().participantIds);
+      allow update: if isSignedIn() && isValidId(chatId) && isValidChat(incoming()) && incoming().id == chatId && (request.auth.uid in resource.data.participantIds);
+      allow delete: if false;
+
+      // Subcollection messages
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantIds);
+        allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming()) && incoming().id == messageId && incoming().senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // Rules for notifications
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() 
+        && isValidId(notifId)
+        && isValidNotification(incoming())
+        && incoming().id == notifId
+        && (!('senderId' in incoming()) || incoming().senderId == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(notifId)
+        && resource.data.userId == request.auth.uid
+        && incoming().userId == request.auth.uid
+        && incoming().diff(resource.data).affectedKeys().hasOnly(['read'])
+        && incoming().read is bool;
+      allow delete: if isSignedIn()
+        && isValidId(notifId)
+        && resource.data.userId == request.auth.uid;
     }
   }
 }

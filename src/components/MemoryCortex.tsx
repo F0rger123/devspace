@@ -132,7 +132,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       if (!entries || entries.length === 0) return;
       const { width, height } = entries[0].contentRect;
       animationFrameId = requestAnimationFrame(() => {
-        setDimensions({ width, height: Math.max(height, 460) });
+        setDimensions({ width, height: Math.max(height, 320) });
       });
     });
 
@@ -140,7 +140,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       resizeObserver.observe(containerRef.current);
       setDimensions({
         width: containerRef.current.clientWidth,
-        height: Math.max(containerRef.current.clientHeight, 460)
+        height: Math.max(containerRef.current.clientHeight, 320)
       });
     }
 
@@ -857,20 +857,20 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
   }, [dimensions, searchQuery, projects, customMemories]);
 
   return (
-    <div className="absolute inset-0 flex flex-col xl:flex-row p-6 gap-6 overflow-hidden bg-[#07070a]/90 animate-in fade-in duration-300 font-sans z-20">
+    <div className="absolute inset-0 flex flex-col xl:flex-row p-3 sm:p-6 gap-4 sm:gap-6 overflow-y-auto xl:overflow-hidden bg-[#07070a]/90 animate-in fade-in duration-300 font-sans z-20">
       
       {/* 1. OBSIDIAN-STYLE INTERACTIVE VISUAL SYNAPSE BRAIN */}
-      <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#0e0e11]/80 rounded-2xl p-5 overflow-hidden min-h-0 relative group shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+      <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#0e0e11]/80 rounded-2xl p-4 sm:p-5 overflow-hidden min-h-0 relative group shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
         <div className="flex items-center justify-between mb-3 shrink-0 z-10">
           <div className="flex items-center gap-2">
             <Network size={14} className="text-yellow-400 animate-pulse" />
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">Obsidian Synaptic Cortex</span>
           </div>
-          <span className="text-[9px] text-zinc-500 font-mono">Hover nodes for labels / Click satellites to query</span>
+          <span className="text-[9px] text-zinc-500 font-mono hidden sm:inline">Hover nodes for labels / Click satellites to query</span>
         </div>
         
         {/* Interactive Node Graph Area - EXPANDED TO BE PHYSICALLY BIGGER FOR OBSIDIAN VIEW */}
-        <div ref={containerRef} className="flex-1 relative bg-gradient-to-br from-[#020205] via-[#121002] to-[#010103] rounded-xl border border-zinc-800/80 overflow-hidden min-h-[580px] shadow-[inset_0_4px_40px_rgba(0,0,0,0.95)]">
+        <div ref={containerRef} className="h-[350px] sm:h-[450px] xl:flex-1 relative bg-gradient-to-br from-[#020205] via-[#121002] to-[#010103] rounded-xl border border-zinc-800/80 overflow-hidden xl:min-h-[500px] shadow-[inset_0_4px_40px_rgba(0,0,0,0.95)]">
           {/* Constellation star grid lines */}
           <div className="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:32px_32px] opacity-[0.09]" />
           <div className="absolute inset-0 bg-[radial-gradient(#eab308_1px,transparent_1px)] [background-size:64px_64px] opacity-[0.08]" />
@@ -1146,7 +1146,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
             {/* Pulses radiating from center */}
             <AnimatePresence mode="popLayout">
               {memoryVoiceActive || memoryAssistantSpeaking ? (
-                <>
+                <motion.div key="active-pulses" className="absolute inset-0">
                   <motion.div 
                     key="active-p1"
                     initial={{ scale: 1, opacity: 0.6 }}
@@ -1163,10 +1163,10 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                     transition={{ repeat: Infinity, duration: 2, ease: "easeOut", delay: 0.5 }}
                     className={`absolute inset-0 rounded-full ${memoryVoiceActive ? 'bg-red-500/10' : 'bg-yellow-500/10'}`}
                   />
-                </>
+                </motion.div>
               ) : (
                 /* Always on Standby Radiator pulses - subtle, calm, and constant */
-                <>
+                <motion.div key="standby-pulses" className="absolute inset-0">
                   <motion.div 
                     key="standby-p1"
                     initial={{ scale: 1, opacity: 0.18 }}
@@ -1181,7 +1181,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                     transition={{ repeat: Infinity, duration: 4.5, ease: "easeInOut", delay: 1 }}
                     className="absolute inset-0 rounded-full bg-emerald-500/5"
                   />
-                </>
+                </motion.div>
               )}
             </AnimatePresence>
             

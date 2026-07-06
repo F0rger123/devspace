@@ -15,6 +15,7 @@ import { IdeaExpansion } from './pages/IdeaExpansion';
 import { AgenticOS } from './pages/AgenticOS';
 import { WhatsAppCompanion } from './pages/WhatsAppCompanion';
 import { Automations } from './pages/Automations';
+import { Community } from './pages/Community';
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/github" element={<GitHubIntelligence />} />
           <Route path="/docs" element={<WorkspaceDocs />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/community" element={<Community />} />
           <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
           <Route path="/automations" element={<Automations />} />
           {/* Fallback for undefined routes */}

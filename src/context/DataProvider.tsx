@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { collection, getDocs, setDoc, doc, deleteDoc, query, where, getDoc } from 'firebase/firestore';
+import { collection, getDocs, setDoc, doc, deleteDoc, query, where, getDoc, onSnapshot } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, auth } from '../lib/auth';
 import { Toast, ToastContainer } from '../components/ui/Toast';
+import { useStore, KineticGesture } from '../store';
 
 enum OperationType {
   CREATE = 'create',
@@ -91,6 +92,9 @@ export type Project = {
   status: 'Active' | 'Paused' | 'Completed' | 'Planning';
   createdAt: number;
   websiteUrl?: string;
+  isPublic?: boolean;
+  tags?: string[];
+  starsCount?: number;
   featuresCount?: number;         // e.g. 50
   totalFeaturesCount?: number;    // e.g. 76
   progressPercent?: number;       // e.g. 80
@@ -293,7 +297,16 @@ type DataContextType = {
   googleUser: any;
   setGoogleUser: React.Dispatch<React.SetStateAction<any>>;
   userProfile: any | null;
-  updateUserProfile: (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => Promise<void>;
+  updateUserProfile: (updates: { 
+    displayName?: string, 
+    avatarColor?: string, 
+    title?: string, 
+    bio?: string, 
+    isPrivate?: boolean,
+    githubUrl?: string,
+    websiteUrl?: string,
+    techStack?: string
+  }) => Promise<void>;
   invitations: any[];
   setInvitations: React.Dispatch<React.SetStateAction<any[]>>;
   sendInvitation: (projectId: string, receiverEmail: string, role?: 'admin' | 'editor' | 'viewer', permissions?: any, receiverUsername?: string) => Promise<void>;
@@ -301,6 +314,19 @@ type DataContextType = {
   declineInvitation: (invitationId: string) => Promise<void>;
   updateCollaboratorRole: (projectId: string, email: string, role: 'admin' | 'editor' | 'viewer') => Promise<void>;
   removeCollaborator: (projectId: string, email: string) => Promise<void>;
+  notifications?: any[];
+  addNotification?: (n: {
+    userId: string;
+    type: 'star' | 'comment' | 'friend_request' | 'message' | 'collab_request' | 'collab_accept';
+    title: string;
+    description: string;
+    senderId?: string;
+    senderName?: string;
+    projectId?: string;
+    projectName?: string;
+  }) => Promise<void>;
+  markNotificationRead?: (id: string) => Promise<void>;
+  clearAllNotifications?: () => Promise<void>;
   googleToken: string | null;
   setGoogleToken: React.Dispatch<React.SetStateAction<string | null>>;
   githubToken: string | null;
@@ -411,7 +437,35 @@ type DataContextType = {
   showToast: (message: string, type?: Toast['type'], duration?: number) => void;
   removeToast: (id: string) => void;
   triggerFullSync: () => Promise<void>;
+
+  // Centralized Macro Registry
+  macroRegistry: KineticGesture[];
+  toggleMacroMapping: (id: string) => void;
+  testMacroMapping: (id: string) => void;
+
+  // Cloud Sync & Sharing Feature APIs
+  backupKineticConfig: () => Promise<void>;
+  restoreKineticConfig: () => Promise<void>;
+  isSyncingConfig: boolean;
+  sharedMacros: SharedMacro[];
+  setSharedMacros: React.Dispatch<React.SetStateAction<SharedMacro[]>>;
+  publishMacro: (title: string, description: string, gestures: KineticGesture[]) => Promise<boolean>;
+  deleteSharedMacro: (macroId: string) => Promise<void>;
+  likeSharedMacro: (macroId: string) => Promise<void>;
+  incrementDownloadsSharedMacro: (macroId: string) => Promise<void>;
 };
+
+export interface SharedMacro {
+  id: string;
+  title: string;
+  description: string;
+  creatorId: string;
+  creatorName: string;
+  gestures: KineticGesture[];
+  likesCount: number;
+  downloadsCount: number;
+  createdAt: number;
+}
 
 const DataContext = createContext<DataContextType | null>(null);
 
@@ -759,6 +813,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [googleUser, setGoogleUser] = useState<any>(() => getStored('app_google_user', null));
   const [userProfile, setUserProfile] = useState<any | null>(() => getStored('app_user_profile', null));
   const [invitations, setInvitations] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [googleToken, setGoogleToken] = useState<string | null>(() => getStored('app_google_token', null));
   const [githubToken, setGithubToken] = useState<string | null>(() => getStored('app_github_token', null));
   const [githubProfile, setGithubProfile] = useState<any>(() => getStored('app_github_profile', null));
@@ -924,7 +979,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           agents,
           aiContextRules,
           aetherPersonalityRules,
-          passcodePin
+          passcodePin,
+          githubToken
         })
       });
 
@@ -970,7 +1026,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [syncStatus, lastSyncedTime]);
 
-  const fetchWithAuth = async (url: string, options: any = {}) => {
+  const fetchWithAuth = async (url: string, options: any = {}, retries = 3, delay = 1000): Promise<Response> => {
     const headers = { ...(options.headers || {}) };
     if (auth.currentUser) {
       try {
@@ -980,7 +1036,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
         console.warn("Failed to get idToken for authenticated request:", e);
       }
     }
-    return fetch(url, { ...options, headers });
+    try {
+      return await fetch(url, { ...options, headers });
+    } catch (e: any) {
+      const isNetworkError = e instanceof TypeError || e.message?.includes('fetch') || e.message?.includes('NetworkError');
+      if (retries > 0 && isNetworkError) {
+        console.warn(`[AutoSync] Fetch to ${url} failed. Retrying in ${delay}ms... (${retries} retries left)`, e);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchWithAuth(url, options, retries - 1, delay * 2);
+      }
+      throw e;
+    }
+  };
+
+  const safeJsonFromResponse = async (res: Response): Promise<any> => {
+    try {
+      const text = await res.text();
+      if (text && (text.trim().startsWith('{') || text.trim().startsWith('['))) {
+        return JSON.parse(text);
+      } else {
+        console.warn(`[SafeJSON] Expected JSON response but received non-JSON payload starting with: ${text ? text.slice(0, 100).replace(/\s+/g, ' ') : 'empty'}`);
+      }
+    } catch (e) {
+      console.warn("[SafeJSON] Failed to parse response as JSON:", e);
+    }
+    return null;
   };
 
   // Fetch server state cache on mount and sync with Firestore
@@ -992,7 +1072,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetchWithAuth('/api/voice/sync-cache');
         if (res.ok) {
-          const data = await res.json();
+          const data = await safeJsonFromResponse(res);
           if (data) {
             if (data.initialized) {
               // Server has backup disk persistence, treat it as single absolute authority (even if arrays are empty)
@@ -1033,8 +1113,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }
           }
         }
-      } catch (e) {
-        console.error("Failed to load server state cache:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+          console.warn("Failed to load server state cache (offline/network error):", e.message);
+        } else {
+          console.error("Failed to load server state cache:", e);
+        }
       }
 
       // If they were empty, load defaults from state/localStorage
@@ -1081,14 +1165,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const allowedProjectIds = fbProjects.map(p => p.id);
         const allowedProjectNames = fbProjects.map(p => (p.name || '').toLowerCase());
 
-        const issuesSnap = await getDocs(collection(db, 'issues'));
         const fbIssues: Issue[] = [];
-        issuesSnap.forEach((docSnap) => {
-          const item = docSnap.data() as Issue;
-          if (allowedProjectIds.includes(item.projectId)) {
-            fbIssues.push(item);
-          }
-        });
+        try {
+          const issuesSnap = await getDocs(collection(db, 'issues'));
+          issuesSnap.forEach((docSnap) => {
+            const item = docSnap.data() as Issue;
+            if (allowedProjectIds.includes(item.projectId)) {
+              fbIssues.push(item);
+            }
+          });
+        } catch (err: any) {
+          console.warn("Failed to retrieve issues from Firestore:", err.message || err);
+        }
 
         const fbNotes: Note[] = [];
         try {
@@ -1099,7 +1187,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
               fbNotes.push(item);
             }
           });
-        } catch (e) {}
+        } catch (e: any) {
+          console.warn("Failed to retrieve notes from Firestore:", e.message || e);
+        }
 
         const fbSynapses: CortexSynapse[] = [];
         try {
@@ -1110,7 +1200,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
               fbSynapses.push(item);
             }
           });
-        } catch (e) {}
+        } catch (e: any) {
+          console.warn("Failed to retrieve synapses from Firestore:", e.message || e);
+        }
 
         if (fbProjects.length > 0) {
           // Merge fbProjects with finalProjects (from server cache) to protect dreamed recommendations and progress
@@ -1153,7 +1245,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else if (finalProjects.length > 0) {
           // Empty in Firestore, seed with currently resolved projects
           for (const proj of finalProjects) {
-            await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+            try {
+              await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+            } catch (err: any) {
+              console.warn(`Failed to seed project ${proj.id}:`, err.message || err);
+            }
           }
         }
 
@@ -1163,7 +1259,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else if (finalIssues.length > 0) {
           // Empty in Firestore, seed with currently resolved issues
           for (const iss of finalIssues) {
-            await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+            try {
+              await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+            } catch (err: any) {
+              console.warn(`Failed to seed issue ${iss.id}:`, err.message || err);
+            }
           }
         }
 
@@ -1173,7 +1273,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const localNotes = getStored<Note[]>('app_notes', []);
           if (localNotes.length > 0) {
             for (const note of localNotes) {
-              await setDocWithSanitize(doc(db, 'notes', note.id), note);
+              try {
+                await setDocWithSanitize(doc(db, 'notes', note.id), note);
+              } catch (err: any) {
+                console.warn(`Failed to seed note ${note.id}:`, err.message || err);
+              }
             }
           }
         }
@@ -1184,12 +1288,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
           if (localSynapses.length > 0) {
             for (const syn of localSynapses) {
-              await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+              try {
+                await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+              } catch (err: any) {
+                console.warn(`Failed to seed synapse ${syn.id}:`, err.message || err);
+              }
             }
           }
         }
-      } catch (fbErr) {
-        console.error("Failed to load / seed to Firestore status:", fbErr);
+      } catch (fbErr: any) {
+        if (fbErr?.message?.includes('fetch') || fbErr?.message?.includes('NetworkError') || fbErr?.code === 'unavailable') {
+          console.warn("Failed to load / seed to Firestore status (network/offline):", fbErr.message);
+        } else {
+          console.error("Failed to load / seed to Firestore status:", fbErr);
+        }
       } finally {
         setIsInitialLoadDone(true);
       }
@@ -1217,22 +1329,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
             agents,
             aiContextRules,
             aetherPersonalityRules,
-            passcodePin
+            passcodePin,
+            githubToken
           })
         });
         endSync('sync-cache', true);
-      } catch (e) {
-        console.error("Failed to auto-sync changes to server:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+          console.warn("Failed to auto-sync changes to server (network/offline):", e.message);
+        } else {
+          console.error("Failed to auto-sync changes to server:", e);
+        }
         endSync('sync-cache', false);
       }
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, isInitialLoadDone]);
+  }, [projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, githubToken, isInitialLoadDone]);
+
+  const lastFirestoreProjectsRef = useRef<Project[]>([]);
 
   // Post projects to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+
+    // Compare local projects to last firestore snapshot
+    const projectsDiffer = (local: Project[], remote: Project[]) => {
+      if (local.length !== remote.length) return true;
+      for (const lp of local) {
+        const rp = remote.find(p => p.id === lp.id);
+        if (!rp) return true;
+        if (JSON.stringify(lp) !== JSON.stringify(rp)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (!projectsDiffer(projects, lastFirestoreProjectsRef.current)) {
+      return;
+    }
+
     setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
@@ -1241,9 +1378,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         for (const proj of projects) {
           await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
         }
+        lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(projects));
         endSync('projects', true);
-      } catch (e) {
-        console.error("Failed to auto-sync projects to Firestore:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
+          console.warn("Failed to auto-sync projects to Firestore (network/offline):", e.message);
+        } else {
+          console.error("Failed to auto-sync projects to Firestore:", e);
+        }
         endSync('projects', false);
       }
     }, 450);
@@ -1268,6 +1410,94 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [activeProjectId, projects, isInitialLoadDone, githubRepo]);
 
+  // Real-time Firestore project sync listener
+  useEffect(() => {
+    if (!googleUser || !isInitialLoadDone) return;
+
+    const email = (googleUser.email || '').trim().toLowerCase();
+    const projectsMap: { [id: string]: Project } = {};
+
+    // Seed the map with current loaded projects
+    projects.forEach(p => {
+      projectsMap[p.id] = p;
+    });
+
+    let unsubOwned: (() => void) | null = null;
+    let unsubCollab: (() => void) | null = null;
+
+    const updateProjectsFromRealtime = () => {
+      const mergedList = Object.values(projectsMap);
+      mergedList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      // Update the reference of remote projects so auto-sync loop prevention is maintained
+      lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(mergedList));
+      setProjects(mergedList);
+    };
+
+    // 1. Listen to owned projects
+    try {
+      const ownedQuery = query(collection(db, 'projects'), where('ownerId', '==', googleUser.uid));
+      unsubOwned = onSnapshot(ownedQuery, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const docData = change.doc.data() as Project;
+          if (change.type === 'removed') {
+            delete projectsMap[change.doc.id];
+          } else {
+            projectsMap[change.doc.id] = docData;
+          }
+        });
+        
+        // Also ensure all current query docs are in map
+        snapshot.forEach((docSnap) => {
+          projectsMap[docSnap.id] = docSnap.data() as Project;
+        });
+
+        updateProjectsFromRealtime();
+      }, (error) => {
+        // Handle error gracefully via our mandated helper
+        handleFirestoreError(error, OperationType.LIST, 'projects');
+      });
+    } catch (e) {
+      console.warn("Failed to attach owned projects real-time listener:", e);
+    }
+
+    // 2. Listen to collab projects
+    if (email) {
+      try {
+        const collabQuery = query(collection(db, 'projects'), where('collaborators', 'array-contains', email));
+        unsubCollab = onSnapshot(collabQuery, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            const docData = change.doc.data() as Project;
+            if (change.type === 'removed') {
+              if (docData.ownerId !== googleUser.uid) {
+                delete projectsMap[change.doc.id];
+              }
+            } else {
+              projectsMap[change.doc.id] = docData;
+            }
+          });
+
+          // Also ensure all current query docs are in map
+          snapshot.forEach((docSnap) => {
+            projectsMap[docSnap.id] = docSnap.data() as Project;
+          });
+
+          updateProjectsFromRealtime();
+        }, (error) => {
+          // Handle error gracefully via our mandated helper
+          handleFirestoreError(error, OperationType.LIST, 'projects');
+        });
+      } catch (e) {
+        console.warn("Failed to attach collab projects real-time listener:", e);
+      }
+    }
+
+    return () => {
+      if (unsubOwned) unsubOwned();
+      if (unsubCollab) unsubCollab();
+    };
+  }, [googleUser, isInitialLoadDone]);
+
   // Post issues to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
@@ -1280,8 +1510,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
         }
         endSync('issues', true);
-      } catch (e) {
-        console.error("Failed to auto-sync issues to Firestore:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
+          console.warn("Failed to auto-sync issues to Firestore (network/offline):", e.message);
+        } else {
+          console.error("Failed to auto-sync issues to Firestore:", e);
+        }
         endSync('issues', false);
       }
     }, 450);
@@ -1301,8 +1535,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await setDocWithSanitize(doc(db, 'notes', note.id), note);
         }
         endSync('notes', true);
-      } catch (e) {
-        console.error("Failed to auto-sync notes to Firestore:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
+          console.warn("Failed to auto-sync notes to Firestore (network/offline):", e.message);
+        } else {
+          console.error("Failed to auto-sync notes to Firestore:", e);
+        }
         endSync('notes', false);
       }
     }, 450);
@@ -1322,8 +1560,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
         }
         endSync('cortexSynapses', true);
-      } catch (e) {
-        console.error("Failed to auto-sync cortex synapses to Firestore:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
+          console.warn("Failed to auto-sync cortex synapses to Firestore (network/offline):", e.message);
+        } else {
+          console.error("Failed to auto-sync cortex synapses to Firestore:", e);
+        }
         endSync('cortexSynapses', false);
       }
     }, 450);
@@ -1339,7 +1581,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetchWithAuth('/api/voice/sync-cache');
         if (res.ok) {
-          const data = await res.json();
+          const data = await safeJsonFromResponse(res);
           if (data && Array.isArray(data.projects)) {
             setProjects(prev => prev.map(p => {
               const serverProj = data.projects.find((sp: any) => sp.id === p.id);
@@ -1365,8 +1607,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }));
           }
         }
-      } catch (e) {
-        console.error("Periodic dream recommendations sync failed:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+          console.warn("Periodic dream recommendations sync failed (network/offline):", e.message);
+        } else {
+          console.error("Periodic dream recommendations sync failed:", e);
+        }
       }
     }, 1000 * 30); // check every 30 seconds
 
@@ -1402,7 +1648,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         });
         if (res.ok) {
-          const data = await res.json();
+          const data = await safeJsonFromResponse(res);
           if (data) {
             finalProjects = data.projects || [];
             finalIssues = data.issues || [];
@@ -1420,8 +1666,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }
           }
         }
-      } catch (e) {
-        console.error("Failed to load user-scoped server state:", e);
+      } catch (e: any) {
+        const msg = e?.message || '';
+        if (
+          msg.includes('fetch') || 
+          msg.includes('NetworkError') || 
+          msg.toLowerCase().includes('network') || 
+          msg.toLowerCase().includes('offline') ||
+          msg.toLowerCase().includes('could not reach') ||
+          msg.toLowerCase().includes('network-request-failed')
+        ) {
+          console.warn("Failed to load user-scoped server state (network/offline):", e.message);
+        } else {
+          console.error("Failed to load user-scoped server state:", e);
+        }
       }
 
       // 2. Query Firestore directly for owned and collab projects
@@ -1591,13 +1849,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         setProjects(mergedProjects);
         setStored('app_projects', mergedProjects);
+        lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(mergedProjects));
       } else {
         if (finalProjects.length > 0) {
           setProjects(finalProjects);
           setStored('app_projects', finalProjects);
+          lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(finalProjects));
         } else {
           setProjects([]);
           setStored('app_projects', []);
+          lastFirestoreProjectsRef.current = [];
         }
       }
 
@@ -1660,19 +1921,55 @@ export function DataProvider({ children }: { children: ReactNode }) {
             passcodePin: "1234"
           })
         });
-      } catch (postErr) {
-        console.error("Failed to post user-scoped initial state:", postErr);
+      } catch (postErr: any) {
+        const pmsg = postErr?.message || '';
+        if (
+          pmsg.includes('fetch') || 
+          pmsg.includes('NetworkError') || 
+          pmsg.toLowerCase().includes('network') || 
+          pmsg.toLowerCase().includes('offline') ||
+          pmsg.toLowerCase().includes('could not reach') ||
+          pmsg.toLowerCase().includes('network-request-failed')
+        ) {
+          console.warn("Failed to post user-scoped initial state (network/offline):", postErr.message);
+        } else {
+          console.error("Failed to post user-scoped initial state:", postErr);
+        }
       }
 
-    } catch (err) {
-      console.error("Error loading user workspace:", err);
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (
+        msg.includes('fetch') || 
+        msg.includes('NetworkError') || 
+        msg.toLowerCase().includes('network') || 
+        msg.toLowerCase().includes('offline') ||
+        msg.toLowerCase().includes('could not reach') ||
+        msg.toLowerCase().includes('network-request-failed')
+      ) {
+        console.warn("Error loading user workspace (network/offline):", err.message);
+      } else {
+        console.error("Error loading user workspace:", err);
+      }
     } finally {
       setIsInitialLoadDone(true);
     }
   };
 
   useEffect(() => {
+    let unsubNotifications: (() => void) | null = null;
+    let unsubInvitations: (() => void) | null = null;
+
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (unsubNotifications) {
+        unsubNotifications();
+        unsubNotifications = null;
+      }
+      if (unsubInvitations) {
+        unsubInvitations();
+        unsubInvitations = null;
+      }
+
       const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
       if (isSandbox) {
         const localUser = getStored<any>('app_google_user', null);
@@ -1767,17 +2064,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Fetch user invitations
+        // Fetch user invitations inside real-time listener
         try {
           const invQuery = query(collection(db, 'invitations'), where('receiverEmail', '==', (user.email || '').trim().toLowerCase()));
-          const invitationsSnap = await getDocs(invQuery);
-          const fbInvitations: any[] = [];
-          invitationsSnap.forEach((docSnap) => {
-            fbInvitations.push(docSnap.data());
+          unsubInvitations = onSnapshot(invQuery, (snapshot) => {
+            const fbInvitations: any[] = [];
+            snapshot.forEach((docSnap) => {
+              fbInvitations.push(docSnap.data());
+            });
+            setInvitations(fbInvitations);
+          }, (err) => {
+            console.warn("Real-time invitations error:", err);
           });
-          setInvitations(fbInvitations);
         } catch (e) {
-          console.warn("Failed to fetch user invitations from Firestore (offline fallback):", e);
+          console.warn("Failed to subscribe to user invitations from Firestore:", e);
+        }
+
+        // Fetch notifications inside real-time listener
+        try {
+          const notQuery = query(collection(db, 'notifications'), where('userId', '==', user.uid));
+          unsubNotifications = onSnapshot(notQuery, (snapshot) => {
+            const fbNotifs: any[] = [];
+            snapshot.forEach((docSnap) => {
+              fbNotifs.push(docSnap.data());
+            });
+            fbNotifs.sort((a, b) => b.createdAt - a.createdAt);
+            setNotifications(fbNotifs);
+          }, (err) => {
+            console.warn("Real-time notifications error:", err);
+          });
+        } catch (e) {
+          console.warn("Failed to subscribe to notifications:", e);
         }
 
         // Load the full isolated user workspace data
@@ -1788,6 +2105,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setStored('app_google_user', null);
         setUserProfile(null);
         setInvitations([]);
+        setNotifications([]);
         
         // Clear workspace data on logout to completely isolate sessions
         setProjects([]);
@@ -1801,8 +2119,53 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setIsInitialLoadDone(true);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (unsubNotifications) unsubNotifications();
+      if (unsubInvitations) unsubInvitations();
+    };
   }, []);
+
+  const addNotification = async (notification: {
+    userId: string;
+    type: 'star' | 'comment' | 'friend_request' | 'message' | 'collab_request' | 'collab_accept';
+    title: string;
+    description: string;
+    senderId?: string;
+    senderName?: string;
+    projectId?: string;
+    projectName?: string;
+  }) => {
+    try {
+      const id = `notif_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      await setDoc(doc(db, 'notifications', id), {
+        id,
+        ...notification,
+        read: false,
+        createdAt: Date.now()
+      });
+    } catch (err) {
+      console.error("Failed to add notification:", err);
+    }
+  };
+
+  const markNotificationRead = async (id: string) => {
+    try {
+      await setDoc(doc(db, 'notifications', id), { read: true }, { merge: true });
+    } catch (err) {
+      console.error("Failed to mark notification read:", err);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    try {
+      for (const notif of notifications) {
+        await deleteDoc(doc(db, 'notifications', notif.id));
+      }
+    } catch (err) {
+      console.error("Failed to clear notifications:", err);
+    }
+  };
 
   const sendInvitation = async (
     projectId: string, 
@@ -1954,7 +2317,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const updateUserProfile = async (updates: { displayName?: string, avatarColor?: string, title?: string, bio?: string }) => {
+  const updateUserProfile = async (updates: { 
+    displayName?: string, 
+    avatarColor?: string, 
+    title?: string, 
+    bio?: string, 
+    isPrivate?: boolean,
+    githubUrl?: string,
+    websiteUrl?: string,
+    techStack?: string
+  }) => {
     const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
     const activeUid = auth.currentUser?.uid || googleUser?.uid;
     const activeEmail = auth.currentUser?.email || googleUser?.email || '';
@@ -2966,6 +3338,267 @@ Description of fix or enhancement recommendation
     return () => clearInterval(pollInterval);
   }, []);
 
+  const macroRegistry = useStore((state) => state.kineticGestures);
+  const setKineticGestures = useStore((state) => state.setKineticGestures);
+
+  // New States for Cloud Sync & Macro Sharing
+  const [isSyncingConfig, setIsSyncingConfig] = useState(false);
+  const [sharedMacros, setSharedMacros] = useState<SharedMacro[]>([]);
+
+  // Auto load shared macros from Firestore on mount
+  useEffect(() => {
+    if (!db || !googleUser) {
+      setSharedMacros([]);
+      return;
+    }
+
+    try {
+      const q = query(collection(db, 'shared_macros'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const macros: SharedMacro[] = [];
+        snapshot.forEach((doc) => {
+          macros.push({ id: doc.id, ...doc.data() } as SharedMacro);
+        });
+        // Sort newest first
+        macros.sort((a, b) => b.createdAt - a.createdAt);
+        setSharedMacros(macros);
+      }, (error) => {
+        if (error.code === 'permission-denied') {
+          console.warn("Shared macros subscription permission denied (auth credentials establishing or transient):", error.message);
+        } else {
+          console.error("Failed to sync shared macros:", error);
+        }
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn("Firestore not ready or offline:", err);
+    }
+  }, [db, googleUser]);
+
+  // Back up configuration (cloud sync)
+  const backupKineticConfig = async () => {
+    const user = auth?.currentUser;
+    if (!user) {
+      showToast("Please sign in to backup your kinetic preferences!", "error", 3000);
+      return;
+    }
+    if (!db) {
+      showToast("Database is not connected!", "error", 3000);
+      return;
+    }
+    
+    setIsSyncingConfig(true);
+    try {
+      const storeState = useStore.getState();
+      const payload = {
+        userId: user.uid,
+        kineticGestures: storeState.kineticGestures,
+        swipeSensitivity: storeState.swipeSensitivity,
+        waveSensitivity: storeState.waveSensitivity,
+        customPathMatchPrecision: storeState.customPathMatchPrecision,
+        fingerPoseStabilityFrames: storeState.fingerPoseStabilityFrames,
+        gestureCooldownDuration: storeState.gestureCooldownDuration,
+        updatedAt: Date.now()
+      };
+      
+      const configRef = doc(db, 'kinetic_configs', user.uid);
+      await setDocWithSanitize(configRef, payload);
+      showToast("🖐️ Kinetic configurations successfully backed up to DevSpace Cloud!", "success", 3000);
+    } catch (error) {
+      showToast("Failed to backup kinetic configuration: " + (error instanceof Error ? error.message : String(error)), "error", 4000);
+      handleFirestoreError(error, OperationType.WRITE, `kinetic_configs/${user.uid}`);
+    } finally {
+      setIsSyncingConfig(false);
+    }
+  };
+
+  // Restore configuration from cloud sync
+  const restoreKineticConfig = async () => {
+    const user = auth?.currentUser;
+    if (!user) {
+      showToast("Please sign in to restore your kinetic configurations!", "error", 3000);
+      return;
+    }
+    if (!db) {
+      showToast("Database is not connected!", "error", 3000);
+      return;
+    }
+
+    setIsSyncingConfig(true);
+    try {
+      const configRef = doc(db, 'kinetic_configs', user.uid);
+      const docSnap = await getDoc(configRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.kineticGestures) {
+          useStore.getState().setKineticGestures(data.kineticGestures);
+        }
+        if (data.swipeSensitivity !== undefined) {
+          useStore.getState().setSwipeSensitivity(data.swipeSensitivity);
+        }
+        if (data.waveSensitivity !== undefined) {
+          useStore.getState().setWaveSensitivity(data.waveSensitivity);
+        }
+        if (data.customPathMatchPrecision !== undefined) {
+          useStore.getState().setCustomPathMatchPrecision(data.customPathMatchPrecision);
+        }
+        if (data.fingerPoseStabilityFrames !== undefined) {
+          useStore.getState().setFingerPoseStabilityFrames(data.fingerPoseStabilityFrames);
+        }
+        if (data.gestureCooldownDuration !== undefined) {
+          useStore.getState().setGestureCooldownDuration(data.gestureCooldownDuration);
+        }
+        showToast("🖐️ Restored custom gestures & sensitivity from DevSpace Cloud successfully!", "success", 3000);
+      } else {
+        showToast("No cloud backups found for your account. Perform a backup first!", "info", 3000);
+      }
+    } catch (error) {
+      showToast("Failed to restore kinetic configuration: " + (error instanceof Error ? error.message : String(error)), "error", 4000);
+      handleFirestoreError(error, OperationType.GET, `kinetic_configs/${user.uid}`);
+    } finally {
+      setIsSyncingConfig(false);
+    }
+  };
+
+  // Publish a custom macro/library to public Community Gallery
+  const publishMacro = async (title: string, description: string, gestures: KineticGesture[]): Promise<boolean> => {
+    const user = auth?.currentUser;
+    if (!user) {
+      showToast("Please sign in to publish to community gallery!", "error", 3000);
+      return false;
+    }
+    if (!db) {
+      showToast("Database is not connected!", "error", 3000);
+      return false;
+    }
+    if (!title || title.trim().length < 3) {
+      showToast("Title must be at least 3 characters long!", "error", 3000);
+      return false;
+    }
+    if (!description || description.trim().length < 10) {
+      showToast("Description must be at least 10 characters long!", "error", 3000);
+      return false;
+    }
+    if (!gestures || gestures.length === 0) {
+      showToast("Please select at least one gesture/macro to publish!", "error", 3000);
+      return false;
+    }
+
+    const macroId = 'sm-' + Math.random().toString(36).substring(2, 11);
+    try {
+      const payload: SharedMacro = {
+        id: macroId,
+        title: title.trim(),
+        description: description.trim(),
+        creatorId: user.uid,
+        creatorName: userProfile?.username || user.displayName || user.email || "Anonymous Dev",
+        gestures: gestures,
+        likesCount: 0,
+        downloadsCount: 0,
+        createdAt: Date.now()
+      };
+
+      await setDocWithSanitize(doc(db, 'shared_macros', macroId), payload);
+      showToast(`🚀 Published "${title}" to the Public Community Gallery successfully!`, "success", 3500);
+      return true;
+    } catch (error) {
+      showToast("Failed to publish macro library: " + (error instanceof Error ? error.message : String(error)), "error", 4000);
+      handleFirestoreError(error, OperationType.CREATE, `shared_macros/${macroId}`);
+      return false;
+    }
+  };
+
+  // Delete a shared macro (if you are the author)
+  const deleteSharedMacro = async (macroId: string) => {
+    const user = auth?.currentUser;
+    if (!user) {
+      showToast("Please sign in first!", "error", 3000);
+      return;
+    }
+    if (!db) return;
+
+    try {
+      const macroRef = doc(db, 'shared_macros', macroId);
+      const snap = await getDoc(macroRef);
+      if (snap.exists() && snap.data().creatorId === user.uid) {
+        await deleteDoc(macroRef);
+        showToast("Successfully removed your shared macro from the public library.", "success", 3000);
+      } else {
+        showToast("Permission denied: You can only delete your own published items.", "error", 3000);
+      }
+    } catch (error) {
+      showToast("Failed to delete shared macro: " + (error instanceof Error ? error.message : String(error)), "error", 4000);
+      handleFirestoreError(error, OperationType.DELETE, `shared_macros/${macroId}`);
+    }
+  };
+
+  // Like a shared macro
+  const likeSharedMacro = async (macroId: string) => {
+    if (!db) return;
+    try {
+      const macroRef = doc(db, 'shared_macros', macroId);
+      const snap = await getDoc(macroRef);
+      if (snap.exists()) {
+        const currentLikes = snap.data().likesCount || 0;
+        await setDocWithSanitize(macroRef, {
+          ...snap.data(),
+          likesCount: currentLikes + 1
+        });
+        showToast("Thanks for liking this shared macro bundle!", "success", 2000);
+      }
+    } catch (error) {
+      showToast("Failed to like macro: " + (error instanceof Error ? error.message : String(error)), "error", 3000);
+    }
+  };
+
+  // Increment downloads when someone saves it to their own library
+  const incrementDownloadsSharedMacro = async (macroId: string) => {
+    if (!db) return;
+    try {
+      const macroRef = doc(db, 'shared_macros', macroId);
+      const snap = await getDoc(macroRef);
+      if (snap.exists()) {
+        const currentDownloads = snap.data().downloadsCount || 0;
+        await setDocWithSanitize(macroRef, {
+          ...snap.data(),
+          downloadsCount: currentDownloads + 1
+        });
+      }
+    } catch (error) {
+      console.error("Failed to increment downloads count:", error);
+    }
+  };
+
+  const toggleMacroMapping = (id: string) => {
+    const updated = macroRegistry.map(g => {
+      if (g.id === id) {
+        return { ...g, disabled: !g.disabled };
+      }
+      return g;
+    });
+    setKineticGestures(updated);
+    const affected = updated.find(g => g.id === id);
+    if (affected) {
+      showToast(
+        `${affected.name} is now ${affected.disabled ? 'Disabled' : 'Enabled'}`,
+        affected.disabled ? 'error' : 'success',
+        2500
+      );
+    }
+  };
+
+  const testMacroMapping = (id: string) => {
+    const gesture = macroRegistry.find(g => g.id === id);
+    if (gesture) {
+      if (gesture.disabled) {
+        showToast(`Cannot test "${gesture.name}" as it is currently disabled!`, 'error', 3000);
+        return;
+      }
+      showToast(`Testing sequence: ${gesture.name}`, 'info', 2000);
+      window.dispatchEvent(new CustomEvent('kinetic-simulate-gesture', { detail: gesture }));
+    }
+  };
+
   return (
     <DataContext.Provider value={{
       projects, setProjects, addProject, updateProject, deleteProject, startProjectDreaming,
@@ -2983,6 +3616,7 @@ Description of fix or enhancement recommendation
       invitations, setInvitations,
       sendInvitation, acceptInvitation, declineInvitation,
       updateCollaboratorRole, removeCollaborator,
+      notifications, addNotification, markNotificationRead, clearAllNotifications,
       googleToken, setGoogleToken,
       githubToken, setGithubToken,
       githubProfile, setGithubProfile,
@@ -3036,7 +3670,21 @@ Description of fix or enhancement recommendation
       toasts,
       showToast,
       removeToast,
-      triggerFullSync
+      triggerFullSync,
+
+      macroRegistry,
+      toggleMacroMapping,
+      testMacroMapping,
+
+      backupKineticConfig,
+      restoreKineticConfig,
+      isSyncingConfig,
+      sharedMacros,
+      setSharedMacros,
+      publishMacro,
+      deleteSharedMacro,
+      likeSharedMacro,
+      incrementDownloadsSharedMacro
     }}>
       {children}
       <ToastContainer toasts={toasts} removeToast={removeToast} />

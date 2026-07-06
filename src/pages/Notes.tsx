@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useData } from '../context/DataProvider';
 import { FileText, Plus, Search, Tag, Image as ImageIcon, Trash, Save, Edit3, X, Sparkles, Loader2, Eye, Columns, BrainCircuit, Check, CheckSquare, AlertCircle, RefreshCw, Lightbulb, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -8,8 +8,8 @@ import { NoteAnalysisPanel } from '../components/ui/NoteAnalysisPanel';
 
 export function Notes() {
   const { notes, addNote, updateNote, deleteNote, activeProjectId, projects, addIssue } = useData();
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => localStorage.getItem('notes_selected_note_id'));
+  const [isEditing, setIsEditing] = useState(() => localStorage.getItem('notes_is_editing') === 'true');
   const [aiLoading, setAiLoading] = useState(false);
   
   // Categorization & Semantic States
@@ -21,10 +21,93 @@ export function Notes() {
   const [hasUnsyncedAnalysis, setHasUnsyncedAnalysis] = useState(false);
   
   // To handle form state
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [tags, setTags] = useState('');
+  const [title, setTitle] = useState(() => localStorage.getItem('notes_draft_title') || '');
+  const [content, setContent] = useState(() => localStorage.getItem('notes_draft_content') || '');
+  const [tags, setTags] = useState(() => localStorage.getItem('notes_draft_tags') || '');
   const [showSplit, setShowSplit] = useState(true);
+
+  const activeProject = projects.find(p => p.id === activeProjectId);
+  const projectNotes = notes.filter(n => n.projectId === activeProjectId);
+  const selectedNote = projectNotes.find(n => n.id === selectedNoteId);
+
+  const handleSelect = (id: string) => {
+    setSelectedNoteId(id);
+    setIsEditing(false);
+    setAnalysisResult(null);
+    setActiveRightPanel('preview');
+    setImportedItems({});
+    const n = projectNotes.find(note => note.id === id);
+    if (n) {
+      setTitle(n.title);
+      setContent(n.content);
+      setTags(n.tags?.join(', ') || '');
+    }
+  };
+
+  const handleCreateNew = () => {
+    setSelectedNoteId('new');
+    setIsEditing(true);
+    setTitle('');
+    setContent('');
+    setTags('');
+    setAnalysisResult(null);
+    setActiveRightPanel('preview');
+    setImportedItems({});
+  };
+
+  // Synchronize draft states with localStorage
+  useEffect(() => {
+    if (selectedNoteId) {
+      localStorage.setItem('notes_selected_note_id', selectedNoteId);
+    } else {
+      localStorage.removeItem('notes_selected_note_id');
+    }
+  }, [selectedNoteId]);
+
+  useEffect(() => {
+    localStorage.setItem('notes_is_editing', String(isEditing));
+  }, [isEditing]);
+
+  useEffect(() => {
+    localStorage.setItem('notes_draft_title', title);
+  }, [title]);
+
+  useEffect(() => {
+    localStorage.setItem('notes_draft_content', content);
+  }, [content]);
+
+  useEffect(() => {
+    localStorage.setItem('notes_draft_tags', tags);
+  }, [tags]);
+
+  // Handle initialization and change of project
+  useEffect(() => {
+    if (activeProjectId) {
+      const storedId = localStorage.getItem('notes_selected_note_id');
+      const valid = storedId === 'new' || projectNotes.some(n => n.id === storedId);
+      if (storedId && valid) {
+        if (!isEditing) {
+          const n = projectNotes.find(note => note.id === storedId);
+          if (n) {
+            setTitle(n.title);
+            setContent(n.content);
+            setTags(n.tags?.join(', ') || '');
+          }
+        }
+      } else {
+        if (projectNotes.length > 0) {
+          handleSelect(projectNotes[0].id);
+        } else {
+          setSelectedNoteId(null);
+          setTitle('');
+          setContent('');
+          setTags('');
+        }
+      }
+    } else {
+      setSelectedNoteId(null);
+    }
+  }, [activeProjectId]);
 
   const handleAiImprove = async () => {
     if (!content.trim() && !title.trim()) return;
@@ -72,35 +155,6 @@ export function Notes() {
       alert('Failed to co-write with AI.');
     } finally {
       setAiLoading(false);
-    }
-  };
-
-  const activeProject = projects.find(p => p.id === activeProjectId);
-  const projectNotes = notes.filter(n => n.projectId === activeProjectId);
-  const selectedNote = projectNotes.find(n => n.id === selectedNoteId);
-
-  const handleCreateNew = () => {
-    setSelectedNoteId('new');
-    setIsEditing(true);
-    setTitle('');
-    setContent('');
-    setTags('');
-    setAnalysisResult(null);
-    setActiveRightPanel('preview');
-    setImportedItems({});
-  };
-
-  const handleSelect = (id: string) => {
-    setSelectedNoteId(id);
-    setIsEditing(false);
-    setAnalysisResult(null);
-    setActiveRightPanel('preview');
-    setImportedItems({});
-    const n = projectNotes.find(note => note.id === id);
-    if (n) {
-      setTitle(n.title);
-      setContent(n.content);
-      setTags(n.tags?.join(', ') || '');
     }
   };
 

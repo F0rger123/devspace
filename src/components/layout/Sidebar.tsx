@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap } from 'lucide-react';
+import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
+import { logout } from '../../lib/auth';
 import { motion } from 'motion/react';
 
 const navItems = [
@@ -11,6 +12,7 @@ const navItems = [
   { icon: Sparkles, label: 'AI Assistant', path: '/assistant' },
   { icon: CheckSquare, label: 'Issues', path: '/issues' },
   { icon: FolderGit2, label: 'Projects', path: '/projects' },
+  { icon: Compass, label: 'Explore Hub', path: '/community' },
   { icon: FileText, label: 'Notes', path: '/notes' },
   { icon: ImageIcon, label: 'Assets', path: '/assets' },
   { icon: BrainCircuit, label: 'Idea Plan', path: '/ideas' },
@@ -39,12 +41,13 @@ export function Sidebar() {
     return 'DV';
   };
 
-  if (!isSidebarOpen) return null;
-
   return (
     <nav className={cn(
-      "absolute md:relative z-40 h-full shrink-0 border-r border-[#1f1f23] bg-[#0c0c0e] flex flex-col p-3 transition-all duration-300 shadow-2xl md:shadow-none",
-      isSidebarMinimized ? "w-16 gap-4 items-center" : "w-60 gap-6"
+      "fixed lg:relative z-40 h-full shrink-0 border-r border-[#1f1f23] bg-[#0c0c0e] flex flex-col p-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl lg:shadow-none overflow-hidden",
+      isSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-full lg:translate-x-0",
+      !isSidebarOpen && "lg:w-0 lg:p-0 lg:border-r-0 lg:opacity-0 lg:pointer-events-none",
+      isSidebarMinimized ? "w-16 gap-4 items-center" : "w-60 gap-6",
+      "left-0 top-0 bottom-0"
     )}>
       
       {/* Sidebar Header & Toggle */}
@@ -193,36 +196,63 @@ export function Sidebar() {
       </div>
 
       {/* System Status / User Footer */}
-      <section className="mt-auto w-full">
-        <button
-          onClick={() => navigate('/settings')}
-          className={cn(
-            "w-full bg-[#0c0c0e] hover:bg-zinc-900/65 border border-zinc-900 rounded-lg shadow-inner text-left transition-all cursor-pointer flex items-center gap-2.5",
-            isSidebarMinimized ? "p-1.5 justify-center" : "p-3"
-          )}
-          title={`View Profile: ${userProfile?.displayName || googleUser?.email || 'User'}`}
-        >
-          <div
-            className="w-6 h-6 rounded-full border flex items-center justify-center font-bold text-[10px]"
-            style={{
-              backgroundColor: userProfile?.avatarColor || '#3b82f6',
-              borderColor: `${userProfile?.avatarColor || '#3b82f6'}60`,
-              color: '#ffffff'
-            }}
+      <section className="mt-auto w-full flex flex-col gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 w-full">
+          <button
+            onClick={() => navigate('/settings')}
+            className={cn(
+              "flex-grow bg-[#0c0c0e] hover:bg-zinc-900/65 border border-zinc-900 rounded-lg shadow-inner text-left transition-all cursor-pointer flex items-center gap-2",
+              isSidebarMinimized ? "p-1.5 justify-center" : "p-2.5 min-w-0"
+            )}
+            title={`View Profile: ${userProfile?.displayName || googleUser?.email || 'User'}`}
           >
-            {getInitials()}
-          </div>
-          {!isSidebarMinimized && (
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-semibold text-zinc-250 truncate leading-none mb-0.5">
-                {userProfile?.displayName || googleUser?.email?.split('@')[0] || 'Developer'}
-              </p>
-              <p className="text-[9px] font-mono text-zinc-500 truncate leading-none">
-                {userProfile?.title || googleUser?.email || 'Lead Engineer'}
-              </p>
+            <div
+              className="w-6 h-6 rounded-full border flex items-center justify-center font-bold text-[10px] shrink-0"
+              style={{
+                backgroundColor: userProfile?.avatarColor || '#3b82f6',
+                borderColor: `${userProfile?.avatarColor || '#3b82f6'}60`,
+                color: '#ffffff'
+              }}
+            >
+              {getInitials()}
             </div>
+            {!isSidebarMinimized && (
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-semibold text-zinc-250 truncate leading-none mb-0.5">
+                  {userProfile?.displayName || googleUser?.email?.split('@')[0] || 'Developer'}
+                </p>
+                <p className="text-[9px] font-mono text-zinc-500 truncate leading-none">
+                  {userProfile?.title || googleUser?.email || 'Lead Engineer'}
+                </p>
+              </div>
+            )}
+          </button>
+
+          {!isSidebarMinimized && (
+            <button
+              onClick={async () => {
+                await logout();
+                navigate('/');
+              }}
+              className="p-2.5 bg-[#0c0c0e] hover:bg-red-950/20 hover:text-red-400 border border-zinc-900 hover:border-red-900/30 rounded-lg shadow-inner transition-all cursor-pointer text-zinc-500 shrink-0"
+              title="Log Out"
+            >
+              <LogOut size={13} />
+            </button>
           )}
-        </button>
+        </div>
+        {isSidebarMinimized && (
+          <button
+            onClick={async () => {
+              await logout();
+              navigate('/');
+            }}
+            className="w-full p-2 bg-[#0c0c0e] hover:bg-red-950/20 hover:text-red-400 border border-zinc-900 hover:border-red-900/30 rounded-lg shadow-inner transition-all cursor-pointer text-zinc-500 flex justify-center shrink-0"
+            title="Log Out"
+          >
+            <LogOut size={11} />
+          </button>
+        )}
       </section>
 
     </nav>

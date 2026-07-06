@@ -86,11 +86,22 @@ export function WorkspaceDocs() {
   const { googleUser, setGoogleUser, googleToken, setGoogleToken } = useData();
   const [needsAuth, setNeedsAuth] = useState(!googleToken);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [docId, setDocId] = useState('');
+  const [docId, setDocId] = useState(() => localStorage.getItem('workspacedocs_active_id') || '');
   const [docContent, setDocContent] = useState<any>(null);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [docViewTab, setDocViewTab] = useState<'live' | 'vector'>('live');
+  const [docViewTab, setDocViewTab] = useState<'live' | 'vector'>(() => {
+    const saved = localStorage.getItem('workspacedocs_view_tab');
+    return (saved as any) || 'live';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('workspacedocs_active_id', docId);
+  }, [docId]);
+
+  useEffect(() => {
+    localStorage.setItem('workspacedocs_view_tab', docViewTab);
+  }, [docViewTab]);
   const [workMode, setWorkMode] = useState<'live' | 'sandbox'>(googleToken ? 'live' : 'sandbox');
   const [urlInput, setUrlInput] = useState('');
 
@@ -394,8 +405,12 @@ export function WorkspaceDocs() {
             setEditedBody(fullText);
           }
         }
-      } catch (e) {
-        console.error("Silent sync error:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+          console.debug("Silent sync error (network/offline):", e.message);
+        } else {
+          console.error("Silent sync error:", e);
+        }
       }
     }, 10000); // Sync every 10 seconds
 

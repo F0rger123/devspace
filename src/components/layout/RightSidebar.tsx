@@ -54,7 +54,7 @@ import 'highlight.js/styles/github-dark.css';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
 import { db } from '../../lib/auth';
-import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, setDoc, doc, deleteDoc } from 'firebase/firestore';
 
 type Message = {
   id: string;
@@ -120,7 +120,8 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     aetherThinkingLevel,
     aetherPersonalityRules,
     activationShortcutKey,
-    stopShortcutKey
+    stopShortcutKey,
+    googleUser
   } = useData();
 
   const { 
@@ -365,6 +366,44 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     };
   }, []);
 
+  // Listen for custom kinetic trigger to clear dialogue history
+  useEffect(() => {
+    const handleClearChat = async () => {
+      const defaultSessions = [
+        {
+          id: 'session-default',
+          title: 'Central Orchestrator Session',
+          createdAt: Date.now(),
+          messages: [
+            {
+              id: '1',
+              role: 'agent',
+              content: getDynamicGreeting()
+            }
+          ]
+        }
+      ];
+      setChatSessions(defaultSessions);
+      setCurrentSessionId('session-default');
+      localStorage.setItem('aether_chat_sessions', JSON.stringify(defaultSessions));
+      localStorage.setItem('aether_current_session_id', 'session-default');
+
+      // Clear in Firestore if logged in
+      if (googleUser) {
+        try {
+          const snap = await getDocs(collection(db, 'chatSessions'));
+          const batchDeletes = snap.docs.map(docSnap => deleteDoc(doc(db, 'chatSessions', docSnap.id)));
+          await Promise.all(batchDeletes);
+          await setDoc(doc(db, 'chatSessions', 'session-default'), defaultSessions[0]);
+        } catch (err) {
+          console.error("Failed to sync cleared chats to Firestore:", err);
+        }
+      }
+    };
+    window.addEventListener('aether-clear-chat', handleClearChat);
+    return () => window.removeEventListener('aether-clear-chat', handleClearChat);
+  }, [googleUser, setChatSessions]);
+
   // Update default welcome greeting dynamically once projects or memory synapses load
   useEffect(() => {
     if (projects && projects.length > 0) {
@@ -394,9 +433,13 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     }
   }, [projects, cortexSynapses]);
 
-  // Load chat sessions from Firestore on mount
+  // Load chat sessions from Firestore when user is authenticated
   useEffect(() => {
     const loadSessions = async () => {
+      if (!googleUser) {
+        setIsSessionsLoaded(true);
+        return;
+      }
       try {
         const snap = await getDocs(collection(db, 'chatSessions'));
         const fbSessions: any[] = [];
@@ -410,34 +453,42 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             await setDoc(doc(db, 'chatSessions', s.id), s);
           }
         }
-      } catch (e) {
-        console.error("Failed to load chat sessions from Firestore:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'permission-denied') {
+          console.warn("Skipped syncing chat sessions from Firestore (permission / offline):", e.message || e);
+        } else {
+          console.error("Failed to load chat sessions from Firestore:", e);
+        }
       } finally {
         setIsSessionsLoaded(true);
       }
     };
     loadSessions();
-  }, []);
+  }, [googleUser]);
 
   // Persist session variations automatically to local storage and Firestore
   useEffect(() => {
     localStorage.setItem('aether_chat_sessions', JSON.stringify(chatSessions));
     window.dispatchEvent(new CustomEvent('aether_sync_chat', { detail: { sender: 'RightSidebar' } }));
 
-    if (!isSessionsLoaded) return;
+    if (!isSessionsLoaded || !googleUser) return;
 
     const timer = setTimeout(async () => {
       try {
         for (const s of chatSessions) {
           await setDoc(doc(db, 'chatSessions', s.id), s);
         }
-      } catch (e) {
-        console.error("Failed to sync chat sessions to Firestore:", e);
+      } catch (e: any) {
+        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'permission-denied') {
+          console.warn("Skipped syncing chat sessions to Firestore (permission / offline):", e.message || e);
+        } else {
+          console.error("Failed to sync chat sessions to Firestore:", e);
+        }
       }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [chatSessions, isSessionsLoaded]);
+  }, [chatSessions, isSessionsLoaded, googleUser]);
 
   useEffect(() => {
     localStorage.setItem('aether_mcp_servers', JSON.stringify(mcpServers));
@@ -2301,7 +2352,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
   // Render Normal RightSidebar Panel Layout
   return (
-    <aside className="absolute md:relative right-0 z-40 h-full w-60 shrink-0 border-l border-zinc-800 bg-[#0c0c0e] flex flex-col overflow-hidden shadow-xl md:shadow-none font-sans">
+    <aside className="absolute md:relative right-0 z-40 h-full w-[85vw] sm:w-80 md:w-60 shrink-0 border-l border-zinc-800 bg-[#0c0c0e] flex flex-col overflow-hidden shadow-xl md:shadow-none font-sans">
       
       {/* Header */}
       <div className="h-12 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#0c0c0e] shrink-0">

@@ -5,6 +5,8 @@ import { RightSidebar } from './RightSidebar';
 import { Header } from './Header';
 import { CommandPalette } from '../ui/CommandPalette';
 import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
+import { KineticController } from '../ui/KineticController';
+import { KineticHUDOverlay } from '../ui/KineticHUDOverlay';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
@@ -233,7 +235,58 @@ export function CursorAmbers() {
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
+  const { isSidebarOpen, toggleSidebar, setSidebarOpen, isRightSidebarOpen, toggleRightSidebar } = useStore();
   const { isAssistantOpen, isAssistantMinimized, googleUser, acceptInvitation, declineInvitation } = useData();
+
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      startTime = Date.now();
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length === 0) return;
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const duration = Date.now() - startTime;
+      
+      const diffX = endX - startX;
+      const diffY = endY - startY;
+
+      // Calculate velocity and threshold: quick flicks are very responsive
+      const minDistance = duration < 300 ? 40 : 80;
+      
+      // Horizontal swipes must be primarily horizontal (diffX is significantly larger than diffY)
+      // We use a ratio of 1.4 to make sure it's an intentional horizontal gesture but still super forgiving
+      if (Math.abs(diffX) > minDistance && Math.abs(diffX) > Math.abs(diffY) * 1.4) {
+        if (diffX > 0) {
+          // Swipe right -> Open sidebar on mobile
+          if (window.innerWidth < 1024) {
+            setSidebarOpen(true);
+          }
+        } else {
+          // Swipe left -> Close sidebar on mobile
+          if (window.innerWidth < 1024) {
+            setSidebarOpen(false);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [setSidebarOpen]);
   const location = useLocation();
   const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
@@ -324,7 +377,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  const { isSidebarOpen, toggleSidebar, isRightSidebarOpen, toggleRightSidebar } = useStore();
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#030305] starry-background text-zinc-300 font-sans overflow-hidden select-none selection:bg-yellow-400/30 relative">
@@ -361,35 +413,49 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <Sidebar />
 
           {/* Mobile Sidebar Backdrop */}
-          {isSidebarOpen && (
-            <div 
-              className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 transition-opacity"
-              onClick={toggleSidebar}
-            />
-          )}
+          <AnimatePresence>
+            {isSidebarOpen && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 cursor-pointer"
+                onClick={toggleSidebar}
+              />
+            )}
+          </AnimatePresence>
 
-          <main className={`flex-grow flex flex-col min-w-0 overflow-hidden bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            isAssistantOpen && isAssistantMinimized ? 'mr-[440px]' : ''
+          <main className={`flex-grow flex flex-col min-w-0 lg:overflow-hidden overflow-y-auto bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            isAssistantOpen && isAssistantMinimized ? 'lg:mr-[440px]' : ''
           }`}>
-            <div className={`flex-grow overflow-hidden ${isAssistantRoute ? 'p-0' : 'p-4 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
-              <div className="w-full h-full flex flex-col overflow-hidden">
+            <div className={`flex-grow lg:overflow-hidden overflow-y-auto ${isAssistantRoute ? 'p-0' : 'p-3 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
+              <div className="w-full h-auto lg:h-full flex flex-col lg:overflow-hidden">
                 {children}
               </div>
             </div>
           </main>
 
           {/* Mobile RightSidebar Backdrop */}
-          {isRightSidebarOpen && !isAssistantRoute && !isAssistantOpen && (
-            <div 
-              className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 transition-opacity"
-              onClick={toggleRightSidebar}
-            />
-          )}
+          <AnimatePresence>
+            {isRightSidebarOpen && !isAssistantRoute && !isAssistantOpen && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 cursor-pointer"
+                onClick={toggleRightSidebar}
+              />
+            )}
+          </AnimatePresence>
 
           {!isAssistantRoute && !isAssistantOpen && <RightSidebar />}
         </div>
         <CommandPalette />
         <VoiceMemoAssistant />
+        <KineticController />
+        <KineticHUDOverlay />
       </div>
 
       {/* Dynamic Invitation Link Handler Overlay Modal */}

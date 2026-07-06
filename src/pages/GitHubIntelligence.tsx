@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GitBranch, GitCommit, GitMerge, GitPullRequest, Search, CheckCircle2, XCircle, Clock, Loader2, Github, X, BookMarked, Bot, Layers, Plus, Trash2, ShieldCheck, Sparkles } from 'lucide-react';
+import { GitBranch, GitCommit, GitMerge, GitPullRequest, Search, CheckCircle2, XCircle, Clock, Loader2, Github, X, BookMarked, Bot, Layers, Plus, Trash2, ShieldCheck, Sparkles, Webhook } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../context/DataProvider';
 import { githubSignIn } from '../lib/auth';
@@ -54,6 +54,326 @@ export function GitHubIntelligence() {
   
   const [insightGenerating, setInsightGenerating] = useState(false);
   const [insightContent, setInsightContent] = useState('');
+
+  // GitHub Autopilot States
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false);
+  const [autopilotBranchMode, setAutopilotBranchMode] = useState<'main' | 'branch'>('branch');
+  const [autopilotLogs, setAutopilotLogs] = useState<any[]>([]);
+  const [autopilotQueue, setAutopilotQueue] = useState<any[]>([]);
+  const [autopilotLoading, setAutopilotLoading] = useState(false);
+  const [triggeringAutopilot, setTriggeringAutopilot] = useState(false);
+  const [autopilotTab, setAutopilotTab] = useState<'queue' | 'recurring' | 'webhooks'>('queue');
+
+  // GitHub Webhooks States
+  const [webhooks, setWebhooks] = useState<any[]>([]);
+  const [loadingWebhooks, setLoadingWebhooks] = useState(false);
+  const [newWebhookRepo, setNewWebhookRepo] = useState('');
+  const [newWebhookSecret, setNewWebhookSecret] = useState('');
+  const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>(['issues', 'pull_request']);
+  const [isCreatingWebhook, setIsCreatingWebhook] = useState(false);
+  
+  // Simulator states
+  const [simulatingWebhook, setSimulatingWebhook] = useState(false);
+  const [simEvent, setSimEvent] = useState<'issues' | 'pull_request'>('issues');
+  const [simAction, setSimAction] = useState<string>('opened');
+  const [simIssueTitle, setSimIssueTitle] = useState('Critical layout refactor required');
+  const [simIssueBody, setSimIssueBody] = useState('Optimize the viewport settings to prevent content clipping on mobile breakpoints.');
+  const [simIssueLabels, setSimIssueLabels] = useState('aether-autopilot, bug');
+  const [simPrTitle, setSimPrTitle] = useState('feat: Add OAuth flow endpoints');
+  const [simPrBody, setSimPrBody] = useState('Prerequisite for linking social accounts securely.');
+  const [simPrBranch, setSimPrBranch] = useState('oauth-refactor');
+  const [webhookSubTab, setWebhookSubTab] = useState<'config' | 'simulate'>('config');
+
+  // Add Task to Queue Form States
+  const [newQueueProjId, setNewQueueProjId] = useState('');
+  const [newQueueTitle, setNewQueueTitle] = useState('');
+  const [newQueueDetails, setNewQueueDetails] = useState('');
+  const [queuingTask, setQueuingTask] = useState(false);
+
+  // Recurring GitHub Tasks States
+  const [recurringTasks, setRecurringTasks] = useState<any[]>([]);
+  const [newRecProjId, setNewRecProjId] = useState('');
+  const [newRecTitle, setNewRecTitle] = useState('');
+  const [newRecDetails, setNewRecDetails] = useState('');
+  const [newRecInterval, setNewRecInterval] = useState('60');
+  const [creatingRecurring, setCreatingRecurring] = useState(false);
+
+  // Fetch Webhooks list
+  const fetchWebhooks = async () => {
+    try {
+      const res = await fetch('/api/github/webhooks');
+      if (res.ok) {
+        const data = await res.json();
+        setWebhooks(data);
+      }
+    } catch (err) {
+      console.debug("Failed to fetch webhooks:", err);
+    }
+  };
+
+  // Fetch Autopilot configuration & live terminal logs from server
+  const fetchAutopilotConfig = async () => {
+    try {
+      const res = await fetch('/api/github/autopilot/config');
+      if (res.ok) {
+        const data = await res.json();
+        setAutopilotEnabled(data.enabled);
+        setAutopilotBranchMode(data.branchMode || 'branch');
+        setAutopilotLogs(data.logs || []);
+        setAutopilotQueue(data.queue || []);
+        setRecurringTasks(data.recurringTasks || []);
+      }
+      await fetchWebhooks();
+    } catch (err) {
+      console.debug("Failed to load Autopilot configuration:", err);
+    }
+  };
+
+  const handleCreateWebhook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWebhookRepo.trim()) return;
+    setIsCreatingWebhook(true);
+    try {
+      const res = await fetch('/api/github/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: newWebhookRepo,
+          secret: newWebhookSecret,
+          events: newWebhookEvents,
+          active: true
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWebhooks(data.webhooks);
+        setNewWebhookRepo('');
+        setNewWebhookSecret('');
+      }
+    } catch (err) {
+      console.error("Failed to create webhook:", err);
+    } finally {
+      setIsCreatingWebhook(false);
+    }
+  };
+
+  const handleToggleWebhook = async (id: string) => {
+    try {
+      const res = await fetch('/api/github/webhooks/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWebhooks(data.webhooks);
+      }
+    } catch (err) {
+      console.error("Failed to toggle webhook:", err);
+    }
+  };
+
+  const handleDeleteWebhook = async (id: string) => {
+    try {
+      const res = await fetch(`/api/github/webhooks/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWebhooks(data.webhooks);
+      }
+    } catch (err) {
+      console.error("Failed to delete webhook:", err);
+    }
+  };
+
+  const handleSimulateWebhook = async () => {
+    setSimulatingWebhook(true);
+    try {
+      const res = await fetch('/api/github/webhook/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: simEvent,
+          action: simAction,
+          repo: repo,
+          issueTitle: simIssueTitle,
+          issueBody: simIssueBody,
+          issueLabels: simIssueLabels.split(',').map(s => s.trim()),
+          prTitle: simPrTitle,
+          prBody: simPrBody,
+          prBranch: simPrBranch
+        })
+      });
+      if (res.ok) {
+        await fetchAutopilotConfig();
+      }
+    } catch (err) {
+      console.error("Failed to simulate webhook:", err);
+    } finally {
+      setSimulatingWebhook(false);
+    }
+  };
+
+  // Update Autopilot configuration on the server
+  const saveAutopilotConfig = async (enabled: boolean, mode: 'main' | 'branch') => {
+    setAutopilotLoading(true);
+    try {
+      const res = await fetch('/api/github/autopilot/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, branchMode: mode })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAutopilotEnabled(data.enabled);
+        setAutopilotBranchMode(data.branchMode);
+      }
+    } catch (err) {
+      console.error("Failed to update Autopilot configuration:", err);
+    } finally {
+      setAutopilotLoading(false);
+    }
+  };
+
+  // Manually trigger an immediate Autopilot check & deployment cycle
+  const triggerAutopilotCycle = async () => {
+    setTriggeringAutopilot(true);
+    try {
+      const res = await fetch('/api/github/autopilot/trigger', { method: 'POST' });
+      if (res.ok) {
+        // Refresh logs immediately
+        await fetchAutopilotConfig();
+      }
+    } catch (err) {
+      console.error("Failed to trigger manual Autopilot cycle:", err);
+    } finally {
+      setTriggeringAutopilot(false);
+    }
+  };
+
+  // Add task to Autopilot queue
+  const handleAddAutopilotQueue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQueueTitle.trim()) return;
+
+    setQueuingTask(true);
+    try {
+      const selectedProj = projects.find(p => p.id === newQueueProjId) || projects[0];
+      const res = await fetch('/api/github/autopilot/queue/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: selectedProj?.id || 'temp-proj',
+          projectName: selectedProj?.name || 'General Workspace',
+          title: newQueueTitle,
+          details: newQueueDetails,
+          type: 'custom'
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setAutopilotQueue(data.queue);
+        setNewQueueTitle('');
+        setNewQueueDetails('');
+      }
+    } catch (err) {
+      console.error("Failed to add task to Autopilot queue:", err);
+    } finally {
+      setQueuingTask(false);
+    }
+  };
+
+  // Clear completed/failed items from queue
+  const handleClearQueue = async () => {
+    try {
+      const res = await fetch('/api/github/autopilot/queue/clear', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setAutopilotQueue(data.queue);
+      }
+    } catch (err) {
+      console.error("Failed to clear Autopilot queue:", err);
+    }
+  };
+
+  // Remove a single item from the queue
+  const handleRemoveQueueItem = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/github/autopilot/queue/${itemId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setAutopilotQueue(data.queue);
+      }
+    } catch (err) {
+      console.error("Failed to delete item from Autopilot queue:", err);
+    }
+  };
+
+  // Add new recurring task
+  const handleAddRecurringTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRecTitle.trim()) return;
+
+    setCreatingRecurring(true);
+    try {
+      const selectedProj = projects.find(p => p.id === newRecProjId) || projects[0];
+      const res = await fetch('/api/github/autopilot/recurring/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: selectedProj?.id || 'temp-proj',
+          projectName: selectedProj?.name || 'General Workspace',
+          title: newRecTitle,
+          details: newRecDetails,
+          intervalMinutes: parseInt(newRecInterval, 10) || 60
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setRecurringTasks(data.recurringTasks);
+        setNewRecTitle('');
+        setNewRecDetails('');
+        setNewRecInterval('60');
+      }
+    } catch (err) {
+      console.error("Failed to add recurring task:", err);
+    } finally {
+      setCreatingRecurring(false);
+    }
+  };
+
+  // Toggle active/inactive for a recurring task
+  const handleToggleRecurringTask = async (id: string, currentlyEnabled: boolean) => {
+    try {
+      const res = await fetch('/api/github/autopilot/recurring/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, enabled: !currentlyEnabled })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecurringTasks(data.recurringTasks);
+      }
+    } catch (err) {
+      console.error("Failed to toggle recurring task:", err);
+    }
+  };
+
+  // Delete a recurring task
+  const handleDeleteRecurringTask = async (id: string) => {
+    try {
+      const res = await fetch(`/api/github/autopilot/recurring/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setRecurringTasks(data.recurringTasks);
+      }
+    } catch (err) {
+      console.error("Failed to delete recurring task:", err);
+    }
+  };
 
   // Fetch commits and PRs for selected repository
   const syncCommits = async (isBackground = false) => {
@@ -112,8 +432,12 @@ export function GitHubIntelligence() {
          setPrs([]);
       }
       setLastSyncedAt(new Date());
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+        console.warn("Failed to sync GitHub commits due to network/offline state:", e.message);
+      } else {
+        console.error(e);
+      }
       setCommits([]);
       setPrs([]);
     }
@@ -153,8 +477,12 @@ export function GitHubIntelligence() {
       } else {
          setFetchedRepos([]);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+        console.debug("Failed to fetch github repos (network/offline):", e.message);
+      } else {
+        console.error(e);
+      }
       setFetchedRepos([]);
     }
     setLoadingRepos(false);
@@ -216,14 +544,22 @@ export function GitHubIntelligence() {
                setFetchedRepos([]);
             }
           }
-        } catch (e) {
-          console.error(e);
+        } catch (e: any) {
+          if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+            console.debug("Failed to fetch github repos (network/offline):", e.message);
+          } else {
+            console.error(e);
+          }
           setFetchedRepos([]);
         }
         setLoadingRepos(false);
       }
     } catch(e: any) {
-      console.error("Login failed", e);
+      if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError')) {
+        console.warn("Login failed (network/offline):", e.message);
+      } else {
+        console.error("Login failed", e);
+      }
       setAuthError(e.message || String(e));
     }
     setLoggingIn(false);
@@ -288,8 +624,14 @@ export function GitHubIntelligence() {
     fetchGithubRepos();
   }, []);
 
+  useEffect(() => {
+    fetchAutopilotConfig();
+    const interval = setInterval(fetchAutopilotConfig, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="flex flex-col h-full overflow-hidden pb-4 relative">
+    <div className="flex flex-col h-auto lg:h-full lg:overflow-hidden pb-4 relative">
       
       {/* Header sections */}
       <div className="flex items-center justify-between mb-6">
@@ -559,6 +901,972 @@ export function GitHubIntelligence() {
              <p className="text-[11px] text-zinc-300 leading-relaxed">
                 {insightGenerating && !insightContent ? <span className="animate-pulse font-mono text-[10px]">Running Gemini analysis on commit streams...</span> : insightContent ? insightContent : 'Map codebases and click analyze to output technical lead diagnostics.'}
              </p>
+          </div>
+
+          {/* Aether Autopilot Engine Dashboard Widget */}
+          <div className="border border-zinc-800 bg-[#121214] rounded-xl p-4 flex flex-col gap-3.5 relative overflow-hidden">
+            {/* Top pulsing status header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="relative flex h-2 w-2">
+                  {autopilotEnabled && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${autopilotEnabled ? 'bg-blue-500' : 'bg-zinc-600'}`}></span>
+                </div>
+                <span className="text-xs font-bold text-zinc-200 tracking-wide uppercase">Aether Autopilot</span>
+              </div>
+              <span className="text-[9px] font-mono font-bold bg-blue-950/40 text-blue-400 border border-blue-900/30 px-2 py-0.5 rounded uppercase">
+                Active 24/7 Engine
+              </span>
+            </div>
+
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
+              When enabled, Aether watches for approved workspace brainstorm ideas and features. It automatically synthesizes production-grade code via Gemini and pushes updates directly onto your GitHub repository.
+            </p>
+
+            {/* Toggle switch row */}
+            <div className="flex items-center justify-between p-2.5 bg-zinc-950/60 rounded-lg border border-zinc-900">
+              <span className="text-[11px] font-medium text-zinc-300">Enable Autonomous Pushes</span>
+              <button
+                id="autopilot-toggle"
+                onClick={() => saveAutopilotConfig(!autopilotEnabled, autopilotBranchMode)}
+                disabled={autopilotLoading}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  autopilotEnabled ? 'bg-blue-600' : 'bg-zinc-800'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    autopilotEnabled ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Branch mode setting */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Branch Deployment Strategy</label>
+              <select
+                id="autopilot-branch-mode"
+                value={autopilotBranchMode}
+                onChange={(e) => saveAutopilotConfig(autopilotEnabled, e.target.value as any)}
+                disabled={autopilotLoading}
+                className="w-full bg-zinc-950 border border-zinc-850 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-zinc-700"
+              >
+                <option value="branch">Draft Branch + Create Pull Request (Recommended)</option>
+                <option value="main">Direct Push (Commit directly to 'main' branch)</option>
+              </select>
+            </div>
+
+            {/* Manual run button */}
+            <button
+              id="autopilot-manual-trigger"
+              onClick={triggerAutopilotCycle}
+              disabled={triggeringAutopilot}
+              className="w-full py-1.5 px-3 bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
+            >
+              {triggeringAutopilot ? (
+                <Loader2 size={12} className="animate-spin text-blue-400" />
+              ) : (
+                <Sparkles size={12} className="text-blue-400" />
+              )}
+              <span>Scan & Deploy Approved Features Now</span>
+            </button>
+
+            {/* Live Autopilot Terminal logs */}
+            <div className="flex flex-col gap-1.5 mt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Live Console Log</label>
+                <span className="text-[8px] font-mono text-zinc-600 uppercase">Engine Streams</span>
+              </div>
+
+              <div className="bg-[#09090b] border border-zinc-900 rounded-lg h-[130px] overflow-y-auto p-2.5 font-mono text-[9px] leading-relaxed flex flex-col gap-1.5 scrollbar-thin scrollbar-thumb-zinc-850">
+                {autopilotLogs.length === 0 ? (
+                  <div className="text-zinc-650 italic text-center py-10">
+                    Console idle. Approve an idea or recommendation to trigger active deployment pipelines.
+                  </div>
+                ) : (
+                  autopilotLogs.map((log) => {
+                    let colorClass = "text-zinc-400";
+                    let icon = "⚙";
+                    if (log.type === "success") {
+                      colorClass = "text-emerald-400 font-semibold";
+                      icon = "✓";
+                    } else if (log.type === "error") {
+                      colorClass = "text-rose-400 font-semibold animate-pulse";
+                      icon = "✗";
+                    } else if (log.type === "warn") {
+                      colorClass = "text-amber-400";
+                      icon = "⚠";
+                    } else if (log.type === "info") {
+                      colorClass = "text-blue-400";
+                      icon = "⚡";
+                    }
+
+                    return (
+                      <div key={log.id} className={`flex items-start gap-1.5 ${colorClass}`}>
+                        <span className="text-zinc-600 shrink-0 font-sans select-none">[{log.time}]</span>
+                        <span className="shrink-0 select-none">{icon}</span>
+                        <span className="break-words flex-1">{log.text}</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* AETHER AUTOPILOT SUB-DASHBOARD with VISUAL TIMELINE & RECURRING SCHEDULER */}
+            <div className="border-t border-zinc-850 pt-4 flex flex-col gap-3">
+              {/* Tab Switcher Headers */}
+              <div className="flex border-b border-zinc-900 p-0.5 bg-zinc-950/60 rounded-lg">
+                <button
+                  onClick={() => setAutopilotTab('queue')}
+                  className={`flex-1 py-1.5 px-2.5 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    autopilotTab === 'queue'
+                      ? 'bg-zinc-900 text-blue-400 shadow-sm border border-zinc-800'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <Layers size={11} />
+                  <span>Timeline Queue ({autopilotQueue.length})</span>
+                </button>
+                <button
+                  onClick={() => setAutopilotTab('recurring')}
+                  className={`flex-1 py-1.5 px-2.5 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    autopilotTab === 'recurring'
+                      ? 'bg-zinc-900 text-blue-400 shadow-sm border border-zinc-800'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <Clock size={11} />
+                  <span>Recurring Tasks ({recurringTasks.length})</span>
+                </button>
+                <button
+                  onClick={() => setAutopilotTab('webhooks')}
+                  className={`flex-1 py-1.5 px-2.5 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    autopilotTab === 'webhooks'
+                      ? 'bg-zinc-900 text-blue-400 shadow-sm border border-zinc-800'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <Webhook size={11} />
+                  <span>Webhooks ({webhooks.length})</span>
+                </button>
+              </div>
+
+              {/* Tab Content 1: Visual Timeline Queue */}
+              {autopilotTab === 'queue' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      Live Queue Pipeline
+                    </span>
+                    {autopilotQueue.length > 0 && (
+                      <button
+                        onClick={handleClearQueue}
+                        className="text-[9px] text-zinc-500 hover:text-zinc-300 font-medium transition cursor-pointer"
+                      >
+                        Clear Finished
+                      </button>
+                    )}
+                  </div>
+
+                  {/* HIGH-FIDELITY VISUAL TIMELINE */}
+                  <div className="relative flex flex-col gap-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-850">
+                    {autopilotQueue.length === 0 ? (
+                      <div className="text-[10px] text-zinc-650 italic text-center py-10 bg-zinc-950/20 rounded-lg border border-zinc-900/40 flex flex-col items-center gap-2">
+                        <Layers size={20} className="text-zinc-700" />
+                        <span>No GitHub actions currently in the workspace pipeline. Add a custom task or approve recommendation models below to trigger deployment.</span>
+                      </div>
+                    ) : (
+                      <div className="relative pl-3">
+                        {/* Timeline vertical axis line */}
+                        <div className="absolute left-6 top-2 bottom-6 w-0.5 border-l border-zinc-800 border-dashed z-0" />
+
+                        <div className="space-y-4">
+                          {autopilotQueue.map((item, idx) => {
+                            const isWorking = item.status === 'working';
+                            const isQueued = item.status === 'queued';
+                            const isCompleted = item.status === 'completed';
+                            const isFailed = item.status === 'failed';
+
+                            return (
+                              <div key={item.id} className="relative flex gap-4 z-10 group/item">
+                                {/* Left side timeline node indicator */}
+                                <div className="flex flex-col items-center shrink-0">
+                                  <div className={`h-6 w-6 rounded-full flex items-center justify-center transition-all border ${
+                                    isWorking
+                                      ? 'bg-blue-950 border-blue-500 shadow-md shadow-blue-500/20 ring-4 ring-blue-500/10'
+                                      : isCompleted
+                                      ? 'bg-emerald-950 border-emerald-500 shadow-sm shadow-emerald-500/10'
+                                      : isFailed
+                                      ? 'bg-rose-950 border-rose-500'
+                                      : 'bg-zinc-950 border-zinc-850'
+                                  }`}>
+                                    {isWorking ? (
+                                      <Loader2 size={11} className="animate-spin text-blue-400" />
+                                    ) : isCompleted ? (
+                                      <CheckCircle2 size={11} className="text-emerald-400" />
+                                    ) : isFailed ? (
+                                      <XCircle size={11} className="text-rose-400" />
+                                    ) : (
+                                      <span className="text-[9px] font-bold text-zinc-500 font-mono">
+                                        {idx + 1}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Timeline task body panel */}
+                                <div className={`flex-1 p-3 rounded-xl border text-xs transition-all flex flex-col gap-2 ${
+                                  isWorking
+                                    ? 'bg-[#141824] border-blue-900/60 shadow-lg shadow-blue-950/20'
+                                    : isQueued
+                                    ? 'bg-zinc-900/30 border-zinc-850 hover:border-zinc-800'
+                                    : isCompleted
+                                    ? 'bg-emerald-950/5 border-emerald-900/15'
+                                    : 'bg-rose-950/5 border-rose-900/15'
+                                }`}>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`font-bold truncate ${
+                                          isWorking ? 'text-blue-200' : isCompleted ? 'text-zinc-300' : 'text-zinc-400'
+                                        }`}>{item.title}</span>
+                                        {item.type === 'recurring' && (
+                                          <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1 rounded font-bold uppercase tracking-wider flex items-center gap-0.5">
+                                            ⏰ Recurring
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[9px] text-zinc-500 truncate">Project Workspace: {item.projectName}</span>
+                                      {item.details && (
+                                        <p className="text-[9px] text-zinc-400 line-clamp-2 mt-0.5 bg-zinc-950/30 p-1.5 rounded leading-relaxed border border-zinc-900/50">
+                                          {item.details}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* Action context button / status badge */}
+                                    {isQueued && (
+                                      <button
+                                        onClick={() => handleRemoveQueueItem(item.id)}
+                                        className="text-zinc-500 hover:text-rose-400 p-1 rounded hover:bg-zinc-800 transition shrink-0"
+                                        title="Cancel queued task"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    )}
+                                    {isFailed && (
+                                      <button
+                                        onClick={() => handleRemoveQueueItem(item.id)}
+                                        className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-800 transition shrink-0"
+                                        title="Dismiss failure"
+                                      >
+                                        <X size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Dynamic progress bar and step trackers for working pipeline */}
+                                  {isWorking && (
+                                    <div className="flex flex-col gap-2 mt-1">
+                                      <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-blue-300 font-semibold truncate max-w-[160px] animate-pulse">
+                                          {item.currentStep || 'Analyzing workspace...'}
+                                        </span>
+                                        <span className="text-blue-400 font-mono font-black shrink-0 bg-blue-950/40 border border-blue-900/30 px-1 rounded">
+                                          {item.progress || 15}%
+                                        </span>
+                                      </div>
+
+                                      {/* Bar with gradient shimmer */}
+                                      <div className="w-full h-2 bg-zinc-950 rounded-full overflow-hidden border border-zinc-900/80 relative">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-blue-600 via-cyan-400 to-blue-500 rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(59,130,246,0.5)]"
+                                          style={{ width: `${item.progress || 15}%` }}
+                                        />
+                                      </div>
+
+                                      {/* Completion timer estimate */}
+                                      <div className="flex items-center gap-1.5 text-[9px] text-zinc-500 font-medium">
+                                        <Clock size={11} className="text-blue-400/80" />
+                                        <span>Guesstimate Completion:</span>
+                                        <span className="font-mono text-blue-300 font-extrabold bg-blue-950/20 border border-blue-900/10 px-1 rounded animate-pulse">
+                                          {item.guesstimateTimer && item.guesstimateTimer > 0
+                                            ? `~${item.guesstimateTimer}s remaining`
+                                            : 'Executing final push stages...'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Queued indicator */}
+                                  {isQueued && (
+                                    <div className="flex items-center gap-1.5 text-[9px] text-zinc-500 mt-1">
+                                      <Clock size={10} className="text-zinc-600" />
+                                      <span>Est. Processing Duration: ~45 seconds</span>
+                                    </div>
+                                  )}
+
+                                  {/* Failure diagnostics */}
+                                  {isFailed && item.error && (
+                                    <div className="p-2 bg-rose-950/10 border border-rose-900/20 rounded-md mt-0.5">
+                                      <span className="text-[9px] text-rose-400 leading-relaxed block italic">
+                                        Deployment Error: {item.error}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* PR Link details */}
+                                  {isCompleted && (
+                                    <div className="flex items-center justify-between text-[9px] text-zinc-500 mt-1">
+                                      <span className="text-emerald-500 font-semibold flex items-center gap-1">
+                                        <CheckCircle2 size={10} /> Simulated Push Completed
+                                      </span>
+                                      {item.prUrl && (
+                                        <a
+                                          href={item.prUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-1 font-bold font-mono text-[9px]"
+                                        >
+                                          <GitPullRequest size={10} />
+                                          <span>Pull Request</span>
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Granular details revealed on hover with premium transition */}
+                                  <div className="mt-1 border-t border-zinc-900/60 pt-2 flex flex-col gap-2 overflow-hidden max-h-0 opacity-0 group-hover/item:max-h-[140px] group-hover/item:opacity-100 transition-all duration-300 ease-out select-text">
+                                    <div className="grid grid-cols-2 gap-2.5 text-left">
+                                      <div className="flex flex-col gap-1 min-w-0">
+                                        <span className="text-[8px] text-zinc-500 font-bold uppercase font-mono tracking-wider flex items-center gap-1">
+                                          <GitBranch size={10} className="text-blue-500/80" /> Active Branch
+                                        </span>
+                                        <span className="font-mono text-[9px] text-blue-400 bg-blue-950/20 border border-blue-900/30 px-1.5 py-0.5 rounded truncate select-all" title={item.gitBranch || 'aether-auto-patch'}>
+                                          {item.gitBranch || (isWorking ? 'Determining...' : 'aether-auto-patch')}
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-col gap-1 min-w-0">
+                                        <span className="text-[8px] text-zinc-500 font-bold uppercase font-mono tracking-wider flex items-center gap-1">
+                                          <BookMarked size={10} className="text-indigo-500/80" /> Target Files
+                                        </span>
+                                        <div className="flex flex-col gap-1 max-h-[55px] overflow-y-auto custom-scrollbar">
+                                          {item.modifiedFiles && item.modifiedFiles.length > 0 ? (
+                                            item.modifiedFiles.map((file: string, fIdx: number) => (
+                                              <span key={fIdx} className="font-mono text-[8px] text-zinc-350 bg-zinc-950/50 border border-zinc-900 px-1.5 py-0.5 rounded truncate select-all" title={file}>
+                                                {file.split('/').pop()}
+                                              </span>
+                                            ))
+                                          ) : (
+                                            <span className="font-mono text-[8px] text-zinc-500 italic px-1">
+                                              {isWorking ? 'Synthesizing...' : 'patch-report.md'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manual Quick Add Queue Form */}
+                  <form onSubmit={handleAddAutopilotQueue} className="bg-zinc-950/40 border border-zinc-900 rounded-lg p-2.5 flex flex-col gap-2 mt-2">
+                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">Enqueue Custom Autopilot Task</span>
+
+                    <div className="flex gap-1.5">
+                      <select
+                        value={newQueueProjId}
+                        onChange={(e) => setNewQueueProjId(e.target.value)}
+                        className="flex-1 bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-zinc-700"
+                      >
+                        <option value="">-- Project Scope --</option>
+                        {projects.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="text"
+                        required
+                        placeholder="Task title (e.g. Add dark mode toggle)"
+                        value={newQueueTitle}
+                        onChange={(e) => setNewQueueTitle(e.target.value)}
+                        className="flex-[2] bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-700"
+                      />
+                    </div>
+
+                    <div className="flex gap-1.5 items-center">
+                      <input
+                        type="text"
+                        placeholder="Instructions / prompt details for code synthesis..."
+                        value={newQueueDetails}
+                        onChange={(e) => setNewQueueDetails(e.target.value)}
+                        className="flex-1 bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-700"
+                      />
+                      <button
+                        type="submit"
+                        disabled={queuingTask || !newQueueTitle.trim()}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus size={10} />
+                        <span>Queue</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Tab Content 2: Recurring GitHub Task Scheduler */}
+              {autopilotTab === 'recurring' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      Scheduled Recurring Tasks
+                    </span>
+                    <span className="text-[8px] font-mono text-zinc-600">
+                      Evaluated on push cycles
+                    </span>
+                  </div>
+
+                  {/* Manual Recurring setup form */}
+                  <form onSubmit={handleAddRecurringTask} className="bg-zinc-950/60 border border-zinc-900 rounded-lg p-3 flex flex-col gap-2.5">
+                    <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-1">
+                      <Clock size={11} className="text-blue-400" />
+                      <span>Setup New Recurring Task</span>
+                    </span>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Associate Project</label>
+                        <select
+                          value={newRecProjId}
+                          onChange={(e) => setNewRecProjId(e.target.value)}
+                          className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-zinc-700"
+                        >
+                          <option value="">-- Project --</option>
+                          {projects.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Execution Interval</label>
+                        <select
+                          value={newRecInterval}
+                          onChange={(e) => setNewRecInterval(e.target.value)}
+                          className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-zinc-700"
+                        >
+                          <option value="5">Every 5 Minutes (Fast Check)</option>
+                          <option value="15">Every 15 Minutes</option>
+                          <option value="30">Every 30 Minutes</option>
+                          <option value="60">Every 1 Hour (Hourly)</option>
+                          <option value="360">Every 6 Hours</option>
+                          <option value="720">Every 12 Hours</option>
+                          <option value="1440">Every 24 Hours (Daily)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Task Title / Work Order</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Codebase Health Check & Docs build"
+                        value={newRecTitle}
+                        onChange={(e) => setNewRecTitle(e.target.value)}
+                        className="bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-700"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Detailed Synthesis Prompt</label>
+                      <textarea
+                        rows={2}
+                        placeholder="e.g. Scrapes repository imports, corrects absolute path resolutions, and updates markdown documentation files to represent changes."
+                        value={newRecDetails}
+                        onChange={(e) => setNewRecDetails(e.target.value)}
+                        className="bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1.5 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none focus:border-zinc-700 resize-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={creatingRecurring || !newRecTitle.trim()}
+                      className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded text-[10px] font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      {creatingRecurring ? (
+                        <Loader2 size={11} className="animate-spin" />
+                      ) : (
+                        <Plus size={11} />
+                      )}
+                      <span>Create & Schedule Recurring Task</span>
+                    </button>
+                  </form>
+
+                  {/* List of active scheduled tasks */}
+                  <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-850 pr-1">
+                    {recurringTasks.length === 0 ? (
+                      <div className="text-[10px] text-zinc-650 italic text-center py-8 bg-zinc-950/20 rounded-lg border border-zinc-900/40">
+                        No recurring GitHub tasks currently scheduled. Setup a schedule above.
+                      </div>
+                    ) : (
+                      recurringTasks.map((task) => {
+                        const intervalText =
+                          task.intervalMinutes >= 1440
+                            ? 'Daily'
+                            : task.intervalMinutes >= 60
+                            ? `Every ${Math.round(task.intervalMinutes / 60)}h`
+                            : `Every ${task.intervalMinutes}m`;
+
+                        const relativeLastTrigger = task.lastTriggeredAt
+                          ? `Last run: ${new Date(task.lastTriggeredAt).toLocaleTimeString()}`
+                          : 'Pending first trigger';
+
+                        return (
+                          <div
+                            key={task.id}
+                            className={`p-2.5 rounded-xl border text-xs flex flex-col gap-1.5 transition-all bg-zinc-900/40 border-zinc-850 hover:border-zinc-800 ${
+                              !task.enabled ? 'opacity-60' : ''
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="font-bold text-zinc-200 truncate">{task.title}</span>
+                                <span className="text-[9px] text-zinc-500 truncate">Scope: {task.projectName}</span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {/* Toggle Switch */}
+                                <button
+                                  onClick={() => handleToggleRecurringTask(task.id, task.enabled)}
+                                  className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                    task.enabled ? 'bg-blue-600' : 'bg-zinc-800'
+                                  }`}
+                                >
+                                  <span
+                                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                      task.enabled ? 'translate-x-3' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </button>
+
+                                {/* Delete Button */}
+                                <button
+                                  onClick={() => handleDeleteRecurringTask(task.id)}
+                                  className="text-zinc-650 hover:text-rose-400 p-0.5 transition"
+                                  title="Delete schedule"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {task.details && (
+                              <p className="text-[9.5px] text-zinc-400 line-clamp-1 leading-relaxed italic">
+                                "{task.details}"
+                              </p>
+                            )}
+
+                            <div className="flex justify-between items-center text-[9px] text-zinc-500 mt-1 pt-1.5 border-t border-zinc-950">
+                              <span className="font-mono text-blue-400 font-bold bg-blue-950/40 border border-blue-900/30 px-1.5 rounded uppercase text-[8px]">
+                                {intervalText}
+                              </span>
+                              <span>{relativeLastTrigger}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {autopilotTab === 'webhooks' && (
+                <div className="flex flex-col gap-4 animate-fadeIn">
+                  {/* Webhook Header & Endpoint info */}
+                  <div className="bg-[#07070a] border border-zinc-900 rounded-xl p-3.5 space-y-2.5">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                          <Webhook size={13} className="text-blue-400" /> Webhook Receiver Node
+                        </span>
+                        <p className="text-[9px] text-zinc-500 leading-normal">
+                          Provide this live payload URL inside your GitHub repository settings to route real-time hooks into your workspace.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 bg-zinc-950 p-2.5 rounded-lg border border-zinc-900 font-mono">
+                      <div className="flex justify-between items-center text-[8px] text-zinc-550 uppercase font-bold tracking-wider">
+                        <span>Local Endpoint URL</span>
+                        <span className="text-blue-500/80">Active Listening Node</span>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <span className="text-[9px] text-zinc-350 select-all truncate flex-1 leading-none py-1">
+                          {window.location.origin}/api/github/webhook
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/api/github/webhook`);
+                            alert("Copied Payload URL to clipboard!");
+                          }}
+                          className="px-2 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-750 text-[8px] text-zinc-400 hover:text-zinc-200 font-bold rounded transition cursor-pointer shrink-0 uppercase font-sans"
+                        >
+                          Copy URL
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Webhooks subtab selection */}
+                  <div className="flex gap-2 border-b border-zinc-900 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setWebhookSubTab('config')}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition cursor-pointer ${
+                        webhookSubTab === 'config'
+                          ? 'bg-zinc-900 text-blue-400 border border-zinc-800/80 font-mono'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      Configure & Subscriptions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWebhookSubTab('simulate')}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition cursor-pointer ${
+                        webhookSubTab === 'simulate'
+                          ? 'bg-zinc-900 text-purple-400 border border-zinc-800/80 font-mono'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      ⚡ High-Fidelity Simulator
+                    </button>
+                  </div>
+
+                  {/* SUB TAB A: CONFIGURE WEBHOOKS & LIST */}
+                  {webhookSubTab === 'config' && (
+                    <div className="flex flex-col gap-3">
+                      {/* Webhook Add Form */}
+                      <form onSubmit={handleCreateWebhook} className="bg-zinc-950/40 border border-zinc-900 rounded-lg p-3 flex flex-col gap-2.5">
+                        <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-1.5 font-mono">
+                          <Plus size={11} className="text-blue-400" /> Setup Repository Webhook
+                        </span>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Target Repository Path</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. google/genai-js"
+                            value={newWebhookRepo}
+                            onChange={(e) => setNewWebhookRepo(e.target.value)}
+                            className="bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1 text-[10px] text-zinc-205 placeholder-zinc-650 outline-none focus:border-zinc-700 font-mono"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Payload Secret Key (Optional Verification)</label>
+                          <input
+                            type="password"
+                            placeholder="e.g. ghp_sec_verify_2026_xyz"
+                            value={newWebhookSecret}
+                            onChange={(e) => setNewWebhookSecret(e.target.value)}
+                            className="bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1 text-[10px] text-zinc-205 placeholder-zinc-650 outline-none focus:border-zinc-700 font-mono"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Event Subscriptions</label>
+                          <div className="flex items-center gap-4 py-1">
+                            <label className="flex items-center gap-1.5 text-[9px] text-zinc-300 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={newWebhookEvents.includes('issues')}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setNewWebhookEvents(prev => [...prev, 'issues']);
+                                  } else {
+                                    setNewWebhookEvents(prev => prev.filter(x => x !== 'issues'));
+                                  }
+                                }}
+                                className="rounded border-zinc-800 bg-zinc-900 text-blue-600 focus:ring-0 cursor-pointer"
+                              />
+                              <span>issues (Issue Labels / Events)</span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 text-[9px] text-zinc-300 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={newWebhookEvents.includes('pull_request')}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setNewWebhookEvents(prev => [...prev, 'pull_request']);
+                                  } else {
+                                    setNewWebhookEvents(prev => prev.filter(x => x !== 'pull_request'));
+                                  }
+                                }}
+                                className="rounded border-zinc-800 bg-zinc-900 text-blue-600 focus:ring-0 cursor-pointer"
+                              />
+                              <span>pull_request (PR Actions)</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={isCreatingWebhook || !newWebhookRepo.trim()}
+                          className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded text-[10px] font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm font-sans"
+                        >
+                          {isCreatingWebhook ? (
+                            <Loader2 size={11} className="animate-spin" />
+                          ) : (
+                            <Plus size={11} />
+                          )}
+                          <span>Bind Real-Time Webhook Listener</span>
+                        </button>
+                      </form>
+
+                      {/* Webhook list */}
+                      <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-850 pr-1">
+                        {webhooks.length === 0 ? (
+                          <div className="text-[10px] text-zinc-650 italic text-center py-8 bg-zinc-950/20 rounded-lg border border-zinc-900/40">
+                            No webhooks registered yet. Configure one above or trigger via simulator.
+                          </div>
+                        ) : (
+                          webhooks.map((hook) => {
+                            const lastTriggeredText = hook.lastTriggeredAt
+                              ? `Last trigger: ${new Date(hook.lastTriggeredAt).toLocaleTimeString()}`
+                              : 'No activity registered';
+
+                            return (
+                              <div
+                                key={hook.id}
+                                className={`p-2.5 rounded-xl border text-xs flex flex-col gap-1.5 transition-all bg-zinc-900/40 border-zinc-850 hover:border-zinc-800 ${
+                                  !hook.active ? 'opacity-60' : ''
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex flex-col gap-0.5 min-w-0">
+                                    <span className="font-bold text-zinc-200 truncate font-mono">{hook.repo}</span>
+                                    <span className="text-[8px] text-zinc-500 truncate">Events: {hook.events.join(', ')}</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      onClick={() => handleToggleWebhook(hook.id)}
+                                      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        hook.active ? 'bg-blue-600' : 'bg-zinc-800'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                          hook.active ? 'translate-x-3' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleDeleteWebhook(hook.id)}
+                                      className="text-zinc-650 hover:text-rose-400 p-0.5 transition cursor-pointer"
+                                      title="Remove webhook"
+                                    >
+                                      <Trash2 size={11} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-between items-center text-[9px] text-zinc-500 mt-1 pt-1.5 border-t border-zinc-950">
+                                  <span className="font-mono text-zinc-400 text-[8px]">
+                                    {hook.secret ? '🔒 Signature verification active' : '🔓 Unsigned payload mode'}
+                                  </span>
+                                  <span>{lastTriggeredText}</span>
+                                </div>
+
+                                {/* Webhook Trigger Logs */}
+                                {hook.logs && hook.logs.length > 0 && (
+                                  <div className="mt-1.5 bg-zinc-950/80 rounded border border-zinc-900/60 p-1.5 max-h-[80px] overflow-y-auto scrollbar-thin text-left">
+                                    <span className="text-[8px] text-zinc-550 font-bold uppercase tracking-wider block mb-1 font-mono">Payload Execution Stream</span>
+                                    <div className="flex flex-col gap-1">
+                                      {hook.logs.map((log: any) => (
+                                        <div key={log.id} className="text-[8px] font-mono flex items-start justify-between gap-2 border-b border-zinc-900/40 pb-1 last:border-0">
+                                          <span className="text-blue-400">[{log.time}] {log.event}:{log.action}</span>
+                                          <span className="text-zinc-400 truncate max-w-[120px]">{log.payloadSummary}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUB TAB B: SIMULATOR SANDBOX */}
+                  {webhookSubTab === 'simulate' && (
+                    <div className="bg-zinc-950/40 border border-zinc-900 rounded-lg p-3 flex flex-col gap-3">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] font-bold text-purple-400 uppercase tracking-wide flex items-center gap-1.5 font-mono">
+                          <Webhook size={11} className="text-purple-400 animate-pulse" /> GitHub Webhook Simulator
+                        </span>
+                        <p className="text-[9px] text-zinc-500">
+                          Dispatches simulated webhook payloads straight to the local API receptor to check triggers instantly.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Simulate Event Type</label>
+                          <select
+                            value={simEvent}
+                            onChange={(e) => {
+                              const val = e.target.value as 'issues' | 'pull_request';
+                              setSimEvent(val);
+                              setSimAction(val === 'issues' ? 'opened' : 'opened');
+                            }}
+                            className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-350 outline-none focus:border-zinc-700"
+                          >
+                            <option value="issues">issues (Bug / Issue / Task)</option>
+                            <option value="pull_request">pull_request (PR Code Sync)</option>
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Simulate Action Type</label>
+                          <select
+                            value={simAction}
+                            onChange={(e) => setSimAction(e.target.value)}
+                            className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-350 outline-none focus:border-zinc-700"
+                          >
+                            {simEvent === 'issues' ? (
+                              <>
+                                <option value="opened">opened (New Task Raised)</option>
+                                <option value="labeled">labeled (Assigned Category)</option>
+                                <option value="closed">closed</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="opened">opened (New PR Pending Audit)</option>
+                                <option value="synchronize">synchronize (Pushed New Code Update)</option>
+                                <option value="merged">merged</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Dynamic form inputs based on event type */}
+                      {simEvent === 'issues' ? (
+                        <div className="space-y-2 border-t border-zinc-900/60 pt-2.5">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Issue Title</label>
+                            <input
+                              type="text"
+                              required
+                              value={simIssueTitle}
+                              onChange={(e) => setSimIssueTitle(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 outline-none focus:border-zinc-700 font-medium"
+                              placeholder="e.g. Memory leak in WebSockets container"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Description / Markdown Payload</label>
+                            <textarea
+                              rows={2}
+                              value={simIssueBody}
+                              onChange={(e) => setSimIssueBody(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 outline-none focus:border-zinc-700 resize-none"
+                              placeholder="Provide details..."
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Issue Labels (comma separated)</label>
+                            <input
+                              type="text"
+                              value={simIssueLabels}
+                              onChange={(e) => setSimIssueLabels(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 outline-none focus:border-zinc-700 font-mono text-[9px]"
+                              placeholder="e.g. aether-autopilot, bug, high-priority"
+                            />
+                            <p className="text-[8px] text-zinc-650 mt-1">
+                              Tip: Labels containing <span className="text-blue-400 font-semibold font-mono">"aether-autopilot"</span>, <span className="text-emerald-400 font-semibold font-mono">"bug"</span>, or <span className="text-amber-400 font-semibold font-mono">"feature"</span> trigger the AI Agent automatically!
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 border-t border-zinc-900/60 pt-2.5">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Pull Request Title</label>
+                            <input
+                              type="text"
+                              required
+                              value={simPrTitle}
+                              onChange={(e) => setSimPrTitle(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 outline-none focus:border-zinc-700 font-medium"
+                              placeholder="e.g. feat: Add multi-user canvas sharing state"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Pull Request Branch</label>
+                            <input
+                              type="text"
+                              value={simPrBranch}
+                              onChange={(e) => setSimPrBranch(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 outline-none focus:border-zinc-700 font-mono text-[9px]"
+                              placeholder="e.g. canvas-sharing-engine"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Description / Proposed Changes</label>
+                            <textarea
+                              rows={2}
+                              value={simPrBody}
+                              onChange={(e) => setSimPrBody(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-850 rounded px-2 py-1 text-[10px] text-zinc-200 outline-none focus:border-zinc-700 resize-none"
+                              placeholder="Describe pull request changes..."
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleSimulateWebhook}
+                        disabled={simulatingWebhook}
+                        className="w-full py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded text-[10px] font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm mt-1 font-sans"
+                      >
+                        {simulatingWebhook ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Webhook size={12} />
+                        )}
+                        <span>Dispatch Live Mock Payload to listening node</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

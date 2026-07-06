@@ -93,16 +93,31 @@ export function Issues() {
     agents,
   } = useData();
   const [searchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
+    const saved = localStorage.getItem('issues_view_mode');
+    return (saved as any) || "list";
+  });
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [showModal, setShowModal] = useState(false);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(
     new Set(),
   );
-  const [activeIssueId, setActiveIssueId] = useState<string | null>(
-    searchParams.get("issueId") || null,
-  );
+  const [activeIssueId, setActiveIssueId] = useState<string | null>(() => {
+    return searchParams.get("issueId") || localStorage.getItem('issues_active_id') || null;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('issues_view_mode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (activeIssueId) {
+      localStorage.setItem('issues_active_id', activeIssueId);
+    } else {
+      localStorage.removeItem('issues_active_id');
+    }
+  }, [activeIssueId]);
   const [newSubTaskTitle, setNewSubTaskTitle] = useState("");
 
   const [showAICommander, setShowAICommander] = useState(false);
@@ -1716,7 +1731,7 @@ Example:
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-zinc-400 mb-1">
                       Type
@@ -1768,7 +1783,7 @@ Example:
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-zinc-400 mb-1">
                       Assign to Phase (Optional)

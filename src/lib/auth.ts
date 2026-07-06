@@ -11,14 +11,25 @@ import {
   sendPasswordResetEmail,
   updateProfile,
   confirmPasswordReset,
-  verifyPasswordResetCode
+  verifyPasswordResetCode,
+  linkWithPopup,
+  linkWithCredential,
+  unlink,
+  EmailAuthProvider
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+let firestoreInstance;
+try {
+  firestoreInstance = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+} catch (e) {
+  firestoreInstance = getFirestore(app);
+}
+export const db = firestoreInstance;
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/documents');
@@ -174,7 +185,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       throw new Error('Firebase: Authentication provider not enabled. Please enable Google sign-in in the Firebase Console.');
     }
     if (error?.code === 'auth/account-exists-with-different-credential') {
-      throw new Error('An account already exists with the same email. Please sign in with the provider you originally used (e.g., GitHub) or enable "Link accounts that use the same email" in the Firebase console.');
+      const enrichedError = new Error('An account already exists with the same email.') as any;
+      enrichedError.code = error.code;
+      enrichedError.email = error.customData?.email || error.email;
+      enrichedError.credential = GoogleAuthProvider.credentialFromError(error);
+      enrichedError.originalError = error;
+      throw enrichedError;
     }
     console.error('Sign in error:', error);
     throw error;
@@ -229,13 +245,61 @@ export const githubSignIn = async (): Promise<{ user: User; accessToken: string,
       throw new Error('Firebase: Authentication provider not enabled. Please enable GitHub sign-in in the Firebase Console.');
     }
     if (error?.code === 'auth/account-exists-with-different-credential') {
-      throw new Error('An account already exists with the same email. Please sign in with the provider you originally used (e.g., Google) or enable "Link accounts that use the same email" in the Firebase Authentication console.');
+      const enrichedError = new Error('An account already exists with the same email.') as any;
+      enrichedError.code = error.code;
+      enrichedError.email = error.customData?.email || error.email;
+      enrichedError.credential = GithubAuthProvider.credentialFromError(error);
+      enrichedError.originalError = error;
+      throw enrichedError;
     }
     console.error('Sign in error:', error);
     throw error;
   } finally {
     isSigningIn = false;
   }
+};
+
+// Account Linking helper functions
+export const linkProvider = async (user: User, providerName: 'google' | 'github'): Promise<User> => {
+  const prov = providerName === 'google' ? provider : githubProvider;
+  const result = await linkWithPopup(user, prov);
+  
+  // Register/update user document upon successful linking
+  try {
+    const userDocRef = doc(db, 'users', user.uid);
+    await setDoc(userDocRef, {
+      uid: user.uid,
+      email: user.email || '',
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Could not update user collection after provider link:', e);
+  }
+  
+  return result.user;
+};
+
+export const unlinkProvider = async (user: User, providerId: string): Promise<User> => {
+  const result = await unlink(user, providerId);
+  return result;
+};
+
+export const linkWithPendingCredential = async (user: User, credential: any): Promise<User> => {
+  const result = await linkWithCredential(user, credential);
+  
+  // Register/update user document upon successful linking
+  try {
+    const userDocRef = doc(db, 'users', user.uid);
+    await setDoc(userDocRef, {
+      uid: user.uid,
+      email: user.email || '',
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Could not update user collection after linking credential:', e);
+  }
+  
+  return result.user;
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
