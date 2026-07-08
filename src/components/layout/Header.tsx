@@ -1,10 +1,11 @@
-import { Bell, HelpCircle, Search, Menu, PanelRight, Copy, Check, ExternalLink, Users, Hand, Zap, Move, CameraOff } from 'lucide-react';
-import React, { useState } from 'react';
+import { Bell, HelpCircle, Search, Menu, PanelRight, Copy, Check, ExternalLink, Users, Hand, Zap, Move, CameraOff, Mic, MicOff, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import { SyncPopover } from '../ui/SyncPopover';
+import { haptic } from '../../utils/haptics';
 
 export function Header() {
   const { 
@@ -14,7 +15,8 @@ export function Header() {
     isKineticEnabled,
     setKineticEnabled,
     kineticInteractionMode,
-    setKineticInteractionMode
+    setKineticInteractionMode,
+    setShowFloatingCamera
   } = useStore();
   const { 
     userProfile, 
@@ -24,42 +26,108 @@ export function Header() {
     declineInvitation, 
     syncStatus, 
     showToast,
+    isOnline,
     notifications = [],
     markNotificationRead,
-    clearAllNotifications
+    clearAllNotifications,
+    isWakeWordEnabled,
+    setIsWakeWordEnabled
   } = useData();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSyncDetails, setShowSyncDetails] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const triggerHaptic = (pattern: number | number[]) => {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try {
-        navigator.vibrate(pattern);
-      } catch (e) {
-        console.warn('Vibration not supported:', e);
-      }
+  const [isAetherOpen, setIsAetherOpen] = useState(false);
+  const [isAetherMuted, setIsAetherMuted] = useState(() => typeof window !== 'undefined' && localStorage.getItem('isAetherMuted') === 'true');
+
+  useEffect(() => {
+    const handleMuteSync = () => {
+      setIsAetherMuted(localStorage.getItem('isAetherMuted') === 'true');
+    };
+    const handleHubSync = () => {
+      setIsAetherOpen(localStorage.getItem('aether-hub-open') === 'true');
+    };
+    window.addEventListener('aether-mute-sync', handleMuteSync);
+    window.addEventListener('aether-hub-open-sync', handleHubSync);
+    // Initial sync
+    handleHubSync();
+    handleMuteSync();
+    return () => {
+      window.removeEventListener('aether-mute-sync', handleMuteSync);
+      window.removeEventListener('aether-hub-open-sync', handleHubSync);
+    };
+  }, []);
+
+  // Determine current Aether voice state
+  // 1. ACTIVE: open and not muted
+  // 2. STANDBY: closed, unmuted, and wake-word enabled
+  // 3. MUTED/OFF: otherwise
+  let aetherState: 'active' | 'standby' | 'muted' = 'muted';
+  if (isAetherOpen && !isAetherMuted) {
+    aetherState = 'active';
+  } else if (!isAetherOpen && !isAetherMuted && isWakeWordEnabled) {
+    aetherState = 'standby';
+  } else {
+    aetherState = 'muted';
+  }
+
+  const handleVoiceStateCycle = () => {
+    if (aetherState === 'active') {
+      // Transition from ACTIVE -> STANDBY:
+      // Close hub, unmute/keep unmuted, keep wake-word active
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: false } }));
+      if (setIsWakeWordEnabled) setIsWakeWordEnabled(true);
+      localStorage.setItem('isAetherMuted', 'false');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+      
+      showToast('🔮 Aether: Standby (Listening for "Hey Aether")', 'success', 2500);
+      haptic.success();
+    } else if (aetherState === 'standby') {
+      // Transition from STANDBY -> MUTED/OFF:
+      // Close hub, mute background listening
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: true } }));
+      localStorage.setItem('isAetherMuted', 'true');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+      
+      showToast('🔇 Aether: Fully Muted & Disabled', 'info', 2500);
+      haptic.warning();
+    } else {
+      // Transition from MUTED/OFF -> ACTIVE:
+      // Open hub, unmute dialogue mic, make sure wake-word is active for background too
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: true, mute: false } }));
+      if (setIsWakeWordEnabled) setIsWakeWordEnabled(true);
+      localStorage.setItem('isAetherMuted', 'false');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+      
+      showToast('🔮 Aether AI Activated (Listening Mode)', 'success', 2500);
+      haptic.success();
     }
+  };
+
+  const handleLogoClick = () => {
+    handleVoiceStateCycle();
   };
 
   const handleKineticClick = () => {
     if (!isKineticEnabled) {
       // Transition from OFF -> MACROS
       setKineticEnabled(true);
+      setShowFloatingCamera(true);
       setKineticInteractionMode('gesture');
-      triggerHaptic(80);
+      haptic.medium();
       showToast('🖐️ Spatial Camera: Enabled (Actions & Macros Mode)', 'success', 2500);
     } else if (kineticInteractionMode === 'gesture') {
       // Transition from MACROS -> CURSOR
       setKineticEnabled(true);
+      setShowFloatingCamera(true);
       setKineticInteractionMode('cursor');
-      triggerHaptic([40, 40]);
+      haptic.medium();
       showToast('🖱️ Spatial Camera: Enabled (Cursor Navigation Mode)', 'success', 2500);
     } else {
       // Transition from CURSOR -> OFF
       setKineticEnabled(false);
-      triggerHaptic(120);
+      haptic.warning();
       showToast('🔇 Spatial Camera: Idle / Disabled', 'info', 2500);
     }
   };
@@ -86,21 +154,89 @@ export function Header() {
   return (
     <header className="h-11 border-b border-zinc-900 flex items-center justify-between px-3 sm:px-4 bg-[#050505] shrink-0">
       <div className="flex items-center gap-2 sm:gap-3">
-        <button onClick={toggleSidebar} className="p-1.5 text-zinc-500 hover:text-zinc-350 hover:bg-zinc-900 rounded transition-colors">
+        <button onClick={() => { haptic.light(); toggleSidebar(); }} className="p-1.5 text-zinc-500 hover:text-zinc-355 hover:bg-zinc-900 rounded transition-colors">
           <Menu size={16} />
         </button>
-        <div className="w-6 h-6 bg-yellow-500 rounded flex items-center justify-center shadow-[0_0_12px_rgba(234,179,8,0.35)] shrink-0">
-          <span className="text-black font-extrabold text-[11px] font-mono">D</span>
-        </div>
-        <span className="text-zinc-100 font-semibold tracking-tight text-xs sm:text-sm truncate max-w-[80px] min-[380px]:max-w-none">DEVSPACE / <span className="text-yellow-500 font-bold">CORE</span></span>
+        <button
+          id="aether-logo-button"
+          onClick={handleLogoClick}
+          className="flex items-center gap-2 group cursor-pointer focus:outline-none"
+          title={isAetherOpen ? (isAetherMuted ? "Unmute Aether" : "Mute Aether") : "Activate Aether AI"}
+        >
+          <div className={`w-6 h-6 rounded flex items-center justify-center transition-all duration-300 shrink-0 ${
+            isAetherOpen && !isAetherMuted
+              ? "bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.7)] border border-emerald-400"
+              : isAetherOpen && isAetherMuted
+                ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"
+                : "bg-yellow-500 hover:scale-105 shadow-[0_0_12px_rgba(234,179,8,0.35)]"
+          }`}>
+            <span className="text-black font-extrabold text-[11px] font-mono">D</span>
+          </div>
+          <span className="text-zinc-150 font-display font-light tracking-[0.16em] text-xs sm:text-sm truncate max-w-[120px] min-[380px]:max-w-none group-hover:text-yellow-400 transition-all">
+            DEVSPACE
+          </span>
+        </button>
+        <div className="h-4 w-[1px] bg-zinc-800 shrink-0 mx-1"></div>
+        {/* Sleek Tactile Aether Voice Controller Button */}
+        <button
+          onClick={handleVoiceStateCycle}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9.5px] font-mono font-black transition-all duration-300 cursor-pointer select-none active:scale-95 shrink-0 ${
+            aetherState === 'active'
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/35 hover:bg-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.25)] animate-pulse font-bold'
+              : aetherState === 'standby'
+                ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/35 hover:bg-yellow-500/20 shadow-[0_0_12px_rgba(234,179,8,0.15)]'
+                : 'bg-zinc-950 border-zinc-900 text-zinc-500 hover:bg-zinc-900 hover:border-zinc-850'
+          }`}
+          title={
+            aetherState === 'active'
+              ? "Aether AI: ACTIVE DIALOG (Listening...) - Click to switch to STANDBY"
+              : aetherState === 'standby'
+                ? "Aether AI: STANDBY (Listening for 'Hey Aether') - Click to MUTED/OFF"
+                : "Aether AI: MUTED / OFF (Voice disabled) - Click to ACTIVE DIALOG"
+          }
+        >
+          <span className="relative flex h-1.5 w-1.5 shrink-0">
+            {aetherState === 'active' && (
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
+              aetherState === 'active'
+                ? 'bg-emerald-400'
+                : aetherState === 'standby'
+                  ? 'bg-yellow-400'
+                  : 'bg-zinc-650'
+            }`}></span>
+          </span>
+
+          {aetherState === 'active' ? (
+            <Mic size={11} className="text-emerald-400 shrink-0" />
+          ) : aetherState === 'standby' ? (
+            <Sparkles size={11} className="text-yellow-400 shrink-0" />
+          ) : (
+            <MicOff size={11} className="text-zinc-500 shrink-0" />
+          )}
+
+          <span className="hidden min-[480px]:inline">
+            {aetherState === 'active'
+              ? 'ACTIVE'
+              : aetherState === 'standby'
+                ? 'STANDBY'
+                : 'MUTED / OFF'}
+          </span>
+        </button>
         <div className="h-4 w-[1px] bg-zinc-800 ml-1 hidden sm:block"></div>
         <div className="relative hidden sm:block">
           <button 
-            onClick={() => setShowSyncDetails(!showSyncDetails)}
+            onClick={() => { haptic.light(); setShowSyncDetails(!showSyncDetails); }}
             className="flex items-center gap-2 ml-2 px-2.5 py-1 bg-black rounded border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-950 transition-colors cursor-pointer select-none"
             title="View Firestore Sync Status"
           >
-            {syncStatus === 'saving' ? (
+            {!isOnline ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,1)]"></span>
+                <span className="text-[9.5px] font-mono text-amber-500 font-bold tracking-wider">OFFLINE MODE</span>
+              </>
+            ) : syncStatus === 'saving' ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
                 <span className="text-[9.5px] font-mono text-yellow-500 font-bold tracking-wider">SYNCING...</span>
@@ -140,7 +276,7 @@ export function Header() {
           </AnimatePresence>
         </div>
       </div>
-      <div className="flex-grow max-w-md mx-2 sm:mx-8 relative hidden sm:block" onClick={toggleCommandPalette}>
+      <div className="flex-grow max-w-md mx-2 sm:mx-8 relative hidden sm:block" onClick={() => { haptic.light(); toggleCommandPalette(); }}>
         <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
           <span className="text-zinc-650 text-xs mr-2"><Search size={14} className="text-zinc-500" /></span>
         </div>
@@ -153,8 +289,8 @@ export function Header() {
             <span className="text-[10px] text-zinc-500 border border-zinc-850 px-1 rounded font-mono">K</span>
         </div>
       </div>
-      <div className="flex items-center gap-1.5 sm:gap-4">
-        <div className="flex items-center gap-1 sm:gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-4.5">
+        <div className="flex items-center gap-2.5 sm:gap-4">
           {/* Kinetic Gesture Status Indicator */}
           <button 
             onClick={handleKineticClick}
@@ -208,7 +344,7 @@ export function Header() {
 
           {/* Mobile Search Button */}
           <button 
-            onClick={toggleCommandPalette} 
+            onClick={() => { haptic.light(); toggleCommandPalette(); }} 
             className="p-1.5 rounded-lg hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-colors sm:hidden"
             title="Search palette"
           >
@@ -218,7 +354,7 @@ export function Header() {
           {/* Bell Icon & Dropdown Container */}
           <div className="relative">
             <button 
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => { haptic.light(); setShowNotifications(!showNotifications); }}
               className="p-1.5 rounded-lg hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-colors relative"
               title="Notifications"
             >
@@ -366,7 +502,7 @@ export function Header() {
           </div>
 
           <button
-            onClick={() => navigate('/settings')}
+            onClick={() => { haptic.light(); navigate('/settings'); }}
             className="w-6 h-6 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center font-bold text-xs cursor-pointer transition-transform hover:scale-105"
             style={{
               backgroundColor: userProfile?.avatarColor || '#3b82f6',
@@ -379,9 +515,6 @@ export function Header() {
             {getInitials()}
           </button>
         </div>
-        <button onClick={toggleRightSidebar} className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors ml-1">
-          <PanelRight size={16} />
-        </button>
       </div>
     </header>
   );

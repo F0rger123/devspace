@@ -24,12 +24,14 @@ import {
   Globe,
   Plus,
   Minimize2,
-  Maximize2
+  Maximize2,
+  Video
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
+import { haptic } from '../../utils/haptics';
 import { WakeCanvasVisualizer } from './WakeCanvasVisualizer';
 
 function extractExplanationFromPartialJson(partialJson: string): string {
@@ -180,7 +182,8 @@ export function VoiceMemoAssistant() {
     isAssistantMinimized,
     setIsAssistantMinimized,
     isAssistantOpen,
-    setIsAssistantOpen
+    setIsAssistantOpen,
+    showToast
   } = useData();
 
   const location = useLocation();
@@ -188,13 +191,59 @@ export function VoiceMemoAssistant() {
   const isAssistantRoute = location.pathname === '/assistant';
 
   // Floating Hub Toggle Expanded State
-  const [isHubOpen, setIsHubOpen] = useState(false);
+  const [isHubOpen, setIsHubOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('aether-hub-open');
+      if (saved === null) return true;
+      return saved === 'true';
+    }
+    return false;
+  });
   
   useEffect(() => {
     if (isAssistantOpen !== isHubOpen) {
       setIsAssistantOpen(isHubOpen);
     }
+    localStorage.setItem('aether-hub-open', String(isHubOpen));
+    window.dispatchEvent(new Event('aether-hub-open-sync'));
   }, [isHubOpen, isAssistantOpen, setIsAssistantOpen]);
+
+  // Voice-Activated Custom Macro Creator Wizard State
+  const handleCloseAssistantRef = useRef<() => void>(() => {});
+  const [voiceMacroStep, setVoiceMacroStep] = useState<'idle' | 'naming' | 'motion' | 'confirm'>('idle');
+  const [voiceMacroName, setVoiceMacroName] = useState('');
+  const [voiceMacroAction, setVoiceMacroAction] = useState('toggle-sidebar');
+  const [voiceMacroPoints, setVoiceMacroPoints] = useState<{ x: number; y: number }[]>([]);
+  const [voiceMacroContradiction, setVoiceMacroContradiction] = useState<string | null>(null);
+  const [isRecordingVoiceMacroPath, setIsRecordingVoiceMacroPath] = useState(false);
+  const [trainingCountdown, setTrainingCountdown] = useState(0);
+  const [trainingProgress, setTrainingProgress] = useState(0);
+
+  useEffect(() => {
+    const handleLogoToggle = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { open, mute } = customEvent.detail;
+      if (open) {
+        setIsHubOpen(true);
+        if (mute === false) {
+          toggleAetherMutedState(false);
+        }
+      } else {
+        if (handleCloseAssistantRef.current) {
+          handleCloseAssistantRef.current();
+        } else {
+          setIsHubOpen(false);
+        }
+        if (mute === true) {
+          toggleAetherMutedState(true);
+        }
+      }
+    };
+    window.addEventListener('aether-logo-toggle', handleLogoToggle);
+    return () => {
+      window.removeEventListener('aether-logo-toggle', handleLogoToggle);
+    };
+  }, []);
   const [isUltraCompact, setIsUltraCompact] = useState(false);
   const [hudTab, setHudTab] = useState<'speak' | 'notepad'>('speak');
   const [mobilePanel, setMobilePanel] = useState<'control' | 'summary'>('control');
@@ -260,10 +309,24 @@ export function VoiceMemoAssistant() {
         backgroundRecogRef.current = null;
         setIsWakeWordListening(false);
       }
+      if (activeRecogRef.current) {
+        try {
+          activeRecogRef.current.onend = null;
+          activeRecogRef.current.stop();
+        } catch (err) {}
+        activeRecogRef.current = null;
+        setIsListeningForSpeech(false);
+      }
     } else {
-      setTimeout(() => {
-        startBackgroundWakeWord();
-      }, 100);
+      if (isHubOpenRef.current) {
+        setTimeout(() => {
+          startContinuousConversationalListen();
+        }, 100);
+      } else {
+        setTimeout(() => {
+          startBackgroundWakeWord();
+        }, 100);
+      }
     }
   };
 
@@ -461,7 +524,19 @@ export function VoiceMemoAssistant() {
   const isStreamAbortedRef = useRef<boolean>(false);
   const isPollingUpdateRef = useRef<boolean>(false);
 
-  useEffect(() => { isHubOpenRef.current = isHubOpen; }, [isHubOpen]);
+  useEffect(() => { 
+    isHubOpenRef.current = isHubOpen; 
+    // Automatically synchronize Aether mic state with the assistant's visibility popup state
+    if (isHubOpen) {
+      if (isAetherMuted) {
+        toggleAetherMutedState(false);
+      }
+    } else {
+      if (!isAetherMuted) {
+        toggleAetherMutedState(true);
+      }
+    }
+  }, [isHubOpen, isAetherMuted]);
   useEffect(() => { isConversingRef.current = isConversing; }, [isConversing]);
   useEffect(() => { isListeningForSpeechRef.current = isListeningForSpeech; }, [isListeningForSpeech]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
@@ -1345,6 +1420,7 @@ export function VoiceMemoAssistant() {
         }
       };
 
+      let sseBuffer = "";
       while (true) {
         if (isStreamAbortedRef.current) {
           addVocalDiagnostic("CONVO_MIC: Active stream loop aborted due to interrupt.");
@@ -1353,14 +1429,16 @@ export function VoiceMemoAssistant() {
         const { value, done } = await reader.read();
         if (done || isStreamAbortedRef.current) break;
 
-        const chunkText = decoder.decode(value);
-        const lines = chunkText.split('\n');
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || ""; // Keep the last incomplete line in the buffer
 
         for (const line of lines) {
           if (isStreamAbortedRef.current) break;
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          const trimmedLine = line.trim();
+          if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
             try {
-              const data = JSON.parse(line.slice(6));
+              const data = JSON.parse(trimmedLine.slice(6));
               if (data.chunk) {
                 streamDoc += data.chunk;
 
@@ -1617,7 +1695,206 @@ export function VoiceMemoAssistant() {
     return false;
   };
 
+  // --- Voice Macro Wizard Helpers ---
+  const normalizePoints = (pts: { x: number; y: number }[]) => {
+    const xs = pts.map(p => p.x);
+    const ys = pts.map(p => p.y);
+    if (xs.length === 0 || ys.length === 0) return [];
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+    return pts.map(p => ({
+      x: spanX > 0 ? (p.x - minX) / spanX : 0.5,
+      y: spanY > 0 ? (p.y - minY) / spanY : 0.5
+    }));
+  };
+
+  const resamplePoints = (pts: { x: number; y: number }[], count: number) => {
+    if (pts.length === 0) return Array(count).fill({ x: 0.5, y: 0.5 });
+    if (pts.length === 1) return Array(count).fill(pts[0]);
+    const resampled: { x: number; y: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const indexFloat = (i / (count - 1)) * (pts.length - 1);
+      const indexLower = Math.floor(indexFloat);
+      const indexUpper = Math.ceil(indexFloat);
+      const t = indexFloat - indexLower;
+      const p1 = pts[indexLower];
+      const p2 = pts[indexUpper];
+      resampled.push({
+        x: p1.x * (1 - t) + p2.x * t,
+        y: p1.y * (1 - t) + p2.y * t
+      });
+    }
+    return resampled;
+  };
+
+  const checkLocalGestureConflicts = (
+    newName: string,
+    newPoints: { x: number; y: number }[],
+    existingGestures: any[]
+  ): { type: 'name' | 'shape'; conflictWith: string } | null => {
+    const nameConflict = existingGestures.find(
+      g => g.name && g.name.trim().toLowerCase() === newName.trim().toLowerCase()
+    );
+    if (nameConflict) return { type: 'name', conflictWith: nameConflict.name };
+
+    if (newPoints.length < 5) return null;
+    const normNew = normalizePoints(newPoints);
+    const keyPointsCount = 10;
+    const resampledNew = resamplePoints(normNew, keyPointsCount);
+
+    for (const gesture of existingGestures) {
+      if (!gesture.points || gesture.points.length < 5) continue;
+      const normExisting = normalizePoints(gesture.points);
+      const resampledExisting = resamplePoints(normExisting, keyPointsCount);
+      let totalDist = 0;
+      for (let i = 0; i < keyPointsCount; i++) {
+        const dX = resampledNew[i].x - resampledExisting[i].x;
+        const dY = resampledNew[i].y - resampledExisting[i].y;
+        totalDist += Math.sqrt(dX * dX + dY * dY);
+      }
+      const avgDist = totalDist / keyPointsCount;
+      if (avgDist < 0.28) {
+        return { type: 'shape', conflictWith: gesture.name };
+      }
+    }
+    return null;
+  };
+
+  const handleWizardStartCountdown = () => {
+    setVoiceMacroStep('motion');
+    setTrainingCountdown(3);
+    setVoiceMacroPoints([]);
+    
+    const countdownInterval = window.setInterval(() => {
+      setTrainingCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval);
+          handleWizardStartRecording();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleWizardStartRecording = () => {
+    setIsRecordingVoiceMacroPath(true);
+    setTrainingProgress(0);
+
+    if (window.__kineticEngine && typeof window.__kineticEngine.startRecordingCustom === 'function') {
+      window.__kineticEngine.startRecordingCustom((points: { x: number; y: number }[]) => {
+        setIsRecordingVoiceMacroPath(false);
+        if (points.length < 5) {
+          showToast("Not enough hand motion detected! Please try again with a wider gesture.", "error");
+          setVoiceMacroStep('naming');
+          triggerBrowserSpeechSynthesis("I couldn't detect enough hand motion. Let's return to the setup step. Please try again when you are ready.");
+          return;
+        }
+
+        setVoiceMacroPoints(points);
+
+        const currentGestures = useStore.getState().kineticGestures || [];
+        const conflict = checkLocalGestureConflicts(voiceMacroName, points, currentGestures);
+
+        if (conflict) {
+          const warn = `Warning: This motion closely resembles your existing gesture "${conflict.conflictWith}".`;
+          setVoiceMacroContradiction(warn);
+          triggerBrowserSpeechSynthesis(`Motion captured. However, it overlaps closely with your existing gesture called ${conflict.conflictWith}. You can still confirm to save, or say re-record to try a different motion.`);
+        } else {
+          setVoiceMacroContradiction(null);
+          triggerBrowserSpeechSynthesis("Excellent! I captured your gesture path perfectly. Say test to try it out, or confirm to save.");
+        }
+        setVoiceMacroStep('confirm');
+      });
+    } else {
+      setTimeout(() => {
+        setIsRecordingVoiceMacroPath(false);
+        const simulatedPoints = [
+          { x: 0.2, y: 0.5 },
+          { x: 0.5, y: 0.2 },
+          { x: 0.8, y: 0.5 }
+        ];
+        setVoiceMacroPoints(simulatedPoints);
+        setVoiceMacroStep('confirm');
+        triggerBrowserSpeechSynthesis("Simulating path registration. Say test to try it, or confirm to save.");
+      }, 2500);
+    }
+
+    let prog = 0;
+    const progressInterval = window.setInterval(() => {
+      prog += 4;
+      setTrainingProgress(prog);
+      if (prog >= 100) {
+        clearInterval(progressInterval);
+        setTrainingProgress(0);
+      }
+    }, 100);
+  };
+
+  const handleWizardTest = () => {
+    showToast(`🧪 Testing gesture action: ${voiceMacroAction}...`, "info", 2000);
+    const store = useStore.getState() as any;
+    
+    if (voiceMacroAction === 'toggle-sidebar') {
+      if (typeof store.toggleSidebar === 'function') store.toggleSidebar();
+    } else if (voiceMacroAction === 'toggle-right-sidebar') {
+      if (typeof store.toggleRightSidebar === 'function') store.toggleRightSidebar();
+    } else if (voiceMacroAction === 'toggle-sidebar-minimize') {
+      if (typeof store.toggleSidebarMinimized === 'function') store.toggleSidebarMinimized();
+    } else if (voiceMacroAction === 'toggle-command-palette') {
+      if (typeof store.toggleCommandPalette === 'function') store.toggleCommandPalette();
+    } else if (voiceMacroAction === 'custom-alert') {
+      showToast('Aether Kinetic Wave Active!', 'success');
+    } else if (voiceMacroAction === 'create-quick-note') {
+      showToast('Creating quick flow note!', 'success');
+    } else if (voiceMacroAction === 'nav-dashboard') {
+      navigate('/');
+    } else if (voiceMacroAction === 'nav-assistant') {
+      navigate('/assistant');
+    } else if (voiceMacroAction === 'nav-notes') {
+      navigate('/notes');
+    } else if (voiceMacroAction === 'nav-settings') {
+      navigate('/settings');
+    } else {
+      showToast(`Macro action ${voiceMacroAction} fired!`, "success");
+    }
+  };
+
+  const handleWizardSave = () => {
+    const store = useStore.getState();
+    const currentGestures = store.kineticGestures || [];
+
+    const newGesture = {
+      id: 'voice-macro-' + Math.random().toString(36).substring(7),
+      name: voiceMacroName,
+      action: voiceMacroAction as any,
+      points: voiceMacroPoints,
+      direction: 'custom'
+    };
+
+    store.setKineticGestures([...currentGestures, newGesture]);
+    showToast(`🔮 Macro "${voiceMacroName}" successfully added!`, "success", 3000);
+    triggerBrowserSpeechSynthesis(`Fantastic! I have saved and mapped your custom gesture macro.`);
+    setVoiceMacroStep('idle');
+  };
+
   const handleOpenAssistant = (shouldMinimize = false) => {
+    // Close other system panels to prevent overlapping overlays
+    try {
+      const store = useStore.getState();
+      store.setCommandPaletteOpen(false);
+      store.setRightSidebarOpen(false);
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        store.setSidebarOpen(false);
+      }
+    } catch (e) {
+      console.warn('Could not sync store values on assistant open:', e);
+    }
+
     setIsHubOpen(true);
     setIsAssistantMinimized(shouldMinimize);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -1654,6 +1931,10 @@ export function VoiceMemoAssistant() {
     }
     setIsListeningForSpeech(false);
   };
+
+  useEffect(() => {
+    handleCloseAssistantRef.current = handleCloseAssistant;
+  }, [handleCloseAssistant]);
 
   const handleToggleMicListen = () => {
     if (isListeningForSpeech) {
@@ -2009,6 +2290,25 @@ export function VoiceMemoAssistant() {
     };
   }, [isSpeechActive]);
 
+  // Handle external system close/open event signals to coordinate popups
+  useEffect(() => {
+    const handleCloseEvent = () => {
+      handleCloseAssistant();
+    };
+    const handleOpenEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const shouldMinimize = customEvent.detail?.minimize || false;
+      handleOpenAssistant(shouldMinimize);
+    };
+
+    window.addEventListener('aether-close-assistant', handleCloseEvent);
+    window.addEventListener('aether-open-assistant', handleOpenEvent);
+    return () => {
+      window.removeEventListener('aether-close-assistant', handleCloseEvent);
+      window.removeEventListener('aether-open-assistant', handleOpenEvent);
+    };
+  }, []);
+
   // Manage Hands-Free Conversation Mode lifecycle
   useEffect(() => {
     if (isHubOpen) {
@@ -2183,6 +2483,354 @@ export function VoiceMemoAssistant() {
     if (!inputText) return false;
     const cleanInput = inputText.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
     
+    // ==========================================
+    // VOICE-ACTIVATED MACRO WIZARD INTERCEPTORS
+    // ==========================================
+    if (voiceMacroStep === 'naming') {
+      if (cleanInput.includes("start recording") || cleanInput.includes("record motion") || cleanInput.includes("next") || cleanInput.includes("record gesture")) {
+        handleWizardStartCountdown();
+        return true;
+      }
+      if (cleanInput.includes("cancel") || cleanInput.includes("stop") || cleanInput.includes("exit")) {
+        setVoiceMacroStep('idle');
+        const msg = "Macro creation cancelled.";
+        triggerBrowserSpeechSynthesis(msg);
+        showToast(msg, 'info');
+        return true;
+      }
+    }
+
+    if (voiceMacroStep === 'confirm') {
+      if (cleanInput.includes("re record") || cleanInput.includes("record again") || cleanInput.includes("try again") || cleanInput.includes("got it wrong")) {
+        handleWizardStartCountdown();
+        return true;
+      }
+      if (cleanInput.includes("yes thats good") || cleanInput.includes("confirm") || cleanInput.includes("save") || cleanInput.includes("yes") || cleanInput.includes("good")) {
+        handleWizardSave();
+        return true;
+      }
+      if (cleanInput.includes("test") || cleanInput.includes("run test") || cleanInput.includes("execute")) {
+        handleWizardTest();
+        return true;
+      }
+      if (cleanInput.includes("cancel") || cleanInput.includes("stop") || cleanInput.includes("exit")) {
+        setVoiceMacroStep('idle');
+        const msg = "Macro creation cancelled.";
+        triggerBrowserSpeechSynthesis(msg);
+        showToast(msg, 'info');
+        return true;
+      }
+    }
+
+    // ==========================================
+    // SPATIAL SETTINGS / CONTROLS INTERCEPTORS
+    // ==========================================
+    // Dynamic Camera Resizing Voice Commands
+    if (cleanInput.includes("make it") && (cleanInput.includes("bigger") || cleanInput.includes("larger") || cleanInput.includes("smaller") || cleanInput.includes("tiny"))) {
+      let percent = 25;
+      const numMatch = cleanInput.match(/(\d+)\s*%/);
+      if (numMatch) {
+        percent = parseInt(numMatch[1], 10);
+      }
+      const isBigger = cleanInput.includes("bigger") || cleanInput.includes("larger");
+      const changeType = isBigger ? 'increase' : 'decrease';
+      window.dispatchEvent(new CustomEvent('kinetic-camera-control', {
+        detail: { action: 'resize-percent', type: changeType, percent }
+      }));
+      const msg = `Resizing the camera preview. I have made it ${percent}% ${isBigger ? 'bigger' : 'smaller'} for you.`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: `📐 Camera Resized`
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    if (cleanInput.includes("make the camera") && (cleanInput.includes("bigger") || cleanInput.includes("larger") || cleanInput.includes("smaller") || cleanInput.includes("twice as big") || cleanInput.includes("double the size"))) {
+      let percent = 25;
+      let isBigger = true;
+      if (cleanInput.includes("twice as big") || cleanInput.includes("double")) {
+        percent = 100;
+      } else {
+        const numMatch = cleanInput.match(/(\d+)\s*%/);
+        if (numMatch) {
+          percent = parseInt(numMatch[1], 10);
+        }
+        isBigger = cleanInput.includes("bigger") || cleanInput.includes("larger");
+      }
+      const changeType = isBigger ? 'increase' : 'decrease';
+      window.dispatchEvent(new CustomEvent('kinetic-camera-control', {
+        detail: { action: 'resize-percent', type: changeType, percent }
+      }));
+      const msg = `Resizing the camera preview. I have made it ${percent}% ${isBigger ? 'bigger' : 'smaller'} for you.`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: `📐 Camera Resized`
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    if (cleanInput.includes("reset camera size") || cleanInput.includes("make the camera normal") || cleanInput.includes("camera original size") || cleanInput.includes("make it normal size")) {
+      window.dispatchEvent(new CustomEvent('kinetic-camera-control', {
+        detail: { action: 'resize-reset' }
+      }));
+      const msg = `I have reset the camera preview to its default size.`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: `📐 Camera Size Reset`
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Toggle Camera Only Mode
+    if (cleanInput.includes("only want the camera") || cleanInput.includes("only want camera preview") || cleanInput.includes("camera only mode") || cleanInput.includes("hide gesture hud") || cleanInput.includes("hide the spatial hud") || cleanInput.includes("clean camera preview") || cleanInput.includes("hide all the kinetic") || cleanInput.includes("hide cursor and hud")) {
+      window.dispatchEvent(new CustomEvent('kinetic-camera-control', {
+        detail: { action: 'set-camera-only', value: true }
+      }));
+      const msg = "I have activated clean Camera Only Mode. All kinetic HUD overlays and joint trackers are now hidden.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: "👁️ Clean Camera Mode Enabled"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    if (cleanInput.includes("restore the hud") || cleanInput.includes("show gesture hud") || cleanInput.includes("show spatial hud") || cleanInput.includes("show tracking overlay") || cleanInput.includes("disable camera only mode") || cleanInput.includes("show full hud")) {
+      window.dispatchEvent(new CustomEvent('kinetic-camera-control', {
+        detail: { action: 'set-camera-only', value: false }
+      }));
+      const msg = "I have restored the full spatial HUD tracking visuals and joint coordinates for you.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: "🖥️ Spatial HUD Visuals Restored"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Disabling macro/gesture/spatial modes
+    if (cleanInput.includes("disable macro mode") || cleanInput.includes("disable spatial mode") || cleanInput.includes("disable gesture mode") || cleanInput.includes("turn off camera tracking") || cleanInput.includes("disable spatial camera") || cleanInput.includes("disable spatial tracking")) {
+      const store = useStore.getState();
+      store.setKineticEnabled(false);
+      const msg = "I have disabled Spatial Camera and Macro Mode for you.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: "🔇 Spatial Camera Disabled"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Switching to cursor mode
+    if (cleanInput.includes("switch to cursor mode") || cleanInput.includes("enable cursor mode") || cleanInput.includes("activate cursor mode") || cleanInput.includes("turn on cursor mode")) {
+      const store = useStore.getState();
+      store.setKineticEnabled(true);
+      store.setKineticInteractionMode('cursor');
+      const msg = "I have activated the Spatial Cursor navigation mode. Move your index finger to control the cursor!";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: "🖱️ Switched to Cursor Mode"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Switching to macro/gesture mode
+    if (cleanInput.includes("switch to macro mode") || cleanInput.includes("switch to gesture mode") || cleanInput.includes("enable macro mode") || cleanInput.includes("enable gesture mode") || cleanInput.includes("turn on macro mode") || cleanInput.includes("turn on gesture mode")) {
+      const store = useStore.getState();
+      store.setKineticEnabled(true);
+      store.setKineticInteractionMode('gesture');
+      const msg = "I have switched you to Spatial Macro mode. Your gestures and poses will trigger actions!";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: "🖐️ Switched to Macro Mode"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Cooldown settings query
+    if (cleanInput.includes("what is the cooldown time") || cleanInput.includes("what is the cool down time") || cleanInput.includes("what is the cooldown duration") || cleanInput.includes("check gesture cooldown") || cleanInput.includes("check cooldown")) {
+      const store = useStore.getState();
+      const seconds = (store.gestureCooldownDuration / 1000).toFixed(1);
+      const msg = `The current gesture cooldown time is configured to ${seconds} seconds.`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_query',
+        triggeredAction: "⏱️ Inspected Cooldown Duration"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Cooldown settings mutation
+    const cooldownMatch = cleanInput.match(/(?:change|set|update|cooldown|cool down)(?:\s+the)?(?:\s+cooldown)?(?:\s+time|\s+duration)?(?:\s+to)?\s+(\d+(?:\.\d+)?)\s*(second|sec|s|millisecond|ms)/i) || 
+                          cleanInput.match(/(?:change|set|update)(?:\s+the)?(?:\s+cooldown)?(?:\s+time|\s+duration)?(?:\s+to)?\s+(\d+(?:\.\d+)?)\s*(?:seconds|second|sec|s|ms|milliseconds)/i);
+    if (cooldownMatch) {
+      const value = parseFloat(cooldownMatch[1]);
+      const unit = cooldownMatch[2] ? cooldownMatch[2].toLowerCase() : 'second';
+      const ms = (unit.startsWith('ms') || unit.startsWith('milli')) ? value : value * 1000;
+      const store = useStore.getState();
+      store.setGestureCooldownDuration(ms);
+      const msg = `I have updated the gesture execution cooldown to ${(ms / 1000).toFixed(1)} seconds.`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: `⏱️ Cooldown Set to ${(ms / 1000).toFixed(1)}s`
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Cursor sensitivity query
+    if (cleanInput.includes("what is the cursor sensitivity") || cleanInput.includes("check cursor sensitivity") || cleanInput.includes("what is our sensitivity")) {
+      const store = useStore.getState();
+      const sens = Math.round((store.cursorSensitivity || 1.0) * 100);
+      const msg = `The current Spatial Cursor sensitivity is set to ${sens} percent.`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_query',
+        triggeredAction: "🖱️ Inspected Cursor Sensitivity"
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Cursor sensitivity relative adjustment
+    let targetSens: number | null = null;
+    let desc = "";
+    if (cleanInput.includes("more sensitive") || cleanInput.includes("increase sensitivity") || cleanInput.includes("make cursor faster")) {
+      const store = useStore.getState();
+      const current = store.cursorSensitivity || 1.0;
+      const pctMatch = cleanInput.match(/(\d+)\s*%/);
+      const multiplier = pctMatch ? 1 + (parseFloat(pctMatch[1]) / 100) : 1.25;
+      targetSens = Math.max(0.2, Math.min(5.0, current * multiplier));
+      desc = `${pctMatch ? pctMatch[1] + '%' : '25%'} more sensitive`;
+    } else if (cleanInput.includes("less sensitive") || cleanInput.includes("decrease sensitivity") || cleanInput.includes("make cursor slower")) {
+      const store = useStore.getState();
+      const current = store.cursorSensitivity || 1.0;
+      const pctMatch = cleanInput.match(/(\d+)\s*%/);
+      const multiplier = pctMatch ? 1 - (parseFloat(pctMatch[1]) / 100) : 0.75;
+      targetSens = Math.max(0.2, Math.min(5.0, current * multiplier));
+      desc = `${pctMatch ? pctMatch[1] + '%' : '25%'} less sensitive`;
+    } else {
+      // Direct sensitivity set, e.g. "set cursor sensitivity to 150%" or "sensitivity to 1.5"
+      const setMatch = cleanInput.match(/(?:set|change|sensitivity)(?:\s+cursor)?(?:\s+sensitivity)?(?:\s+to)?\s+(\d+)\s*%/i);
+      if (setMatch) {
+        const pct = parseFloat(setMatch[1]);
+        targetSens = Math.max(0.2, Math.min(5.0, pct / 100));
+        desc = `to ${pct}%`;
+      } else {
+        const floatMatch = cleanInput.match(/(?:set|change|sensitivity)(?:\s+cursor)?(?:\s+sensitivity)?(?:\s+to)?\s+(\d+\.\d+)/i);
+        if (floatMatch) {
+          const val = parseFloat(floatMatch[1]);
+          targetSens = Math.max(0.2, Math.min(5.0, val));
+          desc = `to ${Math.round(val * 100)}%`;
+        }
+      }
+    }
+
+    if (targetSens !== null) {
+      const store = useStore.getState();
+      store.setCursorSensitivity(targetSens);
+      const sensPercent = Math.round(targetSens * 100);
+      const msg = `I have adjusted the Spatial Cursor sensitivity to ${sensPercent} percent (modified ${desc}).`;
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: `🖱️ Sensitivity set to ${sensPercent}%`
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Interactive Voice Macro Recording wizard trigger
+    if (cleanInput.includes("record and add") || cleanInput.includes("create a new macro") || cleanInput.includes("add a new macro") || cleanInput.includes("create custom hand gesture") || cleanInput.includes("create a custom gesture")) {
+      let actionToBind = 'toggle-sidebar';
+      let actionName = 'Custom Gesture';
+      
+      if (cleanInput.includes("right sidebar") || cleanInput.includes("right panel")) {
+        actionToBind = 'toggle-right-sidebar';
+        actionName = 'Toggle Right Sidebar';
+      } else if (cleanInput.includes("sidebar") || cleanInput.includes("side panel")) {
+        actionToBind = 'toggle-sidebar';
+        actionName = 'Toggle Left Sidebar';
+      } else if (cleanInput.includes("clear chat") || cleanInput.includes("clear conversation")) {
+        actionToBind = 'clear-chat';
+        actionName = 'Clear Conversation';
+      } else if (cleanInput.includes("zen") || cleanInput.includes("peace")) {
+        actionToBind = 'zen-mode';
+        actionName = 'Zen Space';
+      } else if (cleanInput.includes("quick note") || cleanInput.includes("make a note")) {
+        actionToBind = 'create-quick-note';
+        actionName = 'Quick Capture Note';
+      } else if (cleanInput.includes("dashboard") || cleanInput.includes("home")) {
+        actionToBind = 'nav-dashboard';
+        actionName = 'Navigate Dashboard';
+      } else if (cleanInput.includes("projects") || cleanInput.includes("project page")) {
+        actionToBind = 'nav-projects';
+        actionName = 'Navigate Projects';
+      } else if (cleanInput.includes("notes") || cleanInput.includes("note page")) {
+        actionToBind = 'nav-notes';
+        actionName = 'Navigate Notes';
+      } else if (cleanInput.includes("settings") || cleanInput.includes("options")) {
+        actionToBind = 'nav-settings';
+        actionName = 'Navigate Settings';
+      } else if (cleanInput.includes("docs") || cleanInput.includes("documents")) {
+        actionToBind = 'nav-docs';
+        actionName = 'Navigate Workspace Docs';
+      }
+
+      // Check contradiction for this action in existing gestures
+      const currentGestures = useStore.getState().kineticGestures || [];
+      const clashingGesture = currentGestures.find(g => g.action === actionToBind);
+      let contradictionMsg = null;
+      if (clashingGesture) {
+        contradictionMsg = `An existing macro "${clashingGesture.name}" is already assigned to this action.`;
+      }
+
+      setVoiceMacroName(actionName);
+      setVoiceMacroAction(actionToBind);
+      setVoiceMacroPoints([]);
+      setVoiceMacroContradiction(contradictionMsg);
+      setVoiceMacroStep('naming');
+      
+      const vocalGreeting = `Let's set up a new custom macro called ${actionName}. ${contradictionMsg ? contradictionMsg + ' But we can still register a new motion.' : 'No clashing macros detected!'} Let's record the custom hand motion now. Please tap Start Recording or say 'start recording' when you are ready to gesture!`;
+      
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: vocalGreeting,
+        intent: 'create_macro',
+        triggeredAction: "🔮 Initiated Voice Macro Setup"
+      });
+      triggerBrowserSpeechSynthesis(vocalGreeting);
+      setIsAssistantMinimized(useStore.getState().isKineticEnabled);
+      return true;
+    }
+
     // Custom Sidebar / Minimize Command
     const sidebarCommandPhrases = [
       'sidebar', 'ether sidebar', 'aether sidebar', 'go to sidebar', 'minimize', 'minimize to sidebar', 'move to sidebar', 'dock to sidebar', 'dock'
@@ -3068,12 +3716,12 @@ export function VoiceMemoAssistant() {
         const newSyn = {
           id: `synapse-${crypto.randomUUID()}`,
           name: synapseName,
-          desc: parsedData.desc || parsedData.description || 'Cognitive constraint formulated.',
+          desc: parsedData.desc || parsedData.description || 'Saved custom guideline.',
           type: 'custom_synapse' as const,
           createdAt: Date.now()
         };
         setCortexSynapses(prev => [...(prev || []), newSyn]);
-        actionTriggeredDisplay = `🧠 Anchored Cognitive Memory Synapse: "${synapseName}"`;
+        actionTriggeredDisplay = `🧠 Saved guideline: "${synapseName}"`;
         navigate('/brain');
         break;
       }
@@ -3577,10 +4225,10 @@ export function VoiceMemoAssistant() {
 
   const handleAddManualItem = (type: 'note' | 'task' | 'brainstorm' | 'synapse') => {
     const templates = {
-      note: { title: 'New Dev Note Log', content: '# Log Summary\nEnter markdown notes here...' },
-      task: { title: 'New Operational Task', content: 'Describe action items and requirements...' },
-      brainstorm: { title: 'New Brainstorm Concept', content: 'What is this crazy brilliant idea...' },
-      synapse: { title: 'Synaptic Preference Constraint', content: 'Define rules like formatting preferences...' }
+      note: { title: 'New Note', content: '# Note Summary\nEnter details here...' },
+      task: { title: 'New Task', content: 'Describe what needs to be done...' },
+      brainstorm: { title: 'New Idea', content: 'Describe your idea here...' },
+      synapse: { title: 'New Guideline', content: 'Define custom rules, preferences, or instructions...' }
     };
     
     setSessionItems(prev => [
@@ -3684,20 +4332,20 @@ export function VoiceMemoAssistant() {
     setSessionItems([]);
     setPendingNote(null);
 
-    const summaryText = `Session Workspace Compiled Successfully!\n\n` +
-      `I have saved all visual draft records straight into the Obsidian State Context:\n` +
-      `• ${notesAddedCount} Markdown Developer notes filed\n` +
-      `• ${tasksAddedCount} Project action tasks locked into backlog\n` +
-      `• ${brainstormsAddedCount} Smart brainstorm ideas logged\n` +
-      `• ${synapsesAddedCount} AI Synaptic rule preferences updated\n\n` +
-      `Everything has been committed and finalized!`;
+    const summaryText = `Saved Successfully!\n\n` +
+      `All items have been added:\n` +
+      `• ${notesAddedCount} notes saved\n` +
+      `• ${tasksAddedCount} tasks added to backlog\n` +
+      `• ${brainstormsAddedCount} brainstorm ideas saved\n` +
+      `• ${synapsesAddedCount} guidelines updated\n\n` +
+      `Everything has been saved and completed!`;
 
     setConvoHistory(prev => [
       ...prev,
       { role: 'model', text: summaryText }
     ]);
 
-    triggerBrowserSpeechSynthesis("Cooperative session successfully finalized and summarized. Your documents are written down permanently.");
+    triggerBrowserSpeechSynthesis("Everything has been saved and completed.");
   };
 
   const commitSingleSessionItem = (itemId: string) => {
@@ -4016,18 +4664,13 @@ export function VoiceMemoAssistant() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.1, ease: "easeOut" }}
-              className={`fixed transition-all duration-200 ease-out select-none selection:bg-yellow-500/30 flex items-center justify-center ${
+              className={`fixed select-none selection:bg-yellow-500/30 flex items-center justify-center transition-all duration-300 ${
                 isAssistantMinimized 
-                  ? "inset-0 w-full h-full z-[100] bg-black/85 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none sm:right-4 sm:bottom-[108px] sm:top-4 sm:w-[420px] sm:max-w-[95vw] sm:inset-auto sm:z-[90]" 
-                  : "inset-0 z-[100] bg-black/85 backdrop-blur-md p-0 sm:p-4"
+                  ? "inset-x-0 bottom-0 top-auto h-[48vh] w-full z-[90] pointer-events-none bg-transparent backdrop-blur-none sm:right-4 sm:bottom-[108px] sm:top-4 sm:w-[420px] sm:max-w-[95vw] sm:h-auto sm:max-h-[85vh] sm:inset-auto sm:z-[90]" 
+                  : "inset-0 z-[100] bg-black/85 backdrop-blur-md p-0 sm:p-4 pointer-events-auto"
               }`}
               onClick={(e) => {
-                if (isSpeechActive) {
-                  handleIntelligentInterrupt();
-                  e.stopPropagation();
-                  return;
-                }
-                if (!isAssistantMinimized && e.target === e.currentTarget) {
+                if (e.target === e.currentTarget) {
                   handleCloseAssistant();
                 }
               }}
@@ -4042,28 +4685,15 @@ export function VoiceMemoAssistant() {
                 ease: "easeOut",
                 layout: { duration: 0.1, ease: "easeOut" }
               }}
-              className={`transition-all duration-200 ease-out flex flex-col relative ${
+              className={`flex flex-col relative transition-all duration-350 pointer-events-auto ${
                 isAssistantMinimized
-                  ? "w-full h-full bg-[#0c0c0e]/95 border-0 sm:border border-zinc-805 rounded-none sm:rounded-3xl overflow-hidden shadow-[0_0_40px_rgba(245,158,11,0.22)]"
-                  : "w-full sm:max-w-6xl h-full sm:h-[85vh] bg-[#0c0c0e] border-0 sm:border border-zinc-800 rounded-none sm:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(245,158,11,0.12)]"
+                  ? "w-full h-[48vh] bg-[#0c0c0e]/98 border-t border-zinc-800 rounded-t-3xl overflow-hidden shadow-[0_-10px_40px_rgba(245,158,11,0.22)] sm:w-full sm:h-full sm:bg-[#0c0c0e]/95 sm:border sm:border-zinc-850 sm:rounded-3xl sm:shadow-[0_0_40px_rgba(245,158,11,0.22)]"
+                  : "w-full sm:max-w-6xl h-[100dvh] sm:h-[85vh] bg-[#0c0c0e] border-0 sm:border border-zinc-800 rounded-none sm:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(245,158,11,0.12)]"
               }`}
               onClick={(e) => {
+                e.stopPropagation();
                 if (isSpeechActive) {
-                  const target = e.target as HTMLElement;
-                  if (
-                    target &&
-                    typeof target.closest === 'function' &&
-                    (target.closest('button') || 
-                     target.closest('input') || 
-                     target.closest('textarea') || 
-                     target.closest('select') ||
-                     target.closest('a'))
-                  ) {
-                    handleIntelligentInterrupt();
-                  } else {
-                    handleIntelligentInterrupt();
-                    e.stopPropagation();
-                  }
+                  handleIntelligentInterrupt();
                 }
               }}
             >
@@ -4257,8 +4887,8 @@ export function VoiceMemoAssistant() {
               )}
 
               {/* Main Content Area Split Panel */}
-              <div className="flex-grow flex flex-col md:flex-row h-full overflow-hidden min-h-0 divide-y md:divide-y-0 md:divide-x divide-zinc-900">
-                <div className={`flex flex-col p-4 sm:p-5 overflow-hidden h-full relative space-y-4 ${
+              <div className="flex-grow flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-zinc-900">
+                <div className={`flex flex-col p-4 sm:p-5 overflow-hidden flex-1 min-h-0 relative space-y-4 ${
                   isAssistantMinimized ? 'w-full' : 'w-full md:w-1/2'
                 } ${!isAssistantMinimized && mobilePanel !== 'control' ? 'hidden md:flex' : 'flex'}`}>
                   <div className="flex items-center justify-between shrink-0 select-none">
@@ -4270,7 +4900,7 @@ export function VoiceMemoAssistant() {
                     {/* Integrated Tab Selectors */}
                     <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 shrink-0">
                       <button
-                        onClick={() => setHudTab('speak')}
+                        onClick={() => { haptic.light(); setHudTab('speak'); }}
                         className={`px-3 py-1 text-[9px] font-black uppercase rounded-lg transition-all flex items-center gap-1.5 ${
                           hudTab === 'speak' 
                             ? 'bg-yellow-500/10 text-yellow-400 font-bold border border-yellow-500/10' 
@@ -4280,7 +4910,7 @@ export function VoiceMemoAssistant() {
                         <MessageSquare size={10} /> Dialogue Chat
                       </button>
                       <button
-                        onClick={() => setHudTab('notepad')}
+                        onClick={() => { haptic.light(); setHudTab('notepad'); }}
                         className={`px-3 py-1 text-[9px] font-black uppercase rounded-lg transition-all flex items-center gap-1.5 ${
                           hudTab === 'notepad' 
                             ? 'bg-yellow-500/10 text-yellow-400 font-bold border border-yellow-500/10' 
@@ -4293,6 +4923,7 @@ export function VoiceMemoAssistant() {
 
                     <button
                       onClick={() => {
+                        haptic.medium();
                         if (window.speechSynthesis) window.speechSynthesis.cancel();
                         setAetherFeedback(null);
                         setConvoHistory([]);
@@ -4371,7 +5002,7 @@ export function VoiceMemoAssistant() {
                       </div>
 
                       {/* Chat bubbles container */}
-                      <div className="flex-grow overflow-y-auto pr-2 space-y-3.5 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent rounded-xl bg-zinc-950/40 p-3 border border-zinc-900/60 flex flex-col justify-between">
+                      <div className="flex-grow min-h-0 pr-2 space-y-3.5 rounded-xl bg-zinc-950/40 p-3 border border-zinc-900/60 flex flex-col justify-between">
                         <div className="space-y-3.5 flex-1 overflow-y-auto mb-2">
                           {convoHistory.length === 0 && !aetherFeedback ? (
                             <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
@@ -4606,7 +5237,7 @@ export function VoiceMemoAssistant() {
                     {isProcessing && (
                       <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/5 border border-yellow-500/10 rounded-xl font-mono text-[10px] text-yellow-400">
                         <Loader2 size={13} className="animate-spin text-yellow-400 shrink-0" />
-                        <span>{processingStatus || 'Aether digital synapse processing...'}</span>
+                        <span>{processingStatus || 'Processing voice note...'}</span>
                       </div>
                     )}
 
@@ -4910,7 +5541,7 @@ export function VoiceMemoAssistant() {
 
                 {/* RIGHT PANELS: Workspace Summary note grid and Inline Edits */}
                 {!isAssistantMinimized && (
-                  <div className={`w-full md:w-1/2 flex flex-col p-4 sm:p-5 bg-[#09090b]/80 h-full overflow-hidden space-y-4 ${
+                  <div className={`w-full md:w-1/2 flex flex-col p-4 sm:p-5 bg-[#09090b]/80 flex-1 min-h-0 overflow-hidden space-y-4 ${
                     mobilePanel !== 'summary' ? 'hidden md:flex' : 'flex'
                   }`}>
                   <div className="flex items-center justify-between shrink-0">
@@ -4930,7 +5561,7 @@ export function VoiceMemoAssistant() {
                         <Bot size={24} className="text-zinc-700/50 animate-pulse" />
                         <h4 className="text-zinc-400 font-sans font-bold text-xs">Sandbox editor workspace empty</h4>
                         <p className="text-[10px] text-zinc-500 max-w-[280px]">
-                          As you speak or instruct Aether, we synthesize notes, tasks, or synapse rules and show them here. You can directly edit any text before finalizing, or insert a manual block below!
+                          As you speak, we create notes, tasks, or guidelines and show them here. You can directly edit any text before finalizing, or insert a manual block below!
                         </p>
                       </div>
                     ) : (
@@ -4951,7 +5582,7 @@ export function VoiceMemoAssistant() {
                                 <option value="note">📝 NOTE LOG</option>
                                 <option value="task">✅ BACKLOG TASK</option>
                                 <option value="brainstorm">💡 BRAINSTORM IDEA</option>
-                                <option value="synapse">🧠 COGNITIVE RULE</option>
+                                <option value="synapse">🧠 GUIDELINE</option>
                               </select>
 
                               <div className="flex items-center gap-2">
@@ -5055,6 +5686,186 @@ export function VoiceMemoAssistant() {
                 </div>
               )}
             </div>
+
+              {/* Voice Macro Wizard Overlay Modal Panel */}
+              {voiceMacroStep !== 'idle' && (
+                <div className="absolute inset-0 z-[110] bg-[#0c0c0e]/98 backdrop-blur-md flex flex-col justify-between p-6 overflow-y-auto">
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between border-b border-zinc-850 pb-4 shrink-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-yellow-500 animate-pulse">
+                        <BrainCircuit size={18} />
+                      </div>
+                      <div className="text-left">
+                        <h3 className="text-sm font-bold text-zinc-100 font-sans tracking-tight">Aether Macro Builder</h3>
+                        <p className="text-[10px] text-zinc-500 font-mono">STEP-BY-STEP VOICE GUIDED REGISTRATION</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setVoiceMacroStep('idle')}
+                      className="p-1.5 hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+
+                  {/* Wizard Content Body */}
+                  <div className="flex-grow flex flex-col items-center justify-center py-6 text-center space-y-6">
+                    {/* Progress Indicator */}
+                    <div className="flex items-center gap-2 font-mono text-[9px] font-bold text-zinc-500 uppercase tracking-widest bg-zinc-900/60 px-3 py-1 rounded-full border border-zinc-800">
+                      <span className={voiceMacroStep === 'naming' ? 'text-yellow-400 font-black' : ''}>1. Initialize</span>
+                      <span>•</span>
+                      <span className={voiceMacroStep === 'motion' ? 'text-yellow-400 font-black' : ''}>2. Gesture</span>
+                      <span>•</span>
+                      <span className={voiceMacroStep === 'confirm' ? 'text-yellow-400 font-black' : ''}>3. Finalize</span>
+                    </div>
+
+                    {/* Conditional step visuals */}
+                    {voiceMacroStep === 'naming' && (
+                      <div className="space-y-4 max-w-md">
+                        <div className="w-16 h-16 rounded-full bg-yellow-500/5 flex items-center justify-center border border-yellow-500/20 mx-auto text-yellow-400">
+                          <Plus size={28} className="animate-pulse" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-extrabold text-zinc-100 font-sans">Ready to map: <span className="text-yellow-400">"{voiceMacroName}"</span></h4>
+                          <p className="text-xs text-zinc-400 font-sans leading-relaxed">
+                            Aether will bind your custom gesture path to the action: <strong className="text-zinc-200">{voiceMacroAction}</strong>.
+                          </p>
+                        </div>
+
+                        {voiceMacroContradiction && (
+                          <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl text-left flex gap-2">
+                            <span className="text-amber-400 shrink-0 mt-0.5 font-mono text-xs font-bold">⚠️ CONFLICT:</span>
+                            <p className="text-[11px] text-amber-300 font-sans font-medium leading-normal">{voiceMacroContradiction}</p>
+                          </div>
+                        )}
+
+                        <div className="pt-2">
+                          <button
+                            onClick={handleWizardStartCountdown}
+                            className="w-full sm:w-auto px-6 py-2.5 bg-[#d97706] hover:bg-yellow-500 text-zinc-950 font-sans text-xs font-black rounded-xl tracking-wider transition-all duration-300 shadow-[0_4px_20px_rgba(245,158,11,0.25)] flex items-center justify-center gap-1.5 cursor-pointer mx-auto"
+                          >
+                            <Mic size={14} /> START RECORDING MOTION
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-zinc-550 font-mono">
+                          You can also say <strong className="text-zinc-450 font-black">"start recording"</strong> or <strong className="text-zinc-450 font-black">"cancel"</strong>
+                        </p>
+                      </div>
+                    )}
+
+                    {voiceMacroStep === 'motion' && (
+                      <div className="space-y-6 max-w-sm">
+                        {trainingCountdown > 0 ? (
+                          <div className="space-y-4">
+                            <div className="text-6xl font-black text-yellow-500 font-sans animate-ping duration-1000">{trainingCountdown}</div>
+                            <div className="space-y-1">
+                              <h4 className="text-sm font-bold text-zinc-100">Prepare your Hand Gesture...</h4>
+                              <p className="text-xs text-zinc-400">Position your hand in front of your camera frame.</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-5">
+                            {/* Active radar/pulsing circle */}
+                            <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+                              <div className="absolute inset-0 rounded-full bg-red-500/10 border border-red-500/35 animate-ping duration-1000" />
+                              <div className="w-16 h-16 rounded-full bg-red-500/15 border-2 border-red-500/50 flex items-center justify-center text-red-500">
+                                <Video size={24} className="animate-pulse" />
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1.5">
+                              <h4 className="text-sm font-black text-red-400 uppercase tracking-wider font-sans">RECORDING MOTION PATH</h4>
+                              <p className="text-xs text-zinc-400">Perform your gesture clearly. Move your hand up to 3 seconds.</p>
+                            </div>
+
+                            {/* Custom progress bar */}
+                            <div className="w-full h-1.5 bg-zinc-900 rounded-full border border-zinc-800 overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-red-600 to-amber-500 transition-all duration-100 ease-linear"
+                                style={{ width: `${trainingProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {voiceMacroStep === 'confirm' && (
+                      <div className="space-y-5 max-w-md">
+                        <div className="w-16 h-16 rounded-full bg-emerald-500/5 flex items-center justify-center border border-emerald-500/20 mx-auto text-emerald-450">
+                          <CheckCircle2 size={28} className="animate-bounce" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-extrabold text-zinc-100 font-sans">Motion Capture Complete!</h4>
+                          <p className="text-xs text-zinc-400 font-sans">
+                            Successfully registered <strong className="text-zinc-200">{voiceMacroPoints.length}</strong> coordinate path points.
+                          </p>
+                        </div>
+
+                        {/* Miniature Path Preview canvas rendering */}
+                        <div className="h-28 w-44 rounded-xl border border-zinc-850 bg-zinc-950/80 p-2 mx-auto flex flex-col justify-between items-center relative overflow-hidden shadow-inner">
+                          <span className="text-[7px] text-zinc-650 font-mono absolute top-2 left-2">NORMALIZED PATH PREVIEW</span>
+                          
+                          {/* Svg Path rendering */}
+                          {voiceMacroPoints.length > 0 ? (
+                            <svg className="w-full h-full p-4 text-amber-500" viewBox="0 0 1 1">
+                              <polyline
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="0.04"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                points={normalizePoints(voiceMacroPoints).map(p => `${p.x},${p.y}`).join(' ')}
+                              />
+                            </svg>
+                          ) : (
+                            <div className="text-[10px] text-zinc-600 mt-8 font-mono">No coordinates captured</div>
+                          )}
+                        </div>
+
+                        {voiceMacroContradiction && (
+                          <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl text-left flex gap-2">
+                            <span className="text-amber-400 shrink-0 mt-0.5 font-mono text-xs font-bold">⚠️ WARNING:</span>
+                            <p className="text-[11px] text-amber-300 font-sans font-medium leading-normal">{voiceMacroContradiction}</p>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                          <button
+                            onClick={handleWizardTest}
+                            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 hover:border-zinc-700 font-sans text-xs font-bold rounded-xl cursor-pointer"
+                          >
+                            🧪 TEST ACTION
+                          </button>
+                          <button
+                            onClick={handleWizardStartCountdown}
+                            className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 hover:border-zinc-700 font-sans text-xs font-bold rounded-xl cursor-pointer"
+                          >
+                            🔄 RE-RECORD
+                          </button>
+                          <button
+                            onClick={handleWizardSave}
+                            className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-zinc-950 font-sans text-xs font-black rounded-xl tracking-wider shadow-[0_4px_16px_rgba(16,185,129,0.25)] cursor-pointer"
+                          >
+                            ✓ SAVE & MAP MACRO
+                          </button>
+                        </div>
+
+                        <p className="text-[9px] text-zinc-550 font-mono">
+                          You can also say <strong className="text-zinc-450 font-black">"confirm"</strong>, <strong className="text-zinc-450 font-black">"test"</strong>, or <strong className="text-zinc-450 font-black">"re-record"</strong>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Wizard Footer Guidance bar */}
+                  <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-900 text-center text-[10px] text-zinc-500 flex items-center justify-center gap-1.5 shrink-0 font-sans">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span>Aether Speech is fully active. You can speak commands, confirm/reject, or use the touch buttons.</span>
+                  </div>
+                </div>
+              )}
 
               {/* Bottom footer bar */}
               <div className="p-3 bg-zinc-950 border-t border-zinc-900 flex justify-between items-center text-[9px] text-zinc-550 font-mono shrink-0">
@@ -5486,27 +6297,27 @@ export function VoiceMemoAssistant() {
         </motion.div>
       )}
 
-      {/* 3. Full perimeter neon glow feedback around the screen */}
+      {/* 3. Full perimeter neon glow feedback around the screen (softened) */}
       <AnimatePresence>
-        {isSpeechActive && (
+        {isSpeechActive && isHubOpen && (
           <motion.div
             key="screen-perimeter-glow"
             initial={{ opacity: 0 }}
             animate={{ 
-              opacity: [0.4, 0.75, 0.4],
+              opacity: [0.15, 0.4, 0.15],
               boxShadow: [
-                "inset 0 0 40px rgba(234, 179, 8, 0.45), inset 0 0 80px rgba(234, 179, 8, 0.3), 0 0 24px rgba(234, 179, 8, 0.25)",
-                "inset 0 0 70px rgba(234, 179, 8, 0.75), inset 0 0 140px rgba(234, 179, 8, 0.5), 0 0 48px rgba(234, 179, 8, 0.5)",
-                "inset 0 0 40px rgba(234, 179, 8, 0.45), inset 0 0 80px rgba(234, 179, 8, 0.3), 0 0 24px rgba(234, 179, 8, 0.25)"
+                "inset 0 0 20px rgba(234, 179, 8, 0.15), inset 0 0 40px rgba(234, 179, 8, 0.08)",
+                "inset 0 0 40px rgba(234, 179, 8, 0.3), inset 0 0 80px rgba(234, 179, 8, 0.15)",
+                "inset 0 0 20px rgba(234, 179, 8, 0.15), inset 0 0 40px rgba(234, 179, 8, 0.08)"
               ]
             }}
             exit={{ opacity: 0 }}
             transition={{ 
-              duration: 2.5, 
+              duration: 3.5, 
               repeat: Infinity, 
               ease: "easeInOut" 
             }}
-            className="fixed inset-0 pointer-events-none z-[9999] border-2 border-yellow-500/40 rounded-none transition-colors duration-1000"
+            className="fixed inset-0 pointer-events-none z-[9999] border border-yellow-500/10 rounded-none transition-colors duration-1000"
           />
         )}
       </AnimatePresence>

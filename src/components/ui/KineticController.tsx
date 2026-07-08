@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Camera, CameraOff, Move, Settings2, Activity, Sparkles, X, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Check, Trash2, RefreshCw, Home, Bot, Notebook, Zap, FileText, Cpu, Play, Pause, HelpCircle, Award, Eye } from 'lucide-react';
+import { Camera, CameraOff, Move, Settings2, Activity, Sparkles, X, ChevronDown, ChevronUp, AlertCircle, AlertTriangle, Check, Trash2, RefreshCw, Home, Bot, Notebook, Zap, FileText, Cpu, Play, Pause, HelpCircle, Award, Eye, EyeOff, Minus, Plus } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, KineticGesture } from '../../store';
@@ -264,11 +264,15 @@ export function KineticController() {
     virtualCursorPos,
     setVirtualCursorPos,
     isPinching,
-    setIsPinching
+    setIsPinching,
+    isCameraOnlyMode,
+    setCameraOnlyMode,
+    cameraScale,
+    setCameraScale
   } = useStore();
 
   const navigate = useNavigate();
-  const { addNote, showToast, triggerFullSync, declineInvitation, invitations } = useData();
+  const { addNote, showToast, triggerFullSync, declineInvitation, invitations, userProfile } = useData();
 
   // State
   const [isMinimized, setIsMinimized] = useState(false);
@@ -277,6 +281,7 @@ export function KineticController() {
   const [detectedGesture, setDetectedGesture] = useState<string | null>(null);
   const [gestureCooldown, setGestureCooldown] = useState(false);
   const gestureCooldownRef = useRef(false);
+  const lastGlobalTriggerTimeRef = useRef<number>(0);
 
   const setCooldown = (val: boolean) => {
     gestureCooldownRef.current = val;
@@ -300,7 +305,8 @@ export function KineticController() {
     fingerPoseStabilityFrames,
     gestureCooldownDuration,
     customPathMatchPrecision,
-    kineticHandsMode
+    kineticHandsMode,
+    kineticInteractionMode
   });
 
   useEffect(() => {
@@ -311,9 +317,10 @@ export function KineticController() {
       fingerPoseStabilityFrames,
       gestureCooldownDuration,
       customPathMatchPrecision,
-      kineticHandsMode
+      kineticHandsMode,
+      kineticInteractionMode
     };
-  }, [kineticGestures, swipeSensitivity, waveSensitivity, fingerPoseStabilityFrames, gestureCooldownDuration, customPathMatchPrecision, kineticHandsMode]);
+  }, [kineticGestures, swipeSensitivity, waveSensitivity, fingerPoseStabilityFrames, gestureCooldownDuration, customPathMatchPrecision, kineticHandsMode, kineticInteractionMode]);
 
   // Dynamically adapt MediaPipe tracker's tracking capacity when mode switches
   useEffect(() => {
@@ -420,6 +427,38 @@ export function KineticController() {
     return () => window.removeEventListener('kinetic-simulate-gesture', handleSimulate);
   }, []);
 
+  // Set up event listener for remote camera resizing and clean mode toggling
+  useEffect(() => {
+    const handleCameraControl = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+
+      if (detail.action === 'resize-percent') {
+        const currentScale = useStore.getState().cameraScale;
+        const change = detail.percent / 100;
+        const newScale = detail.type === 'increase' ? currentScale + change : currentScale - change;
+        setCameraScale(newScale);
+        showToast(`📐 Resized Camera Preview: ${Math.round(newScale * 100)}%`, 'success', 2500);
+      } else if (detail.action === 'resize-scale') {
+        setCameraScale(detail.scale);
+        showToast(`📐 Camera Preview set to ${Math.round(detail.scale * 100)}%`, 'success', 2500);
+      } else if (detail.action === 'resize-reset') {
+        setCameraScale(1.0);
+        showToast('📐 Camera Preview size reset to default', 'info', 2500);
+      } else if (detail.action === 'toggle-camera-only') {
+        const currentMode = useStore.getState().isCameraOnlyMode;
+        setCameraOnlyMode(!currentMode);
+        showToast(!currentMode ? '👁️ Camera Only mode enabled (HUD Hidden)' : '🖥️ Kinetic Full HUD restored', 'info', 3000);
+      } else if (detail.action === 'set-camera-only') {
+        setCameraOnlyMode(detail.value);
+        showToast(detail.value ? '👁️ Camera Only mode enabled (HUD Hidden)' : '🖥️ Kinetic Full HUD restored', 'info', 3000);
+      }
+    };
+
+    window.addEventListener('kinetic-camera-control', handleCameraControl);
+    return () => window.removeEventListener('kinetic-camera-control', handleCameraControl);
+  }, [setCameraScale, setCameraOnlyMode, showToast]);
+
   // First-time trigger countdown
   useEffect(() => {
     if (!learningGesture || !isFirstTimeDiscovery) return;
@@ -488,10 +527,30 @@ export function KineticController() {
 
   // Hand-dragging camera, virtual cursor, scroll & mode-switching Refs
   const isHandDraggingCameraRef = useRef(false);
+  const wasDraggingCameraThisSessionRef = useRef(false);
+  const lastActiveCursorOrDragTimeRef = useRef<number>(0);
+  const handLastDetectedTimeRef = useRef<number>(0);
+  const handRediscoveredTimeRef = useRef<number>(0);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const lastIsPinchingRef = useRef(false);
   const lastScrollYRef = useRef<number | null>(null);
   const shakaStartRef = useRef<number | null>(null);
+
+  const pinchStartXRef = useRef(0);
+  const pinchStartYRef = useRef(0);
+  const pinchStartTimeRef = useRef(0);
+  const hasDraggedScrollRef = useRef(false);
+  const lastScrollHandXRef = useRef(0);
+  const lastScrollHandYRef = useRef(0);
+  const lastHandXRef = useRef<number | null>(null);
+  const lastHandYRef = useRef<number | null>(null);
+
+  // Reset collapsed/hidden states and position to defaults on page load/mount
+  useEffect(() => {
+    setIsMinimized(false);
+    useStore.getState().setShowFloatingCamera(true);
+    setPosition({ x: 20, y: 100 });
+  }, []);
 
   // Load and unload video stream
   useEffect(() => {
@@ -647,6 +706,12 @@ export function KineticController() {
     const onMediaPipeResults = (results: any) => {
       if (!isTrackingRef.current) return;
 
+      const isNewSignup = typeof window !== 'undefined' && window.sessionStorage.getItem('is_new_signup') === 'true';
+      const isWizardActive = !userProfile?.setupCompleted && isNewSignup;
+      if (isWizardActive) {
+        return;
+      }
+
       // Calculate FPS
       const now = performance.now();
       frameCount++;
@@ -659,6 +724,13 @@ export function KineticController() {
       const handsMode = storeRef.current.kineticHandsMode || 'one';
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const nowMs = Date.now();
+        const wasHandMissing = (nowMs - handLastDetectedTimeRef.current) > 1500;
+        handLastDetectedTimeRef.current = nowMs;
+        if (wasHandMissing) {
+          handRediscoveredTimeRef.current = nowMs;
+        }
+
         // Hand 1 (Always the first detected hand)
         const landmarks1 = results.multiHandLandmarks[0];
 
@@ -814,8 +886,13 @@ export function KineticController() {
               if (Date.now() - lastTrigger > 3500) {
                 const matchedGesture = storeRef.current.kineticGestures.find(g => g.direction === doublePoseKey && !g.disabled);
                 if (matchedGesture) {
-                  triggerGesture(matchedGesture.name, matchedGesture.id);
-                  lastPoseTriggeredRef.current[doublePoseKey] = Date.now();
+                  // Only trigger if not in cursor mode and not recently dragging/interacting, and after hand warm-up
+                  if (storeRef.current.kineticInteractionMode !== 'cursor' && 
+                      Date.now() - lastActiveCursorOrDragTimeRef.current > 1800 && 
+                      Date.now() - handRediscoveredTimeRef.current > 1500) {
+                    triggerGesture(matchedGesture.name, matchedGesture.id);
+                    lastPoseTriggeredRef.current[doublePoseKey] = Date.now();
+                  }
                 }
               }
             }
@@ -828,8 +905,13 @@ export function KineticController() {
               if (Date.now() - lastTrigger > 2500) {
                 const matchedPoseGesture = storeRef.current.kineticGestures.find(g => g.direction === poseKey && !g.disabled);
                 if (matchedPoseGesture) {
-                  triggerGesture(matchedPoseGesture.name, matchedPoseGesture.id);
-                  lastPoseTriggeredRef.current[poseKey] = Date.now();
+                  // Only trigger if not in cursor mode and not recently dragging/interacting, and after hand warm-up
+                  if (storeRef.current.kineticInteractionMode !== 'cursor' && 
+                      Date.now() - lastActiveCursorOrDragTimeRef.current > 1800 && 
+                      Date.now() - handRediscoveredTimeRef.current > 1500) {
+                    triggerGesture(matchedPoseGesture.name, matchedPoseGesture.id);
+                    lastPoseTriggeredRef.current[poseKey] = Date.now();
+                  }
                 }
               }
             }
@@ -878,9 +960,9 @@ export function KineticController() {
         centroid2Ref.current = null;
       }
 
-      // Trim old trail elements
-      trailRef.current = trailRef.current.filter(t => Date.now() - t.time < 800);
-      trail2Ref.current = trail2Ref.current.filter(t => Date.now() - t.time < 800);
+      // Trim old trail elements (increased window to 1600ms to capture full custom gestures without truncation)
+      trailRef.current = trailRef.current.filter(t => Date.now() - t.time < 1600);
+      trail2Ref.current = trail2Ref.current.filter(t => Date.now() - t.time < 1600);
 
       // Sync real-time tracking metrics to Zustand store for on-screen HUD overlay
       try {
@@ -928,14 +1010,61 @@ export function KineticController() {
             store.setIsPinching(isPinchingNow);
           }
 
-          // Screen Coordinates mapping
-          const handX = (1 - indexTip.x) * window.innerWidth;
-          const handY = indexTip.y * window.innerHeight;
+          // Screen Coordinates mapping using an active central bounding-box [0.15, 0.85] range.
+          // This allows standard comfortable hand movements to map to the extreme edges of the screen!
+          const minX = 0.15;
+          const maxX = 0.85;
+          const minY = 0.22;
+          const maxY = 0.78;
+
+          let normX = (indexTip.x - minX) / (maxX - minX);
+          let normY = (indexTip.y - minY) / (maxY - minY);
+
+          normX = Math.max(0, Math.min(1, normX));
+          normY = Math.max(0, Math.min(1, normY));
+
+          let handX = (1 - normX) * window.innerWidth;
+          let handY = normY * window.innerHeight;
+
+          // Apply sensitivity adjustment
+          const cursorSensitivity = store.cursorSensitivity !== undefined ? store.cursorSensitivity : 1.2;
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
+          
+          handX = centerX + (handX - centerX) * cursorSensitivity;
+          handY = centerY + (handY - centerY) * cursorSensitivity;
+
+          // Extra scaling factor if mobile
+          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+          if (isMobile) {
+            handX = centerX + (handX - centerX) * 1.5;
+            handY = centerY + (handY - centerY) * 1.5;
+          }
+
+          // Smooth the coordinates with an exponential low-pass filter (LERP) to reduce jitter
+          if (lastHandXRef.current === null) lastHandXRef.current = handX;
+          if (lastHandYRef.current === null) lastHandYRef.current = handY;
+
+          const smoothing = 0.35;
+          handX = lastHandXRef.current + (handX - lastHandXRef.current) * smoothing;
+          handY = lastHandYRef.current + (handY - lastHandYRef.current) * smoothing;
+
+          lastHandXRef.current = handX;
+          lastHandYRef.current = handY;
+
+          // Clamp coordinates to screen boundaries (with 12px padding to keep cursor circle fully inside the screen)
+          handX = Math.max(12, Math.min(window.innerWidth - 12, handX));
+          handY = Math.max(12, Math.min(window.innerHeight - 12, handY));
+
           const handRightDist = window.innerWidth - handX;
           const handBottomDist = window.innerHeight - handY;
 
           // Sync Virtual Cursor coordinate to store
           store.setVirtualCursorPos({ x: handX, y: handY });
+
+          if (isPinchingNow || isHandDraggingCameraRef.current || wasDraggingCameraThisSessionRef.current) {
+            lastActiveCursorOrDragTimeRef.current = Date.now();
+          }
 
           // 1. PINCH/GRAB DRAGGING CAMERA ANYWHERE ON SCREEN
           const camWidth = isMinimized ? 160 : 192;
@@ -950,6 +1079,7 @@ export function KineticController() {
           if (isPinchingNow) {
             if (isCloseToCamera && !isHandDraggingCameraRef.current) {
               isHandDraggingCameraRef.current = true;
+              wasDraggingCameraThisSessionRef.current = true;
               store.setIsPinchDragging(true);
               dragOffsetRef.current = {
                 x: handRightDist - position.x,
@@ -972,54 +1102,115 @@ export function KineticController() {
             setPosition({ x: clampedX, y: clampedY });
           }
 
-          // 2. VIRTUAL MOUSE / CLICK / SCROLL LOGIC (Only active when in 'cursor' mode)
-          if (store.kineticInteractionMode === 'cursor') {
-            // Track Click trigger (Transition from NOT pinching to PINCHING)
+          // 2. VIRTUAL MOUSE / CLICK / SCROLL LOGIC (Only active when in 'cursor' mode and NOT dragging camera)
+          if (store.kineticInteractionMode === 'cursor' && !wasDraggingCameraThisSessionRef.current) {
+            // Track Click & Scroll trigger
             if (isPinchingNow && !lastIsPinchingRef.current) {
-              // Click dispatcher
+              // Pinch started (Mousedown)
+              pinchStartXRef.current = handX;
+              pinchStartYRef.current = handY;
+              pinchStartTimeRef.current = Date.now();
+              hasDraggedScrollRef.current = false;
+              lastScrollHandXRef.current = handX;
+              lastScrollHandYRef.current = handY;
+
               const element = document.elementFromPoint(handX, handY);
               if (element) {
-                // Focus input elements, or just dispatch click on any element
-                const clickEvent = new MouseEvent('click', {
+                const mousedownEvent = new MouseEvent('mousedown', {
                   view: window,
                   bubbles: true,
                   cancelable: true,
                   clientX: handX,
-                  clientY: handY
+                  clientY: handY,
+                  buttons: 1
                 });
-                element.dispatchEvent(clickEvent);
+                element.dispatchEvent(mousedownEvent);
+              }
+            } else if (isPinchingNow && lastIsPinchingRef.current) {
+              // Pinch is held (Check for dragging/scrolling)
+              const dx = handX - pinchStartXRef.current;
+              const dy = handY - pinchStartYRef.current;
+              const scrollLimit = 15; // 15px scroll boundary
+
+              if (!hasDraggedScrollRef.current && (Math.abs(dx) > scrollLimit || Math.abs(dy) > scrollLimit)) {
+                hasDraggedScrollRef.current = true;
+              }
+
+              if (hasDraggedScrollRef.current) {
+                // Pinch-and-drag scrolling (natural touch scroll dragging)
+                const scrollDeltaX = handX - lastScrollHandXRef.current;
+                const scrollDeltaY = handY - lastScrollHandYRef.current;
                 
-                if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLButtonElement) {
-                  element.focus();
+                window.scrollBy({
+                  left: -scrollDeltaX * 1.6,
+                  top: -scrollDeltaY * 1.6,
+                  behavior: 'auto'
+                });
+              } else {
+                // Regular mouse drag dispatch for sliders or content
+                const element = document.elementFromPoint(handX, handY);
+                if (element) {
+                  const mousemoveEvent = new MouseEvent('mousemove', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: handX,
+                    clientY: handY,
+                    buttons: 1
+                  });
+                  element.dispatchEvent(mousemoveEvent);
+                }
+              }
+
+              // Update scroll reference coordinate frames
+              lastScrollHandXRef.current = handX;
+              lastScrollHandYRef.current = handY;
+            }
+
+            // Pinch ended (Mouseup & click dispatch)
+            if (!isPinchingNow && lastIsPinchingRef.current) {
+              const wasDragging = wasDraggingCameraThisSessionRef.current;
+              wasDraggingCameraThisSessionRef.current = false;
+
+              if (!wasDragging) {
+                const element = document.elementFromPoint(handX, handY);
+                if (element) {
+                  const mouseupEvent = new MouseEvent('mouseup', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: handX,
+                    clientY: handY,
+                    buttons: 0
+                  });
+                  element.dispatchEvent(mouseupEvent);
+                }
+
+                // If they did not drag scroll, perform click
+                if (!hasDraggedScrollRef.current) {
+                  const clickElement = document.elementFromPoint(handX, handY);
+                  if (clickElement) {
+                    const clickEvent = new MouseEvent('click', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                      clientX: handX,
+                      clientY: handY
+                    });
+                    clickElement.dispatchEvent(clickEvent);
+                    if (clickElement instanceof HTMLInputElement || clickElement instanceof HTMLTextAreaElement || clickElement instanceof HTMLButtonElement) {
+                      clickElement.focus();
+                    }
+                  }
                 }
               }
             }
+
             lastIsPinchingRef.current = isPinchingNow;
-
-            // Track Scrolling: if Index & Middle are extended, others are folded
-            const isIndexExtended1 = landmarks1[8].y < landmarks1[6].y;
-            const isMiddleExtended1 = landmarks1[12].y < landmarks1[10].y;
-            const isRingExtended1 = landmarks1[16].y < landmarks1[14].y;
-            const isPinkyExtended1 = landmarks1[20].y < landmarks1[18].y;
-            const isScrollGesture = isIndexExtended1 && isMiddleExtended1 && !isRingExtended1 && !isPinkyExtended1;
-
-            if (isScrollGesture) {
-              if (lastScrollYRef.current !== null) {
-                const scrollDy = handY - lastScrollYRef.current;
-                // Move scroll window or scrollable container
-                window.scrollBy({
-                  top: scrollDy * 4.5,
-                  behavior: 'auto'
-                });
-              }
-              lastScrollYRef.current = handY;
-            } else {
-              lastScrollYRef.current = null;
-            }
           } else {
             // Reset state refs when not in cursor mode
             lastIsPinchingRef.current = false;
-            lastScrollYRef.current = null;
+            hasDraggedScrollRef.current = false;
           }
 
           // 3. SHAKA POSTURE MODE TOGGLE SWITCH (Thumb + Pinky extended, others folded)
@@ -1077,12 +1268,23 @@ export function KineticController() {
       handsRef.current.onResults(onMediaPipeResults);
     }
 
+    let lastProcessTime = 0;
+    // Boost frame processing to up to 60 FPS (16ms) in virtual mouse/cursor mode, and 40 FPS (24ms) in gesture mode
+    const FRAME_INTERVAL = storeRef.current.kineticInteractionMode === 'cursor' ? 16 : 24;
+
     const processFrame = async () => {
       if (!isTrackingRef.current || !videoRef.current) return;
       if (isProcessingFrameRef.current) {
         requestAnimationFrame(processFrame);
         return;
       }
+
+      const now = performance.now();
+      if (now - lastProcessTime < FRAME_INTERVAL) {
+        requestAnimationFrame(processFrame);
+        return;
+      }
+      lastProcessTime = now;
 
       const video = videoRef.current;
       if (
@@ -1120,11 +1322,21 @@ export function KineticController() {
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
 
-    // Sync client layout size avoiding layout thrashing
     const rect = overlay.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     const width = rect.width;
     const height = rect.height;
+
+    if (isCameraOnlyMode) {
+      if (overlay.width !== Math.floor(width * dpr) || overlay.height !== Math.floor(height * dpr)) {
+        overlay.width = Math.floor(width * dpr);
+        overlay.height = Math.floor(height * dpr);
+      }
+      ctx.resetTransform();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, width, height);
+      return;
+    }
 
     if (overlay.width !== Math.floor(width * dpr) || overlay.height !== Math.floor(height * dpr)) {
       overlay.width = Math.floor(width * dpr);
@@ -1293,6 +1505,15 @@ export function KineticController() {
 
   // Analyze trail patterns to trigger corresponding commands
   const analyzeTrail = () => {
+    // Completely isolate gesture/macro analysis if we are in Virtual Mouse (cursor) mode
+    if (storeRef.current.kineticInteractionMode === 'cursor') {
+      return;
+    }
+
+    if (Date.now() - lastActiveCursorOrDragTimeRef.current < 1800) {
+      return;
+    }
+
     if (gestureCooldownRef.current || trailRef.current.length < 4) return;
 
     const points = trailRef.current;
@@ -1323,28 +1544,38 @@ export function KineticController() {
 
     // Check Custom gestures first!
     if (checkCustomGestures()) {
+      trailRef.current = [];
+      trail2Ref.current = [];
       return;
     }
 
     // Velocity checks for standard built-in gestures
-    const minSwipeDistance = storeRef.current.swipeSensitivity * 0.65; // Make it significantly more responsive and snappy!
+    const minSwipeDistance = storeRef.current.swipeSensitivity * 1.1; // Restored standard sensitivity scale to prevent premature/accidental triggers
     const horizontalRatio = 1.35; // slightly more forgiving to allow comfortable, natural swipe curves
 
     // SWIPE RIGHT (Hand moves rightward on screen -> Swipe Right!)
     if (dx > minSwipeDistance && spanX > spanY * horizontalRatio) {
       triggerGesture('Swipe Right', 'swipe-right');
+      trailRef.current = [];
+      trail2Ref.current = [];
     }
     // SWIPE LEFT
     else if (dx < -minSwipeDistance && spanX > spanY * horizontalRatio) {
       triggerGesture('Swipe Left', 'swipe-left');
+      trailRef.current = [];
+      trail2Ref.current = [];
     }
     // SWIPE UP
     else if (dy < -minSwipeDistance && spanY > spanX * horizontalRatio) {
       triggerGesture('Swipe Up', 'swipe-up');
+      trailRef.current = [];
+      trail2Ref.current = [];
     }
     // SWIPE DOWN
     else if (dy > minSwipeDistance && spanY > spanX * horizontalRatio) {
       triggerGesture('Swipe Down', 'swipe-down');
+      trailRef.current = [];
+      trail2Ref.current = [];
     }
     // DETECT WAVE (alternating horizontal swings)
     else {
@@ -1354,7 +1585,7 @@ export function KineticController() {
       let lastDir = 0;
       for (let i = 2; i < wavePoints.length; i++) {
         const step = wavePoints[i].x - wavePoints[i-1].x;
-        if (Math.abs(step) > 1.5) {
+        if (Math.abs(step) > 3.5) { // Increased threshold from 1.5 to 3.5 to filter out hand tremor/noise
           const dir = Math.sign(step);
           if (lastDir !== 0 && dir !== lastDir) {
             turns++;
@@ -1364,14 +1595,26 @@ export function KineticController() {
       }
       
       const waveSpanX = Math.max(...wavePoints.map(p => p.x)) - Math.min(...wavePoints.map(p => p.x));
-      if (turns >= 2 && waveSpanX > storeRef.current.waveSensitivity * 0.75) {
+      // Require at least 3 turns (e.g. back-and-forth) and wider movement to avoid accidental wave triggers
+      if (turns >= 3 && waveSpanX > storeRef.current.waveSensitivity * 1.1) {
         triggerGesture('Wave Gesture', 'wave');
+        trailRef.current = [];
+        trail2Ref.current = [];
       }
     }
   };
 
   // Match current trail against user custom gestures
   const checkCustomGestures = (): boolean => {
+    // Completely isolate gesture/macro analysis if we are in Virtual Mouse (cursor) mode
+    if (storeRef.current.kineticInteractionMode === 'cursor') {
+      return false;
+    }
+
+    if (Date.now() - lastActiveCursorOrDragTimeRef.current < 1800) {
+      return false;
+    }
+
     if (trailRef.current.length < 10) return false;
 
     // Normalize current trail path to 0-1 range
@@ -1385,7 +1628,8 @@ export function KineticController() {
     const spanX = maxX - minX;
     const spanY = maxY - minY;
 
-    if (spanX < 12 && spanY < 12) return false; // not enough motion
+    // Require at least 24px of motion (increased from 12px) to prevent accidental shape matching from small noise/still hands
+    if (spanX < 24 && spanY < 24) return false; 
 
     const normTrail = trailRef.current.map(p => ({
       x: spanX > 0 ? (p.x - minX) / spanX : 0.5,
@@ -1453,6 +1697,14 @@ export function KineticController() {
   // Execute associated system actions for a recognized gesture
   const triggerGesture = (name: string, id: string) => {
     if (gestureCooldownRef.current) return;
+    const isNewSignup = typeof window !== 'undefined' && window.sessionStorage.getItem('is_new_signup') === 'true';
+    const isWizardActive = !userProfile?.setupCompleted && isNewSignup;
+    if (isWizardActive) return;
+
+    if (Date.now() - lastGlobalTriggerTimeRef.current < 2500) {
+      return;
+    }
+    lastGlobalTriggerTimeRef.current = Date.now();
     const gestureObj = storeRef.current.kineticGestures.find(g => g.id === id);
     if (!gestureObj) return;
     if (gestureObj.disabled) return;
@@ -1468,10 +1720,11 @@ export function KineticController() {
     const triggeredList = getTriggeredGestures();
     if (!triggeredList.includes(id)) {
       saveTriggeredGesture(id);
-      setLearningGesture(gestureObj);
-      setIsFirstTimeDiscovery(true);
-      setLearningCountdown(6);
-      setCooldown(true);
+      // Let's NOT auto-popup the annoying learning modal/educational popup to avoid disrupting flow
+      // setLearningGesture(gestureObj);
+      // setIsFirstTimeDiscovery(true);
+      // setLearningCountdown(6);
+      // setCooldown(true);
     }
 
     const action = gestureObj.action as string;
@@ -1704,7 +1957,12 @@ export function KineticController() {
     <>
       {isKineticEnabled && showFloatingCamera && (
         <div 
-          style={{ right: position.x, bottom: position.y }}
+          style={{ 
+            right: position.x, 
+            bottom: position.y,
+            width: isMinimized ? '160px' : `${Math.round(192 * cameraScale)}px`,
+            height: isMinimized ? '44px' : `${Math.round(240 * cameraScale)}px`
+          }}
           onMouseDown={handleMouseDown}
           onTouchStart={handleTouchStart}
           className={`fixed z-50 rounded-2xl border bg-zinc-950/90 backdrop-blur-md shadow-2xl transition-all duration-150 select-none ${
@@ -1713,7 +1971,7 @@ export function KineticController() {
               : detectedGesture 
                 ? 'border-emerald-500 shadow-emerald-500/10' 
                 : 'border-zinc-800 hover:border-zinc-700'
-          } ${isMinimized ? 'w-40 h-11' : 'w-48 h-60'} flex flex-col overflow-hidden cursor-grab active:cursor-grabbing`}
+          } flex flex-col overflow-hidden cursor-grab active:cursor-grabbing`}
         >
       {/* Top Header Controls */}
       <div className="h-10 px-3 bg-zinc-950 border-b border-zinc-900/60 flex items-center justify-between">
@@ -1734,6 +1992,51 @@ export function KineticController() {
         </div>
         
         <div className="flex items-center gap-1 no-drag">
+          {/* Camera Only Mode Clean Toggle */}
+          {!isMinimized && (
+            <button 
+              onClick={() => {
+                const nextMode = !isCameraOnlyMode;
+                setCameraOnlyMode(nextMode);
+                showToast(nextMode ? '👁️ Camera Only Mode enabled' : '🖥️ Kinetic Full HUD restored', 'info', 2000);
+              }}
+              className={`p-1 hover:bg-zinc-900 rounded-md transition-colors ${isCameraOnlyMode ? 'text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+              title={isCameraOnlyMode ? "Show HUD overlays" : "Hide HUD overlays (Camera Only)"}
+            >
+              {isCameraOnlyMode ? <EyeOff size={11} /> : <Eye size={11} />}
+            </button>
+          )}
+
+          {/* Size Down Button */}
+          {!isMinimized && (
+            <button 
+              onClick={() => {
+                const nextScale = Math.max(0.5, cameraScale - 0.25);
+                setCameraScale(nextScale);
+                showToast(`📐 Resized Camera to ${Math.round(nextScale * 100)}%`, 'success', 1500);
+              }}
+              className="p-1 hover:bg-zinc-900 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+              title="Make Camera Smaller"
+            >
+              <Minus size={11} />
+            </button>
+          )}
+
+          {/* Size Up Button */}
+          {!isMinimized && (
+            <button 
+              onClick={() => {
+                const nextScale = Math.min(2.5, cameraScale + 0.25);
+                setCameraScale(nextScale);
+                showToast(`📐 Resized Camera to ${Math.round(nextScale * 100)}%`, 'success', 1500);
+              }}
+              className="p-1 hover:bg-zinc-900 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+              title="Make Camera Larger"
+            >
+              <Plus size={11} />
+            </button>
+          )}
+
           <button 
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 hover:bg-zinc-900 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
@@ -1772,35 +2075,37 @@ export function KineticController() {
           />
 
           {/* Virtual Hud text and stats layer */}
-          <div className="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-2">
-            {/* Realtime stats ticker */}
-            <div className="flex justify-between items-center text-[8px] font-mono text-zinc-500">
-              <span>FPS: {fps}</span>
-              <span>MOTION: {Math.round(motionAmount * 100)}%</span>
-            </div>
-
-            {/* Gesture predicted notification flash */}
-            {detectedGesture && (
-              <div className="absolute inset-x-2 top-10 z-20 py-1.5 px-2 bg-emerald-950/90 border border-emerald-500/50 rounded-lg text-center animate-bounce shadow-lg">
-                <p className="text-[10px] font-bold text-emerald-400 font-mono flex items-center justify-center gap-1">
-                  <Sparkles size={10} className="animate-spin" />
-                  {detectedGesture.toUpperCase()}
-                </p>
-                <p className="text-[7px] text-zinc-400 uppercase tracking-widest font-mono">
-                  Trigger Executed
-                </p>
+          {!isCameraOnlyMode && (
+            <div className="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-2">
+              {/* Realtime stats ticker */}
+              <div className="flex justify-between items-center text-[8px] font-mono text-zinc-500">
+                <span>FPS: {fps}</span>
+                <span>MOTION: {Math.round(motionAmount * 100)}%</span>
               </div>
-            )}
 
-            {/* Bottom hud branding */}
-            <div className="flex justify-between items-end mt-auto text-[7px] font-mono text-emerald-500/60 uppercase tracking-wider">
-              <span>TRK_SENS: HI</span>
-              <span className="flex items-center gap-0.5">
-                <Activity size={8} className="animate-pulse text-emerald-400" />
-                SYSTEM READY
-              </span>
+              {/* Gesture predicted notification flash */}
+              {detectedGesture && (
+                <div className="absolute inset-x-2 top-10 z-20 py-1.5 px-2 bg-emerald-950/90 border border-emerald-500/50 rounded-lg text-center animate-bounce shadow-lg">
+                  <p className="text-[10px] font-bold text-emerald-400 font-mono flex items-center justify-center gap-1">
+                    <Sparkles size={10} className="animate-spin" />
+                    {detectedGesture.toUpperCase()}
+                  </p>
+                  <p className="text-[7px] text-zinc-400 uppercase tracking-widest font-mono">
+                    Trigger Executed
+                  </p>
+                </div>
+              )}
+
+              {/* Bottom hud branding */}
+              <div className="flex justify-between items-end mt-auto text-[7px] font-mono text-emerald-500/60 uppercase tracking-wider">
+                <span>TRK_SENS: HI</span>
+                <span className="flex items-center gap-0.5">
+                  <Activity size={8} className="animate-pulse text-emerald-400" />
+                  SYSTEM READY
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* MediaPipe Loading/Error states overlay */}
           {isMediaPipeLoading && (
@@ -1838,25 +2143,42 @@ export function KineticController() {
 
       {/* Floating control toolbar */}
       {!isMinimized && (
-        <div className="h-10 px-2 bg-zinc-950 border-t border-zinc-900/60 flex items-center justify-between text-[10px] no-drag">
+        <div className="h-10 px-2 bg-zinc-950 border-t border-zinc-900/60 flex items-center justify-between gap-1 text-[10px] no-drag">
           <button 
             onClick={() => {
+              localStorage.setItem('settings_active_tab', 'kinetic-gestures');
+              localStorage.setItem('settings_gesture_group', 'camera');
+              localStorage.setItem('settings_gesture_sub_tab', 'setup');
               navigate('/settings');
-              // Expose event trigger or query to settings
-              setTimeout(() => {
-                const tabBtn = document.querySelector('button[key="kinetic-gestures"]') as HTMLButtonElement;
-                if (tabBtn) tabBtn.click();
-              }, 100);
             }}
             className="flex items-center gap-1 py-1 px-1.5 hover:bg-zinc-900 rounded-md text-zinc-400 hover:text-white transition-colors"
+            title="Configure Camera & Gestures"
           >
-            <Settings2 size={11} />
+            <Settings2 size={11} className="text-zinc-500 hover:text-zinc-300" />
             <span>Manage</span>
+          </button>
+
+          <button 
+            onClick={() => {
+              localStorage.setItem('settings_active_tab', 'kinetic-gestures');
+              localStorage.setItem('settings_gesture_group', 'custom');
+              localStorage.setItem('settings_gesture_sub_tab', 'create');
+              navigate('/settings');
+            }}
+            className="flex items-center gap-1 py-1 px-1.5 hover:bg-zinc-900 rounded-md text-emerald-450 hover:text-emerald-355 transition-colors"
+            title="Create Custom Gesture Shortcut"
+          >
+            <Sparkles size={11} />
+            <span>Customize</span>
           </button>
           
           <button 
-            onClick={() => setKineticEnabled(false)}
+            onClick={() => {
+              setKineticEnabled(false);
+              showToast('🖐️ Camera tracking turned off.', 'info', 2000);
+            }}
             className="flex items-center gap-1 py-1 px-1.5 hover:bg-red-950/40 rounded-md text-zinc-500 hover:text-red-400 transition-colors"
+            title="Disable Kinetic Engine"
           >
             <CameraOff size={11} />
             <span>Turn Off</span>
@@ -1870,6 +2192,9 @@ export function KineticController() {
           <span className="text-[8px] text-zinc-500 font-mono">TRACKING IN BG</span>
           <button 
             onClick={() => {
+              localStorage.setItem('settings_active_tab', 'kinetic-gestures');
+              localStorage.setItem('settings_gesture_group', 'camera');
+              localStorage.setItem('settings_gesture_sub_tab', 'setup');
               navigate('/settings');
             }}
             className="text-[8px] text-emerald-400 font-semibold uppercase hover:underline no-drag"

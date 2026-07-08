@@ -4833,8 +4833,8 @@ Description of fix or enhancement recommendation
     <div className="flex flex-col h-full overflow-hidden relative pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Projects
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Workspace <span className="font-semibold italic text-yellow-500">Projects</span>
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Manage your local projects and optional GitHub integrations.

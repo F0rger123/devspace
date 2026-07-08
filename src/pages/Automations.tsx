@@ -26,7 +26,8 @@ import {
   Layers,
   ChevronDown,
   User,
-  ExternalLink
+  ExternalLink,
+  Eye
 } from 'lucide-react';
 
 interface AutoStep {
@@ -195,6 +196,30 @@ export function Automations() {
   const [isSavingEmailSettings, setIsSavingEmailSettings] = useState(false);
   const [isTriggeringTestEmail, setIsTriggeringTestEmail] = useState(false);
 
+  // Email briefing preview states
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<{ plainText: string; htmlBody: string } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [activePreviewTab, setActivePreviewTab] = useState<'html' | 'plain'>('html');
+
+  const fetchBriefingPreview = async () => {
+    setIsLoadingPreview(true);
+    try {
+      const res = await fetch('/api/email/preview-briefing');
+      if (res.ok) {
+        const data = await res.json();
+        setPreviewData({
+          plainText: data.plainText,
+          htmlBody: data.htmlBody
+        });
+      }
+    } catch (err) {
+      console.error("Error loading email preview", err);
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
   // Aether Synergy state (Idea Incubator)
   const [ideaInput, setIdeaInput] = useState("");
   const [isIncubatingIdea, setIsIncubatingIdea] = useState(false);
@@ -241,6 +266,9 @@ export function Automations() {
         }
       })
       .catch(err => console.error("Error fetching email settings", err));
+    
+    // Fetch initial briefing preview
+    fetchBriefingPreview();
   }, []);
 
   // Save flow changes
@@ -393,9 +421,30 @@ export function Automations() {
             addLog(`💡 INFO: Zero unresolved bugs found. Workspace is fully optimized!`);
           }
         } else {
-          // AI agent action
-          addLog(`🧠 Invoking Gemini models. Processed system parameters: "${step.config?.prompt || 'default'}"`);
-          addLog(`✅ SUCCESS: Aether response compiled and saved to continuous intelligence logs.`);
+          // AI agent action - call real backend with Gemini!
+          addLog(`🧠 Invoking Gemini models... Sending step prompt: "${step.config?.prompt || 'default'}"`);
+          const response = await fetch('/api/automations/run-agent-step', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: step.config?.prompt || "Analyze and summarize active workspace status",
+              context: {
+                projects: projects,
+                issues: issues.slice(0, 10)
+              }
+            })
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              addLog(`🧠 Gemini Agent Response:\n"${data.result}"`);
+              addLog(`✅ SUCCESS: Real AI agent step successfully executed and logged.`);
+            } else {
+              addLog(`⚠️ WARNING: Agent returned failure. Using local fallbacks.`);
+            }
+          } else {
+            addLog(`❌ ERROR: Gemini model execution failed. Skipped execution.`);
+          }
         }
 
         // Mark step as success
@@ -629,8 +678,8 @@ export function Automations() {
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1f1f23] pb-5">
         <div>
-          <h1 className="text-xl font-extrabold text-zinc-100 flex items-center gap-2 tracking-tight">
-            <Zap className="text-yellow-400 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" size={20} /> Aether Automation Studio
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Aether <span className="font-semibold italic text-yellow-500">Automation Studio</span> <Zap className="text-yellow-500 drop-shadow-[0_0_8px_rgba(234,179,8,0.5)] animate-pulse" size={20} />
           </h1>
           <p className="text-xs text-zinc-500 mt-1">
             Build multi-level automated pipelines, configure trigger-based email notifications, or invoke SRE AI repair protocols.
@@ -1134,6 +1183,77 @@ export function Automations() {
               >
                 {isTriggeringTestEmail ? "Sending test..." : "Send Manual briefing Now"}
               </button>
+            </div>
+
+            {/* EMAIL BRIEFING LIVE TEMPLATE PREVIEWER */}
+            <div className="border-t border-zinc-900/60 pt-4 mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPreview(!showPreview);
+                    if (!showPreview) fetchBriefingPreview();
+                  }}
+                  className="text-[10px] font-bold text-zinc-400 hover:text-white uppercase tracking-wider flex items-center gap-1.5 cursor-pointer bg-zinc-900/60 hover:bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-850 transition-colors"
+                >
+                  <Eye size={12} className="text-emerald-400" />
+                  {showPreview ? "Hide Live Template Preview" : "Show Live Template Preview"}
+                </button>
+                {showPreview && (
+                  <div className="flex gap-1.5 bg-zinc-950 p-1 rounded-lg border border-zinc-900">
+                    <button
+                      type="button"
+                      onClick={() => setActivePreviewTab('html')}
+                      className={`text-[9px] font-bold px-2 py-1 rounded cursor-pointer transition-all ${activePreviewTab === 'html' ? 'bg-zinc-850 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      HTML Rendered
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivePreviewTab('plain')}
+                      className={`text-[9px] font-bold px-2 py-1 rounded cursor-pointer transition-all ${activePreviewTab === 'plain' ? 'bg-zinc-850 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      Plain Text
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fetchBriefingPreview}
+                      disabled={isLoadingPreview}
+                      className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer transition-colors"
+                      title="Refresh Preview"
+                    >
+                      <RefreshCw size={10} className={isLoadingPreview ? "animate-spin text-emerald-400" : ""} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {showPreview && (
+                <div className="border border-zinc-900 bg-[#060608] rounded-xl overflow-hidden transition-all">
+                  {isLoadingPreview ? (
+                    <div className="flex flex-col items-center justify-center py-10 space-y-2 text-zinc-500">
+                      <Loader2 size={16} className="animate-spin text-emerald-400" />
+                      <p className="text-[10px] uppercase font-bold tracking-widest">Generating Live Daily Briefing Preview...</p>
+                    </div>
+                  ) : previewData ? (
+                    activePreviewTab === 'html' ? (
+                      <div className="p-4 overflow-x-auto bg-black/40">
+                        <div dangerouslySetInnerHTML={{ __html: previewData.htmlBody }} />
+                      </div>
+                    ) : (
+                      <div className="p-4">
+                        <pre className="p-4 bg-zinc-950 border border-zinc-900 rounded-lg text-zinc-400 font-mono text-[10px] leading-relaxed overflow-x-auto whitespace-pre-wrap max-h-[300px]">
+                          {previewData.plainText}
+                        </pre>
+                      </div>
+                    )
+                  ) : (
+                    <div className="p-6 text-center text-zinc-600 text-xs italic">
+                      Failed to compile briefing. Check workspace active projects cache.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

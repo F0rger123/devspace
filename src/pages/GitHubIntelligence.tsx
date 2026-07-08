@@ -17,7 +17,8 @@ export function GitHubIntelligence() {
     updateProject,
     activeProjectId,
     githubRepo,
-    setGithubRepo
+    setGithubRepo,
+    analyzeProjectCommits
   } = useData();
 
   const repo = githubRepo || (githubUser && githubUser !== 'google' ? `${githubUser}/` : 'google/genai-js');
@@ -39,6 +40,7 @@ export function GitHubIntelligence() {
     }
   };
 
+  const [analyzingCommitsId, setAnalyzingCommitsId] = useState<string | null>(null);
   const [commits, setCommits] = useState<any[]>([]);
   const [prs, setPrs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -636,8 +638,8 @@ export function GitHubIntelligence() {
       {/* Header sections */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            GitHub Intelligence <GitBranch size={18} className="text-blue-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            GitHub <span className="font-semibold italic text-yellow-500">Intelligence</span> <GitBranch size={18} className="text-yellow-500/80 animate-pulse" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Map repository workspaces, assign triggers to projects, and review live commits & AI lead insights.
@@ -771,6 +773,143 @@ export function GitHubIntelligence() {
                 );
               })}
             </div>
+          </div>
+
+          {/* AI Commit Watcher Feed */}
+          <div className="border border-blue-500/20 bg-blue-500/5 rounded-xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-left">
+                <h3 className="font-bold text-xs text-zinc-200 flex items-center gap-2">
+                  <Sparkles size={13} className="text-blue-400 animate-pulse" />
+                  <span>Gemini AI Commit Watcher</span>
+                </h3>
+                <p className="text-[10px] text-zinc-400 leading-normal mt-0.5">
+                  Watches repository commits, auto-summarizes technical changes, evaluates ecosystem impact, and synthesizes follow-up tasks & brainstorming cards.
+                </p>
+              </div>
+              
+              {activeProjectId && (
+                <button
+                  onClick={async () => {
+                    setAnalyzingCommitsId(activeProjectId);
+                    try {
+                      await analyzeProjectCommits(activeProjectId);
+                    } catch (err) {
+                      console.error(err);
+                    } finally {
+                      setAnalyzingCommitsId(null);
+                    }
+                  }}
+                  disabled={analyzingCommitsId === activeProjectId}
+                  className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-1.5 px-3.5 rounded-lg flex items-center gap-1.5 transition-all shadow-md cursor-pointer disabled:opacity-50"
+                >
+                  {analyzingCommitsId === activeProjectId ? (
+                    <>
+                      <Loader2 size={11} className="animate-spin text-white" />
+                      <span>Analyzing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bot size={11} className="text-white" />
+                      <span>Watch & Analyze Commits</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Timelines content */}
+            {(() => {
+              const activeProj = projects.find(p => p.id === activeProjectId);
+              const analyzed = activeProj?.analyzedCommits || [];
+              
+              if (!activeProj) {
+                return (
+                  <div className="text-center py-6 text-zinc-500 text-xs border border-dashed border-zinc-850 rounded-lg">
+                    Select a project above to view and watch its code repository commit streams.
+                  </div>
+                );
+              }
+
+              if (analyzed.length === 0) {
+                return (
+                  <div className="text-center py-8 text-zinc-500 text-xs border border-dashed border-zinc-800/80 rounded-lg bg-zinc-950/20 space-y-2">
+                    <p className="italic">No commits have been analyzed yet for "{activeProj.name}".</p>
+                    <p className="text-[10px] text-zinc-500 max-w-sm mx-auto">
+                      Click the "Watch & Analyze Commits" button to run an incremental scan with Gemini 3.5 Flash on your latest commits!
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3.5 pt-1.5 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
+                  {analyzed.map((ac, idx) => {
+                    const impactColors: Record<string, string> = {
+                      High: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+                      Medium: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+                      Low: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+                    };
+                    const impactBadge = impactColors[ac.impact || "Low"] || impactColors.Low;
+
+                    return (
+                      <motion.div
+                        key={ac.sha}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        className="p-3 bg-zinc-950/60 border border-zinc-850 rounded-lg hover:border-zinc-700 hover:bg-[#18181b] transition-all space-y-2 text-left animate-in fade-in"
+                      >
+                        <div className="flex items-center justify-between gap-2.5">
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-zinc-200 block truncate leading-normal">
+                              {ac.message}
+                            </span>
+                            <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-1">
+                              <span className="font-semibold text-zinc-400">{ac.author}</span>
+                              <span>•</span>
+                              <span>{ac.date ? new Date(ac.date).toLocaleDateString() : "Just now"}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`text-[9px] px-2 py-0.5 rounded border font-bold uppercase font-mono ${impactBadge}`}>
+                              {ac.impact || "Low"} Impact
+                            </span>
+                            <span className="font-mono text-[9px] text-zinc-400 bg-zinc-900 border border-zinc-850 px-1.5 py-0.5 rounded">
+                              {ac.sha.substring(0, 7)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {ac.summary && (
+                          <div className="p-2.5 bg-[#09090b] rounded-lg border border-zinc-900 text-[10px] text-zinc-350 leading-relaxed font-sans">
+                            <span className="text-blue-400 font-bold block mb-1">🤖 AI TECH SUMMARY:</span>
+                            {ac.summary}
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-2 pt-1 border-t border-zinc-900/60 text-[9px]">
+                          {ac.suggestedIssueId && (
+                            <span className="bg-amber-500/5 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold">
+                              🎯 Linked Issue Created
+                            </span>
+                          )}
+                          {ac.suggestedNoteId && (
+                            <span className="bg-blue-500/5 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold">
+                              📝 Auto-Documented in Notes
+                            </span>
+                          )}
+                          {!ac.suggestedIssueId && !ac.suggestedNoteId && (
+                            <span className="text-zinc-650 font-medium">No pending followups required.</span>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Activity stream log timeline */}

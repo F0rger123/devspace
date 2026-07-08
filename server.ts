@@ -680,6 +680,456 @@ async function startServer() {
      }
   });
 
+   // Github API Proxy for Personalized Developer Feed
+   app.post('/api/github/personalized-feed', async (req, res) => {
+     try {
+       const { preferences, token } = req.body;
+       let isRateLimited = false;
+
+       const headers: any = {
+         'Accept': 'application/vnd.github.v3+json',
+         'User-Agent': 'DevSpace'
+       };
+       if (token) {
+         headers['Authorization'] = `token ${token}`;
+       }
+
+       let starredRepos: any[] = [];
+       if (token) {
+         try {
+           const starredRes = await fetch('https://api.github.com/user/starred?per_page=20', { headers });
+           if (starredRes.ok) {
+             starredRepos = await starredRes.json();
+           }
+         } catch (starredErr) {
+           console.error('Failed to fetch starred repos:', starredErr);
+         }
+       }
+
+       const userPrefsClean = (preferences || '').trim();
+       const starredInfo = starredRepos.map(r => ({
+         name: r.full_name || r.name,
+         description: r.description || '',
+         language: r.language || ''
+       }));
+
+       let searchQueries = ['topic:react', 'topic:rust', 'topic:ai'];
+       let personalizedExplanation = '';
+
+       if (process.env.GEMINI_API_KEY) {
+         const ai = new GoogleGenAI({ 
+           apiKey: process.env.GEMINI_API_KEY,
+           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+         });
+
+         const prompt = `You are an elite developer recommendation engine.
+We want to recommend public GitHub repositories to a developer.
+Here is what we know about their preferences:
+User preferences typed: "${userPrefsClean}"
+Connected GitHub account's recently starred repos (analyzed for context):
+${JSON.stringify(starredInfo, null, 2)}
+
+Please formulate 3 distinct search query strings for the GitHub Search API (https://api.github.com/search/repositories?q=...) that will find awesome, highly relevant repositories they would love.
+The query strings should use GitHub search operators if relevant, e.g., "topic:react stars:>100" or keywords, and should NOT contain quotes or URL-encoding. Keep them short and simple, e.g., "react state management" or "rust webgpu".
+Also, write a 1-sentence personalized summary explaining what kinds of repos we are recommending for them based on their profile.
+
+Return your response strictly in JSON format matching this schema:
+{
+  "queries": ["string", "string", "string"],
+  "explanation": "string"
+}`;
+
+         try {
+           const geminiRes = await ai.models.generateContent({
+             model: 'gemini-3.5-flash',
+             contents: prompt,
+             config: {
+               responseMimeType: 'application/json',
+               responseSchema: {
+                 type: Type.OBJECT,
+                 properties: {
+                   queries: {
+                     type: Type.ARRAY,
+                     items: { type: Type.STRING },
+                     description: "List of 3 GitHub search queries"
+                   },
+                   explanation: {
+                     type: Type.STRING,
+                     description: "A friendly personalized explanation for their feed"
+                   }
+                 },
+                 required: ["queries", "explanation"]
+               }
+             }
+           });
+
+           const resText = geminiRes.text;
+           const parsed = JSON.parse(resText || '{}');
+           if (Array.isArray(parsed.queries) && parsed.queries.length > 0) {
+             searchQueries = parsed.queries;
+           }
+           if (parsed.explanation) {
+             personalizedExplanation = parsed.explanation;
+           }
+         } catch (geminiErr) {
+           logModelError('Personalized Feed (Query Generation)', geminiErr);
+           isRateLimited = true;
+         }
+       }
+
+       if (!personalizedExplanation) {
+         personalizedExplanation = userPrefsClean 
+           ? `Showing recommendations tailored to "${userPrefsClean}"`
+           : "Explore personalized recommendations based on popular open-source technologies.";
+       }
+
+       const allResults: any[] = [];
+       const seenRepoIds = new Set<number>();
+
+       for (const queryVal of searchQueries.slice(0, 3)) {
+         try {
+           const qStr = queryVal.includes('stars:') ? queryVal : `${queryVal} stars:>50`;
+           const searchUrl = `https://api.github.com/search/repositories?q=${encodeURIComponent(qStr)}&sort=stars&order=desc&per_page=10`;
+           const sRes = await fetch(searchUrl, { headers });
+           if (sRes.ok) {
+             const sData = await sRes.json();
+             if (Array.isArray(sData.items)) {
+               for (const repo of sData.items) {
+                 if (!seenRepoIds.has(repo.id)) {
+                   seenRepoIds.add(repo.id);
+                   allResults.push(repo);
+                 }
+               }
+             }
+           }
+         } catch (searchErr) {
+           console.error(`Failed search query "${queryVal}":`, searchErr);
+         }
+       }
+
+       if (allResults.length === 0) {
+         try {
+           const searchUrl = `https://api.github.com/search/repositories?q=stars:>5000&sort=stars&order=desc&per_page=12`;
+           const sRes = await fetch(searchUrl, { headers });
+           if (sRes.ok) {
+             const sData = await sRes.json();
+             if (Array.isArray(sData.items)) {
+               allResults.push(...sData.items);
+             }
+           }
+         } catch (fallbackSearchErr) {
+           console.error('Fallback search failed:', fallbackSearchErr);
+         }
+       }
+
+       let recommendedRepos = allResults.slice(0, 8).map(repo => ({
+         id: repo.id,
+         name: repo.full_name || repo.name,
+         description: repo.description || 'No description provided.',
+         html_url: repo.html_url,
+         stargazers_count: repo.stargazers_count,
+         forks_count: repo.forks_count,
+         language: repo.language || 'TypeScript',
+         reason: 'Recommended for your interest in software engineering.'
+       }));
+
+       if (process.env.GEMINI_API_KEY && allResults.length > 0) {
+         const ai = new GoogleGenAI({ 
+           apiKey: process.env.GEMINI_API_KEY,
+           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+         });
+
+         const candidates = allResults.slice(0, 15).map(r => ({
+           id: r.id,
+           name: r.full_name || r.name,
+           description: r.description || '',
+           language: r.language || ''
+         }));
+
+         const rankPrompt = `You are a personalized developer feed ranker.
+User preferences typed: "${userPrefsClean}"
+Connected GitHub starred repos: ${JSON.stringify(starredInfo.slice(0, 10))}
+
+We have fetched these 15 candidate repositories from GitHub Search:
+${JSON.stringify(candidates, null, 2)}
+
+Please select the top 6 repositories that best match this developer's interests. For each selected repository, write a 1-sentence highly specific and personalized reason why they would love it (e.g., "Matches your interest in Rust web frameworks" or "Similar to your star on Framer Motion, utilizing spring animations").
+
+Return your response strictly in JSON format matching this schema:
+{
+  "selected": [
+    {
+      "id": 12345, // Must match the candidate's ID
+      "reason": "personalized reason here"
+    }
+  ]
+}`;
+
+         try {
+           const rankRes = await ai.models.generateContent({
+             model: 'gemini-3.5-flash',
+             contents: rankPrompt,
+             config: {
+               responseMimeType: 'application/json',
+               responseSchema: {
+                 type: Type.OBJECT,
+                 properties: {
+                   selected: {
+                     type: Type.ARRAY,
+                     items: {
+                       type: Type.OBJECT,
+                       properties: {
+                         id: { type: Type.INTEGER },
+                         reason: { type: Type.STRING }
+                       },
+                       required: ["id", "reason"]
+                     }
+                   }
+                 },
+                 required: ["selected"]
+               }
+             }
+           });
+
+           const parsedRank = JSON.parse(rankRes.text || '{}');
+           if (Array.isArray(parsedRank.selected)) {
+             const rankedMap = new Map<number, string>(parsedRank.selected.map((item: any) => [Number(item.id), String(item.reason)]));
+             const filtered = allResults.filter(r => rankedMap.has(r.id)).slice(0, 6);
+             if (filtered.length > 0) {
+               recommendedRepos = filtered.map(repo => ({
+                 id: repo.id,
+                 name: repo.full_name || repo.name,
+                 description: repo.description || 'No description provided.',
+                 html_url: repo.html_url,
+                 stargazers_count: repo.stargazers_count,
+                 forks_count: repo.forks_count,
+                 language: repo.language || 'TypeScript',
+                 reason: rankedMap.get(Number(repo.id)) || 'Matches your developer profile.'
+               }));
+             }
+           }
+         } catch (rankErr) {
+           logModelError('Personalized Feed (Candidate Ranking)', rankErr);
+           isRateLimited = true;
+         }
+       }
+
+       res.json({
+         explanation: personalizedExplanation,
+         items: recommendedRepos,
+         starredCount: starredRepos.length,
+         isRateLimited: isRateLimited
+       });
+     } catch (e: any) {
+       console.error('Personalized feed error:', e);
+       res.status(500).json({ error: e.message });
+     }
+   });
+
+   // GitHub Profile Learner Proxy
+   app.post('/api/github/profile-analysis', async (req, res) => {
+     try {
+       const { token } = req.body;
+       if (!token) {
+         return res.status(400).json({ error: 'GitHub token is required' });
+       }
+
+       const headers: any = {
+         'Accept': 'application/vnd.github.v3+json',
+         'User-Agent': 'DevSpace',
+         'Authorization': `token ${token}`
+       };
+
+       // 1. Fetch repos
+       let repos: any[] = [];
+       try {
+         const reposRes = await fetch('https://api.github.com/user/repos?sort=updated&per_page=30', { headers });
+         if (reposRes.ok) {
+           repos = await reposRes.json();
+         }
+       } catch (err) {
+         console.error('[Profile Analysis] Failed to fetch user repos:', err);
+       }
+
+       // 2. Fetch starred repos
+       let starred: any[] = [];
+       try {
+         const starredRes = await fetch('https://api.github.com/user/starred?per_page=30', { headers });
+         if (starredRes.ok) {
+           starred = await starredRes.json();
+         }
+       } catch (err) {
+         console.error('[Profile Analysis] Failed to fetch user starred repos:', err);
+       }
+
+       const allRepos = [...(Array.isArray(repos) ? repos : []), ...(Array.isArray(starred) ? starred : [])];
+       if (allRepos.length === 0) {
+         return res.json({
+           summary: "Active developer exploring open source projects and building modern solutions.",
+           recommendedGuidelines: [
+             "Developer prefers modern clean-code structures.",
+             "Enforce strict modularity and standard type definitions."
+           ]
+         });
+       }
+
+       const languages: Record<string, number> = {};
+       const topics: string[] = [];
+       const descriptions: string[] = [];
+
+       allRepos.forEach((r: any) => {
+         if (r.language) {
+           languages[r.language] = (languages[r.language] || 0) + 1;
+         }
+         if (Array.isArray(r.topics)) {
+           topics.push(...r.topics);
+         }
+         if (r.description) {
+           descriptions.push(r.description);
+         }
+       });
+
+       const sortedLanguages = Object.entries(languages)
+         .sort((a, b) => b[1] - a[1])
+         .slice(0, 3)
+         .map(([lang]) => lang);
+
+       const topicCounts: Record<string, number> = {};
+       topics.forEach(t => {
+         topicCounts[t] = (topicCounts[t] || 0) + 1;
+       });
+       const sortedTopics = Object.entries(topicCounts)
+         .sort((a, b) => b[1] - a[1])
+         .slice(0, 5)
+         .map(([topic]) => topic);
+
+       let profileObj = {
+         summary: `You are an active developer who primarily uses ${sortedLanguages.join(', ') || 'TypeScript'}. You are interested in ${sortedTopics.slice(0, 3).join(', ') || 'modern software engineering'} and explore open source projects matching these patterns.`,
+         recommendedGuidelines: [
+           `Developer prefers modern patterns matching ${sortedLanguages[0] || 'TypeScript'} specifications.`,
+           `Enforce standards focused on ${sortedTopics[0] || 'clean code'} architectures.`
+         ]
+       };
+
+       if (process.env.GEMINI_API_KEY) {
+         const ai = new GoogleGenAI({ 
+           apiKey: process.env.GEMINI_API_KEY,
+           httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+         });
+
+         const prompt = `You are a Senior Developer Profile Analyzer.
+We have crawled the developer's GitHub repositories and starred repositories:
+- Favorite Languages: ${sortedLanguages.join(', ') || 'Various'}
+- Key Topics: ${sortedTopics.join(', ') || 'Software Development'}
+- Recent project descriptions: ${descriptions.slice(0, 10).join(' | ').substring(0, 600)}
+
+Please output a JSON document EXACTLY in the following format (no markdown tags, no other text):
+{
+  "summary": "A friendly 2-3 sentence overview of what they like based on their repos and stars (e.g. they love React, node.js, AI, clean types).",
+  "recommendedGuidelines": [
+    "Instruction 1 based on their style preferences",
+    "Instruction 2 based on their style preferences"
+  ]
+}
+`;
+
+         try {
+           const geminiRes = await ai.models.generateContent({
+             model: 'gemini-3.1-flash-lite',
+             contents: prompt,
+             config: {
+               responseMimeType: 'application/json',
+               responseSchema: {
+                 type: Type.OBJECT,
+                 properties: {
+                   summary: { type: Type.STRING },
+                   recommendedGuidelines: {
+                     type: Type.ARRAY,
+                     items: { type: Type.STRING }
+                   }
+                 },
+                 required: ["summary", "recommendedGuidelines"]
+               }
+             }
+           });
+
+           if (geminiRes.text) {
+             const parsed = JSON.parse(geminiRes.text);
+             if (parsed.summary && Array.isArray(parsed.recommendedGuidelines)) {
+               profileObj = parsed;
+             }
+           }
+         } catch (e) {
+           console.warn('[Profile Analysis] Gemini processing fail:', e);
+         }
+       }
+
+       res.json(profileObj);
+     } catch (e: any) {
+       console.warn('[Profile Analysis] Route error:', e);
+       res.status(500).json({ error: e.message });
+     }
+   });
+
+   // GitHub API Proxy for repo stats
+   app.post('/api/github/repo-stats', async (req, res) => {
+     try {
+       const { repo, token } = req.body;
+       if (!repo) {
+         return res.status(400).json({ error: 'repo is required' });
+       }
+
+       const headers: any = {
+         'Accept': 'application/vnd.github.v3+json',
+         'User-Agent': 'DevSpace'
+       };
+       if (token) {
+         headers['Authorization'] = `token ${token}`;
+       }
+
+       // Fetch repo info, languages, and contributors in parallel
+       const [repoRes, langRes, contribRes] = await Promise.all([
+         fetch(`https://api.github.com/repos/${repo}`, { headers }),
+         fetch(`https://api.github.com/repos/${repo}/languages`, { headers }),
+         fetch(`https://api.github.com/repos/${repo}/contributors?per_page=10`, { headers })
+       ]);
+
+       if (!repoRes.ok) {
+         return res.status(repoRes.status).json({ error: `Failed to fetch repo data for ${repo}` });
+       }
+
+       const repoData = await repoRes.json();
+       const languages = langRes.ok ? await langRes.json() : {};
+       const contributors = contribRes.ok ? await contribRes.json() : [];
+
+       res.json({
+         name: repoData.name,
+         full_name: repoData.full_name,
+         description: repoData.description,
+         stargazers_count: repoData.stargazers_count,
+         forks_count: repoData.forks_count,
+         open_issues_count: repoData.open_issues_count,
+         watchers_count: repoData.watchers_count,
+         subscribers_count: repoData.subscribers_count || repoData.watchers_count,
+         size: repoData.size,
+         default_branch: repoData.default_branch,
+         created_at: repoData.created_at,
+         updated_at: repoData.updated_at,
+         pushed_at: repoData.pushed_at,
+         language: repoData.language,
+         languages,
+         contributors: Array.isArray(contributors) ? contributors.map((c: any) => ({
+           login: c.login,
+           avatar_url: c.avatar_url,
+           contributions: c.contributions,
+           html_url: c.html_url
+         })) : []
+       });
+     } catch (e: any) {
+       res.status(500).json({ error: e.message });
+     }
+   });
+
   function getFallbackTrendingRepos() {
     return [
       {
@@ -1915,6 +2365,273 @@ Verify the offline simulation parameters as follows:
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Error creating repo' });
+    }
+  });
+
+  // Analyze GitHub Repository with Gemini to autofill project and generate ideas/dreams
+  app.post('/api/github/analyze-repo', async (req, res) => {
+    try {
+      const { repo, token } = req.body;
+      if (!repo) {
+        return res.status(400).json({ error: 'Repository name (owner/repo) is required' });
+      }
+
+      const reqHeaders: any = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'AgenticOS-Build'
+      };
+      if (token) {
+        reqHeaders['Authorization'] = `token ${token}`;
+      }
+
+      // 1. Fetch general repo info
+      let repoInfo: any = {};
+      try {
+        const infoRes = await fetch(`https://api.github.com/repos/${repo}`, { headers: reqHeaders });
+        if (infoRes.ok) {
+          repoInfo = await infoRes.json();
+        }
+      } catch (e) {
+        console.warn("Failed to fetch repo info", e);
+      }
+
+      // 2. Fetch repo tree (try main, then master)
+      let fileTree: any[] = [];
+      try {
+        let treeRes = await fetch(`https://api.github.com/repos/${repo}/git/trees/main?recursive=1`, { headers: reqHeaders });
+        if (!treeRes.ok) {
+          treeRes = await fetch(`https://api.github.com/repos/${repo}/git/trees/master?recursive=1`, { headers: reqHeaders });
+        }
+        if (treeRes.ok) {
+          const treeData = await treeRes.json();
+          fileTree = treeData.tree || [];
+        }
+      } catch (e) {
+        console.warn("Failed to fetch file tree", e);
+      }
+
+      // 3. Find and fetch README and package/config file
+      let readmeContent = "";
+      let packageContent = "";
+      
+      const readmeFile = fileTree.find(f => f.path && f.path.toLowerCase() === 'readme.md');
+      const packageJsonFile = fileTree.find(f => f.path && f.path.toLowerCase() === 'package.json');
+      const requirementsFile = fileTree.find(f => f.path && f.path.toLowerCase() === 'requirements.txt');
+      const cargoTomlFile = fileTree.find(f => f.path && f.path.toLowerCase() === 'cargo.toml');
+
+      const fetchFileContent = async (filePath: string) => {
+        try {
+          const contentRes = await fetch(`https://api.github.com/repos/${repo}/contents/${filePath}`, { headers: reqHeaders });
+          if (contentRes.ok) {
+            const data = await contentRes.json();
+            if (data.content) {
+              return Buffer.from(data.content, 'base64').toString('utf-8');
+            }
+          }
+        } catch (e) {
+          console.warn(`Failed to fetch file ${filePath}`, e);
+        }
+        return "";
+      };
+
+      if (readmeFile) {
+        readmeContent = await fetchFileContent(readmeFile.path);
+        if (readmeContent.length > 3000) readmeContent = readmeContent.substring(0, 3000) + "... (truncated)";
+      }
+      if (packageJsonFile) {
+        packageContent = await fetchFileContent(packageJsonFile.path);
+        if (packageContent.length > 2000) packageContent = packageContent.substring(0, 2000) + "... (truncated)";
+      } else if (requirementsFile) {
+        packageContent = await fetchFileContent(requirementsFile.path);
+        if (packageContent.length > 2000) packageContent = packageContent.substring(0, 2000) + "... (truncated)";
+      } else if (cargoTomlFile) {
+        packageContent = await fetchFileContent(cargoTomlFile.path);
+        if (packageContent.length > 2000) packageContent = packageContent.substring(0, 2000) + "... (truncated)";
+      }
+
+      // Limit file list for context
+      const filePaths = fileTree
+        .filter(f => f.type === 'blob' && f.path)
+        .map(f => f.path)
+        .slice(0, 40);
+
+      // 4. Generate AI response using Gemini
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(550).json({ error: "GEMINI_API_KEY is not configured on the server." });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const prompt = `You are "Aether AI Codebase Architect". Analyze the following repository details and source code structure to extract high-fidelity project information, detect frameworks, and brainstorm creative features/ideas and architectural optimization dreams.
+
+Repository: ${repo}
+Default Description: ${repoInfo.description || "None"}
+Primary Language: ${repoInfo.language || "None"}
+
+Files Structure (First 40):
+${JSON.stringify(filePaths, null, 2)}
+
+README Snippet:
+${readmeContent || "None"}
+
+Package / Configuration File:
+${packageContent || "None"}
+
+Your task is to return a beautiful, polished JSON response that perfectly satisfies the following schema:
+{
+  "name": "A refined, professional name of the project based on the repo name and content",
+  "description": "A clean, concise 2-3 sentence description summarizing the core purpose and value of the codebase",
+  "frameworks": ["Detected main framework(s), e.g. React, Next.js, Django, Node, Flask, Express, Rust, etc."],
+  "customStack": ["Other supportive languages, packages, databases, or cloud tools detected"],
+  "brainstormIdeas": [
+    {
+      "id": "A unique random string ID starting with idea-",
+      "text": "Name of an extremely innovative, futuristic, or useful feature that can be added to this project",
+      "details": "A detailed 1-2 sentence description explaining how this feature works and why users will love it",
+      "status": "pending",
+      "createdAt": ${Date.now()}
+    }
+  ],
+  "dreamRecommendations": [
+    {
+      "id": "A unique random string ID starting with dream-",
+      "title": "A highly specific, detailed code fix, security patch, or performance optimization dream",
+      "description": "A thorough explanation of why this optimization is critical, what parts of the repo it touches, and how it improves the codebase",
+      "snippet": "A beautiful, complete, executable/usable code snippet or config demonstrating exactly how to implement the solution (can be TypeScript, Python, Rust, Docker, or other relevant language)",
+      "category": "refactor",
+      "status": "active",
+      "createdAt": ${Date.now()}
+    }
+  ]
+}
+
+Ensure "category" field in "dreamRecommendations" is strictly one of: "refactor", "security", "performance", "accessibility", "design", "new_ideas", "general".
+Generate exactly 4-5 brainstormIdeas and 3-4 dreamRecommendations.
+Strictly output valid JSON. Do not include any markdown format blocks outside the JSON string (e.g. do not wrap in \`\`\`json). Just return the raw JSON.`;
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const text = result.text;
+      const parsedData = JSON.parse(text);
+      res.json(parsedData);
+
+    } catch (e: any) {
+      console.error("Error in analyze-repo:", e);
+      res.status(500).json({ error: e.message || "Failed to analyze repository" });
+    }
+  });
+
+  // Analyze a specific GitHub Commit with Gemini
+  app.post('/api/github/analyze-commit', async (req, res) => {
+    try {
+      const { repo, sha, message, author, date, token } = req.body;
+      if (!repo || !sha) {
+        return res.status(400).json({ error: 'repo and sha are required' });
+      }
+
+      const reqHeaders: any = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'AgenticOS-Build'
+      };
+      if (token) {
+        reqHeaders['Authorization'] = `token ${token}`;
+      }
+
+      // Fetch specific commit details (to get list of changed files and changes)
+      let commitDetails: any = null;
+      try {
+        const commitRes = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}`, { headers: reqHeaders });
+        if (commitRes.ok) {
+          commitDetails = await commitRes.json();
+        }
+      } catch (e) {
+        console.warn("Failed to fetch commit details from GitHub API", e);
+      }
+
+      const changedFilesSummary = commitDetails && commitDetails.files
+        ? commitDetails.files.map((f: any) => `${f.filename} (${f.status}): +${f.additions} -${f.deletions}`).join('\n')
+        : "None or unavailable";
+
+      // Build text of the file patches
+      let patches = "";
+      if (commitDetails && commitDetails.files) {
+        patches = commitDetails.files
+          .filter((f: any) => f.patch)
+          .map((f: any) => `File: ${f.filename}\nPatch:\n${f.patch}`)
+          .join('\n\n');
+        if (patches.length > 3000) patches = patches.substring(0, 3000) + "... (truncated)";
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(550).json({ error: "GEMINI_API_KEY is not configured on the server." });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const prompt = `You are "Aether AI Commit Sentinel". Analyze the following GitHub commit details, file changes, and diff patches to assess the technical impact, identify potential bugs or regressions, and suggest next actions.
+
+Repository: ${repo}
+Commit SHA: ${sha}
+Author: ${author || "Unknown"}
+Date: ${date || "Unknown"}
+Commit Message: ${message || "No message provided"}
+
+Changed Files Overview:
+${changedFilesSummary}
+
+Code Patches/Diff:
+${patches || "No patches available"}
+
+Your task is to return a beautiful, polished JSON response that perfectly satisfies the following schema:
+{
+  "summary": "A punchy, 2-sentence technical summary of what this commit implements, refactors, or fixes",
+  "impact": "Low" | "Medium" | "High" | "Critical",
+  "achievements": [
+    "Key achievement or file modification 1",
+    "Key achievement or file modification 2"
+  ],
+  "suggestedIssue": {
+    "title": "A highly relevant follow-up bug fix or task based on this commit (e.g. testing the new feature, fixing edge cases, or completing a secondary requirement)",
+    "description": "Thorough instructions for completing this follow-up task",
+    "type": "Task" | "Bug" | "Feature",
+    "priority": "Low" | "Medium" | "High" | "Critical"
+  }, // (Optional, or null if no follow-up is needed)
+  "suggestedNote": {
+    "title": "A documentation or engineering note summarizing the changes (e.g. 'Documentation Update: social auth')",
+    "content": "A beautiful Markdown-formatted description documenting the architectural changes made in this commit"
+  } // (Optional, or null if no documentation is needed)
+}
+
+Ensure "achievements" lists 2-3 bullet points.
+Strictly output valid JSON. Do not include any markdown format blocks outside the JSON string (e.g. do not wrap in \`\`\`json). Just return the raw JSON.`;
+
+      const result = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const text = result.text;
+      const parsedData = JSON.parse(text);
+      res.json(parsedData);
+
+    } catch (e: any) {
+      console.error("Error in analyze-commit:", e);
+      res.status(500).json({ error: e.message || "Failed to analyze commit" });
     }
   });
 
@@ -5445,6 +6162,76 @@ export const ${fileName}: React.FC = () => {
       res.json({
         success: true,
         logs: dailyEmailLogs
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/email/preview-briefing', (req, res) => {
+    try {
+      const plainText = compilePlainDreamingEmail(workspaceProjectsCache);
+      const htmlBody = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0b0d; color: #d4d4d8; padding: 24px; border: 1px solid #1f1f23; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);">
+          <div style="border-bottom: 1px solid #1f1f23; padding-bottom: 16px; margin-bottom: 20px;">
+            <h2 style="font-size: 16px; font-weight: bold; color: #10b981; margin: 0; text-transform: uppercase; letter-spacing: 1px;">☀️ DevSpace Autonomous Briefing</h2>
+            <p style="font-size: 11px; color: #71717a; margin: 4px 0 0 0;">Generated automatically by continuous workspace monitoring</p>
+          </div>
+
+          <div style="background-color: #09090b; border: 1px solid #18181b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <pre style="white-space: pre-wrap; word-wrap: break-word; font-family: monospace; font-size: 11.5px; line-height: 1.6; color: #e4e4e7; margin: 0;">${plainText}</pre>
+          </div>
+
+          <div style="border-top: 1px dashed #1f1f23; padding-top: 16px; text-align: center; font-size: 10px; color: #52525b;">
+            <p style="margin: 0 0 8px 0;">This report contains live syndicated recommendations compiled by autonomous Aether agents.</p>
+            <p style="margin: 0;">DevSpace Continuous Intelligence Engine • Host: ${lastKnownRequestHost || "Local Container"}</p>
+          </div>
+        </div>
+      `;
+
+      res.json({
+        success: true,
+        plainText,
+        htmlBody
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/automations/run-agent-step', async (req, res) => {
+    try {
+      const { prompt, context } = req.body;
+      if (!prompt) {
+        return res.status(400).json({ error: 'Prompt is required' });
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.json({
+          success: true,
+          result: `[Offline Mode] Processed step: "${prompt}". Suggesting optimized resolution pipelines.`
+        });
+      }
+
+      const ai = new GoogleGenAI({ 
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const systemPrompt = `You are the central AI coordinator executing automated steps in the DevSpace environment.`;
+      const userPrompt = `Execute this automation action: "${prompt}"
+Active projects context: ${JSON.stringify(context || {})}
+Compile a real, ultra-concise execution summary report (max 2-3 sentences) explaining the results and actions taken.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: userPrompt,
+        config: { systemInstruction: systemPrompt }
+      });
+
+      res.json({
+        success: true,
+        result: response.text || "Action executed successfully."
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

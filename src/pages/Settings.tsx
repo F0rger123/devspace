@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2 } from 'lucide-react';
+import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2, FolderArchive } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { logout, auth, linkProvider, unlinkProvider } from '../lib/auth';
 import { WakeWordEngine } from '../components/ui/WakeWordEngine';
@@ -396,6 +396,7 @@ function KineticSandboxVisualizer() {
 
 export function Settings() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { 
     userProfile, updateUserProfile,
     aiContextRules, setAiContextRules, 
@@ -521,6 +522,35 @@ export function Settings() {
   
   const [profileName, setProfileName] = useState('');
   const [isCalibrationOpen, setIsCalibrationOpen] = useState(false);
+  const [gestureSubTab, setGestureSubTab] = useState<'setup' | 'create' | 'active' | 'ready-made' | 'suggestions'>(() => {
+    return (localStorage.getItem('settings_gesture_sub_tab') as any) || 'setup';
+  });
+  const [gestureGroup, setGestureGroup] = useState<'camera' | 'presets' | 'custom'>(() => {
+    return (localStorage.getItem('settings_gesture_group') as any) || 'camera';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('settings_gesture_sub_tab', gestureSubTab);
+  }, [gestureSubTab]);
+
+  useEffect(() => {
+    localStorage.setItem('settings_gesture_group', gestureGroup);
+  }, [gestureGroup]);
+
+  useEffect(() => {
+    const tab = localStorage.getItem('settings_active_tab');
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab);
+    }
+    const group = localStorage.getItem('settings_gesture_group');
+    if (group && group !== gestureGroup) {
+      setGestureGroup(group as any);
+    }
+    const subTab = localStorage.getItem('settings_gesture_sub_tab');
+    if (subTab && subTab !== gestureSubTab) {
+      setGestureSubTab(subTab as any);
+    }
+  }, [location]);
 
   const isKineticEnabled = useStore((state) => state.isKineticEnabled);
   const showFloatingCamera = useStore((state) => state.showFloatingCamera);
@@ -1460,8 +1490,8 @@ export function Settings() {
     <div className="flex flex-col h-full overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            System Settings <SettingsIcon size={18} className="text-zinc-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            System <span className="font-semibold italic text-yellow-500">Settings</span> <SettingsIcon size={18} className="text-zinc-400" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Manage infrastructure, API keys, and workspace intelligence.
@@ -1482,7 +1512,7 @@ export function Settings() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Kinetic Gestures 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
           <div className="hidden md:block my-2 border-t border-zinc-900" />
@@ -3402,152 +3432,436 @@ export function Settings() {
                 </div>
               )}
 
-              {/* Header */}
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
-                  <Activity size={16} className="text-emerald-400" /> Aether Kinetic Spatial Gesture Engine
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Enable camera-based computer vision hand gestures. Train custom motion vectors to control your developer environment hands-free.
-                </p>
+              {/* Grouped Gestures & Shortcuts under intuitive, plain-English categories with descriptive labels */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mb-5">
+                {[
+                  {
+                    id: 'camera',
+                    title: '1. Camera Setup & Controls',
+                    description: 'Turn on your webcam and customize how easily your movements trigger actions.',
+                    icon: Camera,
+                    defaultSubTab: 'setup'
+                  },
+                  {
+                    id: 'presets',
+                    title: '2. Ready-to-Use Actions',
+                    description: 'Deploy ready-made shortcut packs, set simple finger shapes, or view AI suggestions.',
+                    icon: Sparkles,
+                    defaultSubTab: 'ready-made'
+                  },
+                  {
+                    id: 'custom',
+                    title: '3. Create & Manage Custom',
+                    description: 'Draw custom hand movement shapes, configure shortcuts, and sync to the cloud.',
+                    icon: Zap,
+                    defaultSubTab: 'create'
+                  }
+                ].map((group) => {
+                  const IconComponent = group.icon;
+                  const isActive = gestureGroup === group.id;
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => {
+                        setGestureGroup(group.id as any);
+                        setGestureSubTab(group.defaultSubTab as any);
+                      }}
+                      className={`text-left p-3.5 rounded-xl border transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-emerald-500/5 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.03)]'
+                          : 'bg-[#09090b] border-zinc-850 hover:border-zinc-750'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={`p-1.5 rounded-lg border ${
+                          isActive 
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                        }`}>
+                          <IconComponent size={14} />
+                        </div>
+                        <h4 className={`text-xs font-bold ${isActive ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                          {group.title}
+                        </h4>
+                      </div>
+                      <p className="text-[10px] text-zinc-500 leading-normal">
+                        {group.description}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Toggles Card */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div 
-                  onClick={() => {
-                    const isKin = useStore.getState().isKineticEnabled;
-                    useStore.getState().setKineticEnabled(!isKin);
-                  }}
-                  className={`border p-4 rounded-xl cursor-pointer transition-all ${
-                    isKineticEnabled
-                      ? 'bg-emerald-950/10 border-emerald-500/20 hover:border-emerald-500/40'
-                      : 'bg-[#09090b] border-zinc-850 hover:border-zinc-750'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
+              {/* Internal Sub-Tabs switcher for Group 2 (Presets & Logs) */}
+              {gestureGroup === 'presets' && (
+                <div className="flex items-center gap-1.5 border-b border-zinc-900 pb-3 mb-4 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setGestureSubTab('ready-made')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
+                      gestureSubTab === 'ready-made'
+                        ? 'bg-zinc-900 border-zinc-800 text-zinc-200'
+                        : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+                    }`}
+                  >
+                    Preset Packs & Finger Postures
+                  </button>
+                  <span className="text-zinc-850">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setGestureSubTab('suggestions')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
+                      gestureSubTab === 'suggestions'
+                        ? 'bg-zinc-900 border-zinc-800 text-zinc-200'
+                        : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+                    }`}
+                  >
+                    AI Suggestions & Activity Logs
+                  </button>
+                </div>
+              )}
+
+              {/* Internal Sub-Tabs switcher for Group 3 (Custom & Active) */}
+              {gestureGroup === 'custom' && (
+                <div className="flex items-center gap-1.5 border-b border-zinc-900 pb-3 mb-4 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setGestureSubTab('create')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
+                      gestureSubTab === 'create'
+                        ? 'bg-zinc-900 border-zinc-800 text-zinc-200'
+                        : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+                    }`}
+                  >
+                    Draw Custom Shortcut Pathway
+                  </button>
+                  <span className="text-zinc-850">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setGestureSubTab('active')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
+                      gestureSubTab === 'active'
+                        ? 'bg-zinc-900 border-zinc-800 text-zinc-200'
+                        : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+                    }`}
+                  >
+                    My Active Shortcuts & Backup
+                  </button>
+                </div>
+              )}
+
+              {gestureSubTab === 'setup' && (
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                      <Camera size={16} className="text-emerald-400" /> Camera Setup & Motion Control
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Turn on your webcam to control your screen with hand movements. Everything is processed privately on your own computer.
+                    </p>
+                  </div>
+
+                  {/* Toggles Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div 
+                      onClick={() => {
+                        const isKin = useStore.getState().isKineticEnabled;
+                        useStore.getState().setKineticEnabled(!isKin);
+                      }}
+                      className={`border p-4 rounded-xl cursor-pointer transition-all ${
+                        isKineticEnabled
+                          ? 'bg-emerald-950/10 border-emerald-500/20 hover:border-emerald-500/40'
+                          : 'bg-[#09090b] border-zinc-855 hover:border-zinc-750'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                            <SettingsIcon size={14} className={isKineticEnabled ? 'text-emerald-400 animate-pulse' : 'text-zinc-500'} />
+                            Enable Hand Gesture Controls
+                          </h4>
+                          <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
+                            Turn on gesture tracking. When active, the camera watches for your hands to trigger actions.
+                          </p>
+                        </div>
+                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors shrink-0 ml-4 ${isKineticEnabled ? 'bg-emerald-500' : 'bg-zinc-800'}`}>
+                          <div className={`w-3 h-3 rounded-full bg-white transition-transform ${isKineticEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={() => {
+                        const isShow = useStore.getState().showFloatingCamera;
+                        useStore.getState().setShowFloatingCamera(!isShow);
+                      }}
+                      className={`border p-4 rounded-xl cursor-pointer transition-all ${
+                        showFloatingCamera
+                          ? 'bg-emerald-950/10 border-emerald-500/20 hover:border-emerald-500/40'
+                          : 'bg-[#09090b] border-zinc-855 hover:border-zinc-750'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                            <Eye size={14} className={showFloatingCamera ? 'text-emerald-400' : 'text-zinc-500'} />
+                            Show Camera Window
+                          </h4>
+                          <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
+                            Show a small floating circle in the corner so you can see where your hands are.
+                          </p>
+                        </div>
+                        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors shrink-0 ml-4 ${showFloatingCamera ? 'bg-emerald-500' : 'bg-zinc-800'}`}>
+                          <div className={`w-3 h-3 rounded-full bg-white transition-transform ${showFloatingCamera ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div 
+                      className="border p-4 rounded-xl transition-all bg-[#09090b] border-zinc-855"
+                    >
+                      <div className="flex flex-col h-full justify-between">
+                        <div>
+                          <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5 mb-1">
+                            <Activity size={14} className="text-emerald-400" />
+                            Hand Tracking Mode
+                          </h4>
+                          <p className="text-[10px] text-zinc-500 leading-normal mb-3">
+                            Choose whether the camera tracks one hand or both hands for shortcuts.
+                          </p>
+                        </div>
+                        <div className="flex bg-[#121214] border border-zinc-800 p-0.5 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setKineticHandsMode('one');
+                              showToast('🖐️ Single-hand tracking mode enabled.', 'success', 2500);
+                            }}
+                            className={`flex-1 py-1 text-[10px] font-mono rounded-md font-bold transition-all cursor-pointer ${
+                              kineticHandsMode === 'one'
+                                ? 'bg-emerald-500 text-black shadow-sm'
+                                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                            }`}
+                          >
+                            Single Hand
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setKineticHandsMode('two');
+                              showToast('🙌 Two-hand tracking mode enabled.', 'success', 2500);
+                            }}
+                            className={`flex-1 py-1 text-[10px] font-mono rounded-md font-bold transition-all cursor-pointer ${
+                              kineticHandsMode === 'two'
+                                ? 'bg-emerald-500 text-black shadow-sm'
+                                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
+                            }`}
+                          >
+                            Two Hands
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sensitivity Controls Panel */}
+                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-5">
                     <div>
                       <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
-                        <SettingsIcon size={14} className={isKineticEnabled ? 'text-emerald-400 animate-pulse' : 'text-zinc-500'} />
-                        Kinetic Camera Tracker
+                        <Settings2 size={14} className="text-emerald-400" />
+                        How Easily Shortcuts Trigger
                       </h4>
-                      <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
-                        Toggle real-time video stream analysis. When enabled, your local web-camera acts as an active motion receiver.
+                      <p className="text-[10px] text-zinc-500 mt-0.5">
+                        Adjust the sliders below to make gesture detection more or less sensitive to your movements.
                       </p>
                     </div>
-                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors shrink-0 ml-4 ${isKineticEnabled ? 'bg-emerald-500' : 'bg-zinc-800'}`}>
-                      <div className={`w-3 h-3 rounded-full bg-white transition-transform ${isKineticEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </div>
-                  </div>
-                </div>
 
-                <div 
-                  onClick={() => {
-                    const isShow = useStore.getState().showFloatingCamera;
-                    useStore.getState().setShowFloatingCamera(!isShow);
-                  }}
-                  className={`border p-4 rounded-xl cursor-pointer transition-all ${
-                    showFloatingCamera
-                      ? 'bg-emerald-950/10 border-emerald-500/20 hover:border-emerald-500/40'
-                      : 'bg-[#09090b] border-zinc-850 hover:border-zinc-750'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
-                        <Eye size={14} className={showFloatingCamera ? 'text-emerald-400' : 'text-zinc-500'} />
-                        Floating Tracking HUD Overlay
-                      </h4>
-                      <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
-                        Show a transparent holographic video bubble in the bottom right corner showing live skeleton tracking paths.
-                      </p>
-                    </div>
-                    <div className={`w-8 h-4 rounded-full p-0.5 transition-colors shrink-0 ml-4 ${showFloatingCamera ? 'bg-emerald-500' : 'bg-zinc-800'}`}>
-                      <div className={`w-3 h-3 rounded-full bg-white transition-transform ${showFloatingCamera ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </div>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Swipe Sensitivity */}
+                      <div className="space-y-2 bg-black/40 p-3.5 rounded-xl border border-zinc-900">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-200 block">Hand Swipe Distance</span>
+                            <span className="text-[9px] text-zinc-500 block">How far you need to move your hand to trigger a swipe shortcut.</span>
+                          </div>
+                          <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
+                            {swipeSensitivity}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={15}
+                          max={60}
+                          value={swipeSensitivity}
+                          onChange={(e) => setSwipeSensitivity(Number(e.target.value))}
+                          className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                          <span>15px (Short movement)</span>
+                          <span className="text-[9px] text-zinc-400">
+                            {swipeSensitivity < 25 ? "⚡ Triggers quickly" : swipeSensitivity <= 42 ? "⚖️ Balanced (Recommended)" : "🔒 Requires wide sweep"}
+                          </span>
+                          <span>60px (Long movement)</span>
+                        </div>
+                      </div>
 
-                <div 
-                  className="border p-4 rounded-xl transition-all bg-[#09090b] border-zinc-850"
-                >
-                  <div className="flex flex-col h-full justify-between">
-                    <div>
-                      <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5 mb-1">
-                        <Activity size={14} className="text-emerald-400" />
-                        Tracking Mode Profile
-                      </h4>
-                      <p className="text-[10px] text-zinc-500 leading-normal mb-3">
-                        Switch between ergonomic single-hand tracking and full double-hand spatial capture modes.
-                      </p>
+                      {/* Path Match Precision */}
+                      <div className="space-y-2 bg-black/40 p-3.5 rounded-xl border border-zinc-900">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-200 block">Shape Matching Accuracy</span>
+                            <span className="text-[9px] text-zinc-500 block">How closely your hand path must match the shape you drew when training.</span>
+                          </div>
+                          <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
+                            {customPathMatchPrecision.toFixed(2)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.10}
+                          max={0.40}
+                          step={0.01}
+                          value={customPathMatchPrecision}
+                          onChange={(e) => setCustomPathMatchPrecision(Number(e.target.value))}
+                          className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                          <span>0.10 (Must match perfectly)</span>
+                          <span className="text-[9px] text-zinc-400">
+                            {customPathMatchPrecision < 0.18 ? "🎯 Must match perfectly" : customPathMatchPrecision <= 0.28 ? "⚖️ Standard accuracy" : "⚠️ Easy to trigger (Loose match)"}
+                          </span>
+                          <span>0.40 (Easy to trigger)</span>
+                        </div>
+                      </div>
+
+                      {/* Wave Sensitivity */}
+                      <div className="space-y-2 bg-black/40 p-3.5 rounded-xl border border-zinc-900">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-200 block">Hand Waving Width</span>
+                            <span className="text-[9px] text-zinc-500 block">How wide you need to wave your hand back and forth to trigger a wave shortcut.</span>
+                          </div>
+                          <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
+                            {waveSensitivity}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={15}
+                          max={60}
+                          value={waveSensitivity}
+                          onChange={(e) => setWaveSensitivity(Number(e.target.value))}
+                          className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                          <span>15px (Slight wave)</span>
+                          <span className="text-[9px] text-zinc-400">
+                            {waveSensitivity < 22 ? "⚡ Triggers with slight wave" : waveSensitivity <= 38 ? "⚖️ Normal wave (Recommended)" : "🔒 Requires broad waving"}
+                          </span>
+                          <span>60px (Broad wave)</span>
+                        </div>
+                      </div>
+
+                      {/* Posture Stability Hold Time */}
+                      <div className="space-y-2 bg-black/40 p-3.5 rounded-xl border border-zinc-900">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-200 block">Posture Hold Time</span>
+                            <span className="text-[9px] text-zinc-500 block">How long you need to hold a hand shape steady before the shortcut triggers.</span>
+                          </div>
+                          <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
+                            {fingerPoseStabilityFrames} frames
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={5}
+                          max={25}
+                          value={fingerPoseStabilityFrames}
+                          onChange={(e) => setFingerPoseStabilityFrames(Number(e.target.value))}
+                          className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                          <span>5 frames (Fast)</span>
+                          <span className="text-[9px] text-zinc-400">
+                            {fingerPoseStabilityFrames < 8 ? "⚡ Instant registration" : fingerPoseStabilityFrames <= 14 ? "⚖️ Normal hold (Recommended)" : "🔒 Must hold frozen"}
+                          </span>
+                          <span>25 frames (Long Hold)</span>
+                        </div>
+                      </div>
+
+                      {/* Cooldown Delay */}
+                      <div className="space-y-2 bg-black/40 p-3.5 rounded-xl border border-zinc-900 md:col-span-2">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-200 block">Pause Between Actions</span>
+                            <span className="text-[9px] text-zinc-500 block">How long to wait after a gesture triggers before the camera accepts another, preventing accidental double triggers.</span>
+                          </div>
+                          <span className="text-emerald-400 font-mono text-xs font-bold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
+                            {gestureCooldownDuration} ms
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={300}
+                          max={4000}
+                          step={100}
+                          value={gestureCooldownDuration}
+                          onChange={(e) => setGestureCooldownDuration(Number(e.target.value))}
+                          className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[8.5px] text-zinc-600 font-mono">
+                          <span>300ms (Instant)</span>
+                          <span className="text-[9px] text-zinc-400">
+                            {gestureCooldownDuration < 1000 ? "⚡ Rapid trigger speed" : gestureCooldownDuration <= 2200 ? "⚖️ Balanced pause (Recommended)" : "🔒 Safer, slower pacing"}
+                          </span>
+                          <span>4000ms (Long Pause)</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex bg-[#121214] border border-zinc-800 p-0.5 rounded-lg">
+
+                    <div className="flex justify-between items-center pt-3 border-t border-zinc-900">
                       <button
-                        type="button"
                         onClick={() => {
-                          setKineticHandsMode('one');
-                          showToast('🖐️ Ergonomic One-Hand Tracking profile activated.', 'success', 2500);
+                          setSwipeSensitivity(32);
+                          setCustomPathMatchPrecision(0.23);
+                          setWaveSensitivity(30);
+                          setFingerPoseStabilityFrames(10);
+                          setGestureCooldownDuration(1500);
                         }}
-                        className={`flex-1 py-1 text-[10px] font-mono rounded-md font-bold transition-all cursor-pointer ${
-                          kineticHandsMode === 'one'
-                            ? 'bg-emerald-500 text-black shadow-sm'
-                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
-                        }`}
+                        className="text-[10px] font-mono text-zinc-500 hover:text-emerald-400 flex items-center gap-1 transition-colors bg-transparent border-0 cursor-pointer"
                       >
-                        Single Hand
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKineticHandsMode('two');
-                          showToast('🙌 Immersive Two-Hand Spatial tracking profile activated.', 'success', 2500);
-                        }}
-                        className={`flex-1 py-1 text-[10px] font-mono rounded-md font-bold transition-all cursor-pointer ${
-                          kineticHandsMode === 'two'
-                            ? 'bg-emerald-500 text-black shadow-sm'
-                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/20'
-                        }`}
-                      >
-                        Two Hands
+                        <RefreshCw size={10} /> Reset to Defaults
                       </button>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Calibration Banner */}
-              <div className="bg-gradient-to-r from-emerald-950/20 to-zinc-950 border border-emerald-500/20 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
-                    <Settings2 size={14} className="text-emerald-400" />
-                    Kinetic Calibration & Tuning Center
-                  </h4>
-                  <p className="text-[10px] text-zinc-500 leading-normal">
-                    Adjust motion thresholds, path similarity requirements, and static hand posture stability variables with a live diagnostic radar.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsCalibrationOpen(true)}
-                  className="px-3.5 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-black rounded-lg transition-colors flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0 self-start sm:self-center cursor-pointer"
-                >
-                  <Activity size={13} />
-                  Open Calibration Console
-                </button>
-              </div>
-
-              {/* Main Workspace split: Sandbox/Train & List of Gestures */}
-              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-                
-                {/* Visualizer & Training Sandbox */}
-                <div className="xl:col-span-7 space-y-4">
+              {/* Visualizer & Training Sandbox */}
+              {gestureSubTab === 'create' && (
+                <div className="space-y-6 animate-fade-in">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                      <Sparkles size={16} className="text-emerald-400" /> Draw Custom Hand Gesture
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Record custom hand movements or simple finger postures to trigger actions on your workstation.
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <div className="lg:col-span-12 space-y-4">
                   <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
                       <div>
                         <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
-                          <Activity size={13} className="text-emerald-400" /> Kinetic Sandbox & Tracking Radar
+                          <Activity size={13} className="text-emerald-400" /> Hand Tracking Playground & Radar
                         </h4>
                         <p className="text-[10px] text-zinc-500">
-                          Verify frame analysis, trace raw coordinates, and test gestures live.
+                          Test your hand tracking live, watch the drawing trail, and practice your gestures.
                         </p>
                       </div>
                       {isKineticEnabled && (
@@ -4000,82 +4314,109 @@ export function Settings() {
                         <button 
                           disabled={
                             !newGestureName || 
-                            !isKineticEnabled || 
                             (newGestureAction === 'macro' && macroActions.length === 0)
                           }
-                          onClick={() => handleStartTraining()}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 ${
-                            (!newGestureName || !isKineticEnabled || (newGestureAction === 'macro' && macroActions.length === 0))
+                          onClick={() => {
+                            if (gestureType === 'finger-pose' || newGestureAction === 'macro') {
+                              const direction = gestureType === 'finger-pose' ? `pose-${targetFingerCount}` : 'custom';
+                              saveNewGesture(newGestureName, newGestureAction, customActionText, [], direction);
+                            } else {
+                              if (!isKineticEnabled) {
+                                showToast('Please enable the Kinetic Camera Tracker to train a kinetic path gesture!', 'error', 3000);
+                                return;
+                              }
+                              handleStartTraining();
+                            }
+                          }}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                            (!newGestureName || (newGestureAction === 'macro' && macroActions.length === 0))
                               ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-800/40'
-                              : 'bg-emerald-500 text-black hover:bg-emerald-400'
+                              : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_15px_rgba(16,185,129,0.15)]'
                           }`}
                         >
                           <Sparkles size={12} />
-                          {gestureType === 'finger-pose' ? 'Register Finger Posture' : 'Start Training Sequence'}
+                          {gestureType === 'finger-pose' || newGestureAction === 'macro' ? 'Save & Register Action' : 'Start Training Sequence'}
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
 
-                {/* Centralized Macro Registry & Kinetic Activity Logs */}
-                <div className="xl:col-span-5 space-y-4">
+              {/* Your Active Shortcuts Sub-tab */}
+              {gestureSubTab === 'active' && (
+                <div className="space-y-6 animate-fade-in w-full">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                      <SettingsIcon size={16} className="text-emerald-400" /> My Active Shortcuts & Backup
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Review your configured actions and save them securely to the cloud.
+                    </p>
+                  </div>
                   
-                  {/* DevSpace Cloud-Sync Panel */}
-                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
-                    <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                          <Cloud size={14} />
+                  <div className="w-full space-y-4">
+                    {/* Cloud Backup Card */}
+                    <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                        <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                              <Cloud size={14} />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-semibold text-zinc-200">Cloud Backup & Sync</h4>
+                              <p className="text-[9.5px] text-zinc-500">Save your custom shortcuts to your secure cloud profile.</p>
+                            </div>
+                          </div>
+                          {isSyncingConfig ? (
+                            <span className="flex items-center gap-1 text-[9px] font-mono text-amber-400 bg-amber-950/20 px-1.5 py-0.5 rounded animate-pulse">
+                              <RefreshCw size={9} className="animate-spin" /> SYNCING
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono text-zinc-600">SECURE PROFILE</span>
+                          )}
                         </div>
-                        <div>
-                          <h4 className="text-xs font-semibold text-zinc-200">DevSpace Cloud Sync</h4>
-                          <p className="text-[9.5px] text-zinc-500">Persist custom gestures and tuning values to the cloud.</p>
+
+                        <p className="text-[10px] text-zinc-400 leading-relaxed bg-[#0d0d0f] p-3 rounded-lg border border-zinc-900">
+                          Save your custom shortcuts and sensitivity settings to the cloud. You can restore them on any computer instantly.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <button
+                            onClick={backupKineticConfig}
+                            disabled={isSyncingConfig}
+                            className="py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-tight bg-emerald-500 hover:bg-emerald-400 text-black rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <Upload size={12} />
+                            Save to Cloud
+                          </button>
+                          <button
+                            onClick={restoreKineticConfig}
+                            disabled={isSyncingConfig}
+                            className="py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-tight bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-350 hover:text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw size={12} className={isSyncingConfig ? 'animate-spin' : ''} />
+                            Load from Cloud
+                          </button>
                         </div>
                       </div>
-                      {isSyncingConfig ? (
-                        <span className="flex items-center gap-1 text-[9px] font-mono text-amber-400 bg-amber-950/20 px-1.5 py-0.5 rounded animate-pulse">
-                          <RefreshCw size={9} className="animate-spin" /> SYNCING
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-mono text-zinc-600">SECURE ENDPOINT</span>
-                      )}
-                    </div>
-
-                    <p className="text-[10px] text-zinc-400 leading-relaxed bg-[#0d0d0f] p-3 rounded-lg border border-zinc-900">
-                      Backup your custom gesture pathways, sensitivity tuning thresholds, static hold values, and cooldown metrics. Sign in to any machine and restore your workspace instantly.
-                    </p>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <button
-                        onClick={backupKineticConfig}
-                        disabled={isSyncingConfig}
-                        className="py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-tight bg-emerald-500 hover:bg-emerald-400 text-black rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        <Upload size={12} />
-                        Backup Config
-                      </button>
-                      <button
-                        onClick={restoreKineticConfig}
-                        disabled={isSyncingConfig}
-                        className="py-2 px-3 text-[10px] font-mono font-bold uppercase tracking-tight bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-350 hover:text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        <RefreshCw size={12} className={isSyncingConfig ? 'animate-spin' : ''} />
-                        Restore Cloud
-                      </button>
                     </div>
                   </div>
+                )}
 
                   {/* Community Shared Macros Gallery */}
-                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                  {gestureSubTab === 'ready-made' && (
+                    <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
                           <Share2 size={14} />
                         </div>
                         <div>
-                          <h4 className="text-xs font-semibold text-zinc-200">Shared Community Macros</h4>
-                          <p className="text-[9.5px] text-zinc-500">Test and adopt custom gesture macros uploaded by other users.</p>
+                          <h4 className="text-xs font-semibold text-zinc-200">Community-Shared Shortcut Packs</h4>
+                          <p className="text-[9.5px] text-zinc-500">Browse, test, and save gesture packages shared by other users in the community.</p>
                         </div>
                       </div>
                       <button
@@ -4269,17 +4610,20 @@ export function Settings() {
                       })()}
                     </div>
                   </div>
+                )}
 
-                  {/* Centralized Macro Registry */}
-                  <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
+                  {/* My Custom Shortcuts */}
+                  {gestureSubTab === 'active' && (
+                    <div className="space-y-6 animate-fade-in">
+                      <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
                           <span className="inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Centralized Macro Registry
+                          My Custom Shortcuts
                         </h4>
                         <p className="text-[10px] text-zinc-500 mt-0.5">
-                          Toggle or test kinetic gestures and sequential action paths.
+                          Enable, disable, edit, or test your configured hand gestures and keyboard mappings.
                         </p>
                       </div>
                       <span className="text-[9px] font-mono px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-400">
@@ -4634,24 +4978,36 @@ export function Settings() {
                       })}
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Finger Tracking Gesture Preset Library */}
+              {/* Ready-to-Use Gesture & Preset Packages */}
+              {gestureSubTab === 'ready-made' && (
+                <div className="space-y-6 animate-fade-in">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                      <FolderArchive size={16} className="text-emerald-400" /> Ready-to-Use Packages & Postures
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Load quick pre-made packages or choose simple finger shapes for your daily tasks.
+                    </p>
+                  </div>
                   <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
                     <div>
                       <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
                         <Settings2 size={14} className="text-emerald-400" />
-                        Finger Posture Preset Library
+                        Ready-To-Use Finger Pose Presets
                       </h4>
                       <p className="text-[10px] text-zinc-500 leading-normal mt-0.5">
-                        Instantly deploy hand-posture mappings for DevSpace navigation without recording path data.
+                        Instantly set actions for simple hand postures (like holding up a peace sign or five fingers) without drawing any custom path shapes.
                       </p>
                     </div>
 
                     {/* Thematic Preset Packs Launcher */}
                     <div className="bg-[#0c0c0e]/80 border border-zinc-900 rounded-xl p-4 space-y-3">
                       <div>
-                        <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest block font-bold">Featured Automation Bundles</span>
-                        <h5 className="text-[11px] font-bold text-zinc-300 mt-0.5">Deploy Complete Spatial Preset Packs</h5>
+                        <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-widest block font-bold">Featured Ready-to-Use Packages</span>
+                        <h5 className="text-[11px] font-bold text-zinc-300 mt-0.5">Activate complete pre-made action groups with one click</h5>
                       </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -4825,17 +5181,29 @@ export function Settings() {
                       })}
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* AI-Driven Macro Suggestions Card */}
+              {/* Smart Shortcut Recommendations & Logs */}
+              {gestureSubTab === 'suggestions' && (
+                <div className="space-y-6 animate-fade-in">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
+                      <Sparkles size={16} className="text-amber-400" /> Smart Suggestions & Activity History
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      View custom shortcuts proposed by Gemini AI and see a live log of recognized gestures.
+                    </p>
+                  </div>
                   <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
                       <div>
                         <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
                           <Sparkles size={14} className="text-amber-400 animate-pulse" />
-                          AI Macro Recommender
+                          Smart Shortcut Recommender
                         </h4>
                         <p className="text-[10px] text-zinc-500">
-                          Gemini analyzes your environment interaction pattern history to compose automation macros.
+                          Gemini analyzes your recent navigation actions to suggest shortcuts that can bundle repetitive tasks.
                         </p>
                       </div>
                       <button 
@@ -4940,15 +5308,15 @@ export function Settings() {
                     </div>
                   </div>
 
-                  {/* Dynamic Detection Activity Logs */}
+                  {/* Live Gesture Log */}
                   <div className="border border-zinc-800 bg-[#09090b] rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between border-b border-zinc-900 pb-2">
                       <div>
                         <h4 className="text-xs font-semibold text-zinc-200">
-                          Kinetic Detection Logs
+                          Live Gesture Log
                         </h4>
                         <p className="text-[10px] text-zinc-500">
-                          Trace active spatial recognitions in real-time.
+                          See which gestures and shortcuts are being recognized right now as you move your hands.
                         </p>
                       </div>
                       <button 
@@ -4975,10 +5343,8 @@ export function Settings() {
                       )}
                     </div>
                   </div>
-
                 </div>
-
-              </div>
+              )}
             </div>
           )}
 

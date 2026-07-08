@@ -136,6 +136,18 @@ export type Project = {
   gitHubCollaboratorUsernames?: { [email: string]: string };
   gitHubCollaboratorStatus?: { [email: string]: 'none' | 'pending' | 'active' };
   collaboratorPermissions?: { [email: string]: { canPushToGit: boolean; canViewCode: boolean; canEditRoadmap: boolean; canInviteOthers: boolean } };
+  analyzedCommits?: {
+    sha: string;
+    message: string;
+    author: string;
+    date: string;
+    summary: string;
+    impact: 'Low' | 'Medium' | 'High' | 'Critical';
+    achievements: string[];
+    analyzedAt: number;
+    suggestedIssueId?: string;
+    suggestedNoteId?: string;
+  }[];
 };
 
 export type Issue = {
@@ -255,10 +267,11 @@ type DataContextType = {
   updateProject: (id: string, p: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   startProjectDreaming: (projectId: string, focusMode?: 'refactor' | 'security' | 'performance' | 'accessibility' | 'design' | 'new_ideas' | 'general') => Promise<void>;
+  analyzeProjectCommits: (projectId: string) => Promise<void>;
 
   issues: Issue[];
   setIssues: React.Dispatch<React.SetStateAction<Issue[]>>;
-  addIssue: (i: Omit<Issue, 'id' | 'createdAt'>) => void;
+  addIssue: (i: Omit<Issue, 'id' | 'createdAt'>) => string;
   updateIssue: (id: string, i: Partial<Issue>) => void;
   deleteIssue: (id: string) => void;
 
@@ -270,7 +283,7 @@ type DataContextType = {
 
   notes: Note[];
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>;
-  addNote: (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  addNote: (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => string;
   updateNote: (id: string, n: Partial<Note>) => void;
   deleteNote: (id: string) => void;
 
@@ -305,7 +318,9 @@ type DataContextType = {
     isPrivate?: boolean,
     githubUrl?: string,
     websiteUrl?: string,
-    techStack?: string
+    techStack?: string,
+    username?: string,
+    setupCompleted?: boolean
   }) => Promise<void>;
   invitations: any[];
   setInvitations: React.Dispatch<React.SetStateAction<any[]>>;
@@ -437,6 +452,7 @@ type DataContextType = {
   showToast: (message: string, type?: Toast['type'], duration?: number) => void;
   removeToast: (id: string) => void;
   triggerFullSync: () => Promise<void>;
+  isOnline: boolean;
 
   // Centralized Macro Registry
   macroRegistry: KineticGesture[];
@@ -631,142 +647,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() => getStored('app_active_project', null));
   
   const [agents, setAgents] = useState<Agent[]>(() => {
-    const list = getStored<Agent[]>('devspace_agents', []);
-    const defaults: Agent[] = [
-      {
-        id: 'agent-sentinel',
-        name: 'Repo Sentinel',
-        role: 'Code Auditor & Reviewer',
-        projectId: 'spacestation-sync',
-        watchTargets: ['github', 'issues'],
-        goals: ['Audit coding and typescript type definitions', 'Analyze PR changes for credential exposures', 'Scan git trees for missing package configurations'],
-        schedule: 'On Commit',
-        commandList: 'Evaluate all modifications to ensure strict ES module imports. Report typed errors immediately.',
-        status: 'Active',
-        avatarColor: 'border-red-500/50 hover:border-red-500 text-red-400 bg-red-950/20',
-        createdAt: Date.now() - 36000000,
-        currentTask: 'Auditing remote branches for credential leaks...',
-        heartbeat: 74,
-        githubRepo: 'google/genai-js',
-        branchName: 'feat/agent-sentinel',
-        officeZone: 'sentinel',
-        mergeRequests: [
-          { id: 'mr-1', title: 'security: cleanup env credential leak paths', source: 'feat/agent-sentinel', target: 'main', status: 'Draft', createdAt: Date.now() - 3600000 }
-        ],
-        modelEngine: 'gemini-3.1-flash-lite'
-      },
-      {
-        id: 'agent-docs',
-        name: 'Docs Archivist',
-        role: 'Knowledge Graph Sync',
-        projectId: 'spacestation-sync',
-        watchTargets: ['docs', 'notes'],
-        goals: ['Synchronize Google Docs outlines to active markdown repositories', 'Parse meeting notes for milestones', 'Enforce structured documentation metadata'],
-        schedule: 'Hourly',
-        commandList: 'Reference incoming doc files for Spanner and Postgres replication designs. Build dynamic cross-linking indexes.',
-        status: 'Idle',
-        avatarColor: 'border-purple-500/50 hover:border-purple-500 text-purple-400 bg-purple-950/20',
-        createdAt: Date.now() - 18000000,
-        currentTask: 'Structuring cosine similarity vector indexes...',
-        heartbeat: 68,
-        githubRepo: 'google/genai-js',
-        branchName: 'feat/agent-docs',
-        officeZone: 'docs_lab',
-        mergeRequests: [],
-        modelEngine: 'gemini-3.5-flash'
-      },
-      {
-        id: 'agent-scrum',
-        name: 'Scrum Overseer',
-        role: 'Workflow bottleneck Auditor',
-        projectId: 'all',
-        watchTargets: ['issues', 'notes'],
-        goals: ['Identify scope creep in active backlogs', 'Track deliverable velocities across sprints', 'Auto-recommend phase dependencies'],
-        schedule: 'Daily',
-        commandList: 'Scrutinize Critical & High priority issues. Flag blocks or circular dependency maps on charts.',
-        status: 'Active',
-        avatarColor: 'border-cyan-500/50 hover:border-cyan-500 text-cyan-400 bg-cyan-950/20',
-        createdAt: Date.now() - 9000000,
-        currentTask: 'Scanning issue backlogs for circular blocks...',
-        heartbeat: 76,
-        githubRepo: 'google/genai-js',
-        branchName: 'feat/agent-scrum',
-        officeZone: 'scrum',
-        mergeRequests: [],
-        modelEngine: 'gemini-3.5-flash'
-      },
-      {
-        id: 'agent-jules',
-        name: 'Jules AI',
-        role: 'Google\'s Coding Assistant',
-        projectId: 'all',
-        watchTargets: ['github', 'issues'],
-        goals: ['Execute multi-task coding queues and bug fixes concurrently', 'Analyze project plans and output step-by-step code briefs', 'Output dynamic markdown testing checklists after complete builds'],
-        schedule: 'Manual',
-        commandList: 'Focus on multi-issue queues and regression coverage. Provide extensive code details and test guides directly.',
-        status: 'Idle',
-        avatarColor: 'border-blue-500/50 hover:border-blue-500 text-blue-400 bg-blue-950/20',
-        createdAt: Date.now() - 5000000,
-        currentTask: 'System idle, awaiting coding mission payload...',
-        heartbeat: 72,
-        githubRepo: 'google/genai-js',
-        branchName: 'feat/jules-coding',
-        officeZone: 'dev_bay',
-        mergeRequests: [],
-        modelEngine: 'gemini-3.1-pro-preview'
-      },
-      {
-        id: 'agent-claude',
-        name: 'Claude Code Bot',
-        role: 'Fast Refactoring & CLI Agent',
-        projectId: 'all',
-        watchTargets: ['github'],
-        goals: ['Run speed refactorings and code replacements', 'Format package configuration trees', 'Audit terminal syntax structures'],
-        schedule: 'On Commit',
-        commandList: 'Execute prompt instructions directly. Enforce ES module imports and single-screen boundaries.',
-        status: 'Idle',
-        avatarColor: 'border-amber-500/50 hover:border-amber-500 text-amber-400 bg-amber-950/20',
-        createdAt: Date.now() - 4000000,
-        currentTask: 'System idle, listening to terminal connectors...',
-        heartbeat: 69,
-        githubRepo: 'google/genai-js',
-        branchName: 'feat/claude-refactor',
-        officeZone: 'dev_bay',
-        mergeRequests: [],
-        modelEngine: 'claude-3.5-sonnet'
-      },
-      {
-        id: 'agent-antigravity',
-        name: 'Antigravity Code Agent',
-        role: 'Orchestrator & Flow Optimizer',
-        projectId: 'all',
-        watchTargets: ['docs', 'notes', 'issues'],
-        goals: ['Maintain design system guidelines', 'Maximize typographic and structural contrast', 'Aesthetic spacing calibration'],
-        schedule: 'Manual',
-        commandList: 'Design, layout, and spacing audit. Maintain literal labels. Shield backend keys.',
-        status: 'Idle',
-        avatarColor: 'border-pink-500/50 hover:border-pink-500 text-pink-400 bg-pink-950/20',
-        createdAt: Date.now() - 3000000,
-        currentTask: 'Awaiting design-token updates...',
-        heartbeat: 75,
-        githubRepo: 'google/genai-js',
-        branchName: 'feat/antigravity-design',
-        officeZone: 'dev_bay',
-        mergeRequests: [],
-        modelEngine: 'gemini-3.1-pro-preview'
-      }
-    ];
-
-    if (list.length === 0) {
-      return defaults;
-    }
-    const merged = [...list];
-    for (const d of defaults) {
-      if (!merged.some(a => a.id === d.id)) {
-        merged.push(d);
-      }
-    }
-    return merged;
+    return getStored<Agent[]>('devspace_agents', []);
   });
 
   const [aiContextRules, setAiContextRules] = useState<string>(() => getStored('app_ai_context', ''));
@@ -930,6 +811,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const lastSyncToastTimeRef = useRef<number>(0);
+  const [isOnline, setIsOnline] = useState(() => typeof window !== 'undefined' ? window.navigator.onLine : true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('🟢 DevSpace is back online! Resuming real-time sync.', 'success', 3000);
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('⚠️ Connection lost. Running in offline-first mode with secure local cache.', 'info', 5000);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const showToast = (message: string, type: Toast['type'] = 'info', duration: number = 3000) => {
     const id = crypto.randomUUID();
@@ -1015,16 +915,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Trigger throttled success / error toasts based on sync status
   useEffect(() => {
-    if (syncStatus === 'saved' && lastSyncedTime) {
-      const now = Date.now();
-      if (now - lastSyncToastTimeRef.current > 12000) {
-        showToast('All changes synchronized with Firestore.', 'success', 2500);
-        lastSyncToastTimeRef.current = now;
-      }
-    } else if (syncStatus === 'error') {
+    if (syncStatus === 'error') {
       showToast('Workspace synchronization failed. Please verify your connection.', 'error', 4000);
     }
-  }, [syncStatus, lastSyncedTime]);
+  }, [syncStatus]);
 
   const fetchWithAuth = async (url: string, options: any = {}, retries = 3, delay = 1000): Promise<Response> => {
     const headers = { ...(options.headers || {}) };
@@ -1619,6 +1513,57 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [isInitialLoadDone]);
 
+  // Active User & Autonomous Background Dreaming Trigger
+  const lastActiveRef = React.useRef<number>(Date.now());
+  useEffect(() => {
+    const updateActivity = () => {
+      lastActiveRef.current = Date.now();
+    };
+
+    window.addEventListener('mousedown', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+    window.addEventListener('touchstart', updateActivity);
+
+    return () => {
+      window.removeEventListener('mousedown', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      window.removeEventListener('touchstart', updateActivity);
+    };
+  }, []);
+
+  // Check activity periodically and trigger a dream on the active project
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+
+    const interval = setInterval(() => {
+      // Is user active? (has interacted in the last 3 minutes)
+      const isUserActive = (Date.now() - lastActiveRef.current) < 180000;
+      if (!isUserActive) return;
+
+      const targetId = activeProjectId || (projects && projects[0]?.id);
+      if (!targetId) return;
+
+      const proj = projects.find(p => p.id === targetId);
+      if (!proj || proj.isDreamingActive) return;
+
+      // Ensure we don't spam. Limit auto-dream to once every 5 minutes
+      const lastDreamed = proj.lastDreamedTime || 0;
+      const timeSinceLastDream = Date.now() - lastDreamed;
+      if (timeSinceLastDream < 300000) return;
+
+      console.log(`[Autonomous Dream] User is active. Auto-triggering dreaming cycle for project: ${proj.name}`);
+      const foci: Array<'refactor' | 'security' | 'performance' | 'accessibility' | 'design' | 'new_ideas' | 'general'> = [
+        'refactor', 'security', 'performance', 'accessibility', 'design', 'new_ideas', 'general'
+      ];
+      const randomFocus = foci[Math.floor(Math.random() * foci.length)];
+      startProjectDreaming(targetId, randomFocus).catch(console.error);
+    }, 30000); // Check user activity and last dreamed timestamp every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [isInitialLoadDone, activeProjectId, projects]);
+
   useEffect(() => { setStored('whatsapp_passcode_pin', passcodePin); }, [passcodePin]);
   useEffect(() => { setStored('app_projects', projects); }, [projects]);
   useEffect(() => { setStored('app_issues', issues); }, [issues]);
@@ -1630,6 +1575,106 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_ai_context', aiContextRules); }, [aiContextRules]);
   useEffect(() => { setStored('app_aether_personality_rules', aetherPersonalityRules); }, [aetherPersonalityRules]);
   useEffect(() => { setStored('app_github_user', githubUser); }, [githubUser]);
+
+  // Sync connected GitHub credentials to Firestore user doc whenever they change
+  useEffect(() => {
+    if (!isInitialLoadDone) return;
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      setDoc(userDocRef, {
+        githubToken,
+        githubUser,
+        githubProfile
+      }, { merge: true }).catch(err => {
+        console.warn("Failed to sync GitHub credentials to Firestore:", err);
+      });
+    }
+  }, [githubToken, githubUser, githubProfile, isInitialLoadDone]);
+
+  // Automated GitHub repos and stars monitoring & profile learning
+  const hasMonitoredGithubRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!isInitialLoadDone || !githubToken) return;
+    if (hasMonitoredGithubRef.current === githubToken) return;
+    hasMonitoredGithubRef.current = githubToken;
+
+    const monitorAndBuildProfile = async () => {
+      console.log("[GitHub Monitor] Fetching user's repositories and starred repos to build preference profile...");
+      
+      const maxRetries = 3;
+      let attempt = 0;
+      let success = false;
+      let response: Response | null = null;
+
+      while (attempt < maxRetries && !success) {
+        try {
+          response = await fetch("/api/github/profile-analysis", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: githubToken })
+          });
+
+          if (response.ok) {
+            success = true;
+          } else {
+            attempt++;
+            console.warn(`[GitHub Monitor] Profile analysis attempt ${attempt} failed with status: ${response.statusText}`);
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+            }
+          }
+        } catch (err) {
+          attempt++;
+          console.warn(`[GitHub Monitor] Network/connection attempt ${attempt} failed:`, err);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+          }
+        }
+      }
+
+      if (!success || !response) {
+        console.warn("[GitHub Monitor] Could not complete profile analysis after several attempts. Gracefully skipping profile synthesis.");
+        return;
+      }
+
+      try {
+        const profileObj = await response.json();
+
+        // Save analysis to Firestore
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const userDocRef = doc(db, 'users', currentUser.uid);
+          await setDoc(userDocRef, {
+            githubProfileAnalysis: profileObj,
+            updatedAt: Date.now()
+          }, { merge: true });
+        }
+
+        // Dynamically append guidelines to aiContextRules to actively "learn what they like"!
+        setAiContextRules(prev => {
+          let updatedRules = prev || "";
+          
+          // Remove existing autogenerated github rules block if any to prevent duplicates
+          updatedRules = updatedRules.replace(/\n*<!-- GITHUB_LEARNED_PREFERENCES_START -->[\s\S]*?<!-- GITHUB_LEARNED_PREFERENCES_END -->/g, "").trim();
+
+          const prefBlock = `\n\n<!-- GITHUB_LEARNED_PREFERENCES_START -->
+# Learned Preferences from GitHub Repos & Stars
+- **Focus Summary:** ${profileObj.summary}
+${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).join('\n')}
+<!-- GITHUB_LEARNED_PREFERENCES_END -->`;
+
+          return updatedRules + prefBlock;
+        });
+
+        console.log("[GitHub Monitor] Successfully synthesized developer preferences profile & registered context rules!");
+      } catch (err) {
+        console.warn("[GitHub Monitor] Error parsing or saving synthesized developer profile:", err);
+      }
+    };
+
+    monitorAndBuildProfile();
+  }, [githubToken, isInitialLoadDone]);
 
   const loadUserWorkspace = async (user: any) => {
     if (!user) return;
@@ -1709,15 +1754,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // 1.5 Migrate local anonymous projects and resources if they exist
+      // 1.5 Migrate local anonymous/sandbox projects and resources if they exist
       const localProjects = getStored<Project[]>('app_projects', []);
-      const anonProjects = localProjects.filter(p => !p.ownerId || p.ownerId === 'anonymous');
+      const anonProjects = localProjects.filter(p => !p.ownerId || p.ownerId === 'anonymous' || p.ownerId.startsWith('sandbox-'));
       
       if (anonProjects.length > 0) {
-        console.log(`[Migration] Migrating ${anonProjects.length} anonymous projects to logged-in user ${user.uid}`);
+        console.log(`[Migration] Migrating ${anonProjects.length} anonymous/sandbox projects to logged-in user ${user.uid}`);
         const email = user.email || '';
         const migratedProjects = localProjects.map(p => {
-          if (!p.ownerId || p.ownerId === 'anonymous') {
+          if (!p.ownerId || p.ownerId === 'anonymous' || p.ownerId.startsWith('sandbox-')) {
             return {
               ...p,
               ownerId: user.uid,
@@ -1970,7 +2015,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         unsubInvitations = null;
       }
 
-      const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
+      let isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
+      if (isSandbox && user) {
+        window.localStorage.removeItem('app_auth_mode');
+        isSandbox = false;
+      }
       if (isSandbox) {
         const localUser = getStored<any>('app_google_user', null);
         if (localUser) {
@@ -2020,7 +2069,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
             const data = profileDoc.data();
             setUserProfile(data);
             setStored('app_user_profile', data);
+            
+            // Restore persistent GitHub credentials from Firestore
+            if (data.githubToken) {
+              setGithubToken(data.githubToken);
+              setStored('app_github_token', data.githubToken);
+            }
+            if (data.githubUser) {
+              setGithubUser(data.githubUser);
+              setStored('app_github_user', data.githubUser);
+            }
+            if (data.githubProfile) {
+              setGithubProfile(data.githubProfile);
+              setStored('app_github_profile', data.githubProfile);
+            }
           } else {
+            if (typeof window !== 'undefined') {
+              window.sessionStorage.setItem('is_new_signup', 'true');
+            }
             const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
             const initialProfile = {
               uid: user.uid,
@@ -2325,7 +2391,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     isPrivate?: boolean,
     githubUrl?: string,
     websiteUrl?: string,
-    techStack?: string
+    techStack?: string,
+    username?: string,
+    setupCompleted?: boolean
   }) => {
     const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
     const activeUid = auth.currentUser?.uid || googleUser?.uid;
@@ -2473,11 +2541,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     deleteDoc(doc(db, 'projects', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `projects/${id}`));
   };
 
-  const addIssue = (i: Omit<Issue, 'id' | 'createdAt'>) => {
+  const addIssue = (i: Omit<Issue, 'id' | 'createdAt'>): string => {
     const id = crypto.randomUUID();
     const newIss = { ...i, id, createdAt: Date.now() };
     setIssues(prev => [...prev, newIss]);
     setDocWithSanitize(doc(db, 'issues', id), newIss).catch(e => handleFirestoreError(e, OperationType.WRITE, `issues/${id}`));
+    return id;
   };
   const updateIssue = (id: string, i: Partial<Issue>) => {
     setIssues(prev => prev.map(iss => {
@@ -2504,12 +2573,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setPhases(prev => prev.filter(ph => ph.id !== id));
   };
 
-  const addNote = (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const addNote = (n: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>): string => {
     const now = Date.now();
     const id = crypto.randomUUID();
     const newNote = { ...n, id, createdAt: now, updatedAt: now };
     setNotes(prev => [...prev, newNote]);
     setDocWithSanitize(doc(db, 'notes', id), newNote).catch(e => handleFirestoreError(e, OperationType.WRITE, `notes/${id}`));
+    return id;
   };
   const updateNote = (id: string, n: Partial<Note>) => {
     setNotes(prev => prev.map(note => {
@@ -2538,7 +2608,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
-        return {
+        const updated = {
           ...p,
           isDreamingActive: true,
           dreamProgress: 10,
@@ -2546,6 +2616,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           dreamLogs: initialLogs,
           lastDreamedTime: Date.now()
         };
+        setDocWithSanitize(doc(db, 'projects', projectId), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${projectId}`));
+        return updated;
       }
       return p;
     }));
@@ -2702,13 +2774,15 @@ Description of fix or enhancement recommendation
           // Alphabetical Sort
           combined.sort((a, b) => a.title.localeCompare(b.title));
 
-          return {
+          const updated = {
             ...p,
             dreamRecommendations: combined,
             isDreamingActive: false,
             dreamProgress: 100,
             dreamLogs: [...currentLogs, "✨ Background Dreaming Completed! Alphabetically Sorted & Saved."]
           };
+          setDocWithSanitize(doc(db, 'projects', projectId), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${projectId}`));
+          return updated;
         }
         return p;
       }));
@@ -2739,16 +2813,150 @@ Description of fix or enhancement recommendation
           // Alphabetical Sort
           combined.sort((a, b) => a.title.localeCompare(b.title));
 
-          return {
+          const updated = {
             ...p,
             dreamRecommendations: combined,
             isDreamingActive: false,
             dreamProgress: 100,
             dreamLogs: [...currentLogs, "⚠️ Dreaming completed with warnings. Offline backup patterns loaded, sorted & structured."]
           };
+          setDocWithSanitize(doc(db, 'projects', projectId), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${projectId}`));
+          return updated;
         }
         return p;
       }));
+    }
+  };
+
+  const analyzeProjectCommits = async (projectId: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    
+    const repos = proj.githubRepos || [];
+    const repo = repos[0] || "";
+    if (!repo) {
+      showToast("No GitHub repository linked to this project.", "error");
+      return;
+    }
+
+    showToast(`Scanning commits for project "${proj.name}"...`, "info");
+
+    try {
+      const activeToken = githubToken || "";
+      const res = await fetch('/api/github/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo, token: activeToken || undefined })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to pull commits from GitHub API.");
+      }
+
+      const commitsData = await res.json();
+      if (!Array.isArray(commitsData) || commitsData.length === 0) {
+        showToast("No remote commits found for this repository.", "info");
+        return;
+      }
+
+      const existingAnalyzed = proj.analyzedCommits || [];
+      const analyzedShas = new Set(existingAnalyzed.map(ac => ac.sha));
+      const newlyAnalyzed: typeof existingAnalyzed = [];
+
+      // Only analyze the newest 3 unanalyzed commits to save tokens/avoid heavy rate limits
+      const unanalyzedCommits = commitsData
+        .filter((c: any) => !analyzedShas.has(c.sha))
+        .slice(0, 3);
+
+      if (unanalyzedCommits.length === 0) {
+        showToast(`All commits for "${proj.name}" are analyzed.`, "success");
+        return;
+      }
+
+      showToast(`Analyzing ${unanalyzedCommits.length} new commit(s) with Gemini...`, "info");
+
+      for (const commit of unanalyzedCommits) {
+        try {
+          const sha = commit.sha;
+          const msg = commit.commit.message;
+          const authorName = commit.commit.author.name;
+          const dateStr = commit.commit.author.date;
+
+          const analyzeRes = await fetch('/api/github/analyze-commit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              repo,
+              sha,
+              message: msg,
+              author: authorName,
+              date: dateStr,
+              token: activeToken || undefined
+            })
+          });
+
+          if (!analyzeRes.ok) {
+            console.warn(`Failed to analyze commit ${sha}`);
+            continue;
+          }
+
+          const analysisResult = await analyzeRes.json();
+
+          let suggestedIssueId: string | undefined = undefined;
+          let suggestedNoteId: string | undefined = undefined;
+
+          // 1. If Gemini suggested an issue, create it
+          if (analysisResult.suggestedIssue) {
+            const iss = analysisResult.suggestedIssue;
+            suggestedIssueId = addIssue({
+              projectId,
+              title: `${iss.title} (Commit Ref: ${sha.substring(0, 7)})`,
+              description: `Auto-generated from Commit analysis of ${sha.substring(0, 7)} by ${authorName}:\n\n${iss.description}`,
+              type: iss.type || 'Task',
+              status: 'Todo',
+              priority: iss.priority || 'Medium',
+              labels: ['commit-watcher', `commit-${sha.substring(0, 7)}`]
+            });
+          }
+
+          // 2. If Gemini suggested a documentation note, create it
+          if (analysisResult.suggestedNote) {
+            const nt = analysisResult.suggestedNote;
+            suggestedNoteId = addNote({
+              projectId,
+              title: `${nt.title} (Commit Ref: ${sha.substring(0, 7)})`,
+              content: `### Commit Documentation Note\n*Commit SHA: [${sha}](https://github.com/${repo}/commit/${sha})*\n*Author: ${authorName}*\n*Date: ${new Date(dateStr).toLocaleString()}*\n\n${nt.content}`,
+              tags: ['commit-documentation', `commit-${sha.substring(0, 7)}`]
+            });
+          }
+
+          newlyAnalyzed.push({
+            sha,
+            message: msg.split('\n')[0],
+            author: authorName,
+            date: new Date(dateStr).toLocaleDateString() + ' ' + new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            summary: analysisResult.summary,
+            impact: analysisResult.impact || 'Low',
+            achievements: analysisResult.achievements || [],
+            analyzedAt: Date.now(),
+            suggestedIssueId,
+            suggestedNoteId
+          });
+
+          showToast(`Analyzed commit ${sha.substring(0, 7)}: Auto-created task and note!`, "success", 4000);
+
+        } catch (e) {
+          console.error(`Error analyzing individual commit ${commit.sha}:`, e);
+        }
+      }
+
+      // Combine and save
+      const finalAnalyzed = [...newlyAnalyzed, ...existingAnalyzed];
+      updateProject(projectId, { analyzedCommits: finalAnalyzed });
+
+    } catch (err: any) {
+      console.error("Failed running commit watcher:", err);
+      showToast(`Error scanning commits: ${err.message}`, "error");
     }
   };
 
@@ -3601,7 +3809,7 @@ Description of fix or enhancement recommendation
 
   return (
     <DataContext.Provider value={{
-      projects, setProjects, addProject, updateProject, deleteProject, startProjectDreaming,
+      projects, setProjects, addProject, updateProject, deleteProject, startProjectDreaming, analyzeProjectCommits,
       issues, setIssues, addIssue, updateIssue, deleteIssue,
       phases, setPhases, addPhase, updatePhase, deletePhase,
       notes, setNotes, addNote, updateNote, deleteNote,
@@ -3671,6 +3879,7 @@ Description of fix or enhancement recommendation
       showToast,
       removeToast,
       triggerFullSync,
+      isOnline,
 
       macroRegistry,
       toggleMacroMapping,

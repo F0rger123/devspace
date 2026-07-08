@@ -25,9 +25,27 @@ export const auth = getAuth(app);
 
 let firestoreInstance;
 try {
-  firestoreInstance = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+  firestoreInstance = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, (firebaseConfig as any).firestoreDatabaseId);
 } catch (e) {
-  firestoreInstance = getFirestore(app);
+  try {
+    firestoreInstance = initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    });
+  } catch (err) {
+    try {
+      firestoreInstance = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+    } catch (err2) {
+      firestoreInstance = getFirestore(app);
+    }
+  }
 }
 export const db = firestoreInstance;
 
@@ -75,6 +93,7 @@ export const signUpWithEmailPassword = async (email: string, password: string, u
     const cleanUsername = username.trim();
     if (typeof window !== 'undefined') {
       window.sessionStorage.setItem('signup_username', cleanUsername);
+      window.sessionStorage.setItem('is_new_signup', 'true');
     }
     const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
     const user = credential.user;
@@ -105,7 +124,11 @@ export const signUpWithEmailPassword = async (email: string, password: string, u
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem('signup_username');
     }
-    console.error('Email sign up error:', error);
+    if (error?.code === 'auth/operation-not-allowed' || error?.message?.includes('operation-not-allowed')) {
+      console.warn('Email sign up provider not enabled (auth/operation-not-allowed). This is expected if the provider has not been turned on in the Firebase Console.');
+    } else {
+      console.error('Email sign up error:', error);
+    }
     throw error;
   }
 };
@@ -116,26 +139,21 @@ export const loginWithEmailPassword = async (email: string, password: string): P
     const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
     return credential.user;
   } catch (error: any) {
-    console.error('Email sign in error:', error);
+    if (error?.code === 'auth/operation-not-allowed' || error?.message?.includes('operation-not-allowed')) {
+      console.warn('Email sign in provider not enabled (auth/operation-not-allowed). This is expected if the provider has not been turned on in the Firebase Console.');
+    } else {
+      console.error('Email sign in error:', error);
+    }
     throw error;
   }
 };
 
 export const sendPasswordReset = async (email: string): Promise<void> => {
   try {
-    const actionCodeSettings = {
-      url: `${window.location.origin}/?mode=resetPassword`,
-      handleCodeInApp: true,
-    };
-    await sendPasswordResetEmail(auth, email, actionCodeSettings);
+    await sendPasswordResetEmail(auth, email);
   } catch (error: any) {
-    if (error.code === 'auth/unauthorized-continue-uri' || error.message?.includes('unauthorized') || error.message?.includes('continue-uri')) {
-      console.warn('Redirect URL not authorized in Firebase Console, falling back to default action handler page.');
-      await sendPasswordResetEmail(auth, email);
-    } else {
-      console.error('Password reset error:', error);
-      throw error;
-    }
+    console.error('Password reset error:', error);
+    throw error;
   }
 };
 
@@ -232,6 +250,9 @@ export const githubSignIn = async (): Promise<{ user: User; accessToken: string,
         avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
         title: 'Software Engineer',
         bio: 'Active DevSpace collaborator and GitHub certified developer.',
+        githubToken: token,
+        githubUser: finalUsername,
+        githubProfile: { name: finalUsername, login: finalUsername },
         createdAt: Date.now(),
         updatedAt: Date.now()
       }, { merge: true });

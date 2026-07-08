@@ -1551,10 +1551,10 @@ export function VoiceHub() {
                       <span className="text-[10px] font-mono uppercase tracking-widest text-slate-300 font-semibold">Action Dispatcher</span>
                     </div>
                     <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
-                      Inbound voice recordings are synthesized instantly by our cognitive core, transforming natural speech into precise actionable project tasks.
+                      Voice recordings are processed instantly, turning spoken notes into project tasks on your board.
                     </p>
                   </div>
-                  <span className="text-[9px] font-mono text-indigo-400 mt-2 block">● COMPILATION ENGINE ONLINE</span>
+                  <span className="text-[9px] font-mono text-indigo-400 mt-2 block">● VOICE PROCESSING READY</span>
                 </div>
 
                 <div className="bg-slate-900/60 border border-slate-800/60 p-3 rounded-lg flex flex-col justify-between">

@@ -355,8 +355,8 @@ JSON Schema format:
     <div className="flex flex-col h-full overflow-hidden pb-4 relative">
       <div className="flex items-center justify-between mb-6 animate-in fade-in duration-350">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Roadmap <Target size={18} className="text-emerald-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Workspace <span className="font-semibold italic text-yellow-500">Roadmap</span> <Target size={18} className="text-yellow-500/80 animate-pulse" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Visual timeline for phases and track progress.

@@ -575,8 +575,8 @@ export function WorkspaceDocs() {
     <div className="flex flex-col h-full overflow-hidden pb-4">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Google Docs Intelligence <FileText size={18} className="text-blue-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Google Docs <span className="font-semibold italic text-yellow-500">Intelligence</span> <FileText size={18} className="text-yellow-500/80 animate-pulse" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Search, sync, and index project architectural templates into active AI memory channels.

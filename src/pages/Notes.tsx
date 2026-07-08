@@ -218,8 +218,8 @@ export function Notes() {
     <div className="flex flex-col h-full overflow-hidden pb-4 relative">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Notes & Docs <FileText size={18} className="text-blue-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Notes & <span className="font-semibold italic text-yellow-500">Docs</span> <FileText size={18} className="text-yellow-500/80 animate-pulse" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Structural Markdown editor for brain-dumps, launch goals, and architecture.

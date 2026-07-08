@@ -46,6 +46,7 @@ import {
   Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { haptic } from '../../utils/haptics';
 import { useNavigate } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -153,6 +154,12 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   };
 
   // Session states for past conversations
+  const [showSessionsSidebar, setShowSessionsSidebar] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return false;
+  });
   const [isSessionsLoaded, setIsSessionsLoaded] = useState(false);
   const [chatSessions, setChatSessions] = useState<any[]>(() => {
     try {
@@ -996,6 +1003,8 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     const textToSend = forcedText || inputValue;
     if (!textToSend.trim() && attachedFiles.length === 0) return;
 
+    haptic.medium();
+
     const lower = textToSend.toLowerCase().trim();
     const clean = lower.replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
 
@@ -1264,6 +1273,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   // Native browser SpeechRecognition Integration to capture voice input live
   const startRecording = async () => {
     stopVoiceReply();
+    haptic.success();
     try {
       setErrorMsg('');
       setSpeechTranscript('');
@@ -1336,6 +1346,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   };
 
   const stopRecording = () => {
+    haptic.medium();
     const recog = (window as any).activeAssistantRecog;
     if (recog) {
       try {
@@ -1349,6 +1360,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   };
 
   const clearConversation = () => {
+    haptic.warning();
     setMessages([
       {
         id: '1',
@@ -1377,135 +1389,158 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
         
         {/* Left Columns - ChatGPT Sessions Sidebar of Past Dialogs */}
         <AnimatePresence>
-          {chatSessions && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 260, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              className="h-full bg-[#0c0c0e] border-r border-[#1e1e24] flex flex-col shrink-0 overflow-hidden"
-            >
-              {/* New session launcher */}
-              <div className="p-3 border-b border-[#1e1e24] space-y-2">
-                <button
-                  onClick={() => {
-                    const newId = `session-${Date.now()}`;
-                    const newS = {
-                      id: newId,
-                      title: `Dialogue Topic ${chatSessions.length + 1}`,
-                      createdAt: Date.now(),
-                      messages: [
-                        {
-                          id: `init-${Date.now()}`,
-                          role: 'agent',
-                          content: 'New syntactic orchestrator workspace initialized. Command me or provide spoken audio directives.'
-                        }
-                      ]
-                    };
-                    setChatSessions(prev => [newS, ...prev]);
-                    setCurrentSessionId(newId);
-                  }}
-                  className="w-full py-2.5 px-3 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm hover:border-indigo-500/30"
-                >
-                  <Plus size={14} className="text-indigo-400" />
-                  <span>New Conversation</span>
-                </button>
-              </div>
+          {chatSessions && showSessionsSidebar && (
+            <>
+              {/* Backdrop for mobile overlays */}
+              <div 
+                className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-30"
+                onClick={() => setShowSessionsSidebar(false)}
+              />
+              <motion.div
+                initial={{ x: -260, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -260, opacity: 0 }}
+                transition={{ type: 'tween', duration: 0.2 }}
+                className="fixed md:relative left-0 top-0 bottom-0 h-full w-[260px] bg-[#0c0c0e] border-r border-[#1e1e24] flex flex-col shrink-0 overflow-hidden z-40"
+              >
+                {/* New session launcher */}
+                <div className="p-3 border-b border-[#1e1e24] space-y-2">
+                  <button
+                    onClick={() => {
+                      const newId = `session-${Date.now()}`;
+                      const newS = {
+                        id: newId,
+                        title: `Dialogue Topic ${chatSessions.length + 1}`,
+                        createdAt: Date.now(),
+                        messages: [
+                          {
+                            id: `init-${Date.now()}`,
+                            role: 'agent',
+                            content: 'New syntactic orchestrator workspace initialized. Command me or provide spoken audio directives.'
+                          }
+                        ]
+                      };
+                      setChatSessions(prev => [newS, ...prev]);
+                      setCurrentSessionId(newId);
+                      // Close sidebar on mobile after selection
+                      if (window.innerWidth < 768) setShowSessionsSidebar(false);
+                    }}
+                    className="w-full py-2.5 px-3 bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-xs font-semibold text-zinc-100 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm hover:border-indigo-500/30"
+                  >
+                    <Plus size={14} className="text-indigo-400" />
+                    <span>New Conversation</span>
+                  </button>
+                </div>
 
-              {/* List of past conversations (ChatGPT style) */}
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 select-none scrollbar-thin">
-                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-2 mb-2">History Dialogues</div>
-                {chatSessions.map((session) => {
-                  const isActive = session.id === currentSessionId;
-                  const isEditing = editingSessionId === session.id;
+                {/* List of past conversations (ChatGPT style) */}
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 select-none scrollbar-thin">
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest pl-2 mb-2">History Dialogues</div>
+                  {chatSessions.map((session) => {
+                    const isActive = session.id === currentSessionId;
+                    const isEditing = editingSessionId === session.id;
 
-                  return (
-                    <div
-                      key={session.id}
-                      onClick={() => !isEditing && setCurrentSessionId(session.id)}
-                      className={`relative group p-2.5 rounded-lg flex items-center justify-between gap-2 border transition-all cursor-pointer text-xs ${
-                        isActive
-                          ? 'bg-zinc-850 border-zinc-700/80 text-zinc-100 shadow'
-                          : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <FileText size={13} className={isActive ? 'text-indigo-400' : 'text-zinc-500'} />
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editingSessionTitle}
-                            onChange={(e) => setEditingSessionTitle(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
+                    return (
+                      <div
+                        key={session.id}
+                        onClick={() => {
+                          if (!isEditing) {
+                            setCurrentSessionId(session.id);
+                            // Close sidebar on mobile after selection
+                            if (window.innerWidth < 768) setShowSessionsSidebar(false);
+                          }
+                        }}
+                        className={`relative group p-2.5 rounded-lg flex items-center justify-between gap-2 border transition-all cursor-pointer text-xs ${
+                          isActive
+                            ? 'bg-zinc-850 border-zinc-700/80 text-zinc-100 shadow'
+                            : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <FileText size={13} className={isActive ? 'text-indigo-400' : 'text-zinc-500'} />
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingSessionTitle}
+                              onChange={(e) => setEditingSessionTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setChatSessions(prev => prev.map(s => s.id === session.id ? { ...s, title: editingSessionTitle } : s));
+                                  setEditingSessionId(null);
+                                }
+                              }}
+                              onBlur={() => {
                                 setChatSessions(prev => prev.map(s => s.id === session.id ? { ...s, title: editingSessionTitle } : s));
                                 setEditingSessionId(null);
-                              }
-                            }}
-                            onBlur={() => {
-                              setChatSessions(prev => prev.map(s => s.id === session.id ? { ...s, title: editingSessionTitle } : s));
-                              setEditingSessionId(null);
-                            }}
-                            className="bg-zinc-950 text-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none"
-                            autoFocus
-                          />
-                        ) : (
-                          <span className="font-medium truncate block">{session.title}</span>
-                        )}
-                      </div>
+                              }}
+                              className="bg-zinc-950 text-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none"
+                              autoFocus
+                            />
+                          ) : (
+                            <span className="font-medium truncate block">{session.title}</span>
+                          )}
+                        </div>
 
-                      {/* Hover action items */}
-                      {!isEditing && (
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingSessionId(session.id);
-                              setEditingSessionTitle(session.title);
-                            }}
-                            className="p-1 hover:bg-zinc-855 rounded text-zinc-400 hover:text-zinc-100 transition-colors"
-                            title="Rename"
-                          >
-                            <Edit3 size={11} />
-                          </button>
-                          {chatSessions.length > 1 && (
+                        {/* Hover action items */}
+                        {!isEditing && (
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const filtered = chatSessions.filter(s => s.id !== session.id);
-                                setChatSessions(filtered);
-                                if (isActive) {
-                                  setCurrentSessionId(filtered[0]?.id || 'session-default');
-                                }
+                                setEditingSessionId(session.id);
+                                setEditingSessionTitle(session.title);
                               }}
-                              className="p-1 hover:bg-red-950/20 rounded text-zinc-400 hover:text-red-400 transition-colors"
-                              title="Delete conversation"
+                              className="p-1 hover:bg-zinc-855 rounded text-zinc-400 hover:text-zinc-100 transition-colors"
+                              title="Rename"
                             >
-                              <Trash2 size={11} />
+                              <Edit3 size={11} />
                             </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                            {chatSessions.length > 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const filtered = chatSessions.filter(s => s.id !== session.id);
+                                  setChatSessions(filtered);
+                                  if (isActive) {
+                                    setCurrentSessionId(filtered[0]?.id || 'session-default');
+                                  }
+                                }}
+                                className="p-1 hover:bg-red-950/20 rounded text-zinc-400 hover:text-red-400 transition-colors"
+                                title="Delete conversation"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
-              {/* Bottom footer credit */}
-              <div className="p-3 border-t border-[#1e1e24] bg-zinc-950/35 text-[10px] font-mono text-zinc-500 flex items-center justify-between">
-                <span>Sessions Persisted</span>
-                <span className="text-indigo-400 font-bold">LocalState</span>
-              </div>
-            </motion.div>
+                {/* Bottom footer credit */}
+                <div className="p-3 border-t border-[#1e1e24] bg-zinc-950/35 text-[10px] font-mono text-zinc-500 flex items-center justify-between">
+                  <span>Sessions Persisted</span>
+                  <span className="text-indigo-400 font-bold">LocalState</span>
+                </div>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
 
         {/* Main Conversation Window */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#09090b] relative">
+        <div className="flex-1 flex flex-col min-w-0 bg-[#09090b] relative h-full overflow-hidden">
           
           {/* Top Board */}
-          <div className="h-14 border-b border-[#1f1f23] flex items-center justify-between px-6 bg-[#0c0c0e]">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-[#6366f1] flex items-center justify-center text-white font-bold text-sm shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+          <div className="h-14 border-b border-[#1f1f23] flex items-center justify-between px-4 sm:px-6 bg-[#0c0c0e] shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                onClick={() => setShowSessionsSidebar(prev => !prev)}
+                className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors"
+                title="Toggle Past Conversations"
+              >
+                <Menu size={14} />
+              </button>
+              <div className="w-8 h-8 rounded-lg bg-[#6366f1] flex items-center justify-center text-white font-bold text-sm shadow-[0_0_15px_rgba(99,102,241,0.3)] hidden sm:flex">
                 AE
               </div>
               <div>

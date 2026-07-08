@@ -31,7 +31,8 @@ export function KineticHUDOverlay() {
     kineticInteractionMode,
     setKineticInteractionMode,
     virtualCursorPos,
-    isPinching
+    isPinching,
+    isCameraOnlyMode
   } = useStore();
 
   const { showToast } = useData();
@@ -182,24 +183,12 @@ export function KineticHUDOverlay() {
     }
   }, [lastTriggeredGesture, setLastTriggeredGesture]);
 
+  if (isCameraOnlyMode) {
+    return null;
+  }
+
   if (!isKineticEnabled) {
-    return (
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-zinc-950/90 border border-zinc-800/80 backdrop-blur-md px-3.5 py-2 rounded-full shadow-lg flex items-center gap-3 select-none pointer-events-auto">
-        <span className="flex h-1.5 w-1.5 relative">
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-zinc-650"></span>
-        </span>
-        <span className="text-[10px] font-mono tracking-wider text-zinc-400 uppercase">Kinetic Engine: Offline</span>
-        <button
-          onClick={() => {
-            setKineticEnabled(true);
-            showToast('🖐️ Spatial Kinetic tracking engine started!', 'success', 2500);
-          }}
-          className="text-[9px] font-mono font-bold text-emerald-400 hover:text-emerald-350 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1 rounded-md border border-emerald-500/30 transition-all cursor-pointer"
-        >
-          Enable Gestures
-        </button>
-      </div>
-    );
+    return null;
   }
 
   // Clear text modes description

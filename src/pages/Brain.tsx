@@ -83,7 +83,7 @@ export function Brain() {
   const [memoryAssistantSpeaking, setMemoryAssistantSpeaking] = useState(false);
   const [selectedHighlightMemory, setSelectedHighlightMemory] = useState<string | null>("AI Core Synapse");
   const [vocalLogs, setVocalLogs] = useState<{ sender: 'user' | 'assistant', text: string }[]>([
-     { sender: 'assistant', text: "Ready. Speak your rules or describe your tech preferences out loud to synchronize my synaptic cortex." }
+     { sender: 'assistant', text: "Ready! Tell me your guidelines or describe your tech preferences to update my memory." }
   ]);
 
   const handleVocalSync = () => {
@@ -375,8 +375,8 @@ export function Brain() {
     <div className="flex flex-col h-full overflow-y-auto lg:overflow-hidden pb-4">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Project Brain <Bot size={18} className="text-yellow-500 drop-shadow-[0_0_6px_rgba(234,179,8,0.35)]" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Project <span className="font-semibold italic text-yellow-500">Brain</span> <Bot size={18} className="text-yellow-500 drop-shadow-[0_0_6px_rgba(234,179,8,0.35)]" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Visualizing semantic relationships, architecture, and memory.
@@ -504,7 +504,7 @@ export function Brain() {
         <div className={`border border-zinc-800 bg-[#121214] rounded-xl relative overflow-hidden flex items-center justify-center transition-all duration-300 ${
           isFullscreen 
             ? 'fixed inset-0 z-50 p-4 m-0 rounded-none bg-[#0c0c0f]' 
-            : 'flex-1 min-h-[460px] lg:min-h-0'
+            : 'w-full h-[500px] lg:h-auto lg:flex-1'
         }`}>
           {/* Fullscreen control button */}
           <button

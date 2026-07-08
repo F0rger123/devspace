@@ -79,66 +79,11 @@ interface ScheduledTask {
   active: boolean;
 }
 
-const PRESET_AGENTS: Agent[] = [
-  {
-    id: 'agent-sentinel',
-    name: 'Repo Sentinel',
-    role: 'Code Auditor & Reviewer',
-    projectId: 'all',
-    watchTargets: ['github', 'issues'],
-    goals: ['Audit coding and typescript type definitions', 'Analyze PR changes for credential exposures', 'Scan git trees for missing package configurations'],
-    schedule: 'On Commit',
-    commandList: 'Evaluate all modifications to ensure strict ES module imports. Report typed errors immediately.',
-    status: 'Active',
-    avatarColor: 'border-red-500/50 hover:border-red-500 text-red-400 bg-red-950/20',
-    createdAt: Date.now() - 36000000,
-    currentTask: 'Auditing remote branches for credential leaks...',
-    heartbeat: 74
-  },
-  {
-    id: 'agent-docs',
-    name: 'Docs Archivist',
-    role: 'Knowledge Graph Sync',
-    projectId: 'all',
-    watchTargets: ['docs', 'notes'],
-    goals: ['Synchronize Google Docs outlines to active markdown repositories', 'Parse meeting notes for milestones', 'Enforce structured documentation metadata'],
-    schedule: 'Hourly',
-    commandList: 'Reference incoming doc files for Spanner and Postgres replication designs. Build dynamic cross-linking indexes.',
-    status: 'Idle',
-    avatarColor: 'border-purple-500/50 hover:border-purple-500 text-purple-400 bg-purple-950/20',
-    createdAt: Date.now() - 18000000,
-    currentTask: 'Structuring cosine similarity vector indexes...',
-    heartbeat: 68
-  },
-  {
-    id: 'agent-scrum',
-    name: 'Scrum Overseer',
-    role: 'Workflow bottleneck Auditor',
-    projectId: 'all',
-    watchTargets: ['issues', 'notes'],
-    goals: ['Identify scope creep in active backlogs', 'Track deliverable velocities across sprints', 'Auto-recommend phase dependencies'],
-    schedule: 'Daily',
-    commandList: 'Scrutinize Critical & High priority issues. Flag blocks or circular dependency maps on charts.',
-    status: 'Active',
-    avatarColor: 'border-cyan-500/50 hover:border-cyan-500 text-cyan-400 bg-cyan-950/20',
-    createdAt: Date.now() - 9000000,
-    currentTask: 'Scanning issue backlogs for circular blocks...',
-    heartbeat: 76
-  }
-];
+const PRESET_AGENTS: Agent[] = [];
 
-const DEFAULT_MCP_SERVERS: McpServer[] = [
-  { id: 'mcp-fs', name: 'File-System MCP', type: 'MCP', urlOrCmd: 'npx @modelcontextprotocol/server-filesystem /workspace', status: 'Connected', addedAt: Date.now() - 90000 },
-  { id: 'mcp-gemini', name: 'Gemini Agent API', type: 'Gemini', urlOrCmd: 'Google GenAI Cloud Engine', status: 'Connected', addedAt: Date.now() - 80000 },
-  { id: 'mcp-claude', name: 'Claude Code Connector', type: 'Claude Code', urlOrCmd: 'npx -y claude-code cli', status: 'Connected', addedAt: Date.now() - 70000 },
-  { id: 'mcp-fermy', name: 'Fermy Webhooks Hub', type: 'Fermy Agent', urlOrCmd: 'https://fermy.agents.local/trigger', status: 'Connected', addedAt: Date.now() - 60000 }
-];
+const DEFAULT_MCP_SERVERS: McpServer[] = [];
 
-const DEFAULT_SCHEDULED_TASKS: ScheduledTask[] = [
-  { id: 'task-1', agentId: 'agent-sentinel', topic: 'Perform complete credential leak threat scan', interval: 'Every Hour', active: true },
-  { id: 'task-2', agentId: 'agent-docs', topic: 'Calculate cosine embedding links across Notes', interval: 'Daily at midnight', active: true },
-  { id: 'task-3', agentId: 'agent-scrum', topic: 'Flush stale issues and auto-allocate priorities', interval: 'Daily at 9:00 AM', active: false }
-];
+const DEFAULT_SCHEDULED_TASKS: ScheduledTask[] = [];
 
 export function AgenticOS() {
   const { 
@@ -183,24 +128,7 @@ export function AgenticOS() {
   
   const [logs, setLogs] = useState<AgentLog[]>(() => {
     const stored = localStorage.getItem('devspace_agent_logs');
-    return stored ? JSON.parse(stored) : [
-      {
-        id: 'log-1',
-        agentId: 'agent-sentinel',
-        agentName: 'Repo Sentinel',
-        timestamp: new Date().toLocaleTimeString(),
-        type: 'info',
-        message: 'Sentinel system listener indexed. Monitoring connected workspace trees.'
-      },
-      {
-        id: 'log-2',
-        agentId: 'agent-docs',
-        agentName: 'Docs Archivist',
-        timestamp: new Date().toLocaleTimeString(),
-        type: 'success',
-        message: 'Successfully mapped 3 Google Doc outline vectors to project brains.'
-      }
-    ];
+    return stored ? JSON.parse(stored) : [];
   });
 
   // UI state states
@@ -1270,7 +1198,21 @@ export function AgenticOS() {
     return () => clearInterval(dreamInterval);
   }, [projects, agents]);
 
-  const selectedAgent = agents.find(a => a.id === selectedAgentId) || agents[0];
+  const fallbackAgent: Agent = {
+    id: 'agent-sentinel',
+    name: 'Sentinel AI',
+    role: 'Security Agent',
+    projectId: 'all',
+    watchTargets: [],
+    goals: [],
+    schedule: 'Manual',
+    commandList: '',
+    status: 'Idle',
+    avatarColor: 'border-blue-500/50 text-blue-400 bg-blue-950/20',
+    createdAt: Date.now()
+  };
+
+  const selectedAgent = agents.find(a => a.id === selectedAgentId) || agents[0] || fallbackAgent;
 
   const addLog = (agentId: string, name: string, type: AgentLog['type'], message: string) => {
     const freshLog: AgentLog = {
@@ -1488,6 +1430,12 @@ export function AgenticOS() {
 
      const query = terminalInput;
      setTerminalInput('');
+
+     if (!selectedAgent) {
+       addLog('system', 'System', 'warn', 'Please create and select an agent to dispatch commands.');
+       return;
+     }
+
      addLog(selectedAgent.id, selectedAgent.name, 'info', `Dispatched directive: "${query}"`);
      
      setTerminalLoading(true);
@@ -3157,7 +3105,7 @@ export function AgenticOS() {
                 <div className="font-sans">
                   <span className="font-semibold text-zinc-200">Execution Goals for {selectedAgent?.name}:</span>
                   <ul className="list-disc list-inside mt-1 space-y-1 pl-1 text-[11px] text-zinc-400">
-                    {selectedAgent?.goals.map((goal, i) => (
+                    {selectedAgent?.goals?.map((goal, i) => (
                       <li key={i}>{goal}</li>
                     ))}
                   </ul>
@@ -3254,7 +3202,7 @@ export function AgenticOS() {
                   
                   <div className="space-y-2 pt-3 flex-1 overflow-y-auto max-h-[220px] custom-scrollbar">
                     {scheduledTasks.map(task => {
-                      const assignedAgent = agents.find(a => a.id === task.agentId) || agents[0];
+                      const assignedAgent = agents.find(a => a.id === task.agentId) || agents[0] || fallbackAgent;
                       return (
                         <div key={task.id} className="p-3 bg-[#0d0d10] border border-zinc-900 rounded-lg flex items-center justify-between">
                           <div>
@@ -3479,13 +3427,13 @@ export function AgenticOS() {
             <div className="flex-1 overflow-y-auto space-y-5 font-sans pb-10">
               
               {/* Core Header Banner */}
-              <div className="border border-zinc-900 bg-gradient-to-br from-zinc-950/80 to-[#0a0a0d] rounded-xl p-5 border-l-4 border-l-blue-500 shadow-xl">
+              <div className="border border-zinc-900 bg-gradient-to-br from-zinc-950/80 to-[#0a0a0d] rounded-xl p-5 border-l-4 border-l-yellow-500 shadow-xl">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h3 className="font-bold text-zinc-100 text-sm mb-1 flex items-center gap-1.5 font-mono">
-                      <Cpu size={14} className="text-blue-500 animate-pulse" /> Agentic Coding Lab & Multi-Task Workspace
+                    <h3 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2 mb-1">
+                      Agentic <span className="font-semibold italic text-yellow-500">Coding Lab</span> <Cpu size={16} className="text-yellow-500/80 animate-pulse" />
                     </h3>
-                    <p className="text-[10px] text-zinc-500 leading-relaxed max-w-3xl">
+                    <p className="text-[11px] text-zinc-400 leading-relaxed max-w-3xl">
                       Assign a batch of sequential bug fixes, features, or design ideas to **Google Jules AI** or other specialized coding agents. 
                       Track code changes concurrently, view interactive files briefings, and follow dynamic live checklists of what to test.
                     </p>
@@ -3543,7 +3491,7 @@ export function AgenticOS() {
                 <div className="lg:col-span-3 space-y-4">
                   {/* Selected Agent Desk Visual Panel */}
                   {(() => {
-                    const activeAgent = agents.find(a => a.id === labAgentId) || agents[0];
+                    const activeAgent = agents.find(a => a.id === labAgentId) || agents[0] || fallbackAgent;
                     return (
                       <div className="border border-zinc-900 bg-zinc-950/20 rounded-xl p-3.5 space-y-3 shadow-md">
                         <div className="flex items-center gap-2">
@@ -3559,7 +3507,7 @@ export function AgenticOS() {
                         <div className="space-y-1.5 pt-2 border-t border-zinc-900/50">
                           <span className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block">Specialized Directives</span>
                           <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar">
-                            {activeAgent?.goals.map((g, gi) => (
+                            {activeAgent?.goals?.map((g, gi) => (
                               <div key={gi} className="text-[9px] text-zinc-400 leading-snug flex gap-1">
                                 <span className="text-blue-500 shrink-0">•</span><span>{g}</span>
                               </div>
@@ -4489,9 +4437,8 @@ export function AgenticOS() {
                      <span className="p-1 px-2 text-[9px] font-mono rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Engine: Google Stitch</span>
                      <span className="p-1 px-2 text-[9px] font-mono rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase tracking-wider">Orchestration Nodes: Swarm v2</span>
                   </div>
-                  <h1 className="text-xl font-bold font-sans tracking-tight text-zinc-100 flex items-center gap-1.5 font-sans">
-                    <Sparkles className="text-blue-400 animate-pulse" size={18} />
-                    Google Stitch, Swarm & Theme Studio
+                  <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2 mt-1">
+                    Google Stitch, <span className="font-semibold italic text-yellow-500">Swarm & Theme Studio</span> <Sparkles className="text-yellow-500 animate-pulse" size={18} />
                   </h1>
                   <p className="text-xs text-zinc-400 max-w-2xl leading-normal">
                     Model alignments, Google Stitch schemas, custom cloned assistants, and CSS styling customizer previews. Fully functional orchestration before the building steps launch.
@@ -5063,9 +5010,8 @@ export function AgenticOS() {
                        <span className="p-1 px-2 text-[9px] font-mono rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">Metrics Subsystem: VCS Engine</span>
                        <span className="p-1 px-2 text-[9px] font-mono rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 uppercase tracking-wider">Analysis Speed: Real-time</span>
                     </div>
-                    <h1 className="text-xl font-bold font-sans tracking-tight text-zinc-100 flex items-center gap-1.5 mt-1.5">
-                      <TrendingUp className="text-blue-400" size={18} />
-                      Agent Efficiency & VCS Telemetry
+                    <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2 mt-1.5 font-sans">
+                      Agent Efficiency & <span className="font-semibold italic text-yellow-500">VCS Telemetry</span> <TrendingUp className="text-yellow-500" size={18} />
                     </h1>
                     <p className="text-xs text-zinc-400 max-w-2xl leading-normal font-sans">
                       Track agent processing velocities, automated success SLAs, commit latencies, and swarm workload distributions. Simulate workload traffic below to see live metrics respond.
@@ -5129,7 +5075,7 @@ export function AgenticOS() {
                         <Hourglass size={11} className="text-amber-400" /> Avg Commit Latency
                       </span>
                       <p className="text-2xl font-bold text-zinc-100 mt-1 font-mono tracking-tight">
-                        {(latencyData.reduce((acc, d) => acc + d.latency, 0) / latencyData.length).toFixed(0)} <span className="text-xs text-zinc-500 font-sans font-normal">ms</span>
+                        {latencyData.length > 0 ? (latencyData.reduce((acc, d) => acc + d.latency, 0) / latencyData.length).toFixed(0) : "0"} <span className="text-xs text-zinc-500 font-sans font-normal">ms</span>
                       </p>
                     </div>
                     <div className="text-[10px] text-emerald-400 mt-2 flex items-center gap-1 font-sans">
@@ -5293,7 +5239,7 @@ export function AgenticOS() {
                           <p className="text-blue-400">✓ [Metrics Engine] Initiated telemetry audit listener for connected GitHub repos.</p>
                           <p className="text-zinc-500 mt-1">✓ [Audit Worker] Indexed commit sha references. Mean response speed computed: <span className="text-amber-400">1,105 ms</span>.</p>
                           <p className="text-zinc-500">✓ [SLA Guard] Checked error count ratios. Swarm node reported success SLA at <span className="text-emerald-400">{metricsSLA}%</span>.</p>
-                          <p className="text-purple-400 mt-1">✓ [Swarm Dispatcher] Tracked {throughputData[throughputData.length - 1].completed} completed agents and {throughputData[throughputData.length - 1].queued} queues.</p>
+                          <p className="text-purple-400 mt-1">✓ [Swarm Dispatcher] Tracked {throughputData[throughputData.length - 1]?.completed || 0} completed agents and {throughputData[throughputData.length - 1]?.queued || 0} queues.</p>
                         </div>
                       </div>
 

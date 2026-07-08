@@ -25,9 +25,13 @@ export function AuthScreen() {
       const params = new URLSearchParams(window.location.search);
       const m = params.get('mode');
       const code = params.get('oobCode');
-      if (m === 'resetPassword' && code) {
+      
+      const cleanM = m ? m.replace(/\s+/g, '') : '';
+      const cleanCode = code ? code.replace(/\s+/g, '') : '';
+      
+      if (cleanM === 'resetPassword' && cleanCode) {
         setMode('resetPassword');
-        setOobCode(code);
+        setOobCode(cleanCode);
       }
     }
   }, []);
@@ -418,7 +422,7 @@ export function AuthScreen() {
           <div className="w-12 h-12 bg-yellow-500 rounded-lg flex items-center justify-center mb-3 shadow-[0_0_20px_rgba(234,179,8,0.45)]">
             <span className="text-black font-extrabold text-xl font-mono">D</span>
           </div>
-          <h1 className="text-zinc-100 text-lg font-bold tracking-tight">DEVSPACE / CORE</h1>
+          <h1 className="text-zinc-100 text-lg font-bold tracking-tight">DEVSPACE</h1>
           <p className="text-zinc-500 text-xs mt-1 text-center font-mono animate-pulse">
             {pendingCredential ? 'CONSOLIDATING DUPLICATE IDENTITY SYNAPSES' : (
               <>
@@ -708,26 +712,64 @@ export function AuthScreen() {
             </form>
 
             {mode === 'forgot' && (
-              <div className="mt-6 p-4 rounded bg-blue-950/20 border border-blue-900/40 text-xs text-blue-300 leading-relaxed space-y-2 font-sans shadow-md">
-                <h4 className="font-semibold text-blue-200 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider">
-                  ℹ️ Avoiding Email Link Expiry & Safelinks
-                </h4>
-                <p>
-                  Email scanners (such as Microsoft SafeLinks or enterprise firewalls) can automatically pre-fetch links in your incoming mail, which instantly consumes the single-use reset token before you can click it.
-                </p>
-                <p className="font-semibold text-blue-100">
-                  To configure a 100% reliable in-app reset experience:
-                </p>
-                <ol className="list-decimal pl-4 space-y-1.5 text-zinc-300 font-mono text-[11px]">
-                  <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-yellow-500 hover:underline">Firebase Console</a></li>
-                  <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Templates</strong></li>
-                  <li>Select <strong>Password reset</strong>, then click the edit pencil icon</li>
-                  <li>Click <strong>Customize action URL</strong> at the bottom of the drawer</li>
-                  <li>Set the Action URL to: <span className="text-yellow-500 bg-[#101012] px-1 rounded break-all select-all font-sans">{typeof window !== 'undefined' ? window.location.origin : 'https://'}/?mode=resetPassword</span></li>
-                </ol>
-                <p className="text-zinc-400 text-[10px] italic">
-                  Once set up, Firebase will route the reset emails directly back to this application, bypassing scanners and letting you safely update your password here.
-                </p>
+              <div className="mt-6 p-4 rounded bg-zinc-900/50 border border-zinc-800 text-xs leading-relaxed space-y-3 font-sans shadow-md">
+                <div className="flex items-start gap-2 text-zinc-300">
+                  <span className="text-sm">✨</span>
+                  <div>
+                    <h4 className="font-semibold text-zinc-200 font-sans text-[11px] uppercase tracking-wider mb-0.5">
+                      Zero-Setup Reset (Active by Default)
+                    </h4>
+                    <p className="text-zinc-400 text-[11px]">
+                      Just enter your email and request a reset. Firebase will send you a standard, secure reset link. You can reset your password on the default Firebase page in 5 seconds with <strong>zero manual configuration</strong> needed!
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-800/80 pt-2.5">
+                  <details className="group cursor-pointer">
+                    <summary className="font-semibold text-zinc-400 hover:text-zinc-300 flex items-center gap-1.5 font-sans text-[10.5px] uppercase tracking-wider select-none outline-none">
+                      <span className="transition-transform group-open:rotate-90 text-[8px] font-mono">▶</span>
+                      Optional: In-App Reset & Safelinks Bypass
+                    </summary>
+                    <div className="mt-2 space-y-2 text-[11px] text-zinc-400 pl-3 border-l border-zinc-800">
+                      <p>
+                        Email scanners (like Microsoft SafeLinks) can sometimes pre-fetch links, which can consume single-use reset codes prematurely.
+                      </p>
+                      <p className="font-semibold text-zinc-300">
+                        To redirect the reset process entirely back inside this app instead:
+                      </p>
+                      <ol className="list-decimal pl-4 space-y-1 text-zinc-400 font-sans text-[10.5px]">
+                        <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Firebase Console</a></li>
+                        <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Templates</strong></li>
+                        <li>Select <strong>Password reset</strong>, click the edit pencil</li>
+                        <li>Click <strong>Customize action URL</strong> at the bottom</li>
+                        <li>
+                          Set the Action URL exactly to:
+                          <div className="inline-flex flex-wrap items-center gap-1.5 mt-1 bg-[#101012] border border-zinc-800 rounded px-2 py-0.5 max-w-full">
+                            <span className="text-yellow-500 select-all font-mono text-[10px] break-all">
+                              {typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(typeof window !== 'undefined' ? `${window.location.origin}/` : '', 'action-url')}
+                              className="text-[10px] text-zinc-400 hover:text-zinc-200 focus:outline-none flex items-center gap-1 border-l border-zinc-800 pl-1.5 cursor-pointer ml-1"
+                              title="Copy URL"
+                            >
+                              {copiedText === 'action-url' ? (
+                                <Check size={11} className="text-green-500 animate-pulse" />
+                              ) : (
+                                <Copy size={11} />
+                              )}
+                              <span className="text-[9px] font-sans font-medium">
+                                {copiedText === 'action-url' ? 'Copied' : 'Copy'}
+                              </span>
+                            </button>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+                  </details>
+                </div>
               </div>
             )}
 

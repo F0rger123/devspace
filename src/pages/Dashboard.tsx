@@ -101,9 +101,9 @@ export function Dashboard() {
     return [
       {
         id: 'rec-linter-swipe-fix',
-        title: "Fix SwipeableItem status assignment (TS2322 exception)",
-        description: "Fix SwipeableItem status type mismatch in the project page file. Resolves 'Archived' assignment issue detected by the TypeScript compiler.",
-        source: "Exception Logs",
+        title: "Fix list item swipe status error",
+        description: "Fix a type error in the swipeable list item status property so that tasks can be archived properly.",
+        source: "Error Logs",
         projectName: "WhatsApp Companion",
         githubRepo: "drummerforger/whatsapp-companion-engine",
         status: 'active',
@@ -116,9 +116,9 @@ export function Dashboard() {
       },
       {
         id: 'rec-canvas-perf',
-        title: "D3.js Coordinate Render Acceleration over WebGL",
-        description: "Scale high-frequency vector rendering inside space telemetry screens with a cached 2D canvas double buffer pipeline.",
-        source: "Dreaming",
+        title: "Optimize chart loading speed",
+        description: "Accelerate chart rendering speeds using a cached canvas buffer so the page loads and scrolls smoothly.",
+        source: "Performance Ideas",
         projectName: "SpaceStation Sync",
         githubRepo: "google/genai-js",
         status: 'active',
@@ -131,8 +131,8 @@ export function Dashboard() {
       },
       {
         id: 'rec-voice-scheduler',
-        title: "Aether Vocal Command Task-Scheduler Interface",
-        description: "Translate real-time microphone dispatches into backlog priorities by hosting an active speech classification routing loop.",
+        title: "Add voice notes task creator",
+        description: "Convert microphone recording notes directly into tasks on your board automatically.",
         source: "Brainstorming",
         projectName: "AgenticOS Project",
         githubRepo: "google/aether-os-companion",
@@ -208,12 +208,12 @@ export function Dashboard() {
 
     let progressVal = 5;
     const simSteps = [
-      { p: 25, l: `🌿 Swapping git working branch: 'main' -> "${rec.branchName}"` },
-      { p: 50, l: `🔍 Locating source directory references... Target: "/src/pages/${rec.projectName.replace(/\s+/g, '')}.tsx"` },
-      { p: 70, l: `📝 Re-writing programmatic structures. Applying patch for "${rec.title}"` },
-      { p: 88, l: `⚡ Testing workspace compilation via 'npm run build' - build succeeded.` },
-      { p: 95, l: `📤 Pushing remote git packfiles securely to branch "${rec.branchName}"...` },
-      { p: 100, l: `🌟 GitHub Merge Request generated! Branch "${rec.branchName}" is open and ready.` }
+      { p: 25, l: `🌿 Switching branch to "${rec.branchName}"` },
+      { p: 50, l: `🔍 Finding target files...` },
+      { p: 70, l: `📝 Writing code updates for "${rec.title}"` },
+      { p: 88, l: `⚡ Building app to test changes - success.` },
+      { p: 95, l: `📤 Pushing code to "${rec.branchName}" branch...` },
+      { p: 100, l: `🌟 Pull request created on GitHub!` }
     ];
 
     let currentStepIdx = 0;
@@ -272,7 +272,7 @@ export function Dashboard() {
           ...r,
           status: 'merged',
           progress: 100,
-          logs: [...r.logs, `🔀 Merged branch "${r.branchName}" into "main" branch successfully!`, `🚀 Production compiler triggered: Build deployment successful.`]
+          logs: [...r.logs, `🔀 Merged branch "${r.branchName}" into main branch!`, `🚀 Build and deploy succeeded.`]
         };
       }
       return r;
@@ -290,7 +290,7 @@ export function Dashboard() {
           return {
             ...a,
             status: 'Idle',
-            currentTask: 'System idle, awaiting coding mission payload...',
+            currentTask: 'Idle, ready for next task...',
             mergeRequests: updatedMRs
           };
         }
@@ -305,7 +305,7 @@ export function Dashboard() {
         return {
           ...r,
           status: 'rejected',
-          logs: [`❌ Recommendation declined by coordinator.`]
+          logs: [`❌ Suggestion declined.`]
         };
       }
       return r;
@@ -318,7 +318,7 @@ export function Dashboard() {
           return {
             ...a,
             status: 'Idle',
-            currentTask: 'System idle, awaiting coding mission payload...'
+            currentTask: 'Idle, ready for next task...'
           };
         }
         return a;
@@ -332,7 +332,7 @@ export function Dashboard() {
         return {
           ...r,
           status: 'snoozed',
-          logs: [`⏳ Recommendation snoozed. Delayed for subsequent core workspace cycles.`]
+          logs: [`⏳ Suggestion snoozed. We will show this again later.`]
         };
       }
       return r;
@@ -484,7 +484,7 @@ export function Dashboard() {
 
   const handleSyncBackup = async () => {
     setIsSyncingBackup(true);
-    setAgentStatus('⚡ Triggering file-backed replication snapshot...');
+    setAgentStatus('⚡ Saving backup copy...');
     try {
       const res = await fetch('/api/voice/sync-cache', {
         method: 'POST',
@@ -495,12 +495,12 @@ export function Dashboard() {
         })
       });
       if (res.ok) {
-        setAgentStatus('🚀 Workspace cache replicated and durably stored.');
+        setAgentStatus('🚀 Saved successfully.');
       } else {
-        setAgentStatus('❌ Server persistent sync endpoint failed.');
+        setAgentStatus('❌ Could not sync with the server.');
       }
     } catch {
-      setAgentStatus('❌ Network sync error.');
+      setAgentStatus('❌ Network connection error.');
     }
     setTimeout(() => {
       setIsSyncingBackup(false);
@@ -509,30 +509,30 @@ export function Dashboard() {
   };
 
   const handleLaunchAgent = () => {
-    setAgentStatus('🤖 Spawning Obsidian autonomous task compiler agent...');
+    setAgentStatus('🤖 Starting developer helper agent...');
     setTimeout(() => {
-      setAgentStatus('🔍 Checking active issue list for matching ticket tags...');
+      setAgentStatus('🔍 Finding related tasks...');
     }, 1200);
     setTimeout(() => {
-      setAgentStatus('💻 Drafting temporary branch commits on linked GitHub records...');
+      setAgentStatus('💻 Creating a draft commit on GitHub...');
     }, 2400);
     setTimeout(() => {
-      setAgentStatus('🚀 Dispatch completed. Developer agent assigned.');
+      setAgentStatus('🚀 Helper agent assigned successfully.');
       setTimeout(() => setAgentStatus(''), 2000);
     }, 3800);
   };
 
   const handleRunAudit = () => {
     setIsAuditing(true);
-    setAuditLog('🔍 Connecting with Synaptic Cortex database...');
+    setAuditLog('🔍 Checking database...');
     setTimeout(() => {
-      setAuditLog(`📊 Mapped: ${projects.length} workspace records | ${issues.length} active issues.`);
+      setAuditLog(`📊 Found: ${projects.length} projects | ${issues.length} active tasks.`);
     }, 1100);
     setTimeout(() => {
-      setAuditLog('💎 Verification: Layout contrast & typography meet core guidelines.');
+      setAuditLog('💎 Checking design and contrast...');
     }, 2200);
     setTimeout(() => {
-      setAuditLog('🎯 Workspace status: fully optimized and secure.');
+      setAuditLog('🎯 Setup status: secure and ready.');
       setIsAuditing(false);
     }, 3300);
   };
@@ -687,8 +687,8 @@ export function Dashboard() {
             <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
             <span className="text-[10px] font-mono tracking-widest text-yellow-400 uppercase font-semibold">Project Workspace Dashboard</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-100 flex items-center gap-2.5">
-            Hello, Code Partner <Sparkles size={22} className="text-yellow-500 fill-yellow-500/10 animate-pulse drop-shadow-[0_0_6px_rgba(234,179,8,0.35)]" />
+          <h1 className="text-3xl md:text-4xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2.5 mt-0.5">
+            Hello, <span className="font-medium italic">Code Partner</span> <Sparkles size={22} className="text-yellow-500 fill-yellow-500/10 animate-pulse drop-shadow-[0_0_6px_rgba(234,179,8,0.35)]" />
           </h1>
           <p className="text-xs md:text-sm text-zinc-400 font-medium">
             Let's build. You have <span className="text-zinc-200 font-bold">{activeTasks.length}</span> active tasks and <span className="text-zinc-200 font-bold">{commits.length}</span> recent commits in <span className="text-yellow-400 font-semibold">{activeProject ? activeProject.name : 'workspace'}</span>.

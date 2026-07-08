@@ -175,8 +175,8 @@ service cloud.firestore {
         resource == null || 
         !('ownerId' in resource.data) || 
         resource.data.ownerId == request.auth.uid || 
-        (resource.data.isPublic == true) ||
-        (request.auth.token.email != null && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
+        ('isPublic' in resource.data && resource.data.isPublic == true) ||
+        (request.auth.token.email != null && 'collaborators' in resource.data && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
       );
       
       allow create: if isSignedIn() 
@@ -192,7 +192,7 @@ service cloud.firestore {
             resource == null || 
             !('ownerId' in resource.data) || 
             resource.data.ownerId == request.auth.uid || 
-            (request.auth.token.email != null && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
+            (request.auth.token.email != null && 'collaborators' in resource.data && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
           )) ||
           // Community upvote / star action
           (incoming().diff(resource.data).affectedKeys().hasOnly(['starsCount']) && incoming().starsCount is number)
@@ -267,8 +267,8 @@ service cloud.firestore {
     match /invitations/{invitationId} {
       allow read: if isSignedIn() && (
         resource == null || 
-        resource.data.senderId == request.auth.uid || 
-        (request.auth.token.email != null && resource.data.receiverEmail == request.auth.token.email)
+        ('senderId' in resource.data && resource.data.senderId == request.auth.uid) || 
+        (request.auth.token.email != null && 'receiverEmail' in resource.data && resource.data.receiverEmail == request.auth.token.email)
       );
       allow create: if isSignedIn() 
         && isValidId(invitationId)
@@ -322,7 +322,11 @@ service cloud.firestore {
 
     // Rules for friend requests
     match /friend_requests/{requestId} {
-      allow read: if isSignedIn() && (resource == null || resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow read: if isSignedIn() && (
+        resource == null || 
+        ('senderId' in resource.data && resource.data.senderId == request.auth.uid) || 
+        ('receiverId' in resource.data && resource.data.receiverId == request.auth.uid)
+      );
       allow create: if isSignedIn() && isValidId(requestId) && isValidFriendRequest(incoming()) && incoming().senderId == request.auth.uid;
       allow update: if isSignedIn() && isValidId(requestId) && isValidFriendRequest(incoming()) && incoming().id == requestId && (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid);
       allow delete: if isSignedIn() && isValidId(requestId) && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
@@ -337,7 +341,10 @@ service cloud.firestore {
 
     // Rules for chats
     match /chats/{chatId} {
-      allow read: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participantIds);
+      allow read: if isSignedIn() && (
+        resource == null || 
+        ('participantIds' in resource.data && request.auth.uid in resource.data.participantIds)
+      );
       allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming()) && incoming().id == chatId && (request.auth.uid in incoming().participantIds);
       allow update: if isSignedIn() && isValidId(chatId) && isValidChat(incoming()) && incoming().id == chatId && (request.auth.uid in resource.data.participantIds);
       allow delete: if false;
@@ -352,7 +359,10 @@ service cloud.firestore {
 
     // Rules for notifications
     match /notifications/{notifId} {
-      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow read: if isSignedIn() && (
+        resource == null || 
+        ('userId' in resource.data && resource.data.userId == request.auth.uid)
+      );
       allow create: if isSignedIn() 
         && isValidId(notifId)
         && isValidNotification(incoming())

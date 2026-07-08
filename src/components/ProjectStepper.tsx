@@ -78,6 +78,14 @@ export function ProjectStepper({
   const [creatingRepo, setCreatingRepo] = useState(false);
   const [repoCreatedSuccess, setRepoCreatedSuccess] = useState<string | null>(null);
   const [repoSearchQuery, setRepoSearchQuery] = useState("");
+  const [showOnlyUnconnected, setShowOnlyUnconnected] = useState(true);
+
+  // AI analysis states
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisLogs, setAnalysisLogs] = useState<string[]>([]);
+  const [aiIdeas, setAiIdeas] = useState<any[] | null>(null);
+  const [aiDreams, setAiDreams] = useState<any[] | null>(null);
+  const [analysisSuccess, setAnalysisSuccess] = useState(false);
 
   // Auto-fetch repos when the modal opens or when currentStep is on linking step
   useEffect(() => {
@@ -85,6 +93,63 @@ export function ProjectStepper({
       onFetchRepos();
     }
   }, [isOpen, currentStep]);
+
+  const runAiAnalysis = async () => {
+    const repo = formData.githubRepos.trim();
+    if (!repo) return;
+
+    setIsAnalyzing(true);
+    setAnalysisSuccess(false);
+    setAnalysisLogs([
+      "📡 Establishing secure connection with GitHub API...",
+      "🔍 Resolving repository reference parameters..."
+    ]);
+
+    try {
+      setTimeout(() => {
+        setAnalysisLogs(prev => [...prev, "📂 Fetching file system structure & tree configurations..."]);
+      }, 700);
+      setTimeout(() => {
+        setAnalysisLogs(prev => [...prev, "📄 Reading repository README.md and active manifest configuration files..."]);
+      }, 1400);
+      setTimeout(() => {
+        setAnalysisLogs(prev => [...prev, "🤖 Streaming context window data into Gemini 3.5 Flash for semantic code review..."]);
+      }, 2100);
+
+      const res = await fetch("/api/github/analyze-repo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo,
+          token: activeToken || undefined
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Gemini API error during architectural codebase compilation.");
+      }
+
+      const result = await res.json();
+
+      setFormData(prev => ({
+        ...prev,
+        name: result.name || prev.name,
+        description: result.description || prev.description,
+        frameworks: result.frameworks ? result.frameworks.join(", ") : prev.frameworks,
+      }));
+
+      setAiIdeas(result.brainstormIdeas || []);
+      setAiDreams(result.dreamRecommendations || []);
+      setAnalysisSuccess(true);
+      setAnalysisLogs(prev => [...prev, "✨ Success! Codebase analyzed perfectly. Project Identity and Presets populated!"]);
+
+    } catch (err: any) {
+      console.error(err);
+      setAnalysisLogs(prev => [...prev, `❌ Error: ${err.message || "Failed to analyze repository"}`]);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // Sync default repo creation name when project name changes
   useEffect(() => {
@@ -229,6 +294,8 @@ export function ProjectStepper({
         : undefined,
       launchTarget: formData.launchTarget || undefined,
       status: formData.status || "Active",
+      brainstormIdeas: aiIdeas || undefined,
+      dreamRecommendations: aiDreams || undefined,
     };
 
     onSubmit(submissionData);
@@ -249,13 +316,29 @@ export function ProjectStepper({
     setRepoCreationName("");
     setRepoCreationDesc("");
     setRepoIsPrivate(false);
+    setAiIdeas(null);
+    setAiDreams(null);
+    setAnalysisSuccess(false);
+    setAnalysisLogs([]);
   };
 
-  // Filter repos based on search query
-  const filteredRepos = githubReposList.filter((repo) =>
-    repo.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase()) ||
-    (repo.description && repo.description.toLowerCase().includes(repoSearchQuery.toLowerCase()))
+  // Filter repos based on search query and optional connection status
+  const connectedRepos = new Set(
+    (context.projects || [])
+      .flatMap((p) => p.githubRepos || [])
+      .map((r) => r.toLowerCase())
   );
+
+  const filteredRepos = githubReposList.filter((repo) => {
+    const matchesSearch = repo.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase()) ||
+      (repo.description && repo.description.toLowerCase().includes(repoSearchQuery.toLowerCase()));
+    
+    if (showOnlyUnconnected) {
+      const isConnected = connectedRepos.has(repo.full_name.toLowerCase());
+      return matchesSearch && !isConnected;
+    }
+    return matchesSearch;
+  });
 
   const stepsList = [
     { num: 1, title: "Identity", subtitle: "Name & Blueprint Presets" },
@@ -639,9 +722,22 @@ export function ProjectStepper({
                             ) : (
                               <>
                                 <div className="flex justify-between items-center">
-                                  <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                                    Select Synced Repository
-                                  </label>
+                                  <div className="flex items-center gap-3">
+                                    <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                      Select Synced Repository
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowOnlyUnconnected(!showOnlyUnconnected)}
+                                      className={`text-[9px] px-2 py-0.5 rounded border transition-all cursor-pointer font-semibold ${
+                                        showOnlyUnconnected
+                                          ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                                          : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                                      }`}
+                                    >
+                                      {showOnlyUnconnected ? "Showing Unconnected Only" : "Showing All Repositories"}
+                                    </button>
+                                  </div>
                                   <div className="relative w-44">
                                     <Search size={10} className="absolute left-2.5 top-2.5 text-zinc-550" />
                                     <input
@@ -663,7 +759,7 @@ export function ProjectStepper({
                                   <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar pr-1 border border-zinc-850 bg-zinc-950/20 p-1 rounded-lg">
                                     {filteredRepos.length === 0 ? (
                                       <div className="text-center py-6 text-zinc-500 text-xs border border-dashed border-zinc-800 rounded-lg">
-                                        No repositories match your search or account scope.
+                                        No repositories match your search or unconnected scope.
                                       </div>
                                     ) : (
                                       filteredRepos.map((r) => {
@@ -738,6 +834,63 @@ export function ProjectStepper({
                                 Type any existing repository target formatted as <code>username/repository-name</code>.
                               </p>
                             </div>
+
+                            {/* AI Codebase Intelligence Analysis Option */}
+                            {formData.githubRepos && (
+                              <div className="mt-4 p-4 rounded-xl border border-blue-500/30 bg-blue-500/5 space-y-3 animate-in slide-in-from-top-2 duration-200 text-left">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles size={14} className="text-blue-400 animate-pulse" />
+                                    <span className="text-xs font-bold text-zinc-200">
+                                      AI Codebase Intelligence
+                                    </span>
+                                  </div>
+                                  <span className="text-[9px] bg-blue-500/10 text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded font-mono uppercase font-bold">
+                                    Gemini 3.5 Flash Active
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-zinc-400 leading-relaxed">
+                                  Automatically scan your repository to extract framework metadata, auto-fill project title & descriptions, and instantiate creative brainstorm ideas & architectural optimization dreams.
+                                </p>
+                                
+                                {isAnalyzing ? (
+                                  <div className="space-y-2 bg-zinc-950 p-3 rounded-lg border border-zinc-850">
+                                    <div className="flex items-center gap-2.5 text-xs text-blue-400 font-bold">
+                                      <Loader2 size={13} className="animate-spin text-blue-400" />
+                                      Synchronizing project intelligence...
+                                    </div>
+                                    <div className="space-y-1 font-mono text-[9px] text-zinc-500 max-h-24 overflow-y-auto">
+                                      {analysisLogs.map((log, idx) => (
+                                        <div key={idx} className="truncate">
+                                          {log}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : analysisSuccess ? (
+                                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-xs space-y-1.5 text-emerald-400">
+                                    <p className="font-bold flex items-center gap-1.5">
+                                      <Check size={14} /> Repository Intelligence Compiled!
+                                    </p>
+                                    <div className="text-[10px] text-zinc-300 space-y-0.5 pl-5">
+                                      <p>• <strong>Name:</strong> {formData.name}</p>
+                                      <p>• <strong>Stack:</strong> {formData.frameworks}</p>
+                                      <p>• <strong>Brainstorm Ideas:</strong> Synthesized {aiIdeas?.length} proposals</p>
+                                      <p>• <strong>Performance Dreams:</strong> Structured {aiDreams?.length} blueprints</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={runAiAnalysis}
+                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-600/10 active:scale-[0.98]"
+                                  >
+                                    <Sparkles size={13} />
+                                    Analyze & Presync with Gemini
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

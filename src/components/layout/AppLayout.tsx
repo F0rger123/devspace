@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
 import { AuthScreen } from '../auth/AuthScreen';
+import { SetupWizard } from '../auth/SetupWizard';
 import { Users } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/auth';
@@ -30,7 +31,7 @@ const EMBERS = [
   { left: '96%', size: '2.5px', delay: '6s', type: 'animate-ember-3', blur: '0px' },
 ];
 
-function InteractiveAura({ size = 420, opacityClass = "from-amber-500/12 via-yellow-500/6 to-orange-500/10" }: { size?: number, opacityClass?: string }) {
+function InteractiveAura({ size = 420, opacityClass = "from-amber-500/5 via-yellow-500/2 to-transparent", active = true }: { size?: number, opacityClass?: string, active?: boolean }) {
   const auraRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,7 +74,7 @@ function InteractiveAura({ size = 420, opacityClass = "from-amber-500/12 via-yel
   return (
     <div 
       ref={auraRef}
-      className={`absolute rounded-full bg-gradient-to-tr ${opacityClass} blur-[130px] transition-all duration-300 ease-out pointer-events-none`}
+      className={`absolute rounded-full bg-gradient-to-tr ${opacityClass} blur-[130px] transition-all duration-700 ease-out pointer-events-none ${active ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`}
       style={{
         left: '50%',
         top: '50%',
@@ -236,7 +237,7 @@ export function CursorAmbers() {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { isSidebarOpen, toggleSidebar, setSidebarOpen, isRightSidebarOpen, toggleRightSidebar } = useStore();
-  const { isAssistantOpen, isAssistantMinimized, googleUser, acceptInvitation, declineInvitation } = useData();
+  const { isAssistantOpen, isAssistantMinimized, googleUser, acceptInvitation, declineInvitation, userProfile } = useData();
 
   useEffect(() => {
     let startX = 0;
@@ -259,20 +260,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
       const diffX = endX - startX;
       const diffY = endY - startY;
 
-      // Calculate velocity and threshold: quick flicks are very responsive
-      const minDistance = duration < 300 ? 40 : 80;
+      // Make expansion (swiping right) much more responsive: 40px for quick flicks, 75px for slow swipes
+      const isSwipingRight = diffX > 0;
+      const minDistance = isSwipingRight 
+        ? (duration < 300 ? 40 : 75)
+        : (duration < 300 ? 65 : 110);
       
-      // Horizontal swipes must be primarily horizontal (diffX is significantly larger than diffY)
-      // We use a ratio of 1.4 to make sure it's an intentional horizontal gesture but still super forgiving
-      if (Math.abs(diffX) > minDistance && Math.abs(diffX) > Math.abs(diffY) * 1.4) {
+      // Horizontal swipes must be generally horizontal (lower angle requirement for expansion to be more responsive)
+      const angleRatio = isSwipingRight ? 1.15 : 1.35;
+      if (Math.abs(diffX) > minDistance && Math.abs(diffX) > Math.abs(diffY) * angleRatio) {
         if (diffX > 0) {
-          // Swipe right -> Open sidebar on mobile
-          if (window.innerWidth < 1024) {
+          // Swipe right -> Open sidebar (initiated in the left 60% of the screen for easier reach)
+          if (window.innerWidth < 1280 && startX < window.innerWidth * 0.6) {
             setSidebarOpen(true);
           }
         } else {
-          // Swipe left -> Close sidebar on mobile
-          if (window.innerWidth < 1024) {
+          // Swipe left -> Close sidebar (initiated anywhere on the screen)
+          if (window.innerWidth < 1280) {
             setSidebarOpen(false);
           }
         }
@@ -350,7 +354,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {/* Slow drifting gold-amber embers background */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
           {/* Interactive mouse-following neon aura */}
-          <InteractiveAura size={380} opacityClass="from-amber-500/10 via-yellow-500/5 to-orange-500/10" />
+          <InteractiveAura size={380} opacityClass="from-amber-500/6 via-yellow-500/2 to-transparent" active={isAssistantOpen} />
           {/* Interactive cursor ambers swarm */}
           <CursorAmbers />
           {/* Drifting embers */}
@@ -383,7 +387,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* Slow drifting gold-amber embers background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         {/* Interactive mouse-following neon aura */}
-        <InteractiveAura size={420} opacityClass="from-amber-500/12 via-yellow-500/6 to-orange-500/10" />
+        <InteractiveAura size={420} opacityClass="from-amber-500/6 via-yellow-500/2 to-transparent" active={isAssistantOpen} />
         {/* Interactive cursor ambers swarm */}
         <CursorAmbers />
 
@@ -426,11 +430,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
             )}
           </AnimatePresence>
 
-          <main className={`flex-grow flex flex-col min-w-0 lg:overflow-hidden overflow-y-auto bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          <main className={`flex-grow flex flex-col min-w-0 ${isAssistantRoute ? 'h-full overflow-hidden' : 'lg:overflow-hidden overflow-y-auto'} bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isAssistantOpen && isAssistantMinimized ? 'lg:mr-[440px]' : ''
           }`}>
-            <div className={`flex-grow lg:overflow-hidden overflow-y-auto ${isAssistantRoute ? 'p-0' : 'p-3 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
-              <div className="w-full h-auto lg:h-full flex flex-col lg:overflow-hidden">
+            <div className={`flex-grow ${isAssistantRoute ? 'p-0 h-full overflow-hidden' : 'lg:overflow-hidden overflow-y-auto p-3 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
+              <div className={`w-full flex flex-col ${isAssistantRoute ? 'h-full overflow-hidden' : 'h-auto lg:h-full lg:overflow-hidden'}`}>
                 {children}
               </div>
             </div>
@@ -454,8 +458,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
         <CommandPalette />
         <VoiceMemoAssistant />
-        <KineticController />
-        <KineticHUDOverlay />
+        {userProfile && <SetupWizard />}
       </div>
 
       {/* Dynamic Invitation Link Handler Overlay Modal */}

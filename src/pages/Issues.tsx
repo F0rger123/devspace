@@ -693,8 +693,8 @@ Example:
     <div className="flex flex-col h-full overflow-hidden pb-4 relative">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Issues <Disc size={18} className="text-purple-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Task <span className="font-semibold italic text-yellow-500">Board</span> <Disc size={18} className="text-yellow-500/80 animate-pulse" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Track tasks and problems for your projects.

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { haptic } from '../../utils/haptics';
 import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
@@ -27,9 +28,15 @@ const navItems = [
 
 export function Sidebar() {
   const toggleCommandPalette = useStore(state => state.toggleCommandPalette);
-  const { isSidebarOpen, isSidebarMinimized, toggleSidebarMinimized } = useStore();
+  const { isSidebarOpen, isSidebarMinimized, toggleSidebarMinimized, setSidebarOpen } = useStore();
   const { projects, activeProjectId, setActiveProjectId, userProfile, googleUser } = useData();
   const navigate = useNavigate();
+
+  const handleLinkClick = () => {
+    if (window.innerWidth < 1280) {
+      setSidebarOpen(false);
+    }
+  };
 
   const getInitials = () => {
     if (userProfile?.displayName) {
@@ -43,7 +50,7 @@ export function Sidebar() {
 
   return (
     <nav className={cn(
-      "fixed lg:relative z-40 h-full shrink-0 border-r border-[#1f1f23] bg-[#0c0c0e] flex flex-col p-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl lg:shadow-none overflow-hidden",
+      "fixed lg:relative z-40 h-full shrink-0 border-r border-[#1f1f23] bg-[#0c0c0e] flex flex-col p-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl lg:shadow-none overflow-hidden",
       isSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-full lg:translate-x-0",
       !isSidebarOpen && "lg:w-0 lg:p-0 lg:border-r-0 lg:opacity-0 lg:pointer-events-none",
       isSidebarMinimized ? "w-16 gap-4 items-center" : "w-60 gap-6",
@@ -52,9 +59,9 @@ export function Sidebar() {
       
       {/* Sidebar Header & Toggle */}
       <div className={cn("flex items-center w-full mt-1", isSidebarMinimized ? "justify-center mb-1" : "justify-between mb-1 pl-2")}>
-        {!isSidebarMinimized && <span className="text-[10px] font-extrabold text-zinc-400 tracking-wider">AETHER OS</span>}
+        {!isSidebarMinimized && <span className="text-[11px] font-display font-light text-zinc-300 tracking-[0.25em] uppercase">DEVSPACE</span>}
         <button 
-          onClick={toggleSidebarMinimized}
+          onClick={() => { haptic.light(); toggleSidebarMinimized(); }}
           className="p-1 rounded bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-850 hover:border-zinc-700 text-zinc-400 hover:text-white transition-all shadow-inner cursor-pointer"
           title={isSidebarMinimized ? "Maximize Sidebar" : "Minimize Sidebar"}
         >
@@ -66,7 +73,7 @@ export function Sidebar() {
       <div className="flex-1 w-full overflow-y-auto custom-scrollbar pr-1 flex flex-col gap-6">
         {/* Navigation */}
         <section className="w-full">
-          {!isSidebarMinimized && <div className="text-[10px] font-extrabold text-white uppercase tracking-widest mb-3 pl-2 opacity-95">Menu</div>}
+          {!isSidebarMinimized && <div className="text-[10px] font-display font-light text-zinc-400 uppercase tracking-[0.22em] mb-3 pl-2 opacity-95">Menu</div>}
           <div className="space-y-1">
             {navItems.map((item) => (
               <NavLink
@@ -74,6 +81,10 @@ export function Sidebar() {
                 to={item.path}
                 className="relative block"
                 title={isSidebarMinimized ? item.label : undefined}
+                onClick={() => {
+                  haptic.light();
+                  handleLinkClick();
+                }}
               >
                 {({ isActive }) => (
                   <motion.div
@@ -123,13 +134,17 @@ export function Sidebar() {
               <FolderGit2 
                 size={14} 
                 className="text-zinc-500 hover:text-yellow-400 cursor-pointer transition-colors" 
-                onClick={() => navigate('/projects')}
+                onClick={() => {
+                  haptic.light();
+                  navigate('/projects');
+                  handleLinkClick();
+                }}
               />
             </div>
           </div>
         ) : (
           <section>
-            <div className="text-[10px] font-extrabold text-white uppercase tracking-widest mb-3 pl-2 flex items-center group cursor-pointer hover:text-white/90">
+            <div className="text-[10px] font-display font-light text-zinc-400 uppercase tracking-[0.22em] mb-3 pl-2 flex items-center group cursor-pointer hover:text-white/90">
               <ChevronRight size={12} className="mr-1 group-hover:block hidden transition-transform" />
               Active Projects
             </div>
@@ -142,8 +157,10 @@ export function Sidebar() {
                   <div 
                     key={project.id}
                     onClick={() => {
+                      haptic.light();
                       setActiveProjectId(project.id);
                       navigate(`/projects?id=${project.id}`);
+                      handleLinkClick();
                     }}
                     className="relative cursor-pointer"
                   >
@@ -178,15 +195,15 @@ export function Sidebar() {
         {isSidebarMinimized ? (
           <div className="flex flex-col items-center gap-2 w-full">
             <div className="w-full h-px bg-zinc-900" />
-            <div className="relative group cursor-pointer" onClick={() => navigate('/github')} title="GitHub Connected">
+            <div className="relative group cursor-pointer" onClick={() => { haptic.light(); navigate('/github'); handleLinkClick(); }} title="GitHub Connected">
               <Github size={14} className="text-zinc-400 hover:text-white transition-colors" />
               <div className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-yellow-500/40 bg-yellow-400/80 shadow-[0_0_8px_rgba(234,179,8,0.8)]" />
             </div>
           </div>
         ) : (
           <section>
-             <div className="text-[10px] font-extrabold text-white uppercase tracking-widest mb-3 pl-2 opacity-95">Integrations</div>
-             <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs text-zinc-100 hover:text-white hover:bg-zinc-800/40 cursor-pointer transition-all border border-transparent hover:border-zinc-800/50 font-medium" onClick={() => navigate('/github')}>
+             <div className="text-[10px] font-display font-light text-zinc-400 uppercase tracking-[0.22em] mb-3 pl-2 opacity-95">Integrations</div>
+             <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs text-zinc-100 hover:text-white hover:bg-zinc-800/40 cursor-pointer transition-all border border-transparent hover:border-zinc-800/50 font-medium" onClick={() => { haptic.light(); navigate('/github'); handleLinkClick(); }}>
                 <Github size={12} className="text-zinc-350 group-hover:text-white" />
                 <span>GitHub Attached</span>
                 <div className="ml-auto w-1.5 h-1.5 rounded-full border border-yellow-500/40 bg-yellow-400/80 shadow-[0_0_8px_rgba(234,179,8,0.8)]" />
@@ -199,7 +216,11 @@ export function Sidebar() {
       <section className="mt-auto w-full flex flex-col gap-1.5 shrink-0">
         <div className="flex items-center gap-1.5 w-full">
           <button
-            onClick={() => navigate('/settings')}
+            onClick={() => {
+              haptic.light();
+              navigate('/settings');
+              handleLinkClick();
+            }}
             className={cn(
               "flex-grow bg-[#0c0c0e] hover:bg-zinc-900/65 border border-zinc-900 rounded-lg shadow-inner text-left transition-all cursor-pointer flex items-center gap-2",
               isSidebarMinimized ? "p-1.5 justify-center" : "p-2.5 min-w-0"
@@ -231,6 +252,7 @@ export function Sidebar() {
           {!isSidebarMinimized && (
             <button
               onClick={async () => {
+                haptic.warning();
                 await logout();
                 navigate('/');
               }}
@@ -244,6 +266,7 @@ export function Sidebar() {
         {isSidebarMinimized && (
           <button
             onClick={async () => {
+              haptic.warning();
               await logout();
               navigate('/');
             }}

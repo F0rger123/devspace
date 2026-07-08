@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useData } from '../context/DataProvider';
+import { haptic } from '../utils/haptics';
 
 export function IdeaExpansion() {
   const { aiContextRules, activeProjectId, setActiveProjectId, addIssue, addPhase, projects, addProject, updateProject } = useData();
@@ -560,11 +561,11 @@ export function IdeaExpansion() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden pb-4">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col h-full md:overflow-hidden pb-4 overflow-y-auto md:overflow-y-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            Idea Expansion <BrainCircuit size={18} className="text-pink-400" />
+          <h1 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2">
+            Idea <span className="font-semibold italic text-yellow-500">Expansion</span> <BrainCircuit size={18} className="text-yellow-500/80 animate-pulse" />
           </h1>
           <p className="text-xs text-zinc-400 mt-1">
             Drop raw brain-dumps here. AI will structure it into an actionable MVP product plan.
@@ -572,24 +573,24 @@ export function IdeaExpansion() {
         </div>
         <button 
           id="generate-mvp-btn"
-          onClick={handleGenerate}
+          onClick={() => { haptic.medium(); handleGenerate(); }}
           disabled={((ideaInputTab === 'freeform' ? !rawDump.trim() : !ideaGuidedAnswers.pitch.trim())) || isGenerating}
-          className="px-4 py-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white rounded-md text-xs font-semibold transition-colors flex items-center gap-2 shadow-sm shadow-pink-500/20"
+          className="px-4 py-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white rounded-md text-xs font-semibold transition-colors flex items-center gap-2 shadow-sm shadow-pink-500/20 self-start sm:self-auto cursor-pointer"
         >
           {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
           Generate MVP Plan
         </button>
       </div>
 
-      <div className="flex-1 flex gap-4 min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
         
         {/* Input Side with Freeform / Guided Tabs */}
-        <div className="w-1/3 flex flex-col border border-zinc-800 bg-[#121214] rounded-xl overflow-hidden min-h-0 shrink-0 text-left">
+        <div className="w-full md:w-1/3 min-h-[380px] md:min-h-0 flex flex-col border border-zinc-800 bg-[#121214] rounded-xl overflow-hidden shrink-0 text-left">
           <div className="px-3 py-2 border-b border-zinc-800 bg-[#09090b] flex items-center justify-between shrink-0">
             <div className="flex items-center gap-1.5 p-0.5 bg-zinc-900/50 border border-zinc-800 rounded-lg">
               <button
                 type="button"
-                onClick={() => setIdeaInputTab('freeform')}
+                onClick={() => { haptic.light(); setIdeaInputTab('freeform'); }}
                 className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition select-none ${
                   ideaInputTab === 'freeform'
                     ? 'bg-zinc-800 text-zinc-100'
@@ -600,7 +601,7 @@ export function IdeaExpansion() {
               </button>
               <button
                 type="button"
-                onClick={() => setIdeaInputTab('guided')}
+                onClick={() => { haptic.light(); setIdeaInputTab('guided'); }}
                 className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition select-none flex items-center gap-1 ${
                   ideaInputTab === 'guided'
                     ? 'bg-pink-950/40 text-pink-400 border border-pink-700/20'
@@ -673,7 +674,7 @@ export function IdeaExpansion() {
                    <button
                      type="button"
                      disabled={isSortingAndInjecting || !rawDump.trim()}
-                     onClick={handleAutoSortAndInject}
+                     onClick={() => { haptic.medium(); handleAutoSortAndInject(); }}
                      className="flex-grow bg-[#4f46e5]/10 hover:bg-[#4f46e5]/20 hover:border-[#4f46e5]/40 border border-zinc-800 text-[#a5b4fc] text-[10px] font-bold px-3 py-1.5 rounded transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
                    >
                      {isSortingAndInjecting ? (
@@ -690,7 +691,7 @@ export function IdeaExpansion() {
                    </button>
 
                    <button 
-                     onClick={toggleRecording}
+                     onClick={() => { haptic.light(); toggleRecording(); }}
                      className={`p-1.5 rounded transition-all shadow-md flex items-center gap-1.5 shrink-0 ${
                         isRecording 
                           ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse' 
@@ -780,7 +781,7 @@ export function IdeaExpansion() {
                    <button
                      type="button"
                      disabled={ideaGuidedStep === 1}
-                     onClick={() => setIdeaGuidedStep(prev => prev - 1)}
+                     onClick={() => { haptic.light(); setIdeaGuidedStep(prev => prev - 1); }}
                      className="px-2.5 py-1 text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white rounded disabled:opacity-40 transition"
                    >
                      Back
@@ -800,7 +801,7 @@ export function IdeaExpansion() {
                    {ideaGuidedStep < 4 ? (
                      <button
                        type="button"
-                       onClick={() => setIdeaGuidedStep(prev => prev + 1)}
+                       onClick={() => { haptic.light(); setIdeaGuidedStep(prev => prev + 1); }}
                        className="px-3 py-1 bg-zinc-800 text-zinc-200 hover:text-white rounded text-[10px] font-semibold transition"
                      >
                        Next
@@ -821,19 +822,19 @@ export function IdeaExpansion() {
         </div>
 
         {/* Output Side */}
-        <div className="flex-1 flex flex-col border border-zinc-800 bg-[#121214] rounded-xl overflow-hidden min-h-0">
-          <div className="px-4 py-3 border-b border-zinc-800 bg-[#09090b] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-             <div className="flex items-center gap-2">
+        <div className="flex-1 min-h-[450px] md:min-h-0 flex flex-col border border-zinc-800 bg-[#121214] rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-800 bg-[#09090b] flex flex-col lg:flex-row items-center justify-between gap-3 shrink-0">
+             <div className="flex items-center gap-2 self-start lg:self-auto">
                 <Sparkles size={14} className="text-pink-400" />
                 <h3 className="text-xs font-semibold text-zinc-200">Structured Output</h3>
              </div>
              
              {/* Dynamic Project Targets & Push controls */}
-             <div className="flex flex-wrap gap-2 items-center">
+             <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center w-full lg:w-auto justify-start lg:justify-end">
                 {output && (
                    <>
                      <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs">
-                       <span className="text-zinc-500 text-[10px]">Target Project:</span>
+                       <span className="hidden md:inline text-zinc-500 text-[10px]">Target:</span>
                        <select 
                          value={targetProjectId}
                          onChange={(e) => {
@@ -843,43 +844,43 @@ export function IdeaExpansion() {
                              setTargetProjectId(e.target.value);
                            }
                          }}
-                         className="bg-transparent border-none text-[11px] font-medium text-zinc-200 outline-none p-0 cursor-pointer min-w-[120px]"
+                         className="bg-transparent border-none text-[11px] font-medium text-zinc-200 outline-none p-0 cursor-pointer max-w-[100px] sm:max-w-none"
                        >
                          {projects.map(p => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                          ))}
-                         <option value="NEW_WIZARD" className="text-pink-400 font-semibold">+ Start New Project Wizard</option>
+                         <option value="NEW_WIZARD" className="text-pink-400 font-semibold">+ New Project Wizard</option>
                        </select>
                      </div>
 
                      <button 
-                        onClick={() => setIsEditingOutput(!isEditingOutput)} 
+                        onClick={() => { haptic.light(); setIsEditingOutput(!isEditingOutput); }} 
                         className={`text-[10px] px-2 py-1.5 rounded transition select-none flex items-center gap-1 border ${
                           isEditingOutput 
                             ? 'bg-pink-950/40 text-pink-300 border-pink-700/40 hover:bg-pink-900/40' 
                             : 'bg-zinc-800 hover:bg-zinc-750 text-zinc-400 hover:text-zinc-200 border-zinc-700'
-                        } font-medium font-sans`}
+                        } font-medium font-sans cursor-pointer`}
                      >
                         {isEditingOutput ? 'Preview' : 'Edit Plan'}
                      </button>
                    </>
                 )}
                 
-                <button onClick={handleCopy} className="text-[10px] bg-zinc-800 px-2 py-1.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition flex items-center gap-1 border border-zinc-700 cursor-pointer">
-                  <LayoutList size={12} /> {isCopying ? 'Copied!' : 'Copy Plan'}
+                <button onClick={() => { haptic.light(); handleCopy(); }} className="text-[10px] bg-zinc-800 px-2 py-1.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition flex items-center gap-1 border border-zinc-700 cursor-pointer">
+                  <LayoutList size={12} /> <span>{isCopying ? 'Copied!' : 'Copy'}</span><span className="hidden sm:inline"> Plan</span>
                 </button>
 
                 <button 
-                  onClick={handleAutoSortIntoProject} 
+                  onClick={() => { haptic.medium(); handleAutoSortIntoProject(); }} 
                   disabled={isPushing} 
-                  className="text-[10px] bg-indigo-700 hover:bg-indigo-600 px-2.5 py-1.5 rounded text-indigo-50 hover:text-white transition flex items-center gap-1.5 border border-indigo-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer shadow-md shadow-indigo-950/45"
+                  className="text-[10px] bg-indigo-700 hover:bg-indigo-600 px-2 py-1.5 rounded text-indigo-50 hover:text-white transition flex items-center gap-1.5 border border-indigo-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer shadow-md shadow-indigo-950/45"
                   title="Auto-extract elements, create a project space, and sort all milestones/tasks"
                 >
-                  <FolderPlus size={12} /> Auto-Create & Sort ⚡
+                  <FolderPlus size={12} /> <span>Auto-Create</span><span className="hidden sm:inline"> & Sort</span> ⚡
                 </button>
 
-                <button onClick={handlePushToIssues} disabled={isPushing} className="text-[10px] bg-pink-650 px-2.5 py-1.5 rounded text-white hover:bg-pink-500 transition flex items-center gap-1 border border-pink-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer">
-                  {isPushing ? <Loader2 size={12} className="animate-spin" /> : <CheckSquare size={12} />} Push to Issues
+                <button onClick={() => { haptic.medium(); handlePushToIssues(); }} disabled={isPushing} className="text-[10px] bg-pink-650 px-2.5 py-1.5 rounded text-white hover:bg-pink-500 transition flex items-center gap-1 border border-pink-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer">
+                  {isPushing ? <Loader2 size={12} className="animate-spin" /> : <CheckSquare size={12} />} <span>Push</span><span className="hidden sm:inline"> to Issues</span>
                 </button>
              </div>
           </div>

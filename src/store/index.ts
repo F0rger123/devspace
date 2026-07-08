@@ -73,6 +73,12 @@ interface StoreState {
   setVirtualCursorPos: (pos: { x: number; y: number }) => void;
   isPinching: boolean;
   setIsPinching: (isPinching: boolean) => void;
+  cursorSensitivity: number;
+  setCursorSensitivity: (val: number) => void;
+  isCameraOnlyMode: boolean;
+  setCameraOnlyMode: (enabled: boolean) => void;
+  cameraScale: number;
+  setCameraScale: (scale: number) => void;
 }
 
 const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
@@ -115,65 +121,132 @@ export const DEFAULT_GESTURES: KineticGesture[] = [
   { id: 'pointer-highfive', name: 'Pointer + High Five (1+5 Combo)', action: 'copy-active-note', direction: 'double-pose-1-5' }
 ];
 
-export const useStore = create<StoreState>((set) => ({
-  isCommandPaletteOpen: false,
-  toggleCommandPalette: () => set((state) => {
-    const nextVal = !state.isCommandPaletteOpen;
-    const nextHistory = [
-      { action: 'toggle-command-palette', timestamp: Date.now() },
-      ...state.commandHistory
-    ].slice(0, 50);
-    localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
-    return { isCommandPaletteOpen: nextVal, commandHistory: nextHistory };
-  }),
-  setCommandPaletteOpen: (open) => set({ isCommandPaletteOpen: open }),
-  isSidebarOpen: initialSidebarOpen,
-  toggleSidebar: () => set((state) => {
-    const nextVal = !state.isSidebarOpen;
-    localStorage.setItem('isSidebarOpen', String(nextVal));
-    const nextHistory = [
-      { action: 'toggle-sidebar', timestamp: Date.now() },
-      ...state.commandHistory
-    ].slice(0, 50);
-    localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
-    return { isSidebarOpen: nextVal, commandHistory: nextHistory };
-  }),
-  setSidebarOpen: (open) => set(() => {
-    localStorage.setItem('isSidebarOpen', String(open));
-    return { isSidebarOpen: open };
-  }),
-  isSidebarMinimized: initialSidebarMinimized,
-  toggleSidebarMinimized: () => set((state) => {
-    const nextVal = !state.isSidebarMinimized;
-    localStorage.setItem('isSidebarMinimized', String(nextVal));
-    const nextHistory = [
-      { action: 'toggle-sidebar-minimize', timestamp: Date.now() },
-      ...state.commandHistory
-    ].slice(0, 50);
-    localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
-    return { isSidebarMinimized: nextVal, commandHistory: nextHistory };
-  }),
-  setSidebarMinimized: (minimized) => set(() => {
-    localStorage.setItem('isSidebarMinimized', String(minimized));
-    return { isSidebarMinimized: minimized };
-  }),
-  isRightSidebarOpen: initialRightSidebarOpen,
-  toggleRightSidebar: () => set((state) => {
-    const nextVal = !state.isRightSidebarOpen;
-    localStorage.setItem('isRightSidebarOpen', String(nextVal));
-    const nextHistory = [
-      { action: 'toggle-right-sidebar', timestamp: Date.now() },
-      ...state.commandHistory
-    ].slice(0, 50);
-    localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
-    return { isRightSidebarOpen: nextVal, commandHistory: nextHistory };
-  }),
-  isRightSidebarExpanded: false,
-  toggleRightSidebarExpanded: () => set((state) => ({ isRightSidebarExpanded: !state.isRightSidebarExpanded })),
-  setRightSidebarOpen: (open) => set(() => {
-    localStorage.setItem('isRightSidebarOpen', String(open));
-    return { isRightSidebarOpen: open };
-  }),
+export const useStore = create<StoreState>((set) => {
+  const dispatchCloseAether = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aether-close-assistant'));
+    }
+  };
+
+  return {
+    isCommandPaletteOpen: false,
+    toggleCommandPalette: () => set((state) => {
+      const nextVal = !state.isCommandPaletteOpen;
+      const nextHistory = [
+        { action: 'toggle-command-palette', timestamp: Date.now() },
+        ...state.commandHistory
+      ].slice(0, 50);
+      localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
+      
+      if (nextVal) {
+        dispatchCloseAether();
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+        return { 
+          isCommandPaletteOpen: nextVal, 
+          isRightSidebarOpen: false, 
+          isSidebarOpen: isMobile ? false : state.isSidebarOpen,
+          commandHistory: nextHistory 
+        };
+      }
+      return { isCommandPaletteOpen: nextVal, commandHistory: nextHistory };
+    }),
+    setCommandPaletteOpen: (open) => set((state) => {
+      if (open) {
+        dispatchCloseAether();
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+        return { 
+          isCommandPaletteOpen: open, 
+          isRightSidebarOpen: false, 
+          isSidebarOpen: isMobile ? false : state.isSidebarOpen 
+        };
+      }
+      return { isCommandPaletteOpen: open };
+    }),
+    isSidebarOpen: initialSidebarOpen,
+    toggleSidebar: () => set((state) => {
+      const nextVal = !state.isSidebarOpen;
+      localStorage.setItem('isSidebarOpen', String(nextVal));
+      const nextHistory = [
+        { action: 'toggle-sidebar', timestamp: Date.now() },
+        ...state.commandHistory
+      ].slice(0, 50);
+      localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
+      
+      if (nextVal && typeof window !== 'undefined' && window.innerWidth < 1024) {
+        dispatchCloseAether();
+        return { 
+          isSidebarOpen: nextVal, 
+          isCommandPaletteOpen: false, 
+          isRightSidebarOpen: false,
+          commandHistory: nextHistory 
+        };
+      }
+      return { isSidebarOpen: nextVal, commandHistory: nextHistory };
+    }),
+    setSidebarOpen: (open) => set((state) => {
+      localStorage.setItem('isSidebarOpen', String(open));
+      if (open && typeof window !== 'undefined' && window.innerWidth < 1024) {
+        dispatchCloseAether();
+        return { 
+          isSidebarOpen: open, 
+          isCommandPaletteOpen: false, 
+          isRightSidebarOpen: false 
+        };
+      }
+      return { isSidebarOpen: open };
+    }),
+    isSidebarMinimized: initialSidebarMinimized,
+    toggleSidebarMinimized: () => set((state) => {
+      const nextVal = !state.isSidebarMinimized;
+      localStorage.setItem('isSidebarMinimized', String(nextVal));
+      const nextHistory = [
+        { action: 'toggle-sidebar-minimize', timestamp: Date.now() },
+        ...state.commandHistory
+      ].slice(0, 50);
+      localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
+      return { isSidebarMinimized: nextVal, commandHistory: nextHistory };
+    }),
+    setSidebarMinimized: (minimized) => set(() => {
+      localStorage.setItem('isSidebarMinimized', String(minimized));
+      return { isSidebarMinimized: minimized };
+    }),
+    isRightSidebarOpen: initialRightSidebarOpen,
+    toggleRightSidebar: () => set((state) => {
+      const nextVal = !state.isRightSidebarOpen;
+      localStorage.setItem('isRightSidebarOpen', String(nextVal));
+      const nextHistory = [
+        { action: 'toggle-right-sidebar', timestamp: Date.now() },
+        ...state.commandHistory
+      ].slice(0, 50);
+      localStorage.setItem('commandHistory', JSON.stringify(nextHistory));
+      
+      if (nextVal) {
+        dispatchCloseAether();
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+        return { 
+          isRightSidebarOpen: nextVal, 
+          isCommandPaletteOpen: false, 
+          isSidebarOpen: isMobile ? false : state.isSidebarOpen,
+          commandHistory: nextHistory 
+        };
+      }
+      return { isRightSidebarOpen: nextVal, commandHistory: nextHistory };
+    }),
+    isRightSidebarExpanded: false,
+    toggleRightSidebarExpanded: () => set((state) => ({ isRightSidebarExpanded: !state.isRightSidebarExpanded })),
+    setRightSidebarOpen: (open) => set((state) => {
+      localStorage.setItem('isRightSidebarOpen', String(open));
+      if (open) {
+        dispatchCloseAether();
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+        return { 
+          isRightSidebarOpen: open, 
+          isCommandPaletteOpen: false, 
+          isSidebarOpen: isMobile ? false : state.isSidebarOpen 
+        };
+      }
+      return { isRightSidebarOpen: open };
+    }),
   
   // Kinetic Gestures Initial State
   isKineticEnabled: typeof window !== 'undefined' 
@@ -288,4 +361,25 @@ export const useStore = create<StoreState>((set) => ({
   setVirtualCursorPos: (pos) => set(() => ({ virtualCursorPos: pos })),
   isPinching: false,
   setIsPinching: (pinching) => set(() => ({ isPinching: pinching })),
-}));
+  cursorSensitivity: typeof window !== 'undefined' && localStorage.getItem('cursorSensitivity')
+    ? Number(localStorage.getItem('cursorSensitivity'))
+    : 1.0,
+  setCursorSensitivity: (val) => set(() => {
+    localStorage.setItem('cursorSensitivity', String(val));
+    return { cursorSensitivity: val };
+  }),
+  isCameraOnlyMode: typeof window !== 'undefined' && localStorage.getItem('isCameraOnlyMode') === 'true',
+  setCameraOnlyMode: (enabled) => set(() => {
+    localStorage.setItem('isCameraOnlyMode', String(enabled));
+    return { isCameraOnlyMode: enabled };
+  }),
+  cameraScale: typeof window !== 'undefined' && localStorage.getItem('cameraScale')
+    ? Number(localStorage.getItem('cameraScale'))
+    : 1.0,
+  setCameraScale: (scale) => set(() => {
+    const clampedScale = Math.max(0.5, Math.min(2.5, scale));
+    localStorage.setItem('cameraScale', String(clampedScale));
+    return { cameraScale: clampedScale };
+  }),
+  };
+});

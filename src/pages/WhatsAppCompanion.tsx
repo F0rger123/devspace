@@ -3116,7 +3116,7 @@ export function WhatsAppCompanion() {
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black tracking-tight text-white font-sans uppercase">Aether Workspace</h1>
+                <h1 className="text-xl font-display font-light tracking-widest text-white uppercase">Aether <span className="font-semibold italic text-yellow-500">Workspace</span></h1>
                 <span className="px-2 py-0.5 rounded bg-emerald-950/40 text-yellow-400 border border-emerald-800/20 text-[9px] font-mono font-bold uppercase tracking-wider">
                   Companion Host
                 </span>
@@ -5254,7 +5254,7 @@ export function WhatsAppCompanion() {
 
                       <button
                         type="button"
-                        onClick={() => speakResponse("Audio output calibrated successfully. Aether voice response framework is online.")}
+                        onClick={() => speakResponse("Audio is working properly. The voice assistant is ready.")}
                         className="w-full py-1.5 bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 text-zinc-350 hover:text-white rounded-lg text-[9.5px] font-mono tracking-wider cursor-pointer uppercase font-black transition-all flex items-center justify-center gap-1.5"
                       >
                         <Zap size={10} className="text-amber-450 animate-pulse" /> Test Vocal Synthesis Output
@@ -5276,25 +5276,25 @@ export function WhatsAppCompanion() {
 
                     <div className="space-y-2 text-[10px] text-zinc-400 font-sans leading-relaxed">
                       <p>
-                        Aether Companion Gateway state remains fully persistent and operational 24/7! All custom projects, backlog issues, cognitive rules, and conversation logs are serialized automatically.
+                        Your assistant's state is fully saved. All custom projects, tasks, rules, and chats are saved automatically.
                       </p>
 
                       <div className="bg-zinc-950/60 border border-zinc-900 rounded-xl p-2.5 divide-y divide-zinc-900/85 font-mono text-[8.5px]">
                         <div className="flex items-center justify-between py-1">
-                          <span className="text-zinc-500">PERSISTENCE STORAGE</span>
-                          <span className="text-zinc-300 text-right truncate pl-2">File Storage (/aether_state_persistence.json)</span>
+                          <span className="text-zinc-500">SAVED DATA LOCATION</span>
+                          <span className="text-zinc-300 text-right truncate pl-2">Local Storage File</span>
                         </div>
                         <div className="flex items-center justify-between py-1">
-                          <span className="text-zinc-500">DYNAMIC CACHE POOLING</span>
-                          <span className="text-zinc-300">Synchronized State-Pooling Active</span>
+                          <span className="text-zinc-500">SYNC STATUS</span>
+                          <span className="text-zinc-300">Synchronized and up-to-date</span>
                         </div>
                         <div className="flex items-center justify-between py-1">
-                          <span className="text-zinc-500">COMPANION SHUTDOWN SAFE</span>
-                          <span className="text-[#fbbf24] font-bold">YES • Safe to turn off desk computer</span>
+                          <span className="text-zinc-500">SAFE TO CLOSE</span>
+                          <span className="text-[#fbbf24] font-bold">YES • Safe to turn off your computer</span>
                         </div>
                         <div className="flex items-center justify-between py-1">
-                          <span className="text-zinc-500">HOST SERVER DIRECTORY</span>
-                          <span className="text-zinc-405">Cloud Run Deployment (Port 3000 Ingress)</span>
+                          <span className="text-zinc-500">SERVER LOCATION</span>
+                          <span className="text-zinc-405">Cloud Run Server</span>
                         </div>
                       </div>
 

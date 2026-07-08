@@ -857,7 +857,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
   }, [dimensions, searchQuery, projects, customMemories]);
 
   return (
-    <div className="absolute inset-0 flex flex-col xl:flex-row p-3 sm:p-6 gap-4 sm:gap-6 overflow-y-auto xl:overflow-hidden bg-[#07070a]/90 animate-in fade-in duration-300 font-sans z-20">
+    <div className="absolute inset-0 w-full h-full flex flex-col xl:flex-row p-3 sm:p-6 gap-4 sm:gap-6 overflow-y-auto xl:overflow-hidden bg-[#07070a]/90 animate-in fade-in duration-300 font-sans z-20">
       
       {/* 1. OBSIDIAN-STYLE INTERACTIVE VISUAL SYNAPSE BRAIN */}
       <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#0e0e11]/80 rounded-2xl p-4 sm:p-5 overflow-hidden min-h-0 relative group shadow-[0_4px_30px_rgba(0,0,0,0.5)]">

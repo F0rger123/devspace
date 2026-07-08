@@ -346,7 +346,7 @@ export function ProfileView({
         <div className="flex justify-between items-center p-5 border-b border-zinc-800/60 shrink-0">
           <div className="flex items-center gap-1.5">
             <span className="text-[9px] uppercase tracking-widest text-yellow-500 font-bold">
-              Developer Pulse
+              Developer Profile
             </span>
             {developer.isPrivate && (
               <span className="flex items-center gap-1 text-[8px] bg-zinc-900 border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
@@ -365,7 +365,7 @@ export function ProfileView({
         {loading ? (
           <div className="p-16 flex flex-col items-center justify-center space-y-3 flex-1">
             <RefreshCw className="animate-spin text-yellow-500" size={30} />
-            <p className="text-xs text-zinc-400 font-mono">Aligning developer synapses...</p>
+            <p className="text-xs text-zinc-400 font-mono">Loading developer profile...</p>
           </div>
         ) : (
           <div className="overflow-y-auto custom-scrollbar flex-1 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-zinc-800/60">
@@ -393,15 +393,25 @@ export function ProfileView({
                 </div>
               </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-2 bg-[#09090b] border border-zinc-850 p-2.5 rounded-lg text-center">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-2.5 bg-[#09090b] border border-zinc-850 p-3 rounded-lg text-center">
                 <div>
-                  <p className="text-sm font-black text-zinc-150">{followersCount}</p>
-                  <p className="text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Followers</p>
+                  <p className="text-sm font-extrabold text-zinc-150">{followersCount}</p>
+                  <p className="text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Followers</p>
                 </div>
                 <div>
-                  <p className="text-sm font-black text-zinc-150">{followingCount}</p>
-                  <p className="text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Following</p>
+                  <p className="text-sm font-extrabold text-zinc-150">{followingCount}</p>
+                  <p className="text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Following</p>
+                </div>
+                <div className="border-t border-zinc-850/50 pt-2 col-span-1">
+                  <p className="text-sm font-extrabold text-zinc-150">{devProjects.length}</p>
+                  <p className="text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Projects</p>
+                </div>
+                <div className="border-t border-zinc-850/50 pt-2 col-span-1">
+                  <p className="text-sm font-extrabold text-amber-400">
+                    {devProjects.reduce((sum, p) => sum + (p.starsCount || 0), 0)}
+                  </p>
+                  <p className="text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Public Stars</p>
                 </div>
               </div>
 
