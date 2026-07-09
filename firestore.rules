@@ -169,6 +169,18 @@ service cloud.firestore {
         && data.createdAt is number;
     }
 
+    // Validation for PasswordResetLog
+    function isValidPasswordResetLog(data) {
+      return data.email is string && data.email.size() <= 200
+        && data.action in ['request', 'confirm']
+        && data.status in ['success', 'failure']
+        && (!('errorCode' in data) || data.errorCode == null || (data.errorCode is string && data.errorCode.size() <= 200))
+        && (!('errorMessage' in data) || data.errorMessage == null || (data.errorMessage is string && data.errorMessage.size() <= 1000))
+        && data.timestamp is number
+        && (!('userAgent' in data) || (data.userAgent is string && data.userAgent.size() <= 500))
+        && (!('origin' in data) || (data.origin is string && data.origin.size() <= 300));
+    }
+
     // Rules for projects
     match /projects/{projectId} {
       allow read: if isSignedIn() && (
@@ -377,6 +389,12 @@ service cloud.firestore {
       allow delete: if isSignedIn()
         && isValidId(notifId)
         && resource.data.userId == request.auth.uid;
+    }
+
+    // Rules for password reset logs
+    match /password_reset_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(logId) && isValidPasswordResetLog(incoming());
     }
   }
 }

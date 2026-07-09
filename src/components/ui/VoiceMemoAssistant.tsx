@@ -4666,7 +4666,7 @@ export function VoiceMemoAssistant() {
               transition={{ duration: 0.1, ease: "easeOut" }}
               className={`fixed select-none selection:bg-yellow-500/30 flex items-center justify-center transition-all duration-300 ${
                 isAssistantMinimized 
-                  ? "inset-x-0 bottom-0 top-auto h-[48vh] w-full z-[90] pointer-events-none bg-transparent backdrop-blur-none sm:right-4 sm:bottom-[108px] sm:top-4 sm:w-[420px] sm:max-w-[95vw] sm:h-auto sm:max-h-[85vh] sm:inset-auto sm:z-[90]" 
+                  ? "inset-x-0 bottom-0 top-auto h-[48vh] w-full z-[90] pointer-events-none bg-transparent backdrop-blur-none sm:right-4 sm:bottom-[108px] sm:top-4 sm:w-[420px] sm:max-w-[95vw] sm:h-auto sm:max-h-[85vh] sm:inset-auto sm:z-[90] lg:right-0 lg:bottom-0 lg:top-0 lg:h-screen lg:w-[440px] lg:max-h-none lg:inset-auto lg:z-[90]" 
                   : "inset-0 z-[100] bg-black/85 backdrop-blur-md p-0 sm:p-4 pointer-events-auto"
               }`}
               onClick={(e) => {
@@ -4687,7 +4687,7 @@ export function VoiceMemoAssistant() {
               }}
               className={`flex flex-col relative transition-all duration-350 pointer-events-auto ${
                 isAssistantMinimized
-                  ? "w-full h-[48vh] bg-[#0c0c0e]/98 border-t border-zinc-800 rounded-t-3xl overflow-hidden shadow-[0_-10px_40px_rgba(245,158,11,0.22)] sm:w-full sm:h-full sm:bg-[#0c0c0e]/95 sm:border sm:border-zinc-850 sm:rounded-3xl sm:shadow-[0_0_40px_rgba(245,158,11,0.22)]"
+                  ? "w-full h-[48vh] bg-[#0c0c0e]/98 border-t border-zinc-800 rounded-t-3xl overflow-hidden shadow-[0_-10px_40px_rgba(245,158,11,0.22)] sm:w-full sm:h-full sm:bg-[#0c0c0e]/95 sm:border sm:border-zinc-850 sm:rounded-3xl sm:shadow-[0_0_40px_rgba(245,158,11,0.22)] lg:rounded-none lg:border-y-0 lg:border-l lg:border-zinc-850 lg:w-full lg:h-full lg:shadow-none"
                   : "w-full sm:max-w-6xl h-[100dvh] sm:h-[85vh] bg-[#0c0c0e] border-0 sm:border border-zinc-800 rounded-none sm:rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(245,158,11,0.12)]"
               }`}
               onClick={(e) => {

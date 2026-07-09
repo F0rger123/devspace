@@ -197,6 +197,23 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "userId", "type", "title", "description", "read", "createdAt"]
+    },
+    "PasswordResetLog": {
+      "title": "PasswordResetLog",
+      "description": "A secure trace of password reset attempts and diagnostic outcomes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique auto-generated log ID" },
+        "email": { "type": "string", "description": "The email target of the password reset" },
+        "action": { "type": "string", "enum": ["request", "confirm"], "description": "Type of password reset activity" },
+        "status": { "type": "string", "enum": ["success", "failure"], "description": "The result of the attempt" },
+        "errorCode": { "type": "string", "description": "Firebase Auth specific error code" },
+        "errorMessage": { "type": "string", "description": "Detailed error diagnostic description" },
+        "timestamp": { "type": "number", "description": "Unix epoch timestamp of the log event" },
+        "userAgent": { "type": "string", "description": "Web browser details of the requester" },
+        "origin": { "type": "string", "description": "Domain origin of the request" }
+      },
+      "required": ["email", "action", "status", "timestamp"]
     }
   },
   "firestore": {
@@ -251,6 +268,10 @@
     "/notifications/{notifId}": {
       "schema": "Notification",
       "description": "Notifications dispatched for stars, comments, collaboration requests, friends, etc."
+    },
+    "/password_reset_logs/{logId}": {
+      "schema": "PasswordResetLog",
+      "description": "Diagnostically captured log traces of password reset requests and confirmations"
     }
   }
 }

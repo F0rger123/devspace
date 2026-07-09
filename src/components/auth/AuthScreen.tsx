@@ -110,9 +110,13 @@ export function AuthScreen() {
         setConfirmPassword('');
       } catch (err: any) {
         if (err.code === 'auth/expired-action-code') {
-          setError('This password reset link has expired. Please request a new one.');
+          setError(
+            'The password reset link has expired. (Note: Email scanners like Microsoft SafeLinks or corporate firewalls often pre-fetch links, which can instantly expire single-use reset tokens. Please request a new link and follow the Optional In-App Reset guide below to bypass scanners).'
+          );
         } else if (err.code === 'auth/invalid-action-code') {
-          setError('This password reset link is invalid or has already been used. Please request a new one.');
+          setError(
+            'This password reset link is invalid or has already been used. (Note: Email scanners like Microsoft SafeLinks or corporate firewalls often pre-fetch and consume single-use reset links before you can click them. Please request a new link and follow the Optional In-App Reset guide below to bypass scanners).'
+          );
         } else {
           setError(err.message || 'Failed to update password. Please request a new password reset link.');
         }

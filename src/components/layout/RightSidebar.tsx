@@ -1077,6 +1077,35 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       return;
     }
 
+    // 1. Intercept project creation requests first
+    const createProjectMatch = lower.match(/(?:create|start|initiate|bootstrap|make|add)(?:\s+a)?\s+project\s+(?:named\s+|called\s+)?(["']?)([a-zA-Z0-9\s\-_]+)\1/);
+    if (createProjectMatch) {
+      const proposedName = createProjectMatch[2].trim();
+      if (proposedName.length >= 2) {
+        const exists = projects.find(p => p.name.toLowerCase() === proposedName.toLowerCase());
+        let newProjId = exists?.id;
+        if (!exists) {
+          newProjId = addProject({
+            name: proposedName,
+            description: "Created via Aether AI workspace direct command.",
+            status: 'Planning',
+            brainstormIdeas: [],
+            seenRecommendedIdeas: [],
+            dreamRecommendations: []
+          });
+        }
+        setActiveProjectId(newProjId);
+        setInputValue('');
+        const feedbackMessage = `I have successfully created and bootstrapped a new project named "${proposedName}" in your workspace and set it as active! Taking you to the Projects Center now.`;
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedbackMessage };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(feedbackMessage);
+        navigate('/projects');
+        return;
+      }
+    }
+
     if (matchedProject) {
       setActiveProjectId(matchedProject.id);
       targetPath = '/projects';
@@ -1093,6 +1122,15 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     } else if (clean === "projects" || clean === "project" || lower.includes("take me to projects") || lower.includes("go to projects") || lower.includes("open projects") || lower.includes("show projects")) {
       targetPath = '/projects';
       descName = 'Projects Center';
+    } else if (clean === "community" || clean === "gallery" || clean === "public feed" || lower.includes("community") || lower.includes("gallery") || lower.includes("public feed") || lower.includes("share")) {
+      targetPath = '/community';
+      descName = 'Developer Community Gallery';
+    } else if (clean === "github" || clean === "git" || clean === "repository" || clean === "repos" || lower.includes("github") || lower.includes("commits") || lower.includes("git intelligence") || lower.includes("curated feed")) {
+      targetPath = '/github';
+      descName = 'GitHub Intelligence & Autopilot';
+    } else if (clean === "whatsapp" || clean === "whatsapp companion" || clean === "phone" || lower.includes("whatsapp") || lower.includes("whatsapp companion") || lower.includes("mobile companion")) {
+      targetPath = '/whatsapp-companion';
+      descName = 'WhatsApp Mobile Companion';
     } else if (clean === "assets" || clean === "asset" || lower.includes("take me to assets") || lower.includes("go to assets") || lower.includes("open assets") || lower.includes("show assets")) {
       targetPath = '/assets';
       descName = 'Digital Asset Repository';

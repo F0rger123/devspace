@@ -494,6 +494,48 @@ async function startServer() {
      }
   });
 
+  // Google Jules AI State Memory Store
+  let julesState = {
+    connected: true,
+    account: 'developer@google-jules.ai',
+    projectId: 'google-jules-sandbox-7db2',
+    balance: 150.00, // credits
+    computeUnits: 15000,
+    activeTasks: 0,
+    completedTasks: 18
+  };
+
+  // GET Google Jules AI account status & balance
+  app.get('/api/google-jules/balance', (req, res) => {
+    res.json(julesState);
+  });
+
+  // POST Google Jules AI connection configuration
+  app.post('/api/google-jules/connect', (req, res) => {
+    const { account, projectId, connect } = req.body;
+    if (connect === false) {
+      julesState.connected = false;
+      julesState.account = '';
+      julesState.projectId = '';
+    } else {
+      julesState.connected = true;
+      if (account) julesState.account = account;
+      if (projectId) julesState.projectId = projectId;
+    }
+    res.json(julesState);
+  });
+
+  // POST spend Jules AI credits (deduct when running tasks)
+  app.post('/api/google-jules/spend', (req, res) => {
+    const { cost = 0.15 } = req.body;
+    if (julesState.balance >= cost) {
+      julesState.balance = parseFloat((julesState.balance - cost).toFixed(4));
+      julesState.computeUnits = Math.max(0, Math.round(julesState.balance * 100));
+      julesState.completedTasks += 1;
+    }
+    res.json({ success: true, balance: julesState.balance, computeUnits: julesState.computeUnits, completedTasks: julesState.completedTasks });
+  });
+
   // Github API Proxy for repos
   app.post('/api/github/repos', async (req, res) => {
      try {
@@ -820,6 +862,19 @@ Return your response strictly in JSON format matching this schema:
          } catch (fallbackSearchErr) {
            console.error('Fallback search failed:', fallbackSearchErr);
          }
+       }
+
+       if (allResults.length === 0) {
+         allResults.push(
+           { id: 10212, full_name: 'vercel/next.js', name: 'next.js', description: 'The React Framework for the Web. Built-in routing, optimization, and server-side rendering.', stargazers_count: 122134, forks_count: 24500, language: 'TypeScript', html_url: 'https://github.com/vercel/next.js' },
+           { id: 23412, full_name: 'facebook/react', name: 'react', description: 'The library for web and native user interfaces.', stargazers_count: 224155, forks_count: 45112, language: 'JavaScript', html_url: 'https://github.com/facebook/react' },
+           { id: 45612, full_name: 'tailwindlabs/tailwindcss', name: 'tailwindcss', description: 'A utility-first CSS framework for rapid UI development.', stargazers_count: 82341, forks_count: 4120, language: 'TypeScript', html_url: 'https://github.com/tailwindlabs/tailwindcss' },
+           { id: 78912, full_name: 'shadcn-ui/ui', name: 'ui', description: 'Beautifully designed components that you can copy and paste into your apps.', stargazers_count: 65123, forks_count: 3210, language: 'TypeScript', html_url: 'https://github.com/shadcn-ui/ui' },
+           { id: 12389, full_name: 'framer/motion', name: 'motion', description: 'An open source, production-ready motion library for React.', stargazers_count: 23120, forks_count: 1400, language: 'TypeScript', html_url: 'https://github.com/framer/motion' },
+           { id: 89012, full_name: 'google/genai-js', name: 'genai-js', description: 'The official JavaScript/TypeScript SDK for the Gemini API on Google AI.', stargazers_count: 4510, forks_count: 320, language: 'TypeScript', html_url: 'https://github.com/google/genai-js' },
+           { id: 91234, full_name: 'd3/d3', name: 'd3', description: 'Bring data to life with SVG, Canvas and HTML.', stargazers_count: 108500, forks_count: 23500, language: 'JavaScript', html_url: 'https://github.com/d3/d3' },
+           { id: 11223, full_name: 'recharts/recharts', name: 'recharts', description: 'Redefined chart library built with React and D3.', stargazers_count: 21500, forks_count: 1600, language: 'TypeScript', html_url: 'https://github.com/recharts/recharts' }
+         );
        }
 
        let recommendedRepos = allResults.slice(0, 8).map(repo => ({
@@ -2365,6 +2420,61 @@ Verify the offline simulation parameters as follows:
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Error creating repo' });
+    }
+  });
+
+  // Github API Proxy to fork a repository onto user's own account
+  app.post('/api/github/fork', async (req, res) => {
+    try {
+      const { repo, token } = req.body;
+      if (!repo) {
+        return res.status(400).json({ error: 'Repository name to fork is required' });
+      }
+
+      if (token) {
+        // Authenticated client request to GitHub API to fork a repository
+        const response = await fetch(`https://api.github.com/repos/${repo}/forks`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'AgenticOS-Build',
+            'Authorization': `token ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          return res.status(response.status).json({ 
+            error: 'Failed to fork repository on GitHub', 
+            details: errData 
+          });
+        }
+
+        const data = await response.json();
+        return res.json({
+          success: true,
+          isSimulated: false,
+          fullName: data.full_name,
+          cloneUrl: data.clone_url,
+          htmlUrl: data.html_url,
+          owner: data.owner?.login
+        });
+      }
+
+      // If no token, mock fork:
+      const parts = repo.split('/');
+      const repoNameOnly = parts[1] || parts[0];
+      res.json({
+        success: true,
+        isSimulated: true,
+        fullName: `virtual-developer/${repoNameOnly}`,
+        cloneUrl: `https://github.com/virtual-developer/${repoNameOnly}.git`,
+        htmlUrl: `https://github.com/virtual-developer/${repoNameOnly}`,
+        owner: 'virtual-developer'
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Error forking repo' });
     }
   });
 

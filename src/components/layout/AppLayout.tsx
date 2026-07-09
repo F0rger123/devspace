@@ -236,8 +236,14 @@ export function CursorAmbers() {
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { isSidebarOpen, toggleSidebar, setSidebarOpen, isRightSidebarOpen, toggleRightSidebar } = useStore();
-  const { isAssistantOpen, isAssistantMinimized, googleUser, acceptInvitation, declineInvitation, userProfile } = useData();
+  const { isSidebarOpen, toggleSidebar, setSidebarOpen, isRightSidebarOpen, toggleRightSidebar, isKineticEnabled } = useStore();
+  const { isAssistantOpen, isAssistantMinimized, setIsAssistantMinimized, googleUser, acceptInvitation, declineInvitation, userProfile } = useData();
+
+  useEffect(() => {
+    if (isKineticEnabled && isAssistantOpen && !isAssistantMinimized) {
+      setIsAssistantMinimized(true);
+    }
+  }, [isKineticEnabled, isAssistantOpen, isAssistantMinimized, setIsAssistantMinimized]);
 
   useEffect(() => {
     let startX = 0;
@@ -458,6 +464,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
         <CommandPalette />
         <VoiceMemoAssistant />
+        <KineticController />
+        <KineticHUDOverlay />
         {userProfile && <SetupWizard />}
       </div>
 

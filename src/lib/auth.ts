@@ -17,7 +17,7 @@ import {
   unlink,
   EmailAuthProvider
 } from 'firebase/auth';
-import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, collection, addDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -148,20 +148,57 @@ export const loginWithEmailPassword = async (email: string, password: string): P
   }
 };
 
-export const sendPasswordReset = async (email: string): Promise<void> => {
+export const logPasswordResetAttempt = async (
+  email: string,
+  action: 'request' | 'confirm',
+  status: 'success' | 'failure',
+  errorCode?: string,
+  errorMessage?: string
+): Promise<void> => {
   try {
-    await sendPasswordResetEmail(auth, email);
+    const cleanEmail = email.trim().toLowerCase();
+    const logsRef = collection(db, 'password_reset_logs');
+    await addDoc(logsRef, {
+      email: cleanEmail || 'unknown',
+      action,
+      status,
+      errorCode: errorCode || null,
+      errorMessage: errorMessage || null,
+      timestamp: Date.now(),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server',
+      origin: typeof window !== 'undefined' ? window.location.origin : 'server'
+    });
+  } catch (err) {
+    console.error('Failed to write password reset log:', err);
+  }
+};
+
+export const sendPasswordReset = async (email: string): Promise<void> => {
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    await sendPasswordResetEmail(auth, cleanEmail);
+    await logPasswordResetAttempt(cleanEmail, 'request', 'success');
   } catch (error: any) {
     console.error('Password reset error:', error);
+    await logPasswordResetAttempt(cleanEmail, 'request', 'failure', error.code || 'unknown', error.message || String(error));
     throw error;
   }
 };
 
 export const confirmReset = async (code: string, newPass: string): Promise<void> => {
+  let email = 'unknown';
+  try {
+    email = await verifyPasswordResetCode(auth, code);
+  } catch (e: any) {
+    console.warn('Could not pre-verify password reset code for email:', e.message);
+  }
+
   try {
     await confirmPasswordReset(auth, code, newPass);
+    await logPasswordResetAttempt(email, 'confirm', 'success');
   } catch (error: any) {
     console.error('Confirm password reset error:', error);
+    await logPasswordResetAttempt(email, 'confirm', 'failure', error.code || 'unknown', error.message || String(error));
     throw error;
   }
 };

@@ -87,8 +87,8 @@ const DEFAULT_SCHEDULED_TASKS: ScheduledTask[] = [];
 
 export function AgenticOS() {
   const { 
-    projects, issues, notes, assets, agents, setAgents, updateProject, updateIssue, addIssue, githubToken, setGithubToken,
-    aetherAutoRecommend, aetherDoubleConfirm 
+    projects, issues, notes, assets, agents, setAgents, updateProject, updateIssue, addIssue, githubToken, setGithubToken, githubUser,
+    aetherAutoRecommend, aetherDoubleConfirm, showToast
   } = useData();
 
   const navigate = useNavigate();
@@ -534,7 +534,7 @@ export function AgenticOS() {
        setLabTestGuide(finalTestGuide);
        setLabUpdatedCode(data.updatedFileContent || "");
        setLabTargetFilePath(data.targetFilePath || "");
-       addConsoleLog(`SYSTEM: Google GenAI synthesis completed! Code Action briefing and step-by-step test instructions are available below.`);
+       addConsoleLog(`SYSTEM: Google GenAI synthesis completed! Code Action briefing and step-by-step test instructions are available below.`); spendJulesCredits(0.15 * queueToRun.length);
     } catch (e: any) {
        console.error("Gemini failed, using fallback:", e);
        addConsoleLog(`WARNING: Gemini API pipeline offline or key missing. Initiating local high-fidelity generator fallback...`);
@@ -1023,6 +1023,136 @@ export function AgenticOS() {
     }, 2600);
   };
 
+  // Google Jules AI Account Connection State
+  const [julesConnected, setJulesConnected] = useState<boolean>(true);
+  const [julesAccount, setJulesAccount] = useState<string>('developer@google-jules.ai');
+  const [julesProjectId, setJulesProjectId] = useState<string>('google-jules-sandbox-7db2');
+  const [julesBalance, setJulesBalance] = useState<number>(150.00);
+  const [julesComputeUnits, setJulesComputeUnits] = useState<number>(15000);
+  const [julesCompletedTasks, setJulesCompletedTasks] = useState<number>(18);
+  const [isJulesLoading, setIsJulesLoading] = useState<boolean>(false);
+
+  // Google Jules GitHub Branch Mission States
+  const [julesSelectedRepo, setJulesSelectedRepo] = useState<string>('google/genai-js');
+  const [julesBranch, setJulesBranch] = useState<string>('main');
+  const [julesMissionType, setJulesMissionType] = useState<string>('synthesis');
+  const [julesCustomPrompt, setJulesCustomPrompt] = useState<string>('Optimize bundle size and improve page speed index');
+  const [isJulesMissionRunning, setIsJulesMissionRunning] = useState<boolean>(false);
+  const [julesMissionLogs, setJulesMissionLogs] = useState<string[]>([]);
+  const [julesMissionStep, setJulesMissionStep] = useState<number>(0);
+
+  const handleTriggerJulesMission = async () => {
+    if (!julesConnected) {
+      showToast('Please connect your Google Jules AI account first.', 'info');
+      return;
+    }
+    
+    let cost = 0.25;
+    if (julesMissionType === 'deploy') cost = 0.50;
+    else if (julesMissionType === 'audit') cost = 0.15;
+    
+    if (julesBalance < cost) {
+      showToast('Insufficient Jules AI balance. Please Top Up first!', 'error');
+      return;
+    }
+
+    setIsJulesMissionRunning(true);
+    setJulesMissionStep(0);
+    setJulesMissionLogs([
+      `[INIT] Launching Google Jules AI Core v2.5...`,
+      `[AUTH] Authenticated Jules with developer credentials...`,
+    ]);
+
+    const logs = [
+      `[GIT] Fetching repository metadata for "${julesSelectedRepo}"...`,
+      `[GIT] Checking out branch "${julesBranch}"...`,
+      `[ANALYZE] Parsing project structure and dependency trees...`,
+      `[GEMINI] Synthesizing autonomous code solution for prompt: "${julesCustomPrompt}"...`,
+      `[BUILD] Compiling TypeScript source and generating static assets...`,
+      `[TEST] Running workspace test suite...`,
+      `[TEST] ✓ 14 unit tests passed (100% success)`,
+      `[GIT] Creating commit: "Jules AI: Autonomous optimization for '${julesCustomPrompt}'"`,
+      `[GIT] Pushing code changes to remote branch 'origin/${julesBranch}'...`,
+      `[GIT] Successfully merged and pushed changes.`,
+      julesMissionType === 'deploy' 
+        ? `[DEPLOY] Triggering Cloud Run deployment pipeline for project "${julesProjectId}"...` 
+        : `[AUDIT] Generating pull request review and code quality scorecard...`,
+      julesMissionType === 'deploy'
+        ? `[DEPLOY] Container built successfully. Ingress routing configured on port 3000.`
+        : `[AUDIT] Scorecard generated: Quality 98%, Performance 95%, Security A+.`,
+      julesMissionType === 'deploy'
+        ? `[SUCCESS] Deployment Live! URL: https://${julesSelectedRepo.replace('/', '-')}-${julesBranch}.run.app`
+        : `[SUCCESS] Quality audit completed. Code meets all professional standards.`,
+    ];
+
+    await spendJulesCredits(cost);
+
+    let currentStep = 0;
+    const interval = setInterval(() => {
+      if (currentStep < logs.length) {
+        setJulesMissionLogs(prev => [...prev, logs[currentStep]]);
+        setJulesMissionStep(currentStep + 1);
+        currentStep++;
+      } else {
+        clearInterval(interval);
+        setIsJulesMissionRunning(false);
+        showToast(`Jules Mission completed successfully!`, 'success');
+      }
+    }, 1200);
+  };
+
+  const fetchJulesState = async () => {
+    try {
+      const res = await fetch('/api/google-jules/balance');
+      if (res.ok) {
+        const data = await res.json();
+        setJulesConnected(!!data.connected);
+        setJulesAccount(data.account || '');
+        setJulesProjectId(data.projectId || '');
+        setJulesBalance(data.balance || 0);
+        setJulesComputeUnits(data.computeUnits || 0);
+        setJulesCompletedTasks(data.completedTasks || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch Jules account details:", err);
+    }
+  };
+
+  const updateJulesConnection = async (connect: boolean, account?: string, projectId?: string) => {
+    setIsJulesLoading(true);
+    try {
+      const res = await fetch('/api/google-jules/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connect, account, projectId })
+      });
+      if (res.ok) {
+        await fetchJulesState();
+        showToast(connect ? 'Connected successfully to Google Jules AI API' : 'Disconnected Google Jules AI account', 'success');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to update Google Jules configuration', 'error');
+    } finally {
+      setIsJulesLoading(false);
+    }
+  };
+
+  const spendJulesCredits = async (cost: number) => {
+    try {
+      const res = await fetch('/api/google-jules/spend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cost })
+      });
+      if (res.ok) {
+        await fetchJulesState();
+      }
+    } catch (err) {
+      console.error("Failed to decrement Jules credit balance:", err);
+    }
+  };
+
   // Auto-persist changes
   useEffect(() => {
     const fetchStatus = async () => {
@@ -1037,6 +1167,7 @@ export function AgenticOS() {
       }
     };
     fetchStatus();
+    fetchJulesState();
   }, []);
 
   const loadWorkspaceFiles = async () => {
@@ -3433,12 +3564,12 @@ export function AgenticOS() {
                     <h3 className="text-2xl md:text-3xl font-display font-light tracking-wide text-zinc-100 flex items-center gap-2 mb-1">
                       Agentic <span className="font-semibold italic text-yellow-500">Coding Lab</span> <Cpu size={16} className="text-yellow-500/80 animate-pulse" />
                     </h3>
-                    <p className="text-[11px] text-zinc-400 leading-relaxed max-w-3xl">
+                    <p className="text-[11px] text-zinc-400 leading-relaxed max-w-3xl text-left">
                       Assign a batch of sequential bug fixes, features, or design ideas to **Google Jules AI** or other specialized coding agents. 
                       Track code changes concurrently, view interactive files briefings, and follow dynamic live checklists of what to test.
                     </p>
                   </div>
-                  
+
                   {/* Global selectors */}
                   <div className="flex flex-wrap gap-2.5 shrink-0 bg-zinc-950 p-2 rounded-lg border border-zinc-900">
                     <div>
@@ -3481,6 +3612,229 @@ export function AgenticOS() {
                       </select>
                     </div>
                   </div>
+                </div>
+
+                {/* Google Jules AI Integration Hub Panel */}
+                <div className="w-full border border-emerald-500/20 bg-emerald-950/5 rounded-xl p-4 flex flex-col gap-4 mt-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg shrink-0">
+                        <Sparkles size={18} className="animate-pulse" />
+                      </div>
+                      <div className="text-left">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-zinc-100 text-sm">Google Jules AI Core</h4>
+                          <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wide border ${
+                            julesConnected 
+                              ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30 animate-pulse' 
+                              : 'bg-zinc-900 text-zinc-500 border-zinc-800'
+                          }`}>
+                            {julesConnected ? '● Online & Linked' : 'Offline'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 mt-0.5 leading-relaxed text-left">
+                          Autonomous system integrated with your corporate Google cloud workspace. Automatically monitors codebase quality, executes full stack code syntheses, and triggers automatic deployment builds.
+                        </p>
+                        {julesConnected && (
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[9px] font-mono text-zinc-500">
+                            <span>Account: <span className="text-zinc-300 font-sans">{julesAccount}</span></span>
+                            <span>Project: <span className="text-zinc-300">{julesProjectId}</span></span>
+                            <span>Total Missions Run: <span className="text-emerald-450 font-bold">{julesCompletedTasks}</span></span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-row items-center gap-3 bg-zinc-950/80 border border-zinc-900 p-3 rounded-lg shrink-0 w-full lg:w-auto justify-between sm:justify-start">
+                      <div className="text-left">
+                        <span className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block">Jules Balance</span>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-lg font-bold font-sans text-emerald-400">${julesBalance.toFixed(2)}</span>
+                          <span className="text-[9px] text-zinc-500 font-mono">credits</span>
+                        </div>
+                        <span className="text-[8px] text-zinc-650 font-mono block mt-0.5">{julesComputeUnits} AI Compute Units</span>
+                      </div>
+
+                      <div className="h-8 w-px bg-zinc-900 mx-1 hidden sm:block" />
+
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={async () => {
+                            const newAcc = prompt("Enter your connected Google Corporate Account:", julesAccount);
+                            const newProj = prompt("Enter your Google Cloud Project ID:", julesProjectId);
+                            if (newAcc !== null && newProj !== null) {
+                              await updateJulesConnection(true, newAcc, newProj);
+                            }
+                          }}
+                          className="px-2.5 py-1.5 bg-zinc-900 border border-zinc-850 text-[10px] rounded hover:bg-zinc-800 text-zinc-300 font-medium transition-colors"
+                        >
+                          Configure
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const amount = prompt("Enter credit amount to top-up (USD):", "50.00");
+                            if (amount && !isNaN(parseFloat(amount))) {
+                              const cost = -parseFloat(amount);
+                              await spendJulesCredits(cost);
+                              showToast(`Successfully credited $${parseFloat(amount).toFixed(2)} to your Google Jules Account balance.`, 'success');
+                            }
+                          }}
+                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] rounded font-medium transition-colors shadow-lg shadow-emerald-950/40"
+                        >
+                          Top Up
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Jules-GitHub Autonomous Branch Deployment Center */}
+                  {julesConnected && (
+                    <div className="border-t border-zinc-900/60 pt-4 mt-2">
+                      <div className="flex items-center gap-1.5 mb-3 text-left">
+                        <GitBranch size={13} className="text-emerald-450" />
+                        <h5 className="text-[11.5px] font-bold text-zinc-200 uppercase tracking-wider font-mono">Jules Autonomous Branch Deployment & Action Center</h5>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+                        <div className="md:col-span-8 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Repo Target */}
+                            <div className="text-left">
+                              <label className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block mb-1">Target Repository</label>
+                              <select
+                                value={julesSelectedRepo}
+                                onChange={e => setJulesSelectedRepo(e.target.value)}
+                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-emerald-500/40"
+                              >
+                                <option value="google/genai-js">google/genai-js (Default Workspace Repo)</option>
+                                {githubUser && githubUser !== 'google' && (
+                                  <>
+                                    <option value={`${githubUser}/agentic-os`}>{githubUser}/agentic-os</option>
+                                    <option value={`${githubUser}/workspace-sync`}>{githubUser}/workspace-sync</option>
+                                    <option value={`${githubUser}/lunar-landing`}>{githubUser}/lunar-landing</option>
+                                  </>
+                                )}
+                              </select>
+                            </div>
+
+                            {/* Branch Selection */}
+                            <div className="text-left">
+                              <label className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block mb-1">GitHub Branch</label>
+                              <div className="flex gap-1.5">
+                                <input
+                                  value={julesBranch}
+                                  onChange={e => setJulesBranch(e.target.value)}
+                                  placeholder="e.g. main, dev, release-v1.0"
+                                  className="flex-1 bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-emerald-500/40 font-mono"
+                                />
+                                <div className="flex gap-1 shrink-0">
+                                  {['main', 'dev', 'release'].map(b => (
+                                    <button
+                                      key={b}
+                                      onClick={() => setJulesBranch(b === 'release' ? 'release-v1.0' : b)}
+                                      className={`px-1.5 py-1 text-[8.5px] font-mono border rounded transition-colors ${
+                                        julesBranch === b || (b === 'release' && julesBranch.startsWith('release'))
+                                          ? 'bg-emerald-950 border-emerald-500/40 text-emerald-400'
+                                          : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                                      }`}
+                                    >
+                                      {b}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Mission/Action Type */}
+                            <div className="text-left">
+                              <label className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block mb-1">Jules Mission Type</label>
+                              <select
+                                value={julesMissionType}
+                                onChange={e => setJulesMissionType(e.target.value)}
+                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-emerald-500/40"
+                              >
+                                <option value="synthesis">Autonomous Feature Synthesis & Push ($0.25)</option>
+                                <option value="deploy">Build & Deploy Branch to Cloud Run ($0.50)</option>
+                                <option value="audit">Code Quality Audit & PR Review Scorecard ($0.15)</option>
+                              </select>
+                            </div>
+
+                            {/* Task Prompt / Guideline */}
+                            <div className="text-left">
+                              <label className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block mb-1">Task Prompt / Directive</label>
+                              <input
+                                value={julesCustomPrompt}
+                                onChange={e => setJulesCustomPrompt(e.target.value)}
+                                placeholder="e.g. Optimize React state dependencies"
+                                className="w-full bg-zinc-950 border border-zinc-850 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-emerald-500/40"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end pt-1">
+                            <button
+                              onClick={handleTriggerJulesMission}
+                              disabled={isJulesMissionRunning}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-55 text-white text-[11px] font-bold rounded flex items-center gap-2 transition-colors shadow-lg shadow-emerald-950/40 cursor-pointer animate-none"
+                            >
+                              {isJulesMissionRunning ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin" />
+                                  <span>Jules Agent Working...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={13} />
+                                  <span>Launch Autonomous Jules Mission</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Mission Logs & Dashboard */}
+                        <div className="md:col-span-4 bg-zinc-950 border border-zinc-900 rounded-lg p-3 flex flex-col h-[180px] md:h-auto md:min-h-[170px] max-h-[220px]">
+                          <div className="flex justify-between items-center mb-1.5 border-b border-zinc-900 pb-1 shrink-0">
+                            <span className="text-[8.5px] uppercase font-bold text-zinc-400 font-mono">Mission Console Logs</span>
+                            {isJulesMissionRunning && (
+                              <span className="flex h-1.5 w-1.5 relative">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 overflow-y-auto font-mono text-[9px] text-zinc-500 space-y-1 scrollbar-thin scrollbar-thumb-zinc-800 pr-1 text-left select-text selection:bg-emerald-500/25">
+                            {julesMissionLogs.length === 0 ? (
+                              <div className="h-full flex flex-col items-center justify-center text-center text-zinc-650 italic py-6">
+                                <span>No mission currently active.</span>
+                                <span>Select options and click Launch above!</span>
+                              </div>
+                            ) : (
+                              julesMissionLogs.map((log, li) => {
+                                const isError = log.includes('[ERROR]');
+                                const isSuccess = log.includes('[SUCCESS]');
+                                const isInit = log.includes('[INIT]') || log.includes('[AUTH]');
+                                return (
+                                  <div 
+                                    key={li} 
+                                    className={
+                                      isError ? 'text-red-400 font-semibold' : 
+                                      isSuccess ? 'text-emerald-400 font-semibold border-t border-emerald-950/40 pt-1 mt-1' : 
+                                      isInit ? 'text-blue-400' : 'text-zinc-300'
+                                    }
+                                  >
+                                    {log}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

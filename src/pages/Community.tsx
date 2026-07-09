@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../lib/auth';
 import { useData } from '../context/DataProvider';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { ProfileView } from '../components/ProfileView';
@@ -92,9 +93,60 @@ interface Message {
 }
 
 export function Community() {
-  const { userProfile, googleUser, addNotification, githubToken, githubUser: storeGithubUser } = useData();
+  const { userProfile, googleUser, addNotification, githubToken, githubUser: storeGithubUser, addProject, setActiveProjectId } = useData();
   const currentUid = auth.currentUser?.uid || googleUser?.uid || '';
   const currentEmail = auth.currentUser?.email || googleUser?.email || '';
+  const navigate = useNavigate();
+
+  const [bootstrappingRepo, setBootstrappingRepo] = useState<string | null>(null);
+
+  const handleBootstrapProject = async (repoName: string, repoDesc: string, repoLang: string) => {
+    setBootstrappingRepo(repoName);
+    try {
+      let finalRepoFullName = repoName;
+      if (githubToken) {
+        showToast(`🔱 Forking "${repoName}" onto your own GitHub account...`, 'info', 3000);
+        const forkRes = await fetch('/api/github/fork', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo: repoName, token: githubToken })
+        });
+        if (forkRes.ok) {
+          const forkData = await forkRes.json();
+          if (forkData.fullName) {
+            finalRepoFullName = forkData.fullName;
+            showToast(`✅ Fork completed: created repository ${forkData.fullName}!`, 'success', 3000);
+          }
+        } else {
+          const errData = await forkRes.json().catch(() => ({}));
+          showToast(`Fork failed: ${errData.error || 'Server error'}. Starting project with original public repo...`, 'info', 4000);
+        }
+      }
+
+      // Now create the local workspace project
+      const parts = finalRepoFullName.split('/');
+      const projName = parts[1] || parts[0];
+      const newProjId = addProject({
+        name: projName,
+        description: repoDesc || `Imported project from ${finalRepoFullName}`,
+        status: 'Active',
+        githubRepos: [finalRepoFullName],
+        frameworks: [repoLang || 'TypeScript'],
+        customStack: [repoLang || 'TypeScript']
+      });
+
+      setActiveProjectId(newProjId);
+      showToast(`🚀 Bootstrap completed! Initializing code workspace files for ${projName}...`, 'success', 4000);
+      
+      // Navigate to /projects tab to start editing files!
+      navigate('/projects');
+    } catch (err: any) {
+      console.error("Failed to bootstrap project:", err);
+      showToast("Error during project bootstrapping", "error");
+    } finally {
+      setBootstrappingRepo(null);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<'projects' | 'developers' | 'inbox' | 'github'>(() => {
     const saved = localStorage.getItem('community_active_tab');
@@ -1860,17 +1912,28 @@ export function Community() {
                                   </div>
                                 </div>
 
-                                <button
-                                  onClick={() => fetchRepoStatsDetails(repo.name)}
-                                  className="flex items-center gap-1 px-2 py-1 bg-[#151518] hover:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-bold text-zinc-400 hover:text-white transition-colors cursor-pointer font-mono shrink-0"
-                                >
-                                  {loadingRepoStats === repo.name ? (
-                                    <RefreshCw size={8} className="animate-spin text-yellow-500" />
-                                  ) : (
-                                    <Terminal size={9} className="text-yellow-500" />
-                                  )}
-                                  <span>{expandedRepo === repo.name ? "Hide Intel" : "Repo Intel"}</span>
-                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    onClick={() => handleBootstrapProject(repo.full_name || `${repo.owner?.login || 'google'}/${repo.name}`, repo.description, repo.language)}
+                                    disabled={bootstrappingRepo === (repo.full_name || repo.name)}
+                                    className="flex items-center gap-1 px-2.5 py-1 bg-emerald-950/40 hover:bg-emerald-900 border border-emerald-800/40 hover:border-emerald-700/50 rounded text-[9px] font-bold text-emerald-400 hover:text-white transition-colors cursor-pointer font-mono shrink-0 disabled:opacity-50"
+                                  >
+                                    <RefreshCw size={8} className={`text-emerald-400 ${bootstrappingRepo === (repo.full_name || repo.name) ? 'animate-spin' : ''}`} />
+                                    <span>{bootstrappingRepo === (repo.full_name || repo.name) ? "Bootstrapping..." : "Start Project"}</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => fetchRepoStatsDetails(repo.name)}
+                                    className="flex items-center gap-1 px-2 py-1 bg-[#151518] hover:bg-zinc-800 border border-zinc-800 rounded text-[9px] font-bold text-zinc-400 hover:text-white transition-colors cursor-pointer font-mono shrink-0"
+                                  >
+                                    {loadingRepoStats === repo.name ? (
+                                      <RefreshCw size={8} className="animate-spin text-yellow-500" />
+                                    ) : (
+                                      <Terminal size={9} className="text-yellow-500" />
+                                    )}
+                                    <span>{expandedRepo === repo.name ? "Hide Intel" : "Repo Intel"}</span>
+                                  </button>
+                                </div>
                               </div>
 
                               {/* Expandable Repository Intelligence Panel */}

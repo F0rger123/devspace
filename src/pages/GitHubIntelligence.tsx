@@ -14,11 +14,13 @@ export function GitHubIntelligence() {
     setGithubProfile,
     projects,
     setProjects,
+    addProject,
     updateProject,
     activeProjectId,
     githubRepo,
     setGithubRepo,
-    analyzeProjectCommits
+    analyzeProjectCommits,
+    showToast
   } = useData();
 
   const repo = githubRepo || (githubUser && githubUser !== 'google' ? `${githubUser}/` : 'google/genai-js');
@@ -41,7 +43,50 @@ export function GitHubIntelligence() {
   };
 
   const [analyzingCommitsId, setAnalyzingCommitsId] = useState<string | null>(null);
-  const [commits, setCommits] = useState<any[]>([]);
+  const [commits, setCommits] = useState<any[]>(() => {
+    const now = new Date();
+    const minutesAgo = (m: number) => new Date(now.getTime() - m * 60 * 1000);
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+    return [
+      {
+        id: "7a29f3d",
+        msg: "feat: implement motion-prediction buffer to prevent hand tracking loss during fast movements",
+        author: "drummerforger",
+        time: formatDate(minutesAgo(12)),
+        verified: true
+      },
+      {
+        id: "cf30d21",
+        msg: "fix: normalize coordinate mapping for complete viewport mouse coverage",
+        author: "drummerforger",
+        time: formatDate(minutesAgo(45)),
+        verified: true
+      },
+      {
+        id: "2e9a55b",
+        msg: "refactor: optimize camera stream tracking latency and response speeds",
+        author: "Aether AI Autopilot",
+        time: formatDate(minutesAgo(120)),
+        verified: true
+      },
+      {
+        id: "92fd5a1",
+        msg: "docs: add comprehensive hand-tracking gesture macro cheat sheet",
+        author: "drummerforger",
+        time: formatDate(minutesAgo(360)),
+        verified: false
+      },
+      {
+        id: "b40d321",
+        msg: "chore: bootstrap initial workspace settings and obsidian synaptic rules",
+        author: "Aether AI Autopilot",
+        time: formatDate(minutesAgo(1440)),
+        verified: true
+      }
+    ];
+  });
   const [prs, setPrs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
@@ -648,14 +693,27 @@ export function GitHubIntelligence() {
 
         <div className="flex items-center gap-2.5">
           {githubToken ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#121214] border border-zinc-800 rounded-md">
-              <img src={githubProfile?.photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${githubUser}`} alt="Github Avatar" className="w-4 h-4 rounded-full bg-zinc-850" />
-              <span className="text-[10px] text-zinc-300 font-bold">{githubUser} (OAuth)</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#121214] border border-zinc-800 rounded-md">
+                <img src={githubProfile?.photoURL || `https://api.dicebear.com/7.x/identicon/svg?seed=${githubUser}`} alt="Github Avatar" className="w-4 h-4 rounded-full bg-zinc-850" />
+                <span className="text-[10px] text-zinc-300 font-bold">{githubUser}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setGithubToken('');
+                  setGithubUser('');
+                  setGithubProfile(null);
+                  showToast('Disconnected GitHub account.', 'success');
+                }}
+                className="px-2.5 py-1.5 text-[10px] font-medium bg-red-950/20 hover:bg-red-950/40 text-red-400 rounded-md border border-red-900/30 transition-colors cursor-pointer"
+              >
+                Disconnect
+              </button>
             </div>
           ) : (
             <button 
               onClick={() => setShowRepoModal(true)}
-              className="px-3 py-1.5 text-[11px] font-medium bg-zinc-800 hover:bg-zinc-750 text-white rounded-md border border-zinc-700 transition-colors flex items-center gap-2 shadow"
+              className="px-3 py-1.5 text-[11px] font-medium bg-zinc-800 hover:bg-zinc-750 text-white rounded-md border border-zinc-700 transition-colors flex items-center gap-2 shadow cursor-pointer"
             >
               <Github size={12} />
               <span>Connect GitHub</span>
@@ -2070,10 +2128,28 @@ export function GitHubIntelligence() {
                <button 
                   onClick={handleOAuthLogin}
                   disabled={loggingIn}
-                  className="mt-4 w-full py-2 bg-[#2ea043] hover:bg-[#2c974b] disabled:opacity-50 text-white rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow"
+                  className="mt-4 w-full py-2 bg-[#2ea043] hover:bg-[#2c974b] disabled:opacity-50 text-white rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow cursor-pointer"
                >
                   {loggingIn ? <Loader2 size={14} className="animate-spin" /> : <Github size={14} />}
                   <span>Sign in with GitHub OAuth</span>
+               </button>
+
+               <button 
+                  onClick={() => {
+                    setGithubUser('google-developer');
+                    setGithubToken('mock_oauth_token_7db2');
+                    setGithubProfile({ photoURL: 'https://api.dicebear.com/7.x/identicon/svg?seed=google-developer' });
+                    setFetchedRepos([
+                      { id: 101, name: 'agentic-os', full_name: 'google-developer/agentic-os', description: 'Advanced AI-led operating system workspace' },
+                      { id: 102, name: 'workspace-sync', full_name: 'google-developer/workspace-sync', description: 'Real-time Google Workspace integration hub' },
+                      { id: 103, name: 'lunar-landing', full_name: 'google-developer/lunar-landing', description: 'Interactive visual physics simulation canvas' }
+                    ]);
+                    showToast('Connected to GitHub sandbox mockup account!', 'success');
+                  }}
+                  className="mt-2 w-full py-2 bg-[#1c1c1e] hover:bg-zinc-800 text-zinc-300 rounded-md text-xs font-semibold border border-zinc-800 transition-colors flex items-center justify-center gap-2 shadow cursor-pointer"
+               >
+                  <Github size={14} className="text-emerald-450" />
+                  <span>Connect Mockup Account (Instant Sandbox)</span>
                </button>
             </div>
 
@@ -2092,21 +2168,46 @@ export function GitHubIntelligence() {
                        const matchesSelected = r.full_name === repo;
                        return (
                          <div 
-                           key={r.id} 
-                           onClick={() => { setRepo(r.full_name); setShowRepoModal(false); }}
-                           className={`flex items-center justify-between p-3 rounded-lg hover:bg-zinc-850 cursor-pointer border transition-colors group ${matchesSelected ? 'bg-blue-950/20 border-blue-500/25' : 'border-transparent hover:border-zinc-800'}`}
-                         >
-                           <div className="flex items-start gap-3 min-w-0 flex-1 pr-2">
-                              <BookMarked size={16} className={`shrink-0 mt-0.5 ${matchesSelected ? 'text-blue-400' : 'text-zinc-500'}`} />
-                              <div className="min-w-0">
-                                <div className={`text-xs font-medium truncate ${matchesSelected ? 'text-blue-400' : 'text-zinc-200'}`}>{r.full_name}</div>
-                                <div className="text-[10px] text-zinc-500 mt-0.5 truncate leading-tight">{r.description || 'No description'}</div>
-                              </div>
-                           </div>
-                           <button className="text-[10px] bg-zinc-950 border border-zinc-800 hover:bg-blue-600 hover:text-white hover:border-blue-700 font-bold px-2.5 py-1.2 rounded transition-colors shrink-0 text-zinc-400">
-                              Select
-                           </button>
-                         </div>
+                            key={r.id} 
+                            className={`flex items-center justify-between p-3 rounded-lg bg-zinc-950/30 border transition-colors ${matchesSelected ? 'bg-blue-950/20 border-blue-500/25' : 'border-zinc-900/60 hover:border-zinc-850 hover:bg-zinc-900/30'}`}
+                          >
+                            <div className="flex items-start gap-3 min-w-0 flex-1 pr-2 text-left">
+                               <BookMarked size={16} className={`shrink-0 mt-0.5 ${matchesSelected ? 'text-blue-400' : 'text-zinc-500'}`} />
+                               <div className="min-w-0 text-left">
+                                 <div className={`text-xs font-medium truncate ${matchesSelected ? 'text-blue-400' : 'text-zinc-200'}`}>{r.full_name}</div>
+                                 <div className="text-[10px] text-zinc-500 mt-0.5 truncate leading-tight">{r.description || 'No description provided.'}</div>
+                               </div>
+                            </div>
+                            <div className="flex gap-1.5 shrink-0">
+                               <button 
+                                 onClick={() => { setRepo(r.full_name); setShowRepoModal(false); }}
+                                 className="text-[10px] bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 font-medium px-2.5 py-1.5 rounded transition-colors text-zinc-300"
+                               >
+                                  {matchesSelected ? 'Selected' : 'Select'}
+                               </button>
+                               <button 
+                                 onClick={() => {
+                                   try {
+                                     const newProjId = addProject({
+                                       name: r.name,
+                                       description: r.description || `Autonomous monitoring of GitHub repository ${r.full_name}`,
+                                       status: 'Active',
+                                       githubRepos: [r.full_name]
+                                     });
+                                     showToast(`🚀 Mapped Project "${r.name}" successfully created! You can now assign AI agents.`, 'success');
+                                     setRepo(r.full_name);
+                                     setShowRepoModal(false);
+                                   } catch (err) {
+                                     console.error(err);
+                                     showToast('Failed to instantiate new project framework', 'error');
+                                   }
+                                 }}
+                                 className="text-[10px] bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/10 font-bold px-2.5 py-1.5 rounded transition-colors text-white flex items-center gap-1 shadow-md shadow-emerald-950/20"
+                               >
+                                  <span>+ Create Project</span>
+                               </button>
+                            </div>
+                          </div>
                        );
                      })}
                   </div>
