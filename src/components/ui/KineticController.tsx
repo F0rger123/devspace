@@ -671,9 +671,9 @@ export function KineticController() {
 
         hands.setOptions({
           maxNumHands: storeRef.current.kineticHandsMode === 'two' ? 2 : 1,
-          modelComplexity: 1,
-          minDetectionConfidence: 0.55,
-          minTrackingConfidence: 0.55
+          modelComplexity: 0, // Lite model for extreme high-speed and ultra-low lag tracking!
+          minDetectionConfidence: 0.50,
+          minTrackingConfidence: 0.50
         });
 
         handsRef.current = hands;
@@ -743,6 +743,76 @@ export function KineticController() {
     // MediaPipe Results Handler
     const onMediaPipeResults = (results: any) => {
       if (!isTrackingRef.current) return;
+
+      // Robust finger extension helper utilizing 3D/2D distance scaling (highly robust to palm rotation and speed)
+      const checkFingerExtended = (landmarks: any, tipIdx: number, pipIdx: number, mcpIdx: number) => {
+        const wrist = landmarks[0];
+        const tip = landmarks[tipIdx];
+        const pip = landmarks[pipIdx];
+        const mcp = landmarks[mcpIdx];
+        if (!wrist || !tip || !pip || !mcp) return false;
+        
+        // 3D Distance from wrist to tip
+        const distWristTip = Math.sqrt(
+          Math.pow(tip.x - wrist.x, 2) +
+          Math.pow(tip.y - wrist.y, 2) +
+          Math.pow(tip.z - wrist.z, 2)
+        );
+        // 3D Distance from wrist to PIP
+        const distWristPip = Math.sqrt(
+          Math.pow(pip.x - wrist.x, 2) +
+          Math.pow(pip.y - wrist.y, 2) +
+          Math.pow(pip.z - wrist.z, 2)
+        );
+        
+        // 3D Distance from MCP (knuckle) to tip
+        const distMcpTip = Math.sqrt(
+          Math.pow(tip.x - mcp.x, 2) +
+          Math.pow(tip.y - mcp.y, 2) +
+          Math.pow(tip.z - mcp.z, 2)
+        );
+        // 3D Distance from MCP (knuckle) to PIP
+        const distMcpPip = Math.sqrt(
+          Math.pow(pip.x - mcp.x, 2) +
+          Math.pow(pip.y - mcp.y, 2) +
+          Math.pow(pip.z - mcp.z, 2)
+        );
+
+        const verticalExtended = tip.y < pip.y;
+        
+        // Extended if distance from wrist or MCP to tip is significantly greater than to PIP
+        // or standard vertical comparison
+        return distWristTip > distWristPip * 1.05 || distMcpTip > distMcpPip * 1.05 || verticalExtended;
+      };
+
+      const checkThumbExtended = (landmarks: any) => {
+        const tip = landmarks[4];
+        const ip = landmarks[3];
+        const mcp = landmarks[2];
+        const indexMcp = landmarks[5];
+        if (!tip || !ip || !mcp || !indexMcp) return false;
+        
+        const distMcpTip = Math.sqrt(
+          Math.pow(tip.x - mcp.x, 2) +
+          Math.pow(tip.y - mcp.y, 2) +
+          Math.pow(tip.z - mcp.z, 2)
+        );
+        const distMcpIp = Math.sqrt(
+          Math.pow(ip.x - mcp.x, 2) +
+          Math.pow(ip.y - mcp.y, 2) +
+          Math.pow(ip.z - mcp.z, 2)
+        );
+        
+        const distIndexMcpTip = Math.sqrt(
+          Math.pow(tip.x - indexMcp.x, 2) +
+          Math.pow(tip.y - indexMcp.y, 2) +
+          Math.pow(tip.z - indexMcp.z, 2)
+        );
+
+        const horizontalDist = Math.abs(tip.x - indexMcp.x);
+        
+        return distMcpTip > distMcpIp * 1.05 || horizontalDist > 0.11 || tip.y < ip.y || distIndexMcpTip > 0.12;
+      };
 
       const isNewSignup = typeof window !== 'undefined' && window.sessionStorage.getItem('is_new_signup') === 'true';
       const isWizardActive = !userProfile?.setupCompleted && isNewSignup;
@@ -851,14 +921,12 @@ export function KineticController() {
 
         lastActiveRef.current = Date.now();
 
-        // Detect extended fingers based on joint angles and positions
-        const isIndexExtended1 = landmarks1[8].y < landmarks1[6].y;
-        const isMiddleExtended1 = landmarks1[12].y < landmarks1[10].y;
-        const isRingExtended1 = landmarks1[16].y < landmarks1[14].y;
-        const isPinkyExtended1 = landmarks1[20].y < landmarks1[18].y;
-        
-        // Thumb extended if tip x-distance is far from index MCP or tip is above IP
-        const isThumbExtended1 = Math.abs(landmarks1[4].x - landmarks1[5].x) > 0.11 || landmarks1[4].y < landmarks1[3].y;
+        // Detect extended fingers based on 3D/2D distance and vertical offsets
+        const isIndexExtended1 = checkFingerExtended(landmarks1, 8, 6, 5);
+        const isMiddleExtended1 = checkFingerExtended(landmarks1, 12, 10, 9);
+        const isRingExtended1 = checkFingerExtended(landmarks1, 16, 14, 13);
+        const isPinkyExtended1 = checkFingerExtended(landmarks1, 20, 18, 17);
+        const isThumbExtended1 = checkThumbExtended(landmarks1);
 
         const fingersList1: any[] = [];
         const addFinger1 = (name: string, tipIdx: number) => {
@@ -910,11 +978,11 @@ export function KineticController() {
           }
 
           // Fingers 2
-          const isIndexExtended2 = landmarks2[8].y < landmarks2[6].y;
-          const isMiddleExtended2 = landmarks2[12].y < landmarks2[10].y;
-          const isRingExtended2 = landmarks2[16].y < landmarks2[14].y;
-          const isPinkyExtended2 = landmarks2[20].y < landmarks2[18].y;
-          const isThumbExtended2 = Math.abs(landmarks2[4].x - landmarks2[5].x) > 0.11 || landmarks2[4].y < landmarks2[3].y;
+          const isIndexExtended2 = checkFingerExtended(landmarks2, 8, 6, 5);
+          const isMiddleExtended2 = checkFingerExtended(landmarks2, 12, 10, 9);
+          const isRingExtended2 = checkFingerExtended(landmarks2, 16, 14, 13);
+          const isPinkyExtended2 = checkFingerExtended(landmarks2, 20, 18, 17);
+          const isThumbExtended2 = checkThumbExtended(landmarks2);
 
           const fingersList2: any[] = [];
           const addFinger2 = (name: string, tipIdx: number) => {
@@ -2102,7 +2170,9 @@ export function KineticController() {
           }}
           onMouseDown={handleMouseDown}
           onTouchStart={handleTouchStart}
-          className={`fixed z-50 rounded-2xl border bg-zinc-950/90 backdrop-blur-md shadow-2xl transition-all duration-150 select-none ${
+          className={`fixed z-50 rounded-2xl border bg-zinc-950/90 backdrop-blur-md shadow-2xl select-none ${
+            !isDragging ? 'transition-all duration-150' : ''
+          } ${
             isPinchDragging
               ? 'border-amber-400 shadow-amber-400/20 scale-[1.02] ring-2 ring-amber-500/20'
               : detectedGesture 

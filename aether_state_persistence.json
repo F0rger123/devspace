@@ -4,18 +4,25 @@
   "workspaceNotesCache": [],
   "workspaceCortexCache": [
     {
-      "desc": "Secure Firestore database security rules require write verification check where auth is not null.",
+      "id": "synapse-a8bc479f-8052-4782-a726-78af8278e70b",
+      "name": "UI Termination Protocol",
+      "type": "custom_synapse",
+      "desc": "Respect the 'Close Assistant' button in the top right as the hard-stop command for all active sessions; maintain unmuted state until this UI trigger is pressed.",
+      "createdAt": 1783708262804
+    },
+    {
       "id": "synapse-authrules",
-      "name": "Authentication Protocol",
       "createdAt": 1783152400457,
-      "type": "custom_synapse"
+      "type": "custom_synapse",
+      "name": "Authentication Protocol",
+      "desc": "Secure Firestore database security rules require write verification check where auth is not null."
     },
     {
       "desc": "Enforce fluid spacing using Tailwind, keeping touch elements to minimum of 44px on mobile layers.",
-      "id": "synapse-margins",
+      "type": "custom_synapse",
       "name": "UI Responsive Grid",
       "createdAt": 1783176400457,
-      "type": "custom_synapse"
+      "id": "synapse-margins"
     }
   ],
   "workspacePhasesCache": [
@@ -189,6 +196,16 @@
   "workspaceAiContextRulesCache": "Enforce clean styling, modular code structure, and professional human-readable UI elements.",
   "workspaceAetherPersonalityRulesCache": [],
   "workspacePasscodePinCache": "1234",
+  "workspaceAetherControlNotes": true,
+  "workspaceAetherControlIssues": true,
+  "workspaceAetherControlAgents": true,
+  "workspaceAetherControlBrainstorm": true,
+  "workspaceAetherControlIntegrations": false,
+  "workspaceAetherDoubleConfirm": false,
+  "workspaceAetherAutoRecommend": true,
+  "workspaceAetherModel": "gemini-3.5-flash",
+  "workspaceAetherConciseness": "balanced",
+  "workspaceAetherThinkingLevel": "auto",
   "whatsappActive": true,
   "whatsappBotNumber": "+1 (310) 902-1845",
   "whatsappAccessToken": "",
@@ -204,18 +221,28 @@
   "whatsappChatHistory": [
     {
       "sender": "aether",
-      "text": "Good afternoon, drummerforger! Aether online and synchronized.\n\nI am holding our continuous synaptic memory of **2 custom rules** and **2 active projects** fully loaded.\n\nLast night, I dreamed up several fresh optimizations and code refactors for your active branches. Let me know if you would like me to retrieve my latest dream recommendations or review outstanding tasks!",
-      "time": "09:58 PM"
+      "text": "Good afternoon! Welcome back to your Cortex Command Panel. How can I help you navigate the system, brainstorm ideas, or review your workspace today?",
+      "time": "09:06 PM"
     },
     {
       "sender": "user",
-      "text": "Yo",
-      "time": "09:58 PM"
+      "text": "hey all the different stuff",
+      "time": "09:06 PM"
     },
     {
       "sender": "aether",
-      "text": "Yo! Aether is online and ready for action. What's on your mind today?",
-      "time": "09:58 PM"
+      "text": "I'm ready to assist with your workspace management. To help you better, could you clarify what you mean by 'all the different stuff'? Are you looking for a summary of your active projects, a review of your current tasks, or perhaps an overview of the agents running in your Agentic OS?",
+      "time": "09:06 PM"
+    },
+    {
+      "sender": "user",
+      "text": "phone contacts",
+      "time": "09:06 PM"
+    },
+    {
+      "sender": "aether",
+      "text": "I am standing by. Are you looking to create a new project for a 'Phone Contacts' app, or perhaps you want me to search your existing notes and issues for contact-related data? Let me know how you'd like to proceed.",
+      "time": "09:06 PM"
     }
   ],
   "whatsappPendingActions": [],
@@ -276,6 +303,76 @@
     },
     {
       "time": "2:32:34 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "10:31:31 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "10:32:02 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "10:32:15 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "10:32:24 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "10:33:03 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "6:30:58 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "6:46:21 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "6:46:42 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:26:24 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:26:25 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:39:03 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:39:14 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "7:57:33 PM",
+      "type": "info",
+      "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
+    },
+    {
+      "time": "9:06:14 PM",
       "type": "info",
       "text": "Browser triggering Aether assistant [Source: Web UI, Mode: Text]"
     }

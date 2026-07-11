@@ -1,5 +1,5 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 7/9/2026, 10:13:13 PM*
+*Last synchronized: 7/10/2026, 9:11:41 PM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
@@ -11,10 +11,25 @@ This is the physical workspace memory file of Aether (your central brain orchest
 ## 🎭 Aether Personality Rules & Dynamic Customizations
 *No custom personality traits registered yet. Tell Aether to "be more funny", "curse more", or "call me Sir from now on" to shape his persona!*
 
+## ⚙️ Aether Autonomy & Permission Settings
+- **Manage Notes/Docs**: ENABLED 📂
+- **Manage Issues/Backlog**: ENABLED 🎯
+- **Manage Specialist Agents**: ENABLED 🤖
+- **Collaborative Brainstorming**: ENABLED 🔮
+- **Integrations Orchestration**: DISABLED ❌
+- **Double-Confirm Actions**: DISABLED (Direct clearance)
+- **Auto-Recommend Enhancements**: ENABLED 💡
+- **Aether Core LLM Model**: `gemini-3.5-flash`
+- **Response Conciseness**: `balanced`
+- **Deep Thinking Capability**: `auto`
+
 ## 🧠 Learned Synaptic Rules (Cognitive Cortex)
-### 1. Authentication Protocol
+### 1. UI Termination Protocol
+- **Description**: Respect the 'Close Assistant' button in the top right as the hard-stop command for all active sessions; maintain unmuted state until this UI trigger is pressed.
+
+### 2. Authentication Protocol
 - **Description**: Secure Firestore database security rules require write verification check where auth is not null.
 
-### 2. UI Responsive Grid
+### 3. UI Responsive Grid
 - **Description**: Enforce fluid spacing using Tailwind, keeping touch elements to minimum of 44px on mobile layers.
 

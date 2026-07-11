@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2, FolderArchive } from 'lucide-react';
+import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2, FolderArchive, BookOpen } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
@@ -415,6 +415,7 @@ export function Settings() {
     trainedPhrases, setTrainedPhrases,
     trainedWakeWordModel, setTrainedWakeWordModel,
     selectedVoiceName, setSelectedVoiceName,
+    vocalDictionary, setVocalDictionary,
     speechPitch, setSpeechPitch,
     speechRate, setSpeechRate,
     activationShortcutKey, setActivationShortcutKey,
@@ -459,6 +460,8 @@ export function Settings() {
   
   // Kinetic Gestures Local State
   const [newGestureName, setNewGestureName] = useState('');
+  const [vocalFrom, setVocalFrom] = useState('');
+  const [vocalTo, setVocalTo] = useState('');
   const [newGestureAction, setNewGestureAction] = useState<string>('toggle-sidebar');
   const [customActionText, setCustomActionText] = useState('');
   const [macroActions, setMacroActions] = useState<string[]>([]);
@@ -489,6 +492,50 @@ export function Settings() {
     conflictWith: string;
     points: { x: number; y: number }[];
   } | null>(null);
+
+  // Hardware Media Devices States
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [speakers, setSpeakers] = useState<MediaDeviceInfo[]>([]);
+
+  const [selectedCameraId, setSelectedCameraId] = useState(() => localStorage.getItem('app_selected_camera_id') || '');
+  const [selectedMicId, setSelectedMicId] = useState(() => localStorage.getItem('app_selected_mic_id') || '');
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState(() => localStorage.getItem('app_selected_speaker_id') || '');
+
+  useEffect(() => {
+    localStorage.setItem('app_selected_camera_id', selectedCameraId);
+  }, [selectedCameraId]);
+
+  useEffect(() => {
+    localStorage.setItem('app_selected_mic_id', selectedMicId);
+  }, [selectedMicId]);
+
+  useEffect(() => {
+    localStorage.setItem('app_selected_speaker_id', selectedSpeakerId);
+  }, [selectedSpeakerId]);
+
+  useEffect(() => {
+    const updateDevices = async () => {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(() => {});
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        setCameras(devices.filter(d => d.kind === 'videoinput'));
+        setMicrophones(devices.filter(d => d.kind === 'audioinput'));
+        setSpeakers(devices.filter(d => d.kind === 'audiooutput'));
+      } catch (err) {
+        console.warn("Could not enumerate media input/output devices:", err);
+      }
+    };
+    updateDevices();
+    
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', updateDevices);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', updateDevices);
+      };
+    }
+  }, []);
 
   // AI-driven suggestions state
   const [isAnalyzingPatterns, setIsAnalyzingPatterns] = useState(false);
@@ -627,26 +674,26 @@ export function Settings() {
 
     if (packType === 'developer') {
       newPresets = [
-        { id: 'dev-preset-1', name: '☝️ Command Portal Pointer', action: 'toggle-command-palette', direction: 'pose-1' },
-        { id: 'dev-preset-2', name: '✌️ Sidebar Dock Toggle', action: 'toggle-sidebar', direction: 'pose-2' },
-        { id: 'dev-preset-3', name: '🤟 Space Assistant Summon', action: 'toggle-right-sidebar', direction: 'pose-3' },
-        { id: 'dev-preset-4', name: '✋ Nav Bar Minimize Claw', action: 'toggle-sidebar-minimize', direction: 'pose-4' },
-        { id: 'dev-preset-5', name: '🖐️ Instant Note Capture', action: 'create-quick-note', direction: 'pose-5' }
+        { id: 'dev-preset-1', name: '☝️ Command Portal Panel', action: 'toggle-command-palette', direction: 'pose-1' },
+        { id: 'dev-preset-2', name: '✌️ Aether Speech Portal', action: 'nav-assistant', direction: 'pose-2' },
+        { id: 'dev-preset-3', name: '🤟 Sidebar Dock Panel', action: 'toggle-right-sidebar', direction: 'pose-3' },
+        { id: 'dev-preset-4', name: '✋ Project Explorer Portal', action: 'toggle-sidebar', direction: 'pose-4' },
+        { id: 'dev-preset-5', name: '🖐️ Workspace Editor Portal', action: 'nav-projects', direction: 'pose-5' }
       ];
       setPresetActions({
         1: 'toggle-command-palette',
-        2: 'toggle-sidebar',
+        2: 'nav-assistant',
         3: 'toggle-right-sidebar',
-        4: 'toggle-sidebar-minimize',
-        5: 'create-quick-note'
+        4: 'toggle-sidebar',
+        5: 'nav-projects'
       });
     } else if (packType === 'navigator') {
       newPresets = [
-        { id: 'nav-preset-1', name: '☝️ Dashboard Router Pointer', action: 'nav-dashboard', direction: 'pose-1' },
-        { id: 'nav-preset-2', name: '✌️ Active Projects Router', action: 'nav-projects', direction: 'pose-2' },
-        { id: 'nav-preset-3', name: '🤟 Notes Manager Router', action: 'nav-notes', direction: 'pose-3' },
-        { id: 'nav-preset-4', name: '✋ Specification Docs Router', action: 'nav-docs', direction: 'pose-4' },
-        { id: 'nav-preset-5', name: '🖐️ System Control Router', action: 'nav-settings', direction: 'pose-5' }
+        { id: 'nav-preset-1', name: '☝️ Dashboard Console Portal', action: 'nav-dashboard', direction: 'pose-1' },
+        { id: 'nav-preset-2', name: '✌️ Active Workspace Portal', action: 'nav-projects', direction: 'pose-2' },
+        { id: 'nav-preset-3', name: '🤟 Research Notes Portal', action: 'nav-notes', direction: 'pose-3' },
+        { id: 'nav-preset-4', name: '✋ Tech Specification Portal', action: 'nav-docs', direction: 'pose-4' },
+        { id: 'nav-preset-5', name: '🖐️ System Control Portal', action: 'nav-settings', direction: 'pose-5' }
       ];
       setPresetActions({
         1: 'nav-dashboard',
@@ -657,47 +704,33 @@ export function Settings() {
       });
     } else if (packType === 'automation') {
       newPresets = [
+        { id: 'auto-preset-1', name: '☝️ Search Command Panel', action: 'toggle-command-palette', direction: 'pose-1' },
+        { id: 'auto-preset-2', name: '✌️ Zen Flow Focus Shield', action: 'zen-mode', direction: 'pose-2' },
+        { id: 'auto-preset-3', name: '🤟 Workspace Cloud Sync', action: 'trigger-sync', direction: 'pose-3' },
         { 
-          id: 'auto-preset-1', 
-          name: '☝️ Dual Dashboard Portal', 
+          id: 'auto-preset-4', 
+          name: '✋ Dual Panel Expansion', 
           action: 'macro', 
-          direction: 'pose-1', 
-          macroActions: ['toggle-sidebar', 'toggle-command-palette'] as any, 
+          direction: 'pose-4', 
+          macroActions: ['toggle-sidebar', 'toggle-right-sidebar'] as any, 
           macroDelay: 450 
         },
-        { 
-          id: 'auto-preset-2', 
-          name: '✌️ Companion Summon Duo', 
-          action: 'macro', 
-          direction: 'pose-2', 
-          macroActions: ['toggle-command-palette', 'toggle-right-sidebar'] as any, 
-          macroDelay: 500 
-        },
-        { 
-          id: 'auto-preset-3', 
-          name: '🤟 Quick Capture & Sync', 
-          action: 'macro', 
-          direction: 'pose-3', 
-          macroActions: ['create-quick-note', 'trigger-sync'] as any, 
-          macroDelay: 400 
-        },
-        { id: 'auto-preset-4', name: '✋ Reset Dialogue Memory', action: 'clear-chat', direction: 'pose-4' },
-        { id: 'auto-preset-5', name: '🖐️ Purge Factory Workspace', action: 'reset-system-data', direction: 'pose-5' }
+        { id: 'auto-preset-5', name: '🖐️ Aether Copilot Portal', action: 'nav-assistant', direction: 'pose-5' }
       ];
       setPresetActions({
-        1: 'macro',
-        2: 'macro',
-        3: 'macro',
-        4: 'clear-chat',
-        5: 'reset-system-data'
+        1: 'toggle-command-palette',
+        2: 'zen-mode',
+        3: 'trigger-sync',
+        4: 'macro',
+        5: 'nav-assistant'
       });
     } else if (packType === 'presentation') {
       newPresets = [
-        { id: 'pres-preset-1', name: '☝️ Dynamic Laser Accent', action: 'custom-alert', direction: 'pose-1', customText: '🎯 Presentation Laser Pointer Accent Active!' },
-        { id: 'pres-preset-2', name: '✌️ Speedrun System Accent', action: 'custom-alert', direction: 'pose-2', customText: '🚀 Rocketing Aether System Processing Speed!' },
-        { id: 'pres-preset-3', name: '🤟 DevSpace Team Accent', action: 'custom-alert', direction: 'pose-3', customText: '👏 Applauding Team DevSpace Achievements!' },
-        { id: 'pres-preset-4', name: '✋ Slide Switcher Accent', action: 'custom-alert', direction: 'pose-4', customText: '📢 Attention: Hands-Free Presentation Deck Active.' },
-        { id: 'pres-preset-5', name: '🖐️ High Five Showcase', action: 'custom-alert', direction: 'pose-5', customText: '🌟 High Five! Thank you for watching our presentation.' }
+        { id: 'pres-preset-1', name: '☝️ Dynamic Laser Accent', action: 'custom-alert', direction: 'pose-1', customText: '🎯 Interactive laser highlight successfully targeted!' },
+        { id: 'pres-preset-2', name: '✌️ Speedrun System Accent', action: 'custom-alert', direction: 'pose-2', customText: '🚀 Kinetic acceleration system fully engaged!' },
+        { id: 'pres-preset-3', name: '🤟 DevSpace Team Accent', action: 'custom-alert', direction: 'pose-3', customText: '👏 Standing ovation for the DevSpace collaborative workflow!' },
+        { id: 'pres-preset-4', name: '✋ Slide Switcher Accent', action: 'custom-alert', direction: 'pose-4', customText: '📢 Active slide advance command transmitted hands-free!' },
+        { id: 'pres-preset-5', name: '🖐️ High Five Showcase', action: 'custom-alert', direction: 'pose-5', customText: '🌟 High five! Thank you for watching the Kinetic OS Showcase.' }
       ];
       setPresetActions({
         1: 'custom-alert',
@@ -707,11 +740,11 @@ export function Settings() {
         5: 'custom-alert'
       });
       setPresetTexts({
-        1: '🎯 Presentation Laser Pointer Accent Active!',
-        2: '🚀 Rocketing Aether System Processing Speed!',
-        3: '👏 Applauding Team DevSpace Achievements!',
-        4: '📢 Attention: Hands-Free Presentation Deck Active.',
-        5: '🌟 High Five! Thank you for watching our presentation.'
+        1: '🎯 Interactive laser highlight successfully targeted!',
+        2: '🚀 Kinetic acceleration system fully engaged!',
+        3: '👏 Standing ovation for the DevSpace collaborative workflow!',
+        4: '📢 Active slide advance command transmitted hands-free!',
+        5: '🌟 High five! Thank you for watching the Kinetic OS Showcase.'
       });
     }
 
@@ -2286,6 +2319,199 @@ export function Settings() {
                 />
               </div>
 
+              {/* Custom Vocal Dictionary / Difficult Words Dictionary */}
+              <div className="border border-zinc-800 bg-[#09090b] rounded-lg p-5 space-y-4">
+                <div className="space-y-1">
+                  <span className="text-[9px] font-mono font-bold tracking-widest text-[#d97706] uppercase flex items-center gap-1">Phonetic Dictionary Interceptor</span>
+                  <h4 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                    <BookOpen size={14} className="text-[#d97706]" /> Custom Voice Dictionary (Misunderstood Words)
+                  </h4>
+                  <p className="text-[10px] text-zinc-400 leading-normal">
+                    Teach Aether specific words, jargon, or acronyms that the speech recognition engine frequently misunderstands. The system will automatically intercept and correct these phrases in real-time.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-zinc-900">
+                  {/* Add New Mapping Form */}
+                  <div className="space-y-3 bg-[#121214] p-3.5 rounded-lg border border-zinc-850">
+                    <span className="block text-[9px] uppercase font-mono font-bold text-zinc-500">Add Phonetic Correction</span>
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <label className="text-[9.5px] text-zinc-400">When I say / Engine hears (e.g., "ether" or "obsidiant")</label>
+                        <input
+                          type="text"
+                          value={vocalFrom}
+                          onChange={(e) => setVocalFrom(e.target.value)}
+                          placeholder="Spoken sound/misspelled word..."
+                          className="w-full bg-[#0a0a0c] border border-zinc-800 rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9.5px] text-zinc-400">Map to desired word (e.g., "Aether" or "Obsidian")</label>
+                        <input
+                          type="text"
+                          value={vocalTo}
+                          onChange={(e) => setVocalTo(e.target.value)}
+                          placeholder="Corrected word/spelling..."
+                          className="w-full bg-[#0a0a0c] border border-zinc-800 rounded-md px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!vocalFrom.trim() || !vocalTo.trim()) {
+                          showToast("Please fill in both fields.", "error");
+                          return;
+                        }
+                        const exists = vocalDictionary?.some(
+                          (item) => item.from.toLowerCase() === vocalFrom.trim().toLowerCase()
+                        );
+                        if (exists) {
+                          showToast(`A correction for "${vocalFrom.trim()}" already exists!`, "error");
+                          return;
+                        }
+                        const newItem = {
+                          id: crypto.randomUUID(),
+                          from: vocalFrom.trim(),
+                          to: vocalTo.trim()
+                        };
+                        setVocalDictionary((prev) => [...(prev || []), newItem]);
+                        setVocalFrom('');
+                        setVocalTo('');
+                        showToast("Vocal mapping added successfully!", "success");
+                      }}
+                      className="w-full py-1.5 bg-[#d97706]/20 hover:bg-[#d97706]/35 text-[#d97706] text-xs font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-sans"
+                    >
+                      <span>➕ Add Dictionary Mapping</span>
+                    </button>
+                  </div>
+
+                  {/* Current Mappings List */}
+                  <div className="space-y-2 bg-[#121214] p-3.5 rounded-lg border border-zinc-850 flex flex-col justify-between">
+                    <div>
+                      <span className="block text-[9px] uppercase font-mono font-bold text-zinc-500 mb-2">Active Corrections ({vocalDictionary?.length || 0})</span>
+                      {vocalDictionary && vocalDictionary.length > 0 ? (
+                        <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                          {vocalDictionary.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between bg-[#0a0a0c] border border-zinc-850 px-2.5 py-1.5 rounded-md">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-zinc-500 line-through decoration-red-500/30">"{item.from}"</span>
+                                <span className="text-zinc-400 font-mono">➜</span>
+                                <span className="text-yellow-500 font-bold">"{item.to}"</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setVocalDictionary((prev) => prev.filter((d) => d.id !== item.id));
+                                  showToast(`Removed correction for "${item.from}"`, "info");
+                                }}
+                                className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors cursor-pointer px-1.5 py-0.5 rounded hover:bg-red-500/10 font-sans"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="h-28 flex flex-col items-center justify-center text-center p-3 border border-dashed border-zinc-800 rounded-md">
+                          <p className="text-[10px] text-zinc-500 leading-normal">
+                            No phonetic overrides defined.<br />Add a rule above to correct words frequently misrecognized by the browser.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[8.5px] text-zinc-500 leading-relaxed mt-2">
+                      💡 These mappings are executed instantaneously as interim transcript results arrive. Perfect for custom server names, personal names, and special commands.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Physical Hardware & Media Device Director */}
+              <div className="border border-zinc-800 bg-[#09090b] rounded-lg p-5 space-y-4">
+                <div className="space-y-1">
+                  <span className="text-[9px] font-mono font-bold tracking-widest text-[#a855f7] uppercase flex items-center gap-1">Physical Signal Ingress / Egress Gateway</span>
+                  <h4 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                    <Cpu size={14} className="text-[#a855f7]" /> Media Input & Output Hardware Channels
+                  </h4>
+                  <p className="text-[10px] text-zinc-400 leading-normal">
+                    Select and calibrate your physical cameras, microphone feeds, and headgear/speaker channels for premium, high-fidelity data feeds.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-3 border-t border-zinc-900">
+                  {/* Camera Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[9px] uppercase font-mono font-bold text-zinc-500">Camera / Kinetic Feed Source</label>
+                    <select
+                      value={selectedCameraId}
+                      onChange={(e) => {
+                        setSelectedCameraId(e.target.value);
+                        showToast("Kinetics visual feed source updated!", "success");
+                      }}
+                      className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500 font-sans cursor-pointer"
+                    >
+                      <option value="">-- System Default Camera --</option>
+                      {cameras.map((cam) => (
+                        <option key={cam.deviceId} value={cam.deviceId}>
+                          {cam.label || `Camera ${cam.deviceId.slice(0, 5)}...`}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[9px] text-zinc-500 leading-relaxed">
+                      Used for Kinetic OS Hand Gestures, Virtual Mouse tracking, and Macro analysis.
+                    </p>
+                  </div>
+
+                  {/* Microphone Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[9px] uppercase font-mono font-bold text-zinc-500">Microphone / Speech Ingress channel</label>
+                    <select
+                      value={selectedMicId}
+                      onChange={(e) => {
+                        setSelectedMicId(e.target.value);
+                        showToast("Speech audio ingress channel updated!", "success");
+                      }}
+                      className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500 font-sans cursor-pointer"
+                    >
+                      <option value="">-- System Default Mic --</option>
+                      {microphones.map((mic) => (
+                        <option key={mic.deviceId} value={mic.deviceId}>
+                          {mic.label || `Microphone ${mic.deviceId.slice(0, 5)}...`}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[9px] text-zinc-500 leading-relaxed">
+                      Used for background wake word listening, continuous conversational speech-to-text, and commands.
+                    </p>
+                  </div>
+
+                  {/* Headphone/Speaker Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[9px] uppercase font-mono font-bold text-zinc-500">Audio Output / Headset channel</label>
+                    <select
+                      value={selectedSpeakerId}
+                      onChange={(e) => {
+                        setSelectedSpeakerId(e.target.value);
+                        showToast("Vocal synthesis egress channel updated!", "success");
+                      }}
+                      className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500 font-sans cursor-pointer"
+                    >
+                      <option value="">-- System Default Output --</option>
+                      {speakers.map((spk) => (
+                        <option key={spk.deviceId} value={spk.deviceId}>
+                          {spk.label || `Output Device ${spk.deviceId.slice(0, 5)}...`}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[9px] text-zinc-500 leading-relaxed">
+                      Used for vocal synthesis playback and acoustic feed tones. Supports setSinkId where compatible.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Shortcuts & Hotkeys Calibration Deck */}
               <div id="shortcuts-calibration-deck" className="border border-zinc-800 bg-[#0a0a0c] rounded-xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
@@ -2589,7 +2815,7 @@ export function Settings() {
                       <option value="/agents">Agentic OS Lab</option>
                       <option value="/github">GitHub Intelligence</option>
                       <option value="/docs">Workspace Help Docs</option>
-                      <option value="/whatsapp-companion">Ether Companion</option>
+                      <option value="/whatsapp-companion">Aether AI Companion</option>
                       <option value="/settings">System Settings</option>
                     </select>
                   </div>
@@ -2642,7 +2868,7 @@ export function Settings() {
                       '/agents': 'Agentic OS',
                       '/github': 'GitHub Intelligence',
                       '/docs': 'Workspace Docs',
-                      '/whatsapp-companion': 'Ether Companion',
+                      '/whatsapp-companion': 'Aether AI Companion',
                       '/settings': 'Settings'
                     };
                     const targetName = pathLabels[trig.path] || trig.path;

@@ -105,7 +105,7 @@ export function Community() {
     try {
       let finalRepoFullName = repoName;
       if (githubToken) {
-        showToast(`🔱 Forking "${repoName}" onto your own GitHub account...`, 'info', 3000);
+        showToast(`🔱 Forking "${repoName}" onto your own GitHub account...`, 'success');
         const forkRes = await fetch('/api/github/fork', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -115,11 +115,11 @@ export function Community() {
           const forkData = await forkRes.json();
           if (forkData.fullName) {
             finalRepoFullName = forkData.fullName;
-            showToast(`✅ Fork completed: created repository ${forkData.fullName}!`, 'success', 3000);
+            showToast(`✅ Fork completed: created repository ${forkData.fullName}!`, 'success');
           }
         } else {
           const errData = await forkRes.json().catch(() => ({}));
-          showToast(`Fork failed: ${errData.error || 'Server error'}. Starting project with original public repo...`, 'info', 4000);
+          showToast(`Fork failed: ${errData.error || 'Server error'}. Starting project with original public repo...`, 'success');
         }
       }
 
@@ -136,7 +136,7 @@ export function Community() {
       });
 
       setActiveProjectId(newProjId);
-      showToast(`🚀 Bootstrap completed! Initializing code workspace files for ${projName}...`, 'success', 4000);
+      showToast(`🚀 Bootstrap completed! Initializing code workspace files for ${projName}...`, 'success');
       
       // Navigate to /projects tab to start editing files!
       navigate('/projects');
@@ -265,6 +265,19 @@ export function Community() {
     fetchPersonalizedFeed();
     showToast('Saved preferences & rebuilt custom feed!', 'success');
   };
+
+  // Debounce typing preferences to automatically rebuild the feed in real-time
+  useEffect(() => {
+    if (activeTab !== 'github' || !githubPreferences.trim()) return;
+    const timer = setTimeout(() => {
+      const savedPrefs = localStorage.getItem('app_explore_github_prefs') || '';
+      if (githubPreferences !== savedPrefs) {
+        localStorage.setItem('app_explore_github_prefs', githubPreferences);
+        fetchPersonalizedFeed();
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [githubPreferences, activeTab]);
 
   useEffect(() => {
     localStorage.setItem('community_active_tab', activeTab);

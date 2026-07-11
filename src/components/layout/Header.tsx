@@ -1,4 +1,4 @@
-import { Bell, HelpCircle, Search, Menu, PanelRight, Copy, Check, ExternalLink, Users, Hand, Zap, Move, CameraOff, Mic, MicOff, Sparkles } from 'lucide-react';
+import { Bell, HelpCircle, Search, Menu, PanelRight, Copy, Check, ExternalLink, Users, Hand, Zap, Move, CameraOff, Mic, MicOff, Sparkles, Target } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
@@ -16,7 +16,9 @@ export function Header() {
     setKineticEnabled,
     kineticInteractionMode,
     setKineticInteractionMode,
-    setShowFloatingCamera
+    setShowFloatingCamera,
+    isDrawingModeActive,
+    setDrawingModeActive
   } = useStore();
   const { 
     userProfile, 
@@ -59,50 +61,81 @@ export function Header() {
     };
   }, []);
 
-  // Determine current Aether voice state
-  // 1. ACTIVE: open and not muted
-  // 2. STANDBY: closed, unmuted, and wake-word enabled
-  // 3. MUTED/OFF: otherwise
-  let aetherState: 'active' | 'standby' | 'muted' = 'muted';
-  if (isAetherOpen && !isAetherMuted) {
-    aetherState = 'active';
-  } else if (!isAetherOpen && !isAetherMuted && isWakeWordEnabled) {
-    aetherState = 'standby';
+  // Determine current Aether voice state with 4 clean user-focused states:
+  // 1. Off (closed, muted, wake word off)
+  // 2. Off & Unmuted / Standby (closed, unmuted, wake word on)
+  // 3. Open & Unmuted (open, unmuted, wake word on)
+  // 4. Open on Context Mode (open, unmuted, wake word on, context/draw active)
+  let aetherDetailedState: 'off' | 'off_wake' | 'open' | 'context' = 'off';
+
+  if (isDrawingModeActive) {
+    aetherDetailedState = 'context';
+  } else if (isAetherOpen) {
+    aetherDetailedState = 'open';
+  } else if (isWakeWordEnabled && !isAetherMuted) {
+    aetherDetailedState = 'off_wake';
   } else {
-    aetherState = 'muted';
+    aetherDetailedState = 'off';
   }
 
   const handleVoiceStateCycle = () => {
-    if (aetherState === 'active') {
-      // Transition from ACTIVE -> STANDBY:
-      // Close hub, unmute/keep unmuted, keep wake-word active
-      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: false } }));
-      if (setIsWakeWordEnabled) setIsWakeWordEnabled(true);
-      localStorage.setItem('isAetherMuted', 'false');
-      window.dispatchEvent(new Event('aether-mute-sync'));
-      
-      showToast('🔮 Aether: Standby (Listening for "Hey Aether")', 'success', 2500);
-      haptic.success();
-    } else if (aetherState === 'standby') {
-      // Transition from STANDBY -> MUTED/OFF:
-      // Close hub, mute background listening
-      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: true } }));
-      localStorage.setItem('isAetherMuted', 'true');
-      window.dispatchEvent(new Event('aether-mute-sync'));
-      
-      showToast('🔇 Aether: Fully Muted & Disabled', 'info', 2500);
-      haptic.warning();
-    } else {
-      // Transition from MUTED/OFF -> ACTIVE:
-      // Open hub, unmute dialogue mic, make sure wake-word is active for background too
-      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: true, mute: false } }));
-      if (setIsWakeWordEnabled) setIsWakeWordEnabled(true);
-      localStorage.setItem('isAetherMuted', 'false');
-      window.dispatchEvent(new Event('aether-mute-sync'));
-      
-      showToast('🔮 Aether AI Activated (Listening Mode)', 'success', 2500);
-      haptic.success();
+    let nextState: 'off' | 'off_wake' | 'open' | 'context' = 'off';
+    
+    if (aetherDetailedState === 'off') {
+      // From fully off, we open up to it being open and unmuted.
+      nextState = 'open';
+    } else if (aetherDetailedState === 'open') {
+      // From open and unmuted, we go to context mode
+      nextState = 'context';
+    } else if (aetherDetailedState === 'context') {
+      // From context mode, we go to off and unmuted (listening standby)
+      nextState = 'off_wake';
+    } else if (aetherDetailedState === 'off_wake') {
+      // From off and unmuted, we go back to fully off
+      nextState = 'off';
     }
+
+    let open = false;
+    let mute = true;
+    let wakeWord = false;
+    let drawingMode = false;
+    let toastMsg = "";
+
+    if (nextState === 'off') {
+      open = false;
+      mute = true;
+      wakeWord = false;
+      drawingMode = false;
+      toastMsg = "🔇 Aether AI: Fully Off";
+    } else if (nextState === 'off_wake') {
+      open = false;
+      mute = false;
+      wakeWord = true;
+      drawingMode = false;
+      toastMsg = "🔮 Aether AI: Off & Unmuted (Listening Standby)";
+    } else if (nextState === 'open') {
+      open = true;
+      mute = false;
+      wakeWord = true;
+      drawingMode = false;
+      toastMsg = "✨ Aether AI: Open & Unmuted (Active)";
+    } else if (nextState === 'context') {
+      open = true;
+      mute = false;
+      wakeWord = true;
+      drawingMode = true;
+      toastMsg = "🎯 Aether AI: Open on Context Mode (Active & Drawing)";
+    }
+
+    // Set and dispatch updated states
+    window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open, mute } }));
+    if (setIsWakeWordEnabled) setIsWakeWordEnabled(wakeWord);
+    localStorage.setItem('isAetherMuted', String(mute));
+    window.dispatchEvent(new Event('aether-mute-sync'));
+    setDrawingModeActive(drawingMode);
+
+    showToast(toastMsg, 'success', 2500);
+    haptic.medium();
   };
 
   const handleLogoClick = () => {
@@ -152,7 +185,9 @@ export function Header() {
   };
 
   return (
-    <header className="h-11 border-b border-zinc-900 flex items-center justify-between px-3 sm:px-4 bg-[#050505] shrink-0">
+    <header className={`h-11 border-b border-zinc-900 flex items-center justify-between px-3 sm:px-4 bg-[#050505] shrink-0 transition-all ${
+      isAetherOpen ? 'relative z-[110]' : 'relative z-30'
+    }`}>
       <div className="flex items-center gap-2 sm:gap-3">
         <button onClick={() => { haptic.light(); toggleSidebar(); }} className="p-1.5 text-zinc-500 hover:text-zinc-355 hover:bg-zinc-900 rounded transition-colors">
           <Menu size={16} />
@@ -181,47 +216,60 @@ export function Header() {
         <button
           onClick={handleVoiceStateCycle}
           className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9.5px] font-mono font-black transition-all duration-300 cursor-pointer select-none active:scale-95 shrink-0 ${
-            aetherState === 'active'
+            aetherDetailedState === 'open'
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/35 hover:bg-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.25)] animate-pulse font-bold'
-              : aetherState === 'standby'
-                ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/35 hover:bg-yellow-500/20 shadow-[0_0_12px_rgba(234,179,8,0.15)]'
-                : 'bg-zinc-950 border-zinc-900 text-zinc-500 hover:bg-zinc-900 hover:border-zinc-850'
+              : aetherDetailedState === 'context'
+                ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/35 hover:bg-cyan-500/20 shadow-[0_0_12px_rgba(6,182,212,0.25)] animate-pulse font-bold'
+                : aetherDetailedState === 'off_wake'
+                  ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/35 hover:bg-yellow-500/20 shadow-[0_0_12px_rgba(234,179,8,0.15)] font-bold'
+                  : 'bg-zinc-950 border-zinc-900 text-zinc-500 hover:bg-zinc-900 hover:border-zinc-850'
           }`}
           title={
-            aetherState === 'active'
-              ? "Aether AI: ACTIVE DIALOG (Listening...) - Click to switch to STANDBY"
-              : aetherState === 'standby'
-                ? "Aether AI: STANDBY (Listening for 'Hey Aether') - Click to MUTED/OFF"
-                : "Aether AI: MUTED / OFF (Voice disabled) - Click to ACTIVE DIALOG"
+            aetherDetailedState === 'open'
+              ? "Aether AI: OPEN & UNMUTED (Active) - Click to cycle to CONTEXT MODE"
+              : aetherDetailedState === 'context'
+                ? "Aether AI: OPEN ON CONTEXT MODE (Active & Drawing) - Click to cycle to OFF & UNMUTED"
+                : aetherDetailedState === 'off_wake'
+                  ? "Aether AI: OFF & UNMUTED (Standby) - Click to cycle to FULLY OFF"
+                  : "Aether AI: FULLY OFF - Click to cycle to OPEN & UNMUTED"
           }
         >
           <span className="relative flex h-1.5 w-1.5 shrink-0">
-            {aetherState === 'active' && (
+            {aetherDetailedState === 'open' && (
               <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
             )}
+            {aetherDetailedState === 'context' && (
+              <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75 animate-ping"></span>
+            )}
             <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-              aetherState === 'active'
+              aetherDetailedState === 'open'
                 ? 'bg-emerald-400'
-                : aetherState === 'standby'
-                  ? 'bg-yellow-400'
-                  : 'bg-zinc-650'
+                : aetherDetailedState === 'context'
+                  ? 'bg-cyan-400'
+                  : aetherDetailedState === 'off_wake'
+                    ? 'bg-yellow-400'
+                    : 'bg-zinc-650'
             }`}></span>
           </span>
 
-          {aetherState === 'active' ? (
+          {aetherDetailedState === 'open' ? (
             <Mic size={11} className="text-emerald-400 shrink-0" />
-          ) : aetherState === 'standby' ? (
+          ) : aetherDetailedState === 'context' ? (
+            <Target size={11} className="text-cyan-400 shrink-0 animate-spin" style={{ animationDuration: '3s' }} />
+          ) : aetherDetailedState === 'off_wake' ? (
             <Sparkles size={11} className="text-yellow-400 shrink-0" />
           ) : (
             <MicOff size={11} className="text-zinc-500 shrink-0" />
           )}
 
           <span className="hidden min-[480px]:inline">
-            {aetherState === 'active'
-              ? 'ACTIVE'
-              : aetherState === 'standby'
-                ? 'STANDBY'
-                : 'MUTED / OFF'}
+            {aetherDetailedState === 'open'
+              ? 'AETHER AI, OPEN'
+              : aetherDetailedState === 'context'
+                ? 'AETHER AI, OPEN ON CONTEXT MODE'
+                : aetherDetailedState === 'off_wake'
+                  ? 'AETHER AI, UNMUTED'
+                  : 'AETHER AI, OFF'}
           </span>
         </button>
         <div className="h-4 w-[1px] bg-zinc-800 ml-1 hidden sm:block"></div>

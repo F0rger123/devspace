@@ -301,6 +301,8 @@ export function VoiceHub() {
 
       const voices = window.speechSynthesis?.getVoices();
       const matchVoice = voices?.find(v => 
+        (v.name.includes('Google UK English Male') || v.name.includes('Daniel') || v.name.toLowerCase().includes('george') || v.name.includes('Oliver')) && v.lang.includes('en')
+      ) || voices?.find(v => 
         v.lang.includes('en') && 
         (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Aria') || v.name.includes('Samantha'))
       );
@@ -1827,7 +1829,7 @@ export function VoiceHub() {
                             <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold tracking-wider block">Option A: Scan QR Code</span>
                             <ol className="text-[11px] text-slate-350 space-y-1.5 font-sans leading-relaxed list-decimal pl-4">
                               <li>Open your phone's default <strong className="text-white">System Camera App</strong>.</li>
-                              <li>Scan the QR code to open the browser-based <strong className="text-emerald-400">Ether Companion</strong>.</li>
+                              <li>Scan the QR code to open the browser-based <strong className="text-emerald-400">Aether AI Companion</strong>.</li>
                               <li>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                   <span>Or click to test in a new tab:</span>

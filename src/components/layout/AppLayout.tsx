@@ -7,6 +7,7 @@ import { CommandPalette } from '../ui/CommandPalette';
 import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
 import { KineticController } from '../ui/KineticController';
 import { KineticHUDOverlay } from '../ui/KineticHUDOverlay';
+import { CursorDrawContext } from '../ui/CursorDrawContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
@@ -466,6 +467,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <VoiceMemoAssistant />
         <KineticController />
         <KineticHUDOverlay />
+        <CursorDrawContext />
         {userProfile && <SetupWizard />}
       </div>
 

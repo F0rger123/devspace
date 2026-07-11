@@ -403,6 +403,8 @@ type DataContextType = {
   setTrainedWakeWordModel: React.Dispatch<React.SetStateAction<any>>;
   selectedVoiceName: string;
   setSelectedVoiceName: React.Dispatch<React.SetStateAction<string>>;
+  vocalDictionary: Array<{ id: string, from: string, to: string }>;
+  setVocalDictionary: React.Dispatch<React.SetStateAction<Array<{ id: string, from: string, to: string }>>>;
   speechPitch: number;
   setSpeechPitch: React.Dispatch<React.SetStateAction<number>>;
   speechRate: number;
@@ -742,6 +744,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [trainedPhrases, setTrainedPhrases] = useState<string[]>(() => getStored<string[]>('app_trained_phrases', []));
   const [trainedWakeWordModel, setTrainedWakeWordModel] = useState<any>(() => getStored<any>('app_trained_wakeword_model', null));
   const [selectedVoiceName, setSelectedVoiceName] = useState<string>(() => getStored('app_speech_selected_voice', ''));
+  const [vocalDictionary, setVocalDictionary] = useState<Array<{ id: string, from: string, to: string }>>(() => {
+    const defaults = [
+      { id: '1', from: 'ether', to: 'Aether AI' },
+      { id: '1b', from: 'e3', to: 'Aether AI' },
+      { id: '1c', from: 'e 3', to: 'Aether AI' },
+      { id: '1d', from: 'e-3', to: 'Aether AI' },
+      { id: '1e', from: 'ether ai', to: 'Aether AI' },
+      { id: '2', from: 'obsidiant', to: 'Obsidian' },
+      { id: '3', from: 'dev space', to: 'DevSpace' }
+    ];
+    const stored = localStorage.getItem('app_vocal_dictionary');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          // Filter out old 'ether' -> 'Aether' maps to overwrite with 'Aether AI'
+          const filtered = parsed.filter(item => 
+            item.from !== 'ether' && 
+            item.from !== 'e3' && 
+            item.from !== 'e 3' && 
+            item.from !== 'e-3' && 
+            item.from !== 'ether ai'
+          );
+          return [...defaults.filter(d => !filtered.some(f => f.from === d.from)), ...filtered];
+        }
+      } catch (e) {}
+    }
+    return defaults;
+  });
   const [speechPitch, setSpeechPitch] = useState<number>(() => getStored('app_speech_pitch', 1.0));
   const [speechRate, setSpeechRate] = useState<number>(() => getStored('app_speech_rate', 1.05));
   
@@ -984,6 +1015,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 setPasscodePin(data.passcodePin);
                 localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
               }
+              if (typeof data.aetherControlNotes === 'boolean') setAetherControlNotes(data.aetherControlNotes);
+              if (typeof data.aetherControlIssues === 'boolean') setAetherControlIssues(data.aetherControlIssues);
+              if (typeof data.aetherControlAgents === 'boolean') setAetherControlAgents(data.aetherControlAgents);
+              if (typeof data.aetherControlBrainstorm === 'boolean') setAetherControlBrainstorm(data.aetherControlBrainstorm);
+              if (typeof data.aetherControlIntegrations === 'boolean') setAetherControlIntegrations(data.aetherControlIntegrations);
+              if (typeof data.aetherDoubleConfirm === 'boolean') setAetherDoubleConfirm(data.aetherDoubleConfirm);
+              if (typeof data.aetherAutoRecommend === 'boolean') setAetherAutoRecommend(data.aetherAutoRecommend);
+              if (typeof data.aetherModel === 'string') setAetherModel(data.aetherModel);
+              if (typeof data.aetherConciseness === 'string') setAetherConciseness(data.aetherConciseness);
+              if (typeof data.aetherThinkingLevel === 'string') setAetherThinkingLevel(data.aetherThinkingLevel);
             } else {
               // Server not yet initialized, load whatever we have in localStorage or defaults, and save it up
               if (Array.isArray(data.projects) && data.projects.length > 0) {
@@ -1004,6 +1045,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 setPasscodePin(data.passcodePin);
                 localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
               }
+              if (typeof data.aetherControlNotes === 'boolean') setAetherControlNotes(data.aetherControlNotes);
+              if (typeof data.aetherControlIssues === 'boolean') setAetherControlIssues(data.aetherControlIssues);
+              if (typeof data.aetherControlAgents === 'boolean') setAetherControlAgents(data.aetherControlAgents);
+              if (typeof data.aetherControlBrainstorm === 'boolean') setAetherControlBrainstorm(data.aetherControlBrainstorm);
+              if (typeof data.aetherControlIntegrations === 'boolean') setAetherControlIntegrations(data.aetherControlIntegrations);
+              if (typeof data.aetherDoubleConfirm === 'boolean') setAetherDoubleConfirm(data.aetherDoubleConfirm);
+              if (typeof data.aetherAutoRecommend === 'boolean') setAetherAutoRecommend(data.aetherAutoRecommend);
+              if (typeof data.aetherModel === 'string') setAetherModel(data.aetherModel);
+              if (typeof data.aetherConciseness === 'string') setAetherConciseness(data.aetherConciseness);
+              if (typeof data.aetherThinkingLevel === 'string') setAetherThinkingLevel(data.aetherThinkingLevel);
             }
           }
         }
@@ -1224,7 +1275,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
             aiContextRules,
             aetherPersonalityRules,
             passcodePin,
-            githubToken
+            githubToken,
+            aetherControlNotes,
+            aetherControlIssues,
+            aetherControlAgents,
+            aetherControlBrainstorm,
+            aetherControlIntegrations,
+            aetherDoubleConfirm,
+            aetherAutoRecommend,
+            aetherModel,
+            aetherConciseness,
+            aetherThinkingLevel
           })
         });
         endSync('sync-cache', true);
@@ -1239,7 +1300,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, githubToken, isInitialLoadDone]);
+  }, [
+    projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, githubToken,
+    aetherControlNotes, aetherControlIssues, aetherControlAgents, aetherControlBrainstorm, aetherControlIntegrations,
+    aetherDoubleConfirm, aetherAutoRecommend, aetherModel, aetherConciseness, aetherThinkingLevel, isInitialLoadDone
+  ]);
 
   const lastFirestoreProjectsRef = useRef<Project[]>([]);
 
@@ -2476,6 +2541,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   useEffect(() => { setStored('app_trained_phrases', trainedPhrases); }, [trainedPhrases]);
   useEffect(() => { setStored('app_trained_wakeword_model', trainedWakeWordModel); }, [trainedWakeWordModel]);
   useEffect(() => { setStored('app_speech_selected_voice', selectedVoiceName); }, [selectedVoiceName]);
+  useEffect(() => { setStored('app_vocal_dictionary', vocalDictionary); }, [vocalDictionary]);
   useEffect(() => { setStored('app_speech_pitch', speechPitch); }, [speechPitch]);
   useEffect(() => { setStored('app_speech_rate', speechRate); }, [speechRate]);
   useEffect(() => { setStored('app_shortcut_activation_key', activationShortcutKey); }, [activationShortcutKey]);
@@ -3850,6 +3916,7 @@ Description of fix or enhancement recommendation
       trainedPhrases, setTrainedPhrases,
       trainedWakeWordModel, setTrainedWakeWordModel,
       selectedVoiceName, setSelectedVoiceName,
+      vocalDictionary, setVocalDictionary,
       speechPitch, setSpeechPitch,
       speechRate, setSpeechRate,
       activationShortcutKey, setActivationShortcutKey,

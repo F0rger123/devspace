@@ -2050,24 +2050,33 @@ Provide:
          }
       }
 
+      const finalAetherControlNotes = aetherControlNotes !== undefined ? aetherControlNotes : workspaceAetherControlNotes;
+      const finalAetherControlIssues = aetherControlIssues !== undefined ? aetherControlIssues : workspaceAetherControlIssues;
+      const finalAetherControlAgents = aetherControlAgents !== undefined ? aetherControlAgents : workspaceAetherControlAgents;
+      const finalAetherControlBrainstorm = aetherControlBrainstorm !== undefined ? aetherControlBrainstorm : workspaceAetherControlBrainstorm;
+      const finalAetherControlIntegrations = aetherControlIntegrations !== undefined ? aetherControlIntegrations : workspaceAetherControlIntegrations;
+      const finalAetherDoubleConfirm = aetherDoubleConfirm !== undefined ? aetherDoubleConfirm : workspaceAetherDoubleConfirm;
+      const finalAetherAutoRecommend = aetherAutoRecommend !== undefined ? aetherAutoRecommend : workspaceAetherAutoRecommend;
+      const finalAetherPersonalityRules = aetherPersonalityRules !== undefined ? aetherPersonalityRules : workspaceAetherPersonalityRulesCache;
+
       // Format full system instructions
       const synapticBrainContext = `YOU ARE AETHER, the highly capable AI Chief Executive Officer (CEO) and central orchestrator of the developer workspace.
 You have native access to the user's "Obsidian Synaptic Brain", which captures their tech preferences, workflow guidelines, learned skills, and active project contexts.
 
 === AETHER AUTONOMY & PERMISSIONS CONFIGURATION ===
-Aether Notes/Docs Archivist Command: ${aetherControlNotes !== false ? "ENABLED 📂 (You can draft notes and documentation)" : "DISABLED ❌ (You are NOT permitted to touch or manage text documents)"}
-Aether Issues & Backlog Sprint Command: ${aetherControlIssues !== false ? "ENABLED 🎯 (You can categorize, schedule, and assign issues)" : "DISABLED ❌ (You are NOT permitted to touch or manage ticket backlogs)"}
-Aether Subagent Squad Director: ${aetherControlAgents !== false ? "ENABLED 🤖 (You can proactively suggest tasks and assign roles/goals to specialist bots: Docs Archivist, Claude Bot, Sentinel AI, etc.)" : "DISABLED ❌ (You are NOT permitted to delegate work or order other agents)"}
-Aether Dreamweaver Sandbox Mode: ${aetherControlBrainstorm !== false ? "ENABLED 🔮 (You are encouraged to run dreaming simulations and propose new ideas, look-aheads, and code improvements)" : "DISABLED ❌ (Background dreaming and refactoring suggestions are deactivated)"}
-Aether Integrations Workspace Connector: ${aetherControlIntegrations === true ? "ENABLED 🔌 (You have access to inspect and recommend integration changes)" : "DISABLED ❌ (Access to connected integrations is restricted)"}
-Look-Ahead Suggestion state: ${aetherAutoRecommend !== false ? "ACTIVE 💡" : "PAUSED"}
-Duplicate verification constraint: ${aetherDoubleConfirm === true ? "STRICT DOUBLE CONFIRMATION ACTIVE ⚠️ (You MUST request explicit user confirmation first before doing any destructive operations, assigning high-priority tickets, or updating codebase structures)" : "DIRECT AUTONOMY ACTIVE ⚡ (No extra confirmation is needed; you have straight clearance to execute code solutions and propose workspace updates immediately)"}
+Aether Notes/Docs Archivist Command: ${finalAetherControlNotes !== false ? "ENABLED 📂 (You can draft notes and documentation)" : "DISABLED ❌ (You are NOT permitted to touch or manage text documents)"}
+Aether Issues & Backlog Sprint Command: ${finalAetherControlIssues !== false ? "ENABLED 🎯 (You can categorize, schedule, and assign issues)" : "DISABLED ❌ (You are NOT permitted to touch or manage ticket backlogs)"}
+Aether Subagent Squad Director: ${finalAetherControlAgents !== false ? "ENABLED 🤖 (You can proactively suggest tasks and assign roles/goals to specialist bots: Docs Archivist, Claude Bot, Sentinel AI, etc.)" : "DISABLED ❌ (You are NOT permitted to delegate work or order other agents)"}
+Aether Dreamweaver Sandbox Mode: ${finalAetherControlBrainstorm !== false ? "ENABLED 🔮 (You are encouraged to run dreaming simulations and propose new ideas, look-aheads, and code improvements)" : "DISABLED ❌ (Background dreaming and refactoring suggestions are deactivated)"}
+Aether Integrations Workspace Connector: ${finalAetherControlIntegrations === true ? "ENABLED 🔌 (You have access to inspect and recommend integration changes)" : "DISABLED ❌ (Access to connected integrations is restricted)"}
+Look-Ahead Suggestion state: ${finalAetherAutoRecommend !== false ? "ACTIVE 💡" : "PAUSED"}
+Duplicate verification constraint: ${finalAetherDoubleConfirm === true ? "STRICT DOUBLE CONFIRMATION ACTIVE ⚠️ (You MUST request explicit user confirmation first before doing any destructive operations, assigning high-priority tickets, or updating codebase structures)" : "DIRECT AUTONOMY ACTIVE ⚡ (No extra confirmation is needed; you have straight clearance to execute code solutions and propose workspace updates immediately)"}
 
 === OBSIDIAN SYNAPTIC BRAIN: USER PREFERENCES & MEMORY ===
 ${aiContextRules ? `[USER-DEFINED SYSTEM RULES & GUIDELINES]:\n${aiContextRules}` : "No specific custom rules declared in user preferences."}
 
 === ACTIVE SYNAPTIC PERSONA / PERSONALITY RULES ===
-${aetherPersonalityRules && aetherPersonalityRules.length > 0 ? aetherPersonalityRules.map((r: string) => `- ${r}`).join('\n') : "- Speak with architectural precision, intelligence, and friendly support."}
+${finalAetherPersonalityRules && finalAetherPersonalityRules.length > 0 ? finalAetherPersonalityRules.map((r: string) => `- ${r}`).join('\n') : "- Speak with architectural precision, intelligence, and friendly support."}
 
 === LEARNED SKILLS / CORTEX SYNAPSES ===
 ${cortexSynapses && cortexSynapses.length > 0 ? cortexSynapses.map((s: any) => `- [Skill/Synapse] ${s?.name || 'Unnamed'}: ${s?.desc || 'No description'}`).join('\n') : "No custom learning synapses detected."}
@@ -3664,6 +3673,16 @@ CRITICAL RULES:
   let workspaceAiContextRulesCache: string = "";
   let workspaceAetherPersonalityRulesCache: string[] = [];
   let workspacePasscodePinCache: string = "1234";
+  let workspaceAetherControlNotes: boolean = true;
+  let workspaceAetherControlIssues: boolean = true;
+  let workspaceAetherControlAgents: boolean = true;
+  let workspaceAetherControlBrainstorm: boolean = true;
+  let workspaceAetherControlIntegrations: boolean = false;
+  let workspaceAetherDoubleConfirm: boolean = false;
+  let workspaceAetherAutoRecommend: boolean = true;
+  let workspaceAetherModel: string = "gemini-3.5-flash";
+  let workspaceAetherConciseness: string = "balanced";
+  let workspaceAetherThinkingLevel: string = "auto";
 
   function decodeFirebaseToken(token: string) {
     try {
@@ -3717,6 +3736,16 @@ CRITICAL RULES:
     aiContextRules: string;
     aetherPersonalityRules: string[];
     passcodePin: string;
+    aetherControlNotes: boolean;
+    aetherControlIssues: boolean;
+    aetherControlAgents: boolean;
+    aetherControlBrainstorm: boolean;
+    aetherControlIntegrations: boolean;
+    aetherDoubleConfirm: boolean;
+    aetherAutoRecommend: boolean;
+    aetherModel: string;
+    aetherConciseness: string;
+    aetherThinkingLevel: string;
   }
 
   const userCaches: { [uid: string]: UserCache } = {};
@@ -3732,7 +3761,17 @@ CRITICAL RULES:
         agents: workspaceAgentsCache,
         aiContextRules: workspaceAiContextRulesCache,
         aetherPersonalityRules: workspaceAetherPersonalityRulesCache,
-        passcodePin: workspacePasscodePinCache
+        passcodePin: workspacePasscodePinCache,
+        aetherControlNotes: workspaceAetherControlNotes,
+        aetherControlIssues: workspaceAetherControlIssues,
+        aetherControlAgents: workspaceAetherControlAgents,
+        aetherControlBrainstorm: workspaceAetherControlBrainstorm,
+        aetherControlIntegrations: workspaceAetherControlIntegrations,
+        aetherDoubleConfirm: workspaceAetherDoubleConfirm,
+        aetherAutoRecommend: workspaceAetherAutoRecommend,
+        aetherModel: workspaceAetherModel,
+        aetherConciseness: workspaceAetherConciseness,
+        aetherThinkingLevel: workspaceAetherThinkingLevel
       };
     }
     if (!userCaches[uid]) {
@@ -3745,7 +3784,17 @@ CRITICAL RULES:
         agents: [],
         aiContextRules: "",
         aetherPersonalityRules: [],
-        passcodePin: "1234"
+        passcodePin: "1234",
+        aetherControlNotes: true,
+        aetherControlIssues: true,
+        aetherControlAgents: true,
+        aetherControlBrainstorm: true,
+        aetherControlIntegrations: false,
+        aetherDoubleConfirm: false,
+        aetherAutoRecommend: true,
+        aetherModel: "gemini-3.5-flash",
+        aetherConciseness: "balanced",
+        aetherThinkingLevel: "auto"
       };
     }
     return userCaches[uid];
@@ -4054,7 +4103,7 @@ Send code commands to "create project X" or "create task bug in Y", or ask me to
     };
   }
 
-  function getAetherSystemPrompt(cortexToUse: any[], notesToUse: any[], pendingNoteContext: string, activeProjectId?: string | null, currentPath?: string) {
+  function getAetherSystemPrompt(cortexToUse: any[], notesToUse: any[], pendingNoteContext: string, activeProjectId?: string | null, currentPath?: string, circledContexts?: any[]) {
     // Find name of active project if any
     let activeProjectName = "None (Global)";
     if (activeProjectId && workspaceProjectsCache) {
@@ -4134,10 +4183,12 @@ You are fully in charge of the website workspace and have deep operational power
 
 === ADVANCED INTENT RECOGNITION & SELF-LEARNING ===
 - Undergo semantic pre-processing: If the user commands any project, task, or page navigation, match it to the most relevant element in the "Known Platform State" even if they use colloquialisms, abbreviations, or have transcription typos.
-- SELF-LEARNING MECHANISM (Obsidian Cortex Integration): If the user teaches you a preference, mentions a tech constraint, tells you to remember a development rule (e.g., "remember to use React 18", "always structure databases with Prisma", "I prefer dark themes"), you MUST:
+- CONTEXTUAL CORRECTION & INSTRUCTION OVERRIDING: Pay meticulous, strict attention to conversational corrections in the dialogue history (e.g., if you proposed "Do you want me to do X?" or "Take me to Y", and the user replies with "No, actually take me to Z" or "Instead, do A"). You MUST immediately recognize this as an explicit correction that overrides your previous turn. Instantly pivot, execute the corrected target intent (e.g., navigation path, task details, or creation parameters), discard your previous proposal entirely, and acknowledge and confirm the correction smoothly in your "explanation" so that you learn and adapt dynamically from corrections!
+- SELF-LEARNING & TEACHING MECHANISM (Obsidian Cortex Integration): If the user teaches you a preference, mentions a tech constraint, tells you to remember a development rule, gives you instructions on how to handle commands (e.g., "from now on, when I say do this, it's you want me to use this and do this", "from now on, if I say delete this, this is what I'm talking about"), or asks "Does that make sense?" / "Did you get that?" after teaching a rule, you MUST:
   1. Set the "intent" of this turn to "add_cortex_synapse"
-  2. Set "parsedData" to include: {"name": "A short, descriptive rule title", "desc": "The precise workflow constraint or preference directive to remember"}
-  3. Inform the user in "explanation" that you have wired this knowledge permanently into their synaptic cortex!
+  2. Set "parsedData" to include: {"name": "A short, descriptive rule title matching their topic", "desc": "The precise workflow constraint, preference directive, or command mapping to remember"}
+  3. In "explanation", formulate a clear, warm, conversational confirmation that repeats exactly what you learned. Begin with "Yes, from now on, when you say [X], you mean you want me to [Y]." or a highly precise summary of what you've wired into your brain, and let them know you've successfully wired this knowledge permanently into their synaptic cortex so you can learn from them and self-learn over time!
+  4. If you need a clarification or are slightly unsure of their instruction, ask them politely (e.g., "Did you mean X or Y?"), while still saving your best understanding in the synapse list so that it can be refined in subsequent rounds. Let them reply "yes" or "no" to verify!
 
 === USER CURRENT LOCATION & VIEWPORT CONTEXT ===
 - Active Project Selected (Context): ${activeProjectName} (ID: ${activeProjectId || 'None'})
@@ -4199,6 +4250,20 @@ Known Platform State (The Assistant Memory Store / Obsidian Synaptic Cortex):
 - Shared developer system instructions/rules: ${workspaceAiContextRulesCache}${pendingNoteContext}
 - Aether's Persistent Learned Personality rules: ${JSON.stringify(workspaceAetherPersonalityRulesCache)}
 
+=== SPATIAL CURSOR CAPTURED CONTEXTS (USER CIRCLED REGIONS) ===
+${Array.isArray(circledContexts) && circledContexts.length > 0 ? `The user has explicitly drawn loops/circles around these screen areas with their mouse to capture active developer context:\n` + circledContexts.map((c: any, idx: number) => `- Region #${idx + 1}: label="${c.label}" (Bounding Box: clientX=${c.bounds?.x}px, clientY=${c.bounds?.y}px, width=${c.bounds?.width}px, height=${c.bounds?.height}px)`).join('\n') + `\nWhen the user refers to "this", "look at this", "these two things", or asks you questions about what they circled, they are discussing these exact screen areas! Provide tailored assistance and code examples corresponding to these visual selections.` : "No screen areas currently circled."}
+
+=== AETHER AUTONOMY & PERMISSIONS CONTROLS ===
+You MUST strictly adhere to the following permissions configured by the user:
+- Manage Notes/Docs: ${workspaceAetherControlNotes ? "ENABLED 📂 (You can draft and manage notes/documentation)" : "DISABLED ❌ (You are NOT permitted to touch or manage text documents)"}
+- Manage Issues/Backlog: ${workspaceAetherControlIssues ? "ENABLED 🎯 (You can categorize, schedule, and assign issues)" : "DISABLED ❌ (You are NOT permitted to touch or manage ticket backlogs)"}
+- Manage Specialist Agents: ${workspaceAetherControlAgents ? "ENABLED 🤖 (You can proactively suggest tasks and assign roles/goals to specialist bots: Docs Archivist, Claude Bot, Sentinel AI, etc.)" : "DISABLED ❌ (You are NOT permitted to delegate work or order other agents)"}
+- Collaborative Brainstorming: ${workspaceAetherControlBrainstorm ? "ENABLED 🔮 (You are authorized to add brainstorm ideas)" : "DISABLED ❌ (Background dreaming and refactoring suggestions are deactivated)"}
+- Integrations Orchestration: ${workspaceAetherControlIntegrations ? "ENABLED 🔌 (You have access to inspect and recommend integration changes)" : "DISABLED ❌ (Access to connected integrations is restricted)"}
+- Double-Confirm Actions: ${workspaceAetherDoubleConfirm ? "ENABLED ⚠️ (You MUST request explicit user confirmation first before doing any destructive operations, assigning high-priority tickets, or updating codebase structures)" : "DIRECT AUTONOMY ACTIVE ⚡ (No extra confirmation is needed; you have straight clearance to execute code solutions and propose workspace updates immediately)"}
+- Auto-Recommend Enhancements: ${workspaceAetherAutoRecommend ? "ACTIVE 💡" : "PAUSED"}
+- Response Conciseness: ${workspaceAetherConciseness}
+
 Rules:
 Return a valid, pure JSON object conforming strictly to this Schema:
 {
@@ -4233,7 +4298,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
   }
 
   // Unified Aether AI processing engine with full workspace awareness
-  async function processInputWithAetherAI(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[], history?: any[], pendingNote?: string | null, activeProjectId?: string | null, currentPath?: string }) {
+  async function processInputWithAetherAI(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[], history?: any[], pendingNote?: string | null, activeProjectId?: string | null, currentPath?: string, circledContexts?: any[] }) {
     if (!process.env.GEMINI_API_KEY) {
       console.warn("GEMINI_API_KEY is not set. Activating local synaptic rule engine...");
       return localAetherAIFallback(text);
@@ -4252,7 +4317,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       pendingNoteContext = `\n\n[Conversational Session Context: There is currently a pending note you offered to save: "${options.pendingNote}". If the user answers yes or confirms, set "shouldWriteDown": "yes", and "noteContent": "${options.pendingNote}". If they decline with no, set "shouldWriteDown": "no" and clear. If they command to save a brand new note on something else, set "shouldWriteDown": "yes" and "noteContent" to the new note.]`;
     }
 
-    const systemPrompt = getAetherSystemPrompt(cortexToUse, notesToUse, pendingNoteContext, options?.activeProjectId, options?.currentPath);
+    const systemPrompt = getAetherSystemPrompt(cortexToUse, notesToUse, pendingNoteContext, options?.activeProjectId, options?.currentPath, options?.circledContexts);
 
     try {
       let contents: any[] = [];
@@ -4335,7 +4400,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
     }
   }
 
-  async function processInputWithAetherAIStream(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[], history?: any[], pendingNote?: string | null, activeProjectId?: string | null, currentPath?: string }) {
+  async function processInputWithAetherAIStream(text: string, audioBase64: string, mimeType: string, options?: { cortexSynapses?: any[], notes?: any[], history?: any[], pendingNote?: string | null, activeProjectId?: string | null, currentPath?: string, circledContexts?: any[] }) {
     if (!process.env.GEMINI_API_KEY) {
       console.warn("GEMINI_API_KEY is not set.");
       return null;
@@ -4354,7 +4419,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       pendingNoteContext = `\n\n[Conversational Session Context: There is currently a pending note you offered to save: "${options.pendingNote}". If the user answers yes or confirms, set "shouldWriteDown": "yes", and "noteContent": "${options.pendingNote}". If they decline with no, set "shouldWriteDown": "no" and clear. If they command to save a brand new note on something else, set "shouldWriteDown": "yes" and "noteContent" to the new note.]`;
     }
 
-    const systemPrompt = getAetherSystemPrompt(cortexToUse, notesToUse, pendingNoteContext, options?.activeProjectId, options?.currentPath);
+    const systemPrompt = getAetherSystemPrompt(cortexToUse, notesToUse, pendingNoteContext, options?.activeProjectId, options?.currentPath, options?.circledContexts);
 
     try {
       let contents: any[] = [];
@@ -4608,7 +4673,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
   // 1. Centralized browser-dictation API endpoint
   app.post(['/api/voice/process', '/api/text/process'], async (req, res) => {
     try {
-      const { audioData, mimeType, projectContexts, textCommand, cortexSynapses, notes, issues, phases, agents, aiContextRules, history, pendingNote, activeProjectId, currentPath } = req.body;
+      const { audioData, mimeType, projectContexts, textCommand, cortexSynapses, notes, issues, phases, agents, aiContextRules, history, pendingNote, activeProjectId, currentPath, circledContexts } = req.body;
 
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: 'GEMINI_API_KEY is not set' });
@@ -4667,7 +4732,8 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
           history,
           pendingNote,
           activeProjectId,
-          currentPath
+          currentPath,
+          circledContexts
         });
 
         if (!stream) {
@@ -4703,7 +4769,8 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         history,
         pendingNote,
         activeProjectId,
-        currentPath
+        currentPath,
+        circledContexts
       });
       res.json(response);
     } catch (e: any) {
@@ -4728,7 +4795,17 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         aiContextRules: cache.aiContextRules,
         aetherPersonalityRules: cache.aetherPersonalityRules,
         passcodePin: cache.passcodePin,
-        githubToken: (cache as any).githubToken || ""
+        githubToken: (cache as any).githubToken || "",
+        aetherControlNotes: cache.aetherControlNotes,
+        aetherControlIssues: cache.aetherControlIssues,
+        aetherControlAgents: cache.aetherControlAgents,
+        aetherControlBrainstorm: cache.aetherControlBrainstorm,
+        aetherControlIntegrations: cache.aetherControlIntegrations,
+        aetherDoubleConfirm: cache.aetherDoubleConfirm,
+        aetherAutoRecommend: cache.aetherAutoRecommend,
+        aetherModel: cache.aetherModel,
+        aetherConciseness: cache.aetherConciseness,
+        aetherThinkingLevel: cache.aetherThinkingLevel
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -4739,7 +4816,11 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
     try {
       const uid = getUserIdFromRequest(req);
       const cache = getUserCache(uid);
-      const { projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, githubToken } = req.body;
+      const { 
+        projects, issues, cortexSynapses, notes, phases, agents, aiContextRules, aetherPersonalityRules, passcodePin, githubToken,
+        aetherControlNotes, aetherControlIssues, aetherControlAgents, aetherControlBrainstorm, aetherControlIntegrations,
+        aetherDoubleConfirm, aetherAutoRecommend, aetherModel, aetherConciseness, aetherThinkingLevel
+      } = req.body;
       
       if (Array.isArray(projects)) {
         cache.projects = projects;
@@ -4780,6 +4861,47 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       if (typeof githubToken === 'string') {
         (cache as any).githubToken = githubToken;
         if (uid === 'anonymous') workspaceGithubToken = githubToken;
+      }
+      
+      if (typeof aetherControlNotes === 'boolean') {
+        cache.aetherControlNotes = aetherControlNotes;
+        if (uid === 'anonymous') workspaceAetherControlNotes = aetherControlNotes;
+      }
+      if (typeof aetherControlIssues === 'boolean') {
+        cache.aetherControlIssues = aetherControlIssues;
+        if (uid === 'anonymous') workspaceAetherControlIssues = aetherControlIssues;
+      }
+      if (typeof aetherControlAgents === 'boolean') {
+        cache.aetherControlAgents = aetherControlAgents;
+        if (uid === 'anonymous') workspaceAetherControlAgents = aetherControlAgents;
+      }
+      if (typeof aetherControlBrainstorm === 'boolean') {
+        cache.aetherControlBrainstorm = aetherControlBrainstorm;
+        if (uid === 'anonymous') workspaceAetherControlBrainstorm = aetherControlBrainstorm;
+      }
+      if (typeof aetherControlIntegrations === 'boolean') {
+        cache.aetherControlIntegrations = aetherControlIntegrations;
+        if (uid === 'anonymous') workspaceAetherControlIntegrations = aetherControlIntegrations;
+      }
+      if (typeof aetherDoubleConfirm === 'boolean') {
+        cache.aetherDoubleConfirm = aetherDoubleConfirm;
+        if (uid === 'anonymous') workspaceAetherDoubleConfirm = aetherDoubleConfirm;
+      }
+      if (typeof aetherAutoRecommend === 'boolean') {
+        cache.aetherAutoRecommend = aetherAutoRecommend;
+        if (uid === 'anonymous') workspaceAetherAutoRecommend = aetherAutoRecommend;
+      }
+      if (typeof aetherModel === 'string') {
+        cache.aetherModel = aetherModel;
+        if (uid === 'anonymous') workspaceAetherModel = aetherModel;
+      }
+      if (typeof aetherConciseness === 'string') {
+        cache.aetherConciseness = aetherConciseness;
+        if (uid === 'anonymous') workspaceAetherConciseness = aetherConciseness;
+      }
+      if (typeof aetherThinkingLevel === 'string') {
+        cache.aetherThinkingLevel = aetherThinkingLevel;
+        if (uid === 'anonymous') workspaceAetherThinkingLevel = aetherThinkingLevel;
       }
       
       savePersistentState();
@@ -5048,6 +5170,16 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         workspaceAiContextRulesCache,
         workspaceAetherPersonalityRulesCache,
         workspacePasscodePinCache,
+        workspaceAetherControlNotes,
+        workspaceAetherControlIssues,
+        workspaceAetherControlAgents,
+        workspaceAetherControlBrainstorm,
+        workspaceAetherControlIntegrations,
+        workspaceAetherDoubleConfirm,
+        workspaceAetherAutoRecommend,
+        workspaceAetherModel,
+        workspaceAetherConciseness,
+        workspaceAetherThinkingLevel,
         whatsappActive,
         whatsappBotNumber,
         whatsappAccessToken,
@@ -5110,6 +5242,18 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
           mdContent += `*No custom personality traits registered yet. Tell Aether to "be more funny", "curse more", or "call me Sir from now on" to shape his persona!*\n`;
         }
 
+        mdContent += `\n## ⚙️ Aether Autonomy & Permission Settings\n`;
+        mdContent += `- **Manage Notes/Docs**: ${workspaceAetherControlNotes ? "ENABLED 📂" : "DISABLED ❌"}\n`;
+        mdContent += `- **Manage Issues/Backlog**: ${workspaceAetherControlIssues ? "ENABLED 🎯" : "DISABLED ❌"}\n`;
+        mdContent += `- **Manage Specialist Agents**: ${workspaceAetherControlAgents ? "ENABLED 🤖" : "DISABLED ❌"}\n`;
+        mdContent += `- **Collaborative Brainstorming**: ${workspaceAetherControlBrainstorm ? "ENABLED 🔮" : "DISABLED ❌"}\n`;
+        mdContent += `- **Integrations Orchestration**: ${workspaceAetherControlIntegrations ? "ENABLED 🔌" : "DISABLED ❌"}\n`;
+        mdContent += `- **Double-Confirm Actions**: ${workspaceAetherDoubleConfirm ? "ENABLED ⚠️" : "DISABLED (Direct clearance)"}\n`;
+        mdContent += `- **Auto-Recommend Enhancements**: ${workspaceAetherAutoRecommend ? "ENABLED 💡" : "DISABLED ❌"}\n`;
+        mdContent += `- **Aether Core LLM Model**: \`${workspaceAetherModel}\`\n`;
+        mdContent += `- **Response Conciseness**: \`${workspaceAetherConciseness}\`\n`;
+        mdContent += `- **Deep Thinking Capability**: \`${workspaceAetherThinkingLevel}\`\n`;
+
         mdContent += `\n## 🧠 Learned Synaptic Rules (Cognitive Cortex)\n`;
         if (workspaceCortexCache && workspaceCortexCache.length > 0) {
           workspaceCortexCache.forEach((syn: any, idx: number) => {
@@ -5151,6 +5295,16 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         if (typeof data.workspaceAiContextRulesCache === 'string') workspaceAiContextRulesCache = data.workspaceAiContextRulesCache;
         if (Array.isArray(data.workspaceAetherPersonalityRulesCache)) workspaceAetherPersonalityRulesCache = data.workspaceAetherPersonalityRulesCache;
         if (typeof data.workspacePasscodePinCache === 'string') workspacePasscodePinCache = data.workspacePasscodePinCache;
+        if (typeof data.workspaceAetherControlNotes === 'boolean') workspaceAetherControlNotes = data.workspaceAetherControlNotes;
+        if (typeof data.workspaceAetherControlIssues === 'boolean') workspaceAetherControlIssues = data.workspaceAetherControlIssues;
+        if (typeof data.workspaceAetherControlAgents === 'boolean') workspaceAetherControlAgents = data.workspaceAetherControlAgents;
+        if (typeof data.workspaceAetherControlBrainstorm === 'boolean') workspaceAetherControlBrainstorm = data.workspaceAetherControlBrainstorm;
+        if (typeof data.workspaceAetherControlIntegrations === 'boolean') workspaceAetherControlIntegrations = data.workspaceAetherControlIntegrations;
+        if (typeof data.workspaceAetherDoubleConfirm === 'boolean') workspaceAetherDoubleConfirm = data.workspaceAetherDoubleConfirm;
+        if (typeof data.workspaceAetherAutoRecommend === 'boolean') workspaceAetherAutoRecommend = data.workspaceAetherAutoRecommend;
+        if (typeof data.workspaceAetherModel === 'string') workspaceAetherModel = data.workspaceAetherModel;
+        if (typeof data.workspaceAetherConciseness === 'string') workspaceAetherConciseness = data.workspaceAetherConciseness;
+        if (typeof data.workspaceAetherThinkingLevel === 'string') workspaceAetherThinkingLevel = data.workspaceAetherThinkingLevel;
         
         if (typeof data.whatsappActive === 'boolean') whatsappActive = data.whatsappActive;
         if (typeof data.whatsappBotNumber === 'string') whatsappBotNumber = data.whatsappBotNumber;

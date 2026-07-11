@@ -25,7 +25,9 @@ import {
   Plus,
   Minimize2,
   Maximize2,
-  Video
+  Video,
+  Target,
+  MousePointerClick
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -126,10 +128,66 @@ function areConvoHistoriesEqual(a: any[] | null | undefined, b: any[] | null | u
   return true;
 }
 
+const applyVocalDictionary = (text: string, dict: Array<{ from: string, to: string }> | undefined) => {
+  if (!text) return text;
+  let corrected = text;
+  const activeDict = dict || (() => {
+    try {
+      const stored = localStorage.getItem('app_vocal_dictionary');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  })();
+  
+  if (Array.isArray(activeDict)) {
+    for (const item of activeDict) {
+      if (item.from && item.to) {
+        const regex = new RegExp(`\\b${item.from.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi');
+        corrected = corrected.replace(regex, item.to);
+      }
+    }
+  }
+  return corrected;
+};
+
+const extractNewProjectNameFromDecline = (command: string): string | null => {
+  const lower = command.toLowerCase().trim();
+  
+  // Look for patterns like "no, it was spelled xxx", "no, i meant xxx", "no, make it xxx", "no, named xxx"
+  const patterns = [
+    /no,?\s+it\s+was\s+spelled\s+(.+)/i,
+    /no,?\s+it's\s+spelled\s+(.+)/i,
+    /no,?\s+its\s+spelled\s+(.+)/i,
+    /no,?\s+i\s+meant\s+(.+)/i,
+    /no,?\s+make\s+it\s+(.+)/i,
+    /no,?\s+named\s+(.+)/i,
+    /no,?\s+name\s+it\s+(.+)/i,
+    /no,?\s+create\s+(.+)/i,
+    /no,?\s+(.+)/i
+  ];
+  
+  for (const regex of patterns) {
+    const match = command.match(regex);
+    if (match && match[1]) {
+      let extracted = match[1].trim();
+      extracted = extracted.replace(/[.?!"']+$/, '').trim();
+      if (extracted.length > 0) {
+        return extracted.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      }
+    }
+  }
+  return null;
+};
+
 export function VoiceMemoAssistant() {
   const { 
     isRightSidebarOpen, 
-    toggleRightSidebar 
+    toggleRightSidebar,
+    circledContexts,
+    clearCircledContexts,
+    isDrawingModeActive,
+    setDrawingModeActive
   } = useStore();
   
   const {
@@ -183,7 +241,8 @@ export function VoiceMemoAssistant() {
     setIsAssistantMinimized,
     isAssistantOpen,
     setIsAssistantOpen,
-    showToast
+    showToast,
+    vocalDictionary
   } = useData();
 
   const location = useLocation();
@@ -511,6 +570,7 @@ export function VoiceMemoAssistant() {
   
   // Synchronized state refs to prevent stale closure bugs in browser speech recognition callbacks
   const isHubOpenRef = useRef(isHubOpen);
+  const isDrawingModeActiveRef = useRef(isDrawingModeActive);
   const isConversingRef = useRef(isConversing);
   const isListeningForSpeechRef = useRef(isListeningForSpeech);
   const isRecordingRef = useRef(isRecording);
@@ -532,16 +592,17 @@ export function VoiceMemoAssistant() {
         toggleAetherMutedState(false);
       }
     } else {
-      if (!isAetherMuted) {
+      if (!isAetherMuted && !isWakeWordEnabled) {
         toggleAetherMutedState(true);
       }
     }
-  }, [isHubOpen, isAetherMuted]);
+  }, [isHubOpen, isAetherMuted, isWakeWordEnabled]);
   useEffect(() => { isConversingRef.current = isConversing; }, [isConversing]);
   useEffect(() => { isListeningForSpeechRef.current = isListeningForSpeech; }, [isListeningForSpeech]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
   useEffect(() => { isConcurrentStreamEnabledRef.current = isConcurrentStreamEnabled; }, [isConcurrentStreamEnabled]);
+  useEffect(() => { isDrawingModeActiveRef.current = isDrawingModeActive; }, [isDrawingModeActive]);
   
   // High-Quality natural synthesis voices pre-fetching state
   const [voices, setVoices] = useState<any[]>([]);
@@ -948,7 +1009,8 @@ export function VoiceMemoAssistant() {
         for (let i = 0; i < event.results.length; ++i) {
           fullTranscriptOfRecognition += event.results[i][0].transcript;
         }
-        const transcript = fullTranscriptOfRecognition.toLowerCase().trim();
+        const correctedRaw = applyVocalDictionary(fullTranscriptOfRecognition, vocalDictionary);
+        const transcript = correctedRaw.toLowerCase().trim();
         const cleanWakeWord = wakeWord.toLowerCase().trim();
 
         if (transcript.trim()) {
@@ -1087,7 +1149,7 @@ export function VoiceMemoAssistant() {
   };
 
   const startContinuousConversationalListen = () => {
-    if (!isHubOpenRef.current) return;
+    if (!isHubOpenRef.current && !isDrawingModeActiveRef.current) return;
     if (isAetherMutedRef.current) {
       setIsListeningForSpeech(false);
       return;
@@ -1176,7 +1238,8 @@ export function VoiceMemoAssistant() {
           }
         }
 
-        const fullCurrentText = (finalTranscriptOfRound + interimTranscript).trim();
+        const fullCurrentTextRaw = (finalTranscriptOfRound + interimTranscript).trim();
+        const fullCurrentText = applyVocalDictionary(fullCurrentTextRaw, vocalDictionary);
 
         // Intelligent Voice Barge-In / User Interrupting AI Speak or active stream
         const isStreaming = activeStreamAbortControllerRef.current !== null;
@@ -1204,7 +1267,11 @@ export function VoiceMemoAssistant() {
                 }
               }
 
-              const intenseCuts = ["stop", "wait", "no", "cancel", "hold on", "hold", "aether", "ether", "heather", "shut up", "go away", "hey", "close"];
+              const intenseCuts = [
+                "stop", "wait", "no", "cancel", "hold on", "hold", "aether", "ether", "heather", 
+                "shut up", "go away", "hey", "close", "silence", "pause", "shut", "listen", "excuse me",
+                "actually", "wrong", "instead", "change", "correct", "no actually"
+              ];
               const hasIntenseCut = intenseCuts.some(cut => {
                 if (cleanTranscript.includes(cut)) {
                   // If the AI itself is speaking this word, don't trigger self-interruption!
@@ -1216,8 +1283,8 @@ export function VoiceMemoAssistant() {
                 return false;
               });
 
-              // Refined threshold: require at least 5 new words or a clear intense cut command to prevent minor room echo triggers
-              if (newWordsCount >= 5 || hasIntenseCut) {
+              // Enhanced responsive threshold: require at least 1 new word or a clear intense cut word to trigger interruption
+              if (newWordsCount >= 1 || hasIntenseCut) {
                 isUserInterrupting = true;
               }
             } else {
@@ -1287,7 +1354,7 @@ export function VoiceMemoAssistant() {
         setIsUserSpeaking(false);
         // Automatic restart loop while modal window is active & we are conversing
         setTimeout(() => {
-          if (isHubOpenRef.current && isConversingRef.current && !isListeningForSpeechRef.current) {
+          if ((isHubOpenRef.current || isDrawingModeActiveRef.current) && isConversingRef.current && !isListeningForSpeechRef.current) {
             startContinuousConversationalListen();
           }
         }, 150);
@@ -1299,6 +1366,31 @@ export function VoiceMemoAssistant() {
       console.warn("Failed starting conversational listener loop:", err);
     }
   };
+
+  // Handle auto-conversational listening trigger when Aether Context Mode (drawing mode) is activated
+  useEffect(() => {
+    if (isDrawingModeActive) {
+      setIsConversing(true);
+      isConversingRef.current = true;
+      if (!isListeningForSpeechRef.current && !isProcessingRef.current && !speakActiveRef.current) {
+        startContinuousConversationalListen();
+      }
+    } else {
+      if (!isHubOpenRef.current) {
+        setIsConversing(false);
+        isConversingRef.current = false;
+        if (activeRecogRef.current) {
+          try {
+            activeRecogRef.current.onend = null;
+            activeRecogRef.current.stop();
+          } catch (e) {}
+          activeRecogRef.current = null;
+        }
+        setIsListeningForSpeech(false);
+        startBackgroundWakeWord();
+      }
+    }
+  }, [isDrawingModeActive]);
 
   const requestAetherStream = async (payload: any) => {
     setIsProcessing(true);
@@ -1367,6 +1459,8 @@ export function VoiceMemoAssistant() {
               if (matched) return matched;
             }
             const priorities = [
+              // Prioritize British Male voice as the default choice
+              (v: any) => (v.name.includes('Google UK English Male') || v.name.includes('Daniel') || v.name.toLowerCase().includes('george') || v.name.includes('Oliver')) && v.lang.includes('en'),
               (v: any) => v.name.includes('Google US English') || v.name.includes('Google UK English Female') || v.name.includes('Google US English Male'),
               (v: any) => v.name.includes('Google') && v.lang.startsWith('en'),
               (v: any) => v.name.toLowerCase().includes('natural') && v.lang.startsWith('en'),
@@ -1400,7 +1494,7 @@ export function VoiceMemoAssistant() {
                 speakActiveRef.current = false;
                 addVocalDiagnostic("CONVO_MIC: Streaming SpeechSynthesis completed.");
                 
-                if (isHubOpenRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+                if ((isHubOpenRef.current || isDrawingModeActiveRef.current) && !isRecordingRef.current && !isProcessingRef.current) {
                   if (isConversingRef.current || isConcurrentStreamEnabledRef.current) {
                     setTimeout(() => {
                       startContinuousConversationalListen();
@@ -1529,7 +1623,7 @@ export function VoiceMemoAssistant() {
       setAetherFeedback({ error: err.message || "Failed conversational streaming processing" });
       
       setTimeout(() => {
-        if (isHubOpenRef.current && isConversingRef.current && !isSpeechActive) {
+        if ((isHubOpenRef.current || isDrawingModeActiveRef.current) && isConversingRef.current && !isSpeechActive) {
           startContinuousConversationalListen();
         }
       }, 1500);
@@ -1555,6 +1649,46 @@ export function VoiceMemoAssistant() {
         executeProposedAction(proposedAction);
         return;
       } else if (isDecline) {
+        if (proposedAction.intent === 'create_project') {
+          const newSpelling = extractNewProjectNameFromDecline(command);
+          if (newSpelling) {
+            const updatedAction = {
+              ...proposedAction,
+              parsedData: {
+                ...proposedAction.parsedData,
+                name: newSpelling
+              },
+              actionDisplay: `Create Project: "${newSpelling}"`
+            };
+            setProposedAction(updatedAction);
+            
+            const feedbackMsg = `Okay, so you meant create project named "${newSpelling}". Is that correct?`;
+            
+            setConvoHistory(prev => [
+              ...prev,
+              { role: 'user' as const, text: command },
+              { role: 'model' as const, text: feedbackMsg }
+            ].slice(-10));
+
+            setAetherFeedback({
+              transcript: command,
+              explanation: feedbackMsg,
+              intent: 'create_project',
+              triggeredAction: `📋 Corrected Proposed Project Name: "${newSpelling}"`
+            });
+
+            if (voicePlayback) {
+              triggerBrowserSpeechSynthesis(feedbackMsg);
+            }
+
+            setTimeout(() => {
+              if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+                startContinuousConversationalListen();
+              }
+            }, 1200);
+            return;
+          }
+        }
         discardProposedAction(proposedAction);
         return;
       }
@@ -1584,7 +1718,8 @@ export function VoiceMemoAssistant() {
         history: convoHistory,
         pendingNote: pendingNote,
         activeProjectId,
-        currentPath: location.pathname
+        currentPath: location.pathname,
+        circledContexts: circledContexts || []
       });
     } catch (err: any) {
       console.error(err);
@@ -2309,6 +2444,28 @@ export function VoiceMemoAssistant() {
     };
   }, []);
 
+  // Handle external text submission commands (e.g. from Kinetic HUD Overlay voice control)
+  useEffect(() => {
+    const handleSubmitCommandEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { text, openSidebar } = customEvent.detail || {};
+      if (text && text.trim()) {
+        if (openSidebar) {
+          setIsHubOpen(true);
+          if (!isRightSidebarOpen) {
+            toggleRightSidebar();
+          }
+        }
+        submitDirectConversationalText(text);
+      }
+    };
+
+    window.addEventListener('aether-submit-command', handleSubmitCommandEvent);
+    return () => {
+      window.removeEventListener('aether-submit-command', handleSubmitCommandEvent);
+    };
+  }, [isProcessing, proposedAction, convoHistory]);
+
   // Manage Hands-Free Conversation Mode lifecycle
   useEffect(() => {
     if (isHubOpen) {
@@ -2461,7 +2618,8 @@ export function VoiceMemoAssistant() {
             history: convoHistory,
             pendingNote: pendingNote,
             activeProjectId,
-            currentPath: location.pathname
+            currentPath: location.pathname,
+            circledContexts: circledContexts || []
           });
         } catch (innerErr: any) {
           console.error(innerErr);
@@ -2483,6 +2641,105 @@ export function VoiceMemoAssistant() {
     if (!inputText) return false;
     const cleanInput = inputText.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
     
+    // -----------------------------------------------------------------
+    // SPECIAL CORE VOICE COMMANDS FOR ETHER (AETHER AI) STATE CHANGING
+    // -----------------------------------------------------------------
+    const cleanNoAether = cleanInput.replace(/^(aether|ether|heather|hey aether|hey ether)\s+/, "").trim();
+
+    // 1. Mute and turn off
+    if (cleanInput.includes("mute yourself and turn off") || cleanInput.includes("mute and turn off") || cleanNoAether === "mute yourself and turn off" || cleanNoAether === "turn off and mute") {
+      const feedbackMsg = "Understood. Muting myself and turning off.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'settings_change',
+        triggeredAction: "🔇 Aether: Muted & Off"
+      });
+      triggerBrowserSpeechSynthesis(feedbackMsg);
+      
+      // Fully turn off
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: true } }));
+      if (setIsWakeWordEnabled) setIsWakeWordEnabled(false);
+      localStorage.setItem('isAetherMuted', 'true');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+      useStore.getState().setDrawingModeActive(false);
+      
+      return true;
+    }
+
+    // 2. Turn off
+    if (cleanInput.includes("turn off") || cleanNoAether === "turn off" || cleanInput === "turn off") {
+      const feedbackMsg = "Aether turning off. Goodbye!";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'settings_change',
+        triggeredAction: "🔇 Aether: Off"
+      });
+      triggerBrowserSpeechSynthesis(feedbackMsg);
+
+      // Fully turn off
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: true } }));
+      if (setIsWakeWordEnabled) setIsWakeWordEnabled(false);
+      localStorage.setItem('isAetherMuted', 'true');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+      useStore.getState().setDrawingModeActive(false);
+
+      return true;
+    }
+
+    // 3. Mute yourself
+    if (cleanInput.includes("mute yourself") || cleanInput === "mute yourself" || cleanNoAether === "mute yourself" || cleanInput === "mute") {
+      const feedbackMsg = "Muting myself now.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'settings_change',
+        triggeredAction: "🔇 Aether: Muted"
+      });
+      triggerBrowserSpeechSynthesis(feedbackMsg);
+
+      // Mute
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: false, mute: true } }));
+      localStorage.setItem('isAetherMuted', 'true');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+
+      return true;
+    }
+
+    // 4. Switch to context mode / context mode / switches context mode
+    if (
+      cleanInput.includes("switch context mode") || 
+      cleanInput.includes("switches context mode") || 
+      cleanInput.includes("switch to context mode") || 
+      cleanInput.includes("switches to context mode") || 
+      cleanInput.includes("context mode") || 
+      cleanNoAether === "context" || 
+      cleanNoAether === "context mode" || 
+      cleanNoAether === "switches context mode" || 
+      cleanNoAether === "can you show context" || 
+      cleanInput.includes("show context") || 
+      cleanInput.includes("can you show context")
+    ) {
+      const feedbackMsg = "Switched to Context Mode. You can now draw or circle areas with your mouse or hold Alt and drag to create selection regions.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedbackMsg,
+        intent: 'settings_change',
+        triggeredAction: "🎯 Context Mode Activated"
+      });
+      triggerBrowserSpeechSynthesis(feedbackMsg);
+
+      // Activate open on context mode
+      window.dispatchEvent(new CustomEvent('aether-logo-toggle', { detail: { open: true, mute: false } }));
+      if (setIsWakeWordEnabled) setIsWakeWordEnabled(true);
+      localStorage.setItem('isAetherMuted', 'false');
+      window.dispatchEvent(new Event('aether-mute-sync'));
+      useStore.getState().setDrawingModeActive(true);
+
+      return true;
+    }
+
     // ==========================================
     // VOICE-ACTIVATED MACRO WIZARD INTERCEPTORS
     // ==========================================
@@ -2585,6 +2842,56 @@ export function VoiceMemoAssistant() {
         explanation: msg,
         intent: 'settings_change',
         triggeredAction: `📐 Camera Size Reset`
+      });
+      triggerBrowserSpeechSynthesis(msg);
+      return true;
+    }
+
+    // Voice command: Rename / label the last circled context region
+    const areaNameRegex = /(?:from\s+now\s+on\s+)?(?:this\s+area\s+is\s+called|this\s+area\s+is\s+the|this\s+area\s+is|name\s+this\s+area|call\s+this\s+area|this\s+is\s+the|this\s+area\s+is\s+the)\s+(.+)/i;
+    const areaMatch = cleanInput.match(areaNameRegex);
+    if (areaMatch) {
+      const currentContexts = [...useStore.getState().circledContexts];
+      if (currentContexts.length > 0) {
+        const lastIndex = currentContexts.length - 1;
+        // Match raw casing if possible by finding the substring in inputText
+        const targetLabelRaw = (inputText.match(/(?:this\s+area\s+is\s+called|this\s+area\s+is\s+the|this\s+area\s+is|name\s+this\s+area|call\s+this\s+area|this\s+is\s+the|this\s+area\s+is\s+the)\s+(.+)/i)?.[1] || areaMatch[1]).trim().replace(/[.?]/g, "");
+        currentContexts[lastIndex] = {
+          ...currentContexts[lastIndex],
+          label: targetLabelRaw
+        };
+        useStore.getState().setCircledContexts(currentContexts);
+
+        const msg = `Acknowledged. I have labeled this circled region as "${targetLabelRaw}" and integrated it as active context.`;
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: msg,
+          intent: 'settings_change',
+          triggeredAction: `🎯 Named Area: "${targetLabelRaw}"`
+        });
+        triggerBrowserSpeechSynthesis(msg);
+        return true;
+      } else {
+        const msg = `You asked to label an area, but I couldn't find any active circled regions. Please circle an area with your mouse or hold Alt and drag to define a region first!`;
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: msg,
+          intent: 'chat_query'
+        });
+        triggerBrowserSpeechSynthesis(msg);
+        return true;
+      }
+    }
+
+    // Voice command: Clear circled areas
+    if (cleanInput.includes("clear circled areas") || cleanInput.includes("clear circled contexts") || cleanInput.includes("clear all circled areas") || cleanInput.includes("clear target boxes") || cleanInput.includes("delete all circled")) {
+      useStore.getState().clearCircledContexts();
+      const msg = "I have cleared all circled screen regions and reset active spatial context anchors.";
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: msg,
+        intent: 'settings_change',
+        triggeredAction: "🧹 Cleared Circled Contexts"
       });
       triggerBrowserSpeechSynthesis(msg);
       return true;
@@ -3573,6 +3880,46 @@ export function VoiceMemoAssistant() {
         executeProposedAction(proposedAction);
         return;
       } else if (isDecline) {
+        if (proposedAction.intent === 'create_project') {
+          const newSpelling = extractNewProjectNameFromDecline(command);
+          if (newSpelling) {
+            const updatedAction = {
+              ...proposedAction,
+              parsedData: {
+                ...proposedAction.parsedData,
+                name: newSpelling
+              },
+              actionDisplay: `Create Project: "${newSpelling}"`
+            };
+            setProposedAction(updatedAction);
+            
+            const feedbackMsg = `Okay, so you meant create project named "${newSpelling}". Is that correct?`;
+            
+            setConvoHistory(prev => [
+              ...prev,
+              { role: 'user' as const, text: command },
+              { role: 'model' as const, text: feedbackMsg }
+            ].slice(-10));
+
+            setAetherFeedback({
+              transcript: command,
+              explanation: feedbackMsg,
+              intent: 'create_project',
+              triggeredAction: `📋 Corrected Proposed Project Name: "${newSpelling}"`
+            });
+
+            if (voicePlayback) {
+              triggerBrowserSpeechSynthesis(feedbackMsg);
+            }
+
+            setTimeout(() => {
+              if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+                startContinuousConversationalListen();
+              }
+            }, 1200);
+            return;
+          }
+        }
         discardProposedAction(proposedAction);
         return;
       }
@@ -3601,7 +3948,8 @@ export function VoiceMemoAssistant() {
         history: convoHistory,
         pendingNote: pendingNote,
         activeProjectId,
-        currentPath: location.pathname
+        currentPath: location.pathname,
+        circledContexts: circledContexts || []
       });
     } catch (err: any) {
       console.error(err);
@@ -4445,6 +4793,8 @@ export function VoiceMemoAssistant() {
         }
 
         const priorities = [
+          // Prioritize British Male voice as the default choice
+          (v: any) => (v.name.includes('Google UK English Male') || v.name.includes('Daniel') || v.name.toLowerCase().includes('george') || v.name.includes('Oliver')) && v.lang.includes('en'),
           // Natural Google voices
           (v: any) => v.name.includes('Google US English') || v.name.includes('Google UK English Female') || v.name.includes('Google US English Male'),
           (v: any) => v.name.includes('Google') && v.lang.startsWith('en'),
@@ -4945,6 +5295,74 @@ export function VoiceMemoAssistant() {
                         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                         className="flex-grow flex flex-col min-h-0 space-y-3"
                       >
+                      {/* Interactive Mouse Selection & Context Dashboard */}
+                      <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-900/85 text-left shrink-0">
+                        <div className="flex items-center justify-between mb-2 select-none">
+                          <div className="flex items-center gap-1.5">
+                            <Target size={12} className="text-yellow-400 animate-pulse" />
+                            <span className="text-[10px] uppercase font-black tracking-widest text-yellow-400 font-mono">Spatial Screen Context</span>
+                          </div>
+                          
+                          <button
+                            onClick={() => {
+                              setDrawingModeActive(!isDrawingModeActive);
+                              showToast(
+                                !isDrawingModeActive ? "🎯 Activated screen region draw mode" : "🚫 Deactivated screen region draw mode",
+                                "info",
+                                2000
+                              );
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                              isDrawingModeActive
+                                ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 animate-pulse'
+                                : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700'
+                            }`}
+                          >
+                            <MousePointerClick size={10} />
+                            <span>{isDrawingModeActive ? "Drawing Active" : "Circle Regions"}</span>
+                          </button>
+                        </div>
+
+                        {/* List of active circled areas */}
+                        {circledContexts && circledContexts.length > 0 ? (
+                          <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[8px] text-zinc-500 font-mono font-bold uppercase">Active Captured Areas ({circledContexts.length})</span>
+                              <button
+                                onClick={() => {
+                                  clearCircledContexts();
+                                  showToast("🧹 Cleared all screen context areas", "info", 1500);
+                                }}
+                                className="text-[8px] text-red-400 hover:text-red-300 font-mono font-bold uppercase cursor-pointer"
+                              >
+                                Clear All
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {circledContexts.map((ctx, idx) => (
+                                <div key={ctx.id} className="flex items-center justify-between gap-1.5 bg-zinc-900/80 border border-zinc-850 px-2 py-1 rounded-lg text-[9.5px]">
+                                  <span className="text-zinc-300 truncate max-w-[120px] font-mono">{ctx.label || `Area #${idx + 1}`}</span>
+                                  <button
+                                    onClick={() => {
+                                      useStore.setState(state => ({
+                                        circledContexts: state.circledContexts.filter(c => c.id !== ctx.id)
+                                      }));
+                                    }}
+                                    className="text-zinc-500 hover:text-red-400 cursor-pointer"
+                                  >
+                                    <X size={10} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[9px] text-zinc-500 font-mono leading-normal">
+                            No visual context selected. Circle any item on your screen using your cursor, or hold <kbd className="bg-zinc-900 border border-zinc-800 text-zinc-300 px-1 py-0.5 rounded text-[8px] font-sans font-bold">Alt</kbd> + drag to recruit instant UI content context.
+                          </p>
+                        )}
+                      </div>
+
                       {/* Real-time Dynamic Acoustic Synaptic feedback tracker */}
                       <div className="flex items-center justify-between px-3.5 py-2.5 bg-zinc-900/40 rounded-xl border border-zinc-850/60 font-sans select-none shrink-0 text-left">
                         <div className="flex items-center gap-2">
@@ -5868,434 +6286,14 @@ export function VoiceMemoAssistant() {
               )}
 
               {/* Bottom footer bar */}
-              <div className="p-3 bg-zinc-950 border-t border-zinc-900 flex justify-between items-center text-[9px] text-zinc-550 font-mono shrink-0">
-                <span>OBSIDIAN STATE SYNC ACTIVE • DUAL DESK ENVIRONMENT</span>
+              <div className="p-3 bg-zinc-950 border-t border-zinc-900 flex justify-between items-center text-[9px] text-zinc-500 font-mono shrink-0">
+                <span>Aether Cognitive Hub Active • Dual Desk Environment</span>
                 <span>SYSTEM ONLINE</span>
               </div>
             </motion.div>
           </motion.div>
-          )
-        )}
+        ))}
       </AnimatePresence>
-
-      {/* 2. Floating Assistant Activation Widget Trigger (Always in bottom-right corner when HUD is closed) */}
-      {!isAssistantRoute && (
-        <motion.div 
-          layout
-          transition={{ type: "spring", stiffness: 280, damping: 26 }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setShowMutePopover(true);
-          }}
-          className={`fixed bottom-6 z-[101] flex flex-col items-end gap-3 select-none ${
-            isRightSidebarOpen 
-              ? 'right-6 max-md:hidden md:right-[264px]' 
-              : 'right-6'
-          }`}
-        >
-          <AnimatePresence>
-            {!isHubOpen && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 15 }}
-                className="flex flex-col items-end gap-2.5 max-w-[270px] sm:max-w-[340px]"
-              >
-                {/* 1. If Aether is currently speaking/responding, show a premium active waveform card */}
-                {isSpeechActive ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3 bg-gradient-to-tr from-amber-950/90 via-[#0c0c0e]/95 to-zinc-900 border border-amber-500/30 backdrop-blur-md rounded-2xl shadow-[0_4px_30px_rgba(245,158,11,0.25)] w-full text-right"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      {/* Active bouncing waveform */}
-                      <div className="flex items-end gap-[2px] h-3 ml-0.5">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                          <motion.span
-                            key={i}
-                            animate={{ height: [3, Math.round(10 + Math.random() * 12), 3] }}
-                            transition={{ duration: 0.5 + i * 0.1, repeat: Infinity, ease: "easeInOut" }}
-                            className="w-[2.5px] rounded-t bg-amber-400"
-                          />
-                        ))}
-                      </div>
-                      
-                      <div className="text-right">
-                        <span className="text-[8px] font-mono font-black text-yellow-400 uppercase tracking-widest block leading-none">AETHER SPEAKING</span>
-                        <span className="text-[10px] text-zinc-300 font-sans font-medium mt-0.5 block leading-tight">Responding live...</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleIntelligentInterrupt();
-                      }}
-                      className="mt-2 w-full py-1 text-[8px] font-mono tracking-wider font-extrabold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-md cursor-pointer transition-all uppercase"
-                    >
-                      Mute / Interrupt
-                    </button>
-                  </motion.div>
-                ) : showMutePopover ? (
-                  isWakeWordListening ? (
-                    /* 2. Waveform / radar list card */
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={`flex flex-col gap-1.5 p-3 backdrop-blur-md rounded-2xl w-full max-w-[280px] transition-all duration-300 ${
-                        isVoiceDetectedInBg 
-                          ? 'bg-[#0f241d]/95 border border-emerald-400/40 shadow-[0_4px_30px_rgba(16,185,129,0.3)]Scale-[1.02]' 
-                          : 'bg-zinc-900/95 border border-emerald-500/25 shadow-[0_4px_24px_rgba(16,185,129,0.15)]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-2.5 w-2.5 shrink-0">
-                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                              isVoiceDetectedInBg ? 'bg-emerald-300' : 'bg-emerald-400'
-                            }`} />
-                            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                              isVoiceDetectedInBg ? 'bg-green-400' : 'bg-emerald-500'
-                            }`} />
-                          </span>
-                          <span className="text-[10px] font-mono text-zinc-200">
-                            {isVoiceDetectedInBg ? 'Aether Hearing Sound...' : 'Aether 24/7 Active'}
-                          </span>
-                        </div>
-
-                        {/* Waveform indicator */}
-                        <div className="flex items-end gap-[2.5px] h-3.5 bg-zinc-950/60 px-1.5 rounded-sm">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <motion.span
-                              key={i}
-                              animate={{ height: isVoiceDetectedInBg ? [4, 12, 4] : [2, 6, 2] }}
-                              transition={{ duration: 0.4 + i * 0.12, repeat: Infinity, ease: "easeInOut" }}
-                              className={`w-[1.8px] rounded-t ${isVoiceDetectedInBg ? 'bg-yellow-400' : 'bg-emerald-500'}`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      {isVoiceDetectedInBg ? (
-                        <p className="text-[9px] font-sans text-emerald-300 leading-normal text-left font-semibold">
-                          Hearing voice activity... Matching <span className="text-yellow-300 font-extrabold font-mono">"{wakeWord || 'hey aether'}"</span>...
-                        </p>
-                      ) : (
-                        <p className="text-[9px] font-sans text-zinc-400 leading-normal text-left">
-                          Say <span className="text-yellow-400 font-semibold font-mono">"{wakeWord || 'hey aether'}"</span> to start talking hands-free!
-                        </p>
-                      )}
-                    </motion.div>
-                  ) : isMicPermissionBlocked ? (
-                    /* 3. Blocked permission guide card */
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="p-3 bg-[#180f10] border border-rose-500/20 backdrop-blur-md rounded-2xl shadow-[0_4px_20px_rgba(239,68,68,0.1)] w-full text-left"
-                    >
-                      <span className="text-[8px] font-mono font-black text-rose-400 uppercase tracking-widest block leading-none mb-1">
-                        ⚠️ VOICE AUTOBLOCK
-                      </span>
-                      <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
-                        Microphone permission is blocked. Tap anywhere on the page to trigger prompt, or click microphone to unlock vocal feeds.
-                      </p>
-                    </motion.div>
-                  ) : (
-                    /* 4. Default Standby helper, inviting interaction to wake up word */
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="p-3 bg-zinc-900/90 border border-yellow-500/10 backdrop-blur-md rounded-2xl shadow-lg w-full text-left"
-                    >
-                      <span className="text-[8px] font-mono font-black text-yellow-400 tracking-wider uppercase block mb-1">
-                        ⚡ Voice standby asleep
-                      </span>
-                      <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
-                        Click anywhere on the screen to initialize and synchronize hands-free microphone listening.
-                      </p>
-                    </motion.div>
-                  )
-                ) : null}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Consolidated Single Mute / Interrupt / Activate Button */}
-          <motion.button
-            id="global-ais-voice-btn"
-            onContextMenu={(e) => {
-              e.preventDefault(); // Prevent native right-click browser menu
-              const nextMuteState = !isAetherMuted;
-              toggleAetherMutedState(nextMuteState);
-              if (nextMuteState) {
-                // If muting, close the assistant area so it immediately ceases active recording
-                handleCloseAssistant();
-              } else {
-                // If unmuting, start background listening
-                setTimeout(() => {
-                  startBackgroundWakeWord();
-                }, 100);
-              }
-            }}
-            onClick={(e) => {
-              // Ensure it is a Left Click
-              if (e.button !== 0) return;
-              if (window.speechSynthesis) window.speechSynthesis.cancel();
-
-              let wasMuted = isAetherMuted;
-              if (wasMuted) {
-                toggleAetherMutedState(false);
-              }
-
-              // Activate the pop-up (if not already open)
-              if (!isHubOpen) {
-                // Open the assistant panel
-                playActivationChime();
-                setWakeWordTriggerTime(Date.now());
-                setIsHubOpen(true);
-
-                setHudTab('speak');
-                setIsConversing(true);
-                setIsMicPermissionBlocked(false);
-
-                // Continue session if history exists, otherwise use a greeting
-                if (convoHistory.length > 0) {
-                  const continueMsg = "Continuing our session. What's on your mind?";
-                  setAetherFeedback({
-                    explanation: continueMsg
-                  });
-                  setTimeout(() => {
-                    triggerBrowserSpeechSynthesis(continueMsg);
-                  }, 120);
-                } else {
-                  const chosenGreeting = getGreeting();
-                  setConvoHistory([
-                    { role: 'model', text: chosenGreeting }
-                  ]);
-                  setAetherFeedback({
-                    explanation: chosenGreeting
-                  });
-                  setTimeout(() => {
-                    triggerBrowserSpeechSynthesis(chosenGreeting);
-                  }, 120);
-                }
-              } else {
-                // If already open
-                if (isSpeechActive) {
-                  // If speaking, clicking interrupts the speech
-                  handleIntelligentInterrupt();
-                } else {
-                  // If silent and open:
-                  if (wasMuted) {
-                    // If we just unmuted it, keep it open and let it start listening
-                    setTimeout(() => {
-                      startContinuousConversationalListen();
-                    }, 100);
-                  } else {
-                    // Otherwise close it
-                    handleCloseAssistant();
-                  }
-                }
-              }
-            }}
-            className={`relative group p-4 rounded-full shadow-2xl flex items-center justify-center transition-all cursor-pointer ${
-              isHubOpen 
-                ? 'bg-zinc-850 text-yellow-500 border border-zinc-700' 
-                : isAetherMuted
-                  ? 'bg-gradient-to-tr from-[#1f1618] via-zinc-900 to-[#121214] text-red-400 border border-red-950/50'
-                  : isRecording
-                    ? 'bg-gradient-to-tr from-red-650 via-amber-600 to-yellow-500 text-white shadow-[0_0_25px_rgba(239,68,68,0.45)]'
-                    : isVoiceDetectedInBg
-                      ? 'bg-gradient-to-tr from-emerald-600 via-teal-500 to-yellow-400 text-zinc-950 font-black shadow-[0_0_30px_rgba(16,185,129,0.75)] border border-emerald-400/50'
-                      : isWakeWordListening
-                        ? 'bg-gradient-to-tr from-[#122c22] via-zinc-900 to-zinc-900 text-emerald-400 border border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.25)]'
-                        : 'bg-gradient-to-tr from-amber-650 via-amber-550 to-yellow-400 text-zinc-950 font-black shadow-lg shadow-yellow-500/10'
-            }`}
-            whileTap={{ scale: 0.95 }}
-            animate={isVoiceDetectedInBg ? {
-              scale: [1, 1.08, 1],
-              boxShadow: [
-                "0 0 15px rgba(16, 185, 129, 0.4)",
-                "0 0 35px rgba(16, 185, 129, 0.7)",
-                "0 0 15px rgba(16, 185, 129, 0.4)"
-              ]
-            } : isRecording ? {
-              scale: [1, 1.05, 1],
-            } : {}}
-            transition={isVoiceDetectedInBg ? {
-              duration: 1.2,
-              repeat: Infinity,
-              ease: "easeInOut"
-            } : isRecording ? {
-              duration: 1.5,
-              repeat: Infinity,
-              ease: "easeInOut"
-            } : {}}
-            title={
-              isAetherMuted 
-                ? "Unmute Aether" 
-                : isHubOpen 
-                  ? isSpeechActive 
-                    ? "Interrupt Speech" 
-                    : "Mute & Sleep Aether" 
-                  : "Aether Vocal Dispatch"
-            }
-          >
-            {/* Concentric waves */}
-            {isRecording && (
-              <>
-                <motion.div
-                  animate={{
-                    scale: [1, 1.35 + (frequencyBuffer.reduce((sum, v) => sum + v, 0) / frequencyBuffer.length / 20) * 0.4, 1],
-                    opacity: [0.6, 0.1, 0.6],
-                  }}
-                  transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute inset-0 rounded-full bg-red-500/30 filter blur-sm -z-10 pointer-events-none"
-                />
-                <motion.div
-                  animate={{
-                    scale: [1, 1.6 + (frequencyBuffer.reduce((sum, v) => sum + v, 0) / frequencyBuffer.length / 20) * 0.7, 1],
-                    opacity: [0.4, 0, 0.4],
-                  }}
-                  transition={{ duration: 1.9, repeat: Infinity, ease: "easeInOut", delay: 0.15 }}
-                  className="absolute inset-0 rounded-full bg-amber-500/20 filter blur-md -z-20 pointer-events-none"
-                />
-              </>
-            )}
-
-            {/* Rotating processing thinking halo */}
-            {isProcessing && (
-              <motion.div
-                animate={{
-                  rotate: 360,
-                  scale: [1, 1.15, 1],
-                }}
-                transition={{
-                  rotate: { duration: 2.2, repeat: Infinity, ease: "linear" },
-                  scale: { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
-                }}
-                className="absolute -inset-1.5 rounded-full bg-gradient-to-tr from-yellow-500 via-amber-500 to-yellow-300 opacity-70 filter blur-xs -z-10 pointer-events-none"
-              />
-            )}
-
-            {/* Standby hearing sound/capturing speech wave animation */}
-            {!isHubOpen && !isRecording && isVoiceDetectedInBg && (
-              <>
-                <motion.div
-                  animate={{
-                    scale: [1, 1.55, 1],
-                    opacity: [0.65, 0.08, 0.65],
-                  }}
-                  transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
-                  className="absolute inset-0 rounded-full bg-emerald-500/35 filter blur-sm -z-10 pointer-events-none"
-                />
-                <motion.div
-                  animate={{
-                    scale: [1, 2.1, 1],
-                    opacity: [0.35, 0, 0.35],
-                  }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut", delay: 0.12 }}
-                  className="absolute inset-0 rounded-full bg-teal-500/20 filter blur-md -z-20 pointer-events-none"
-                />
-              </>
-            )}
-
-            {/* General Standby breathing aura to prove 24/7 active standby is working! */}
-            {!isHubOpen && !isRecording && !isVoiceDetectedInBg && isWakeWordListening && (
-              <motion.div
-                animate={{
-                  scale: [1, 1.22, 1],
-                  opacity: [0.3, 0.08, 0.3],
-                }}
-                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0 rounded-full bg-emerald-500/15 filter blur-xs -z-10 pointer-events-none"
-              />
-            )}
-
-            <AnimatePresence mode="wait">
-              {isHubOpen ? (
-                <motion.div 
-                  key="close" 
-                  initial={{ rotate: -90, opacity: 0 }} 
-                  animate={{ rotate: 0, opacity: 1 }} 
-                  exit={{ rotate: 90, opacity: 0 }}
-                  className="flex items-center justify-center text-amber-500"
-                >
-                  {isProcessing ? (
-                    <Loader2 size={20} className="animate-spin text-yellow-400" />
-                  ) : isSpeechActive ? (
-                    <VolumeX size={20} className="animate-pulse" />
-                  ) : (
-                    <X size={20} />
-                  )}
-                </motion.div>
-              ) : (
-                <motion.div 
-                  key="mic" 
-                  initial={{ rotate: 90, opacity: 0 }} 
-                  animate={{ rotate: 0, opacity: 1 }} 
-                  exit={{ rotate: -90, opacity: 0 }}
-                  className={`relative flex items-center justify-center ${
-                    isRecording 
-                      ? 'animate-pulse' 
-                      : isVoiceDetectedInBg 
-                        ? 'scale-105' 
-                        : ''
-                  }`}
-                >
-                  {isAetherMuted ? (
-                    <MicOff size={20} className="text-red-400 animate-pulse" />
-                  ) : isProcessing ? (
-                    <Loader2 size={20} className="animate-spin text-yellow-400" />
-                  ) : (
-                    <Mic 
-                      size={20} 
-                      className={
-                        isRecording 
-                          ? 'text-red-350' 
-                          : isVoiceDetectedInBg
-                            ? 'text-yellow-350'
-                            : isWakeWordListening
-                              ? 'text-emerald-450'
-                              : 'text-zinc-955'
-                      } 
-                    />
-                  )}
-                  {!isAetherMuted && (
-                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                        isRecording 
-                          ? 'bg-red-400' 
-                          : isVoiceDetectedInBg
-                            ? 'bg-yellow-400'
-                            : isWakeWordListening 
-                              ? 'bg-emerald-400' 
-                              : 'bg-amber-400'
-                      }`} />
-                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                        isRecording 
-                          ? 'bg-red-500' 
-                          : isVoiceDetectedInBg
-                            ? 'bg-yellow-500'
-                            : isWakeWordListening 
-                              ? 'bg-emerald-500' 
-                              : 'bg-amber-500'
-                      }`} />
-                    </span>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <WakeCanvasVisualizer
-              triggerKey={wakeWordTriggerTime}
-              isHubOpen={isHubOpen}
-              isListening={isListeningForSpeech}
-              isSpeaking={isSpeechActive}
-              isPowerSaving={isPowerSaving}
-            />
-          </motion.button>
-        </motion.div>
-      )}
 
       {/* 3. Full perimeter neon glow feedback around the screen (softened) */}
       <AnimatePresence>

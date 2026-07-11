@@ -79,6 +79,35 @@ interface StoreState {
   setCameraOnlyMode: (enabled: boolean) => void;
   cameraScale: number;
   setCameraScale: (scale: number) => void;
+
+  // Real-time Drawing Contexts
+  isDrawingModeActive: boolean;
+  setDrawingModeActive: (active: boolean) => void;
+  circledContexts: {
+    id: string;
+    type: 'circle' | 'screen';
+    points?: { x: number; y: number }[];
+    bounds?: { x: number; y: number; width: number; height: number };
+    label: string;
+    timestamp: number;
+  }[];
+  setCircledContexts: (contexts: {
+    id: string;
+    type: 'circle' | 'screen';
+    points?: { x: number; y: number }[];
+    bounds?: { x: number; y: number; width: number; height: number };
+    label: string;
+    timestamp: number;
+  }[]) => void;
+  addCircledContext: (context: {
+    id: string;
+    type: 'circle' | 'screen';
+    points?: { x: number; y: number }[];
+    bounds?: { x: number; y: number; width: number; height: number };
+    label: string;
+    timestamp: number;
+  }) => void;
+  clearCircledContexts: () => void;
 }
 
 const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
@@ -381,5 +410,15 @@ export const useStore = create<StoreState>((set) => {
     localStorage.setItem('cameraScale', String(clampedScale));
     return { cameraScale: clampedScale };
   }),
+
+  // Real-time Drawing Contexts initializers
+  isDrawingModeActive: false,
+  setDrawingModeActive: (active) => set(() => ({ isDrawingModeActive: active })),
+  circledContexts: [],
+  setCircledContexts: (contexts) => set(() => ({ circledContexts: contexts })),
+  addCircledContext: (context) => set((state) => ({ 
+    circledContexts: [...state.circledContexts, context] 
+  })),
+  clearCircledContexts: () => set(() => ({ circledContexts: [] })),
   };
 });

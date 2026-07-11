@@ -79,8 +79,12 @@ export function KineticHUDOverlay() {
 
         recognition.onresult = (event: any) => {
           let interimText = '';
+          let isFinalResult = false;
           for (let i = 0; i < event.results.length; ++i) {
             interimText += event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              isFinalResult = true;
+            }
           }
           setVoiceTranscript(interimText);
 
@@ -127,6 +131,18 @@ export function KineticHUDOverlay() {
             setVoiceStatus('heard');
             showToast(`🎙️ Voice Command: Swapped mode to ${nextMode === 'cursor' ? 'Virtual Mouse' : 'Actions & Macros'}!`, 'success', 3000);
             setVoiceTranscript('');
+            if (recognition) recognition.stop();
+          } else if (isFinalResult && transcriptLower.length > 1) {
+            // It is a conversational query - route directly to Aether AI Sidebar!
+            setLastVoiceCommand(interimText);
+            setVoiceStatus('heard');
+            setVoiceTranscript('');
+            
+            window.dispatchEvent(new CustomEvent('aether-submit-command', {
+              detail: { text: interimText, openSidebar: true }
+            }));
+            
+            showToast(`🎙️ Transmitting vocal feed to Aether AI...`, 'info', 3000);
             if (recognition) recognition.stop();
           }
         };
@@ -520,16 +536,16 @@ export function KineticHUDOverlay() {
                 </div>
               </div>
 
-              <div className="flex flex-col md:flex-row gap-2.5 items-start md:items-center justify-between">
+              <div className="flex flex-col gap-2.5">
                 <div className="space-y-1">
                   <p className="text-[9px] text-zinc-500 leading-normal">
-                    Hands-free voice switcher using Web Speech API. Switch tracking modes using clear vocal triggers.
+                    Hands-free voice switcher. Say commands to swap tracking modes or general speech to talk to Aether.
                   </p>
                   
                   {/* Dynamic transcript or hint */}
-                  <div className="h-6 flex items-center">
+                  <div className="min-h-6 flex items-center py-1">
                     {voiceTranscript ? (
-                      <p className="text-[8.5px] font-mono text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 italic truncate max-w-xs">
+                      <p className="text-[8.5px] font-mono text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 italic truncate max-w-full">
                         "{voiceTranscript}"
                       </p>
                     ) : lastVoiceCommand ? (
@@ -567,7 +583,7 @@ export function KineticHUDOverlay() {
                       setLastVoiceCommand('');
                     }
                   }}
-                  className={`w-full md:w-auto px-3 py-1.5 text-[9px] font-mono rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                  className={`w-full px-3 py-1.5 text-[9.5px] font-mono rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
                     isVoiceControlActive
                       ? 'bg-amber-400 border-amber-400 text-black shadow-md shadow-amber-400/5'
                       : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300 hover:text-white'

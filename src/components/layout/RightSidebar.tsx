@@ -43,7 +43,8 @@ import {
   Activity,
   Eye,
   Compass,
-  Menu
+  Menu,
+  Target
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { haptic } from '../../utils/haptics';
@@ -122,14 +123,20 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     aetherPersonalityRules,
     activationShortcutKey,
     stopShortcutKey,
-    googleUser
+    googleUser,
+    vocalDictionary
   } = useData();
 
   const { 
     isRightSidebarOpen, 
     toggleRightSidebar, 
     isRightSidebarExpanded, 
-    toggleRightSidebarExpanded 
+    toggleRightSidebarExpanded,
+    circledContexts,
+    setCircledContexts,
+    clearCircledContexts,
+    isDrawingModeActive,
+    setDrawingModeActive
   } = useStore();
 
   const getDynamicGreeting = () => {
@@ -225,6 +232,8 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   }, []);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState<string>('');
+  const [editingRegionId, setEditingRegionId] = useState<string | null>(null);
+  const [editingRegionValue, setEditingRegionValue] = useState<string>('');
 
   // Right Inspector active tab
   const [rightInspectorTab, setRightInspectorTab] = useState<'sessions' | 'automations' | 'mcp' | 'access' | 'synapses'>('sessions');
@@ -1352,7 +1361,16 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        const fullTranscript = finalTranscript || interimTranscript;
+        let fullTranscriptRaw = finalTranscript || interimTranscript;
+        let fullTranscript = fullTranscriptRaw;
+        if (Array.isArray(vocalDictionary)) {
+          for (const item of vocalDictionary) {
+            if (item.from && item.to) {
+              const regex = new RegExp(`\\b${item.from.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi');
+              fullTranscript = fullTranscript.replace(regex, item.to);
+            }
+          }
+        }
         latestTranscriptRef.current = fullTranscript;
         setSpeechTranscript(fullTranscript);
         setInputValue(fullTranscript);
@@ -2395,6 +2413,127 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                         </span>
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                {/* Circled Screen Regions Context Section */}
+                <div className="space-y-2.5 pt-3 border-t border-zinc-900">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block flex items-center gap-1.5">
+                      <Compass size={11} className="text-cyan-400" /> Spatial Regions ({circledContexts?.length || 0})
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setDrawingModeActive(!isDrawingModeActive);
+                        }}
+                        className={`text-[9px] font-mono font-bold uppercase tracking-wide flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer transition-all ${
+                          isDrawingModeActive
+                            ? 'bg-cyan-950 text-cyan-400 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
+                            : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:bg-zinc-850'
+                        }`}
+                        title={isDrawingModeActive ? "Deactivate Screen Region Selection" : "Activate Screen Region Selection"}
+                      >
+                        <Target size={10} className={isDrawingModeActive ? 'animate-pulse' : ''} />
+                        <span>{isDrawingModeActive ? 'Selecting' : 'Draw'}</span>
+                      </button>
+                      {circledContexts && circledContexts.length > 0 && (
+                        <button
+                          onClick={clearCircledContexts}
+                          className="text-[9px] font-mono font-bold text-red-500 hover:text-red-400 uppercase tracking-wide flex items-center gap-1 hover:bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-850 cursor-pointer transition-colors"
+                          title="Clear all circled areas"
+                        >
+                          <Trash2 size={10} />
+                          <span>Clear</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {(!circledContexts || circledContexts.length === 0) ? (
+                      <div className="p-3 bg-zinc-950/40 border border-dashed border-zinc-850 rounded-lg text-center text-zinc-500 text-[10px] leading-normal font-sans">
+                        No active circled regions.<br />
+                        <span className="text-cyan-500/80 font-semibold">Hold Alt + drag with mouse</span> to recruit any screen region into Aether's active context.
+                      </div>
+                    ) : (
+                      circledContexts.map((ctx) => {
+                        const isEditingRegion = editingRegionId === ctx.id;
+                        return (
+                          <div key={ctx.id} className="p-2 bg-zinc-900 border border-zinc-850 hover:border-cyan-500/30 rounded-lg flex items-center justify-between gap-2 text-xs transition-colors">
+                            <div className="min-w-0 flex-1">
+                              {isEditingRegion ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={editingRegionValue}
+                                    onChange={(e) => setEditingRegionValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        const trimmed = editingRegionValue.trim();
+                                        if (trimmed) {
+                                          setCircledContexts(circledContexts.map(c => c.id === ctx.id ? { ...c, label: trimmed } : c));
+                                        }
+                                        setEditingRegionId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingRegionId(null);
+                                      }
+                                    }}
+                                    className="bg-zinc-950 border border-cyan-500/50 outline-none text-cyan-200 text-[10px] font-sans px-1 py-0.5 rounded w-full"
+                                    autoFocus
+                                    placeholder="Rename..."
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const trimmed = editingRegionValue.trim();
+                                      if (trimmed) {
+                                        setCircledContexts(circledContexts.map(c => c.id === ctx.id ? { ...c, label: trimmed } : c));
+                                      }
+                                      setEditingRegionId(null);
+                                    }}
+                                    className="p-1 text-cyan-400 hover:text-white cursor-pointer"
+                                  >
+                                    <Check size={11} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-1">
+                                    <Compass size={10} className="text-cyan-400 shrink-0" />
+                                    <span className="text-[11px] font-semibold text-zinc-200 truncate">{ctx.label}</span>
+                                  </div>
+                                  <div className="text-[8.5px] text-zinc-500 mt-0.5 font-mono">
+                                    Bounds: {Math.round(ctx.bounds?.width || 0)}x{Math.round(ctx.bounds?.height || 0)}px
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            
+                            {!isEditingRegion && (
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setEditingRegionId(ctx.id);
+                                    setEditingRegionValue(ctx.label || '');
+                                  }}
+                                  className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-cyan-400 rounded transition-colors cursor-pointer"
+                                  title="Rename region"
+                                >
+                                  <Edit3 size={11} />
+                                </button>
+                                <button
+                                  onClick={() => setCircledContexts(circledContexts.filter(c => c.id !== ctx.id))}
+                                  className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded transition-colors cursor-pointer"
+                                  title="Delete region"
+                                >
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 
