@@ -42,7 +42,7 @@
           ]
         }
       ],
-      "icon": "public/favicon.svg"
+      "icon": "public/favicon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -52,7 +52,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "DevSpace Aether Desktop",
-      "uninstallDisplayName": "DevSpace Aether Desktop Uninstaller"
+      "uninstallDisplayName": "DevSpace Aether Desktop Uninstaller",
+      "installerIcon": "public/favicon.ico",
+      "uninstallerIcon": "public/favicon.ico",
+      "installerHeaderIcon": "public/favicon.ico"
     }
   },
   "dependencies": {
