@@ -1,0 +1,66 @@
+name: DevSpace Desktop CI/CD Build & Publish Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish-windows:
+    name: Build & Publish DevSpace Native Windows Desktop Executable (.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Type Check & Code Quality Verification
+        run: npm run lint
+
+      - name: Build Web Application & Backend Proxy Server
+        run: npm run build
+
+      - name: Build Electron Native Desktop Main & Preload Processes
+        run: npm run build:electron
+
+      - name: Package Windows Desktop Executable (NSIS Setup.exe)
+        run: npm run dist:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Desktop Installer Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevSpace-Desktop-Windows-Installer
+          path: release/*.exe
+          retention-days: 30
+
+      - name: Publish Official Windows Installer Release to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          name: DevSpace Aether Desktop Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: release/*.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

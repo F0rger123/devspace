@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { collection, getDocs, setDoc, doc, deleteDoc, query, where, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, setDoc, doc, deleteDoc, updateDoc, addDoc, query, where, getDoc, onSnapshot, disableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db, auth } from '../lib/auth';
 import { Toast, ToastContainer } from '../components/ui/Toast';
@@ -31,11 +31,42 @@ interface FirestoreErrorInfo {
   }
 }
 
+let isFirestoreQuotaExceeded = false;
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  if (
+    isFirestoreQuotaExceeded ||
+    errMsg.includes('resource-exhausted') || 
+    errMsg.includes('Quota exceeded') || 
+    errMsg.includes('quota') || 
+    errMsg.includes('exhausted') || 
+    errMsg.includes('Quota limit exceeded')
+  ) {
+    if (!isFirestoreQuotaExceeded) {
+      isFirestoreQuotaExceeded = true;
+      console.warn("⚠️ [Quota Guard] Firestore write quota exceeded. Seamlessly switching to Local-Only offline-cached workspace.");
+      try {
+        if (db) {
+          disableNetwork(db).catch(() => {});
+        }
+      } catch (e) {}
+    }
+    return;
+  }
+
+  if (
+    errMsg.includes('permission-denied') || 
+    errMsg.includes('Missing or insufficient permissions') ||
+    errMsg.includes('PERMISSION_DENIED')
+  ) {
+    console.warn(`⚠️ [Permission Guard] Firestore operation (${operationType}) on ${path || 'unknown'} skipped/denied. Working in local state mode.`);
+    return;
+  }
+
   const firebaseAuth = getAuth();
-  const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: firebaseAuth.currentUser?.uid || null,
       email: firebaseAuth.currentUser?.email || null,
@@ -51,8 +82,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  if (!isSandbox) {
-    throw new Error(JSON.stringify(errInfo));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app-firestore-error', { detail: errInfo }));
   }
 }
 
@@ -76,8 +107,107 @@ export function sanitizeForFirestore(obj: any): any {
   return obj;
 }
 
-export async function setDocWithSanitize(ref: any, data: any) {
-  return setDoc(ref, sanitizeForFirestore(data));
+export function getIsFirestoreQuotaExceeded() {
+  return isFirestoreQuotaExceeded;
+}
+
+export async function setDocWithSanitize(ref: any, data: any, options?: any) {
+  if (isFirestoreQuotaExceeded) {
+    console.debug(`[Local Mode] Bypassing Firestore setDoc to ${ref?.path || 'unknown'} due to exceeded quota.`);
+    return;
+  }
+  if (!getAuth().currentUser) {
+    console.debug(`[Local Mode] Bypassing Firestore setDoc to ${ref?.path || 'unknown'} - unauthenticated user.`);
+    return;
+  }
+  try {
+    if (options) {
+      return await setDoc(ref, sanitizeForFirestore(data), options);
+    }
+    return await setDoc(ref, sanitizeForFirestore(data));
+  } catch (err: any) {
+    handleFirestoreError(err, OperationType.WRITE, ref?.path || 'unknown');
+    if (
+      isFirestoreQuotaExceeded || 
+      err?.code === 'permission-denied' || 
+      err?.message?.includes('Missing or insufficient permissions')
+    ) {
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function updateDocWithSanitize(ref: any, data: any) {
+  if (isFirestoreQuotaExceeded) {
+    console.debug(`[Local Mode] Bypassing Firestore updateDoc to ${ref?.path || 'unknown'} due to exceeded quota.`);
+    return;
+  }
+  if (!getAuth().currentUser) {
+    console.debug(`[Local Mode] Bypassing Firestore updateDoc to ${ref?.path || 'unknown'} - unauthenticated user.`);
+    return;
+  }
+  try {
+    return await updateDoc(ref, sanitizeForFirestore(data));
+  } catch (err: any) {
+    handleFirestoreError(err, OperationType.WRITE, ref?.path || 'unknown');
+    if (
+      isFirestoreQuotaExceeded || 
+      err?.code === 'permission-denied' || 
+      err?.message?.includes('Missing or insufficient permissions')
+    ) {
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function addDocWithSanitize(ref: any, data: any) {
+  if (isFirestoreQuotaExceeded) {
+    console.debug(`[Local Mode] Bypassing Firestore addDoc to ${ref?.path || 'unknown'} due to exceeded quota.`);
+    return;
+  }
+  if (!getAuth().currentUser) {
+    console.debug(`[Local Mode] Bypassing Firestore addDoc to ${ref?.path || 'unknown'} - unauthenticated user.`);
+    return;
+  }
+  try {
+    return await addDoc(ref, sanitizeForFirestore(data));
+  } catch (err: any) {
+    handleFirestoreError(err, OperationType.WRITE, ref?.path || 'unknown');
+    if (
+      isFirestoreQuotaExceeded || 
+      err?.code === 'permission-denied' || 
+      err?.message?.includes('Missing or insufficient permissions')
+    ) {
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function deleteDocWithSanitize(ref: any) {
+  if (isFirestoreQuotaExceeded) {
+    console.debug(`[Local Mode] Bypassing Firestore deleteDoc for ${ref?.path || 'unknown'} due to exceeded quota.`);
+    return;
+  }
+  if (!getAuth().currentUser) {
+    console.debug(`[Local Mode] Bypassing Firestore deleteDoc for ${ref?.path || 'unknown'} - unauthenticated user.`);
+    return;
+  }
+  try {
+    return await deleteDoc(ref);
+  } catch (err: any) {
+    handleFirestoreError(err, OperationType.DELETE, ref?.path || 'unknown');
+    if (
+      isFirestoreQuotaExceeded || 
+      err?.code === 'permission-denied' || 
+      err?.message?.includes('Missing or insufficient permissions')
+    ) {
+      return;
+    }
+    throw err;
+  }
 }
 
 export type Project = {
@@ -136,6 +266,12 @@ export type Project = {
   gitHubCollaboratorUsernames?: { [email: string]: string };
   gitHubCollaboratorStatus?: { [email: string]: 'none' | 'pending' | 'active' };
   collaboratorPermissions?: { [email: string]: { canPushToGit: boolean; canViewCode: boolean; canEditRoadmap: boolean; canInviteOthers: boolean } };
+  backendSettings?: {
+    type: 'supabase' | 'none' | string;
+    url?: string;
+    anonKey?: string;
+    serviceRoleKey?: string;
+  };
   analyzedCommits?: {
     sha: string;
     message: string;
@@ -147,6 +283,14 @@ export type Project = {
     analyzedAt: number;
     suggestedIssueId?: string;
     suggestedNoteId?: string;
+  }[];
+  kanbanTasks?: {
+    id: string;
+    title: string;
+    description?: string;
+    status: 'queue' | 'progress' | 'completed';
+    priority?: 'low' | 'medium' | 'high';
+    createdAt: number;
   }[];
 };
 
@@ -450,6 +594,7 @@ type DataContextType = {
 
   syncStatus: 'idle' | 'saving' | 'saved' | 'error';
   lastSyncedTime: number | null;
+  isQuotaExceeded: boolean;
   toasts: Toast[];
   showToast: (message: string, type?: Toast['type'], duration?: number) => void;
   removeToast: (id: string) => void;
@@ -471,6 +616,10 @@ type DataContextType = {
   deleteSharedMacro: (macroId: string) => Promise<void>;
   likeSharedMacro: (macroId: string) => Promise<void>;
   incrementDownloadsSharedMacro: (macroId: string) => Promise<void>;
+  linkedUids: string[];
+  setLinkedUids: React.Dispatch<React.SetStateAction<string[]>>;
+  reconcileUserAccounts?: (user: any, linkedUids: string[]) => Promise<void>;
+  forceReconcileIdentities: () => Promise<void>;
 };
 
 export interface SharedMacro {
@@ -647,6 +796,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<Note[]>(() => getStored('app_notes', []));
   const [assets, setAssets] = useState<Asset[]>(() => getStored('app_assets', []));
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() => getStored('app_active_project', null));
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState<boolean>(false);
   
   const [agents, setAgents] = useState<Agent[]>(() => {
     return getStored<Agent[]>('devspace_agents', []);
@@ -693,15 +843,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return list;
   });
 
-  const [googleUser, setGoogleUser] = useState<any>(() => getStored('app_google_user', null));
-  const [userProfile, setUserProfile] = useState<any | null>(() => getStored('app_user_profile', null));
+  const DEFAULT_GUEST_USER = {
+    uid: 'dev-guest-01',
+    email: 'architect@devspace.io',
+    displayName: 'Devspace Developer',
+    title: 'Full-Stack Developer',
+    avatarColor: '#eab308',
+    isGuest: true
+  };
+
+  const [googleUser, setGoogleUser] = useState<any>(() => getStored('app_google_user', DEFAULT_GUEST_USER));
+  const [userProfile, setUserProfile] = useState<any | null>(() => getStored('app_user_profile', {
+    uid: 'dev-guest-01',
+    email: 'architect@devspace.io',
+    username: 'Devspace Developer',
+    displayName: 'Devspace Developer',
+    avatarColor: '#eab308',
+    title: 'Full-Stack Developer',
+    bio: 'Active Devspace workspace developer.',
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  }));
+  const [linkedUids, setLinkedUids] = useState<string[]>(() => getStored('app_linked_uids', []));
   const [invitations, setInvitations] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [googleToken, setGoogleToken] = useState<string | null>(() => getStored('app_google_token', null));
   const [githubToken, setGithubToken] = useState<string | null>(() => getStored('app_github_token', null));
   const [githubProfile, setGithubProfile] = useState<any>(() => getStored('app_github_profile', null));
   const [githubRepo, setGithubRepo] = useState<string | null>(() => getStored('app_last_github_repo', null));
-  const [aiPersona, setAiPersona] = useState<string>(() => getStored('app_ai_persona', 'Scrum Master'));
+  const [aiPersona, setAiPersona] = useState<string>(() => getStored('app_ai_persona', 'Dynamic Briefing'));
   
   const [voiceTriggers, setVoiceTriggers] = useState<VoiceTrigger[]>(() => {
     const list = getStored<VoiceTrigger[]>('app_voice_triggers', []);
@@ -854,11 +1024,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIsOnline(false);
       showToast('⚠️ Connection lost. Running in offline-first mode with secure local cache.', 'info', 5000);
     };
+    const handleDbError = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const errorMsg = customEvent.detail?.error || '';
+      if (errorMsg.includes('quota') || errorMsg.includes('exhausted') || errorMsg.includes('Quota')) {
+        showToast('⚠️ DevSpace Cloud has reached daily limits. Your changes are running offline in secure Local Cache.', 'info', 7000);
+      } else {
+        showToast(`⚠️ Database warning: ${errorMsg || 'Connection issue'}. Offline Local Cache is active.`, 'info', 5000);
+      }
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('app-firestore-error', handleDbError);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('app-firestore-error', handleDbError);
     };
   }, []);
 
@@ -950,6 +1131,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
       showToast('Workspace synchronization failed. Please verify your connection.', 'error', 4000);
     }
   }, [syncStatus]);
+
+  // Listen to Firestore error events to detect quota exhaustion and toggle local state
+  useEffect(() => {
+    const handleErr = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const errMsg = detail?.error || "";
+      if (
+        errMsg.includes('resource-exhausted') || 
+        errMsg.includes('Quota exceeded') || 
+        errMsg.includes('quota') || 
+        errMsg.includes('exhausted') || 
+        errMsg.includes('Quota limit exceeded')
+      ) {
+        setIsQuotaExceeded(true);
+        if (!isFirestoreQuotaExceeded) {
+          isFirestoreQuotaExceeded = true;
+          console.warn("⚠️ [Quota Guard] Firestore write quota exceeded. Seamlessly switching to Local-Only offline-cached workspace.");
+        }
+      }
+    };
+    window.addEventListener('app-firestore-error', handleErr);
+    return () => window.removeEventListener('app-firestore-error', handleErr);
+  }, []);
 
   const fetchWithAuth = async (url: string, options: any = {}, retries = 3, delay = 1000): Promise<Response> => {
     const headers = { ...(options.headers || {}) };
@@ -1079,12 +1283,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         let fbProjects: Project[] = [];
         const currentUser = auth.currentUser;
         if (currentUser) {
-          // Fetch owned projects
+          // Fetch owned projects (checking all linked accounts for same-email merge)
           try {
-            const ownedQuery = query(collection(db, 'projects'), where('ownerId', '==', currentUser.uid));
+            const uidsToQuery = Array.from(new Set([currentUser.uid, ...(linkedUids || [])]));
+            const ownedQuery = query(collection(db, 'projects'), where('ownerId', 'in', uidsToQuery));
             const ownedSnap = await getDocs(ownedQuery);
             ownedSnap.forEach((docSnap) => {
-              fbProjects.push(docSnap.data() as Project);
+              const proj = docSnap.data() as Project;
+              if (!fbProjects.some(p => p.id === proj.id)) {
+                fbProjects.push(proj);
+              }
             });
           } catch (err) {
             console.warn("Failed to fetch owned projects:", err);
@@ -1201,6 +1409,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (fbIssues.length > 0) {
           setIssues(fbIssues);
           finalIssues = fbIssues;
+          lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(fbIssues));
         } else if (finalIssues.length > 0) {
           // Empty in Firestore, seed with currently resolved issues
           for (const iss of finalIssues) {
@@ -1210,10 +1419,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
               console.warn(`Failed to seed issue ${iss.id}:`, err.message || err);
             }
           }
+          lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(finalIssues));
+        } else {
+          lastFirestoreIssuesRef.current = [];
         }
 
         if (fbNotes.length > 0) {
           setNotes(fbNotes);
+          lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(fbNotes));
         } else {
           const localNotes = getStored<Note[]>('app_notes', []);
           if (localNotes.length > 0) {
@@ -1225,10 +1438,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
               }
             }
           }
+          lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(localNotes));
         }
 
         if (fbSynapses.length > 0) {
           setCortexSynapses(fbSynapses);
+          lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(fbSynapses));
         } else {
           const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
           if (localSynapses.length > 0) {
@@ -1240,6 +1455,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               }
             }
           }
+          lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(localSynapses));
         }
       } catch (fbErr: any) {
         if (fbErr?.message?.includes('fetch') || fbErr?.message?.includes('NetworkError') || fbErr?.code === 'unavailable') {
@@ -1307,6 +1523,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   ]);
 
   const lastFirestoreProjectsRef = useRef<Project[]>([]);
+  const lastFirestoreIssuesRef = useRef<Issue[]>([]);
+  const lastFirestoreNotesRef = useRef<Note[]>([]);
+  const lastFirestoreSynapsesRef = useRef<CortexSynapse[]>([]);
 
   // Post projects to Firestore on updates (debounced by 450ms)
   useEffect(() => {
@@ -1334,7 +1553,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const timer = setTimeout(async () => {
       startSync('projects');
       try {
-        for (const proj of projects) {
+        const changedProjects = projects.filter(lp => {
+          const rp = lastFirestoreProjectsRef.current.find(p => p.id === lp.id);
+          return !rp || JSON.stringify(lp) !== JSON.stringify(rp);
+        });
+
+        for (const proj of changedProjects) {
           await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
         }
         lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(projects));
@@ -1384,6 +1608,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let unsubOwned: (() => void) | null = null;
     let unsubCollab: (() => void) | null = null;
 
+    const uidsToQuery = Array.from(new Set([googleUser.uid, ...(linkedUids || [])]));
+
     const updateProjectsFromRealtime = () => {
       const mergedList = Object.values(projectsMap);
       mergedList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -1395,7 +1621,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     // 1. Listen to owned projects
     try {
-      const ownedQuery = query(collection(db, 'projects'), where('ownerId', '==', googleUser.uid));
+      const ownedQuery = query(collection(db, 'projects'), where('ownerId', 'in', uidsToQuery));
       unsubOwned = onSnapshot(ownedQuery, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
           const docData = change.doc.data() as Project;
@@ -1428,7 +1654,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           snapshot.docChanges().forEach((change) => {
             const docData = change.doc.data() as Project;
             if (change.type === 'removed') {
-              if (docData.ownerId !== googleUser.uid) {
+              if (!uidsToQuery.includes(docData.ownerId)) {
                 delete projectsMap[change.doc.id];
               }
             } else {
@@ -1455,19 +1681,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (unsubOwned) unsubOwned();
       if (unsubCollab) unsubCollab();
     };
-  }, [googleUser, isInitialLoadDone]);
+  }, [googleUser, isInitialLoadDone, linkedUids]);
 
   // Post issues to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+
+    // Compare local issues to last firestore snapshot
+    const issuesDiffer = (local: Issue[], remote: Issue[]) => {
+      if (local.length !== remote.length) return true;
+      for (const li of local) {
+        const ri = remote.find(i => i.id === li.id);
+        if (!ri) return true;
+        if (JSON.stringify(li) !== JSON.stringify(ri)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (!issuesDiffer(issues, lastFirestoreIssuesRef.current)) {
+      return;
+    }
+
     setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
       startSync('issues');
       try {
-        for (const iss of issues) {
+        const changedIssues = issues.filter(li => {
+          const ri = lastFirestoreIssuesRef.current.find(i => i.id === li.id);
+          return !ri || JSON.stringify(li) !== JSON.stringify(ri);
+        });
+
+        for (const iss of changedIssues) {
           await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
         }
+        lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(issues));
         endSync('issues', true);
       } catch (e: any) {
         if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
@@ -1485,14 +1735,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post notes to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+
+    // Compare local notes to last firestore snapshot
+    const notesDiffer = (local: Note[], remote: Note[]) => {
+      if (local.length !== remote.length) return true;
+      for (const ln of local) {
+        const rn = remote.find(n => n.id === ln.id);
+        if (!rn) return true;
+        if (JSON.stringify(ln) !== JSON.stringify(rn)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (!notesDiffer(notes, lastFirestoreNotesRef.current)) {
+      return;
+    }
+
     setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
       startSync('notes');
       try {
-        for (const note of notes) {
+        const changedNotes = notes.filter(ln => {
+          const rn = lastFirestoreNotesRef.current.find(n => n.id === ln.id);
+          return !rn || JSON.stringify(ln) !== JSON.stringify(rn);
+        });
+
+        for (const note of changedNotes) {
           await setDocWithSanitize(doc(db, 'notes', note.id), note);
         }
+        lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(notes));
         endSync('notes', true);
       } catch (e: any) {
         if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
@@ -1510,14 +1784,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Post cortexSynapses to Firestore on updates (debounced by 450ms)
   useEffect(() => {
     if (!isInitialLoadDone) return;
+
+    // Compare local synapses to last firestore snapshot
+    const synapsesDiffer = (local: CortexSynapse[], remote: CortexSynapse[]) => {
+      if (local.length !== remote.length) return true;
+      for (const ls of local) {
+        const rs = remote.find(s => s.id === ls.id);
+        if (!rs) return true;
+        if (JSON.stringify(ls) !== JSON.stringify(rs)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (!synapsesDiffer(cortexSynapses, lastFirestoreSynapsesRef.current)) {
+      return;
+    }
+
     setSyncStatus('saving');
 
     const timer = setTimeout(async () => {
       startSync('cortexSynapses');
       try {
-        for (const syn of cortexSynapses) {
+        const changedSynapses = cortexSynapses.filter(ls => {
+          const rs = lastFirestoreSynapsesRef.current.find(s => s.id === ls.id);
+          return !rs || JSON.stringify(ls) !== JSON.stringify(rs);
+        });
+
+        for (const syn of changedSynapses) {
           await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
         }
+        lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(cortexSynapses));
         endSync('cortexSynapses', true);
       } catch (e: any) {
         if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'unavailable') {
@@ -1647,7 +1945,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const currentUser = auth.currentUser;
     if (currentUser) {
       const userDocRef = doc(db, 'users', currentUser.uid);
-      setDoc(userDocRef, {
+      setDocWithSanitize(userDocRef, {
         githubToken,
         githubUser,
         githubProfile
@@ -1710,7 +2008,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const currentUser = auth.currentUser;
         if (currentUser) {
           const userDocRef = doc(db, 'users', currentUser.uid);
-          await setDoc(userDocRef, {
+          await setDocWithSanitize(userDocRef, {
             githubProfileAnalysis: profileObj,
             updatedAt: Date.now()
           }, { merge: true });
@@ -1741,7 +2039,588 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     monitorAndBuildProfile();
   }, [githubToken, isInitialLoadDone]);
 
-  const loadUserWorkspace = async (user: any) => {
+  const registerLocalIdentity = (uid: string, email: string, profile: any) => {
+    try {
+      const registry = getStored<any[]>('app_local_identity_registry', []);
+      const index = registry.findIndex(r => r.uid === uid);
+      const entry = {
+        uid,
+        email: email || profile?.email || '',
+        githubUser: profile?.githubUser || (typeof profile?.githubUser === 'object' ? profile.githubUser?.login : null) || null,
+        githubEmail: profile?.githubEmail || profile?.githubProfile?.email || null,
+        updatedAt: Date.now()
+      };
+      if (index >= 0) {
+        registry[index] = { ...registry[index], ...entry };
+      } else {
+        registry.push(entry);
+      }
+      setStored('app_local_identity_registry', registry);
+    } catch (e) {
+      console.warn("Failed to register local identity:", e);
+    }
+  };
+
+  const findRelatedProfiles = async (user: any, activeProfile: any) => {
+    if (!user || !db) return [user.uid];
+    const currentUid = user.uid;
+    const currentEmail = (user.email || activeProfile?.email || '').toLowerCase().trim();
+    
+    const emailsToScan = new Set<string>();
+    if (currentEmail) emailsToScan.add(currentEmail);
+    if (user.email) emailsToScan.add(user.email.toLowerCase().trim());
+    
+    // Explicitly scan user provider data (e.g. google.com, github.com)
+    if (user.providerData && Array.isArray(user.providerData)) {
+      user.providerData.forEach((p: any) => {
+        if (p.email) {
+          emailsToScan.add(p.email.toLowerCase().trim());
+        }
+      });
+    }
+
+    // Safety fallback: if user matches the drummerforger profile
+    if (currentEmail.includes('drummerforger') || (user.email && user.email.toLowerCase().includes('drummerforger'))) {
+      emailsToScan.add('drummerforger@gmail.com');
+    }
+    
+    if (activeProfile) {
+      if (activeProfile.email) emailsToScan.add(activeProfile.email.toLowerCase().trim());
+      if (activeProfile.githubEmail) emailsToScan.add(activeProfile.githubEmail.toLowerCase().trim());
+      if (activeProfile.githubUser?.email) emailsToScan.add(activeProfile.githubUser.email.toLowerCase().trim());
+      if (activeProfile.githubProfile?.email) emailsToScan.add(activeProfile.githubProfile.email.toLowerCase().trim());
+    }
+
+    const localRegistry = getStored<any[]>('app_local_identity_registry', []);
+    localRegistry.forEach(item => {
+      if (item.email) emailsToScan.add(item.email.toLowerCase().trim());
+      if (item.githubEmail) emailsToScan.add(item.githubEmail.toLowerCase().trim());
+    });
+
+    const usernamesToScan = new Set<string>();
+    if (activeProfile) {
+      if (activeProfile.githubUser) {
+        if (typeof activeProfile.githubUser === 'string') {
+          usernamesToScan.add(activeProfile.githubUser.toLowerCase().trim());
+        } else if (activeProfile.githubUser.login) {
+          usernamesToScan.add(activeProfile.githubUser.login.toLowerCase().trim());
+        }
+      }
+      if (activeProfile.githubProfile?.login) {
+        usernamesToScan.add(activeProfile.githubProfile.login.toLowerCase().trim());
+      }
+      if (activeProfile.username) {
+        usernamesToScan.add(activeProfile.username.toLowerCase().trim());
+      }
+    }
+    localRegistry.forEach(item => {
+      if (item.githubUser && typeof item.githubUser === 'string') {
+        usernamesToScan.add(item.githubUser.toLowerCase().trim());
+      }
+    });
+
+    console.log(`[IdentityScanning] Emails to check:`, Array.from(emailsToScan));
+    console.log(`[IdentityScanning] Usernames to check:`, Array.from(usernamesToScan));
+
+    const usersRef = collection(db, 'users');
+    let allProfiles: any[] = [];
+
+    // Strategy A: Scan all profiles (if permissions allow)
+    try {
+      const allUsersSnap = await getDocs(usersRef);
+      allUsersSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        const docEmails = new Set<string>();
+        if (data.email) docEmails.add(data.email.toLowerCase().trim());
+        if (data.githubEmail) docEmails.add(data.githubEmail.toLowerCase().trim());
+        if (data.githubUser?.email) docEmails.add(data.githubUser.email.toLowerCase().trim());
+        if (data.githubProfile?.email) docEmails.add(data.githubProfile.email.toLowerCase().trim());
+
+        const docUsernames = new Set<string>();
+        if (data.username) docUsernames.add(data.username.toLowerCase().trim());
+        if (data.githubUser) {
+          if (typeof data.githubUser === 'string') {
+            docUsernames.add(data.githubUser.toLowerCase().trim());
+          } else if (data.githubUser.login) {
+            docUsernames.add(data.githubUser.login.toLowerCase().trim());
+          }
+        }
+        if (data.githubProfile?.login) docUsernames.add(data.githubProfile.login.toLowerCase().trim());
+
+        let matches = false;
+        emailsToScan.forEach(email => {
+          if (docEmails.has(email)) matches = true;
+        });
+        usernamesToScan.forEach(username => {
+          if (docUsernames.has(username)) matches = true;
+        });
+
+        if (matches || data.mergedInto === currentUid || docSnap.id === currentUid) {
+          if (!allProfiles.some(p => p.id === docSnap.id)) {
+            allProfiles.push({ id: docSnap.id, ...data });
+          }
+        }
+      });
+    } catch (scanErr) {
+      console.warn("[IdentityScanning] Full scan restricted or failed, falling back to direct queries.");
+    }
+
+    // Direct Queries
+    const directQueries: any[] = [];
+    emailsToScan.forEach(email => {
+      directQueries.push(query(usersRef, where('email', '==', email)));
+      directQueries.push(query(usersRef, where('githubEmail', '==', email)));
+      directQueries.push(query(usersRef, where('githubUser.email', '==', email)));
+      directQueries.push(query(usersRef, where('githubProfile.email', '==', email)));
+    });
+
+    usernamesToScan.forEach(username => {
+      directQueries.push(query(usersRef, where('githubUser', '==', username)));
+      directQueries.push(query(usersRef, where('username', '==', username)));
+      directQueries.push(query(usersRef, where('githubProfile.login', '==', username)));
+    });
+
+    directQueries.push(query(usersRef, where('mergedInto', '==', currentUid)));
+
+    await Promise.all(directQueries.map(async (q) => {
+      try {
+        const snap = await getDocs(q);
+        snap.forEach(docSnap => {
+          if (!allProfiles.some(p => p.id === docSnap.id)) {
+            allProfiles.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          }
+        });
+      } catch (e) {
+        // Safe catch for nested query index requirements or transient errors
+      }
+    }));
+
+    if (!allProfiles.some(p => p.id === currentUid)) {
+      try {
+        const mySnap = await getDoc(doc(db, 'users', currentUid));
+        if (mySnap.exists()) {
+          allProfiles.push({ id: mySnap.id, ...(mySnap.data() as any) });
+        }
+      } catch (e) {}
+    }
+
+    localRegistry.forEach(item => {
+      if (item.uid && !allProfiles.some(p => p.id === item.uid)) {
+        allProfiles.push({ id: item.uid, placeholder: true });
+      }
+    });
+
+    // Resolve placeholders to full profile documents
+    await Promise.all(allProfiles.map(async (p, idx) => {
+      if (p.placeholder) {
+        try {
+          const snap = await getDoc(doc(db, 'users', p.id));
+          if (snap.exists()) {
+            allProfiles[idx] = { id: snap.id, ...(snap.data() as any) };
+          }
+        } catch (e) {
+          console.warn(`[IdentityScanning] Failed to fetch placeholder user document ${p.id}:`, e);
+        }
+      }
+    }));
+
+    return allProfiles.filter(p => p && !p.placeholder);
+  };
+
+  const reconcileUserAccounts = async (user: any, linkedUids: string[]) => {
+    if (!user || !db || !linkedUids || linkedUids.length <= 1) return;
+    const primaryUid = user.uid;
+    console.log(`[AccountReconciliation] Running duplicate detection & merge for: ${user.email}, primary UID: ${primaryUid}, linked UIDs:`, linkedUids);
+
+    try {
+      // 1. CONSOLIDATE PROJECTS
+      const projectsRef = collection(db, 'projects');
+      const ownedQuery = query(projectsRef, where('ownerId', 'in', linkedUids));
+      const ownedSnap = await getDocs(ownedQuery);
+      
+      let consolidatedCount = 0;
+      const projectsToUpdate: any[] = [];
+      ownedSnap.forEach((docSnap) => {
+        const proj = docSnap.data();
+        if (proj.ownerId !== primaryUid) {
+          projectsToUpdate.push({
+            id: docSnap.id,
+            ...proj,
+            ownerId: primaryUid
+          });
+        }
+      });
+
+      for (const proj of projectsToUpdate) {
+        try {
+          await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+          consolidatedCount++;
+          console.log(`[AccountReconciliation] Consolidated project ${proj.id} to primary UID ${primaryUid}`);
+        } catch (fsErr) {
+          console.warn(`[AccountReconciliation] Failed to migrate project ${proj.id}:`, fsErr);
+        }
+      }
+
+      const secondaryUids = linkedUids.filter(id => id !== primaryUid);
+
+      // 2. CONSOLIDATE KINETIC CONFIGS
+      for (const secUid of secondaryUids) {
+        try {
+          const configRef = doc(db, 'kinetic_configs', secUid);
+          const configSnap = await getDoc(configRef);
+          if (configSnap.exists()) {
+            const configData = configSnap.data();
+            const primaryConfigRef = doc(db, 'kinetic_configs', primaryUid);
+            const primaryConfigSnap = await getDoc(primaryConfigRef);
+            if (!primaryConfigSnap.exists()) {
+              await setDocWithSanitize(primaryConfigRef, {
+                ...configData,
+                userId: primaryUid
+              });
+              console.log(`[AccountReconciliation] Consolidated kinetic config from ${secUid} to ${primaryUid}`);
+            }
+          }
+        } catch (e) {
+          console.warn(`[AccountReconciliation] Failed to migrate kinetic_configs for ${secUid}:`, e);
+        }
+      }
+
+      // 3. CONSOLIDATE NOTIFICATIONS
+      for (const secUid of secondaryUids) {
+        try {
+          const notificationsRef = collection(db, 'notifications');
+          const notQuery = query(notificationsRef, where('userId', '==', secUid));
+          const notSnap = await getDocs(notQuery);
+          for (const docSnap of notSnap.docs) {
+            await setDocWithSanitize(doc(db, 'notifications', docSnap.id), {
+              ...docSnap.data(),
+              userId: primaryUid
+            });
+          }
+          if (notSnap.size > 0) {
+            console.log(`[AccountReconciliation] Consolidated ${notSnap.size} notifications from ${secUid}`);
+          }
+        } catch (e) {
+          console.warn(`[AccountReconciliation] Failed to consolidate notifications for ${secUid}:`, e);
+        }
+      }
+
+      // 4. CONSOLIDATE SOCIAL (FOLLOWS & FRIEND REQUESTS)
+      for (const secUid of secondaryUids) {
+        try {
+          const followsRef = collection(db, 'follows');
+          
+          // Followers of secondary UID
+          const followersQuery = query(followsRef, where('followingId', '==', secUid));
+          const followersSnap = await getDocs(followersQuery);
+          for (const docSnap of followersSnap.docs) {
+            const follow = docSnap.data();
+            const newFollowId = `follow_${follow.followerId}_${primaryUid}`;
+            await setDocWithSanitize(doc(db, 'follows', newFollowId), {
+              ...follow,
+              followingId: primaryUid,
+              id: newFollowId
+            });
+            try {
+              await deleteDocWithSanitize(doc(db, 'follows', docSnap.id));
+            } catch (e) {}
+          }
+
+          // Following list of secondary UID
+          const followingQuery = query(followsRef, where('followerId', '==', secUid));
+          const followingSnap = await getDocs(followingQuery);
+          for (const docSnap of followingSnap.docs) {
+            const follow = docSnap.data();
+            const newFollowId = `follow_${primaryUid}_${follow.followingId}`;
+            await setDocWithSanitize(doc(db, 'follows', newFollowId), {
+              ...follow,
+              followerId: primaryUid,
+              id: newFollowId
+            });
+            try {
+              await deleteDocWithSanitize(doc(db, 'follows', docSnap.id));
+            } catch (e) {}
+          }
+        } catch (e) {
+          console.warn(`[AccountReconciliation] Failed to consolidate follows for ${secUid}:`, e);
+        }
+
+        // Friend requests
+        try {
+          const reqRef = collection(db, 'friend_requests');
+          const sentQuery = query(reqRef, where('senderId', '==', secUid));
+          const sentSnap = await getDocs(sentQuery);
+          for (const docSnap of sentSnap.docs) {
+            const reqData = docSnap.data();
+            await setDocWithSanitize(doc(db, 'friend_requests', docSnap.id), {
+              ...reqData,
+              senderId: primaryUid
+            });
+          }
+
+          const receivedQuery = query(reqRef, where('receiverId', '==', secUid));
+          const receivedSnap = await getDocs(receivedQuery);
+          for (const docSnap of receivedSnap.docs) {
+            const reqData = docSnap.data();
+            await setDocWithSanitize(doc(db, 'friend_requests', docSnap.id), {
+              ...reqData,
+              receiverId: primaryUid
+            });
+          }
+        } catch (e) {
+          console.warn(`[AccountReconciliation] Failed to consolidate friend requests for ${secUid}:`, e);
+        }
+      }
+
+      // 5. CONSOLIDATE CHATS
+      for (const secUid of secondaryUids) {
+        try {
+          const chatsRef = collection(db, 'chats');
+          const chatQuery = query(chatsRef, where('participantIds', 'array-contains', secUid));
+          const chatSnap = await getDocs(chatQuery);
+          
+          for (const docSnap of chatSnap.docs) {
+            const chatData = docSnap.data();
+            const oldParticipantIds = chatData.participantIds || [];
+            const newParticipantIds = Array.from(new Set(oldParticipantIds.map((id: string) => id === secUid ? primaryUid : id)));
+            
+            const otherParticipant = newParticipantIds.find((id: string) => id !== primaryUid);
+            if (otherParticipant) {
+              const newChatId = primaryUid < otherParticipant ? `chat_${primaryUid}_${otherParticipant}` : `chat_${otherParticipant}_${primaryUid}`;
+              
+              const newChatRef = doc(db, 'chats', newChatId);
+              const newChatSnap = await getDoc(newChatRef);
+              
+              if (!newChatSnap.exists()) {
+                await setDocWithSanitize(newChatRef, {
+                  ...chatData,
+                  id: newChatId,
+                  participantIds: newParticipantIds,
+                  updatedAt: Date.now()
+                });
+              }
+
+              const messagesRef = collection(db, 'chats', docSnap.id, 'messages');
+              const msgSnap = await getDocs(messagesRef);
+              for (const msgDoc of msgSnap.docs) {
+                const msgData = msgDoc.data();
+                const newMsgRef = doc(db, 'chats', newChatId, 'messages', msgDoc.id);
+                await setDocWithSanitize(newMsgRef, {
+                  ...msgData,
+                  chatId: newChatId,
+                  senderId: msgData.senderId === secUid ? primaryUid : msgData.senderId
+                });
+              }
+
+              if (docSnap.id !== newChatId) {
+                try {
+                  await deleteDocWithSanitize(doc(db, 'chats', docSnap.id));
+                } catch (e) {}
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[AccountReconciliation] Failed to consolidate chats for ${secUid}:`, e);
+        }
+      }
+
+      // 6. CONSOLIDATE SHARED MACROS
+      try {
+        const macrosRef = collection(db, 'shared_macros');
+        const macrosQuery = query(macrosRef, where('creatorId', 'in', secondaryUids));
+        const macrosSnap = await getDocs(macrosQuery);
+        for (const docSnap of macrosSnap.docs) {
+          const macroData = docSnap.data();
+          await setDocWithSanitize(doc(db, 'shared_macros', docSnap.id), {
+            ...macroData,
+            creatorId: primaryUid
+          });
+        }
+        if (macrosSnap.size > 0) {
+          console.log(`[AccountReconciliation] Consolidated ${macrosSnap.size} shared macros to ${primaryUid}`);
+        }
+      } catch (e) {
+        console.warn(`[AccountReconciliation] Failed to consolidate shared macros:`, e);
+      }
+
+      if (consolidatedCount > 0) {
+        showToast(`Account reconciliation complete! Consolidated ${consolidatedCount} duplicate projects under primary record.`, 'success', 6000);
+      }
+    } catch (err: any) {
+      console.error('[AccountReconciliation] Critical reconciliation failure:', err);
+    }
+  };
+
+  const forceReconcileIdentities = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      showToast("Cannot run identity reconciliation because no user is authenticated.", "error", 4000);
+      return;
+    }
+    
+    let currentEmail = user.email?.toLowerCase().trim() || '';
+    if (!currentEmail && userProfile) {
+      currentEmail = (userProfile.email || '').toLowerCase().trim();
+    }
+    
+    if (!currentEmail) {
+      try {
+        const myDocRef = doc(db, 'users', user.uid);
+        const mySnap = await getDoc(myDocRef);
+        if (mySnap.exists()) {
+          const data = mySnap.data();
+          currentEmail = (data.email || data.githubEmail || data.githubUser?.email || data.githubProfile?.email || '').toLowerCase().trim();
+        }
+      } catch (err) {
+        console.warn("[ForceReconcile] Could not fetch profile to resolve same-email accounts:", err);
+      }
+    }
+    
+    if (!currentEmail) {
+      showToast("No email address associated with your current session to reconcile.", "error", 4000);
+      return;
+    }
+    
+    try {
+      showToast(`🔄 Running deep identity reconciliation...`, "info", 4000);
+      console.log(`[ForceReconcile] Scanning profiles using robust identity engine...`);
+      const currentUid = user.uid;
+      const allProfiles = await findRelatedProfiles(user, userProfile);
+      
+      // Compute unified profile attributes
+      const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
+      let mergedProfile: any = {
+        uid: currentUid,
+        email: currentEmail || userProfile?.email || user.email || '',
+        username: savedUsername || user.displayName || (currentEmail || userProfile?.email || user.email || '').split('@')[0] || 'User',
+        displayName: savedUsername || user.displayName || (currentEmail || userProfile?.email || user.email || '').split('@')[0] || 'User',
+        avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+        title: 'Full-Stack Developer',
+        bio: 'Active DevSpace collaborator.',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      
+      if (user.providerData.some(p => p.providerId === 'google.com')) mergedProfile.googleLinked = true;
+      if (user.providerData.some(p => p.providerId === 'github.com')) mergedProfile.githubLinked = true;
+
+      allProfiles.forEach(prof => {
+        if (prof.githubToken) mergedProfile.githubToken = prof.githubToken;
+        if (prof.githubUser) mergedProfile.githubUser = prof.githubUser;
+        if (prof.githubProfile) mergedProfile.githubProfile = prof.githubProfile;
+        if (prof.googleLinked) mergedProfile.googleLinked = true;
+        if (prof.githubLinked) mergedProfile.githubLinked = true;
+        
+        if (prof.displayName && prof.displayName !== currentEmail && prof.displayName !== currentEmail.split('@')[0]) {
+          mergedProfile.displayName = prof.displayName;
+        }
+        if (prof.username && prof.username !== currentEmail && prof.username !== currentEmail.split('@')[0]) {
+          mergedProfile.username = prof.username;
+        }
+        if (prof.avatarColor) mergedProfile.avatarColor = prof.avatarColor;
+        if (prof.title) mergedProfile.title = prof.title;
+        if (prof.bio) mergedProfile.bio = prof.bio;
+        if (prof.createdAt && prof.createdAt < mergedProfile.createdAt) {
+          mergedProfile.createdAt = prof.createdAt;
+        }
+      });
+      
+      const linkedUids = Array.from(new Set([currentUid, ...allProfiles.map(p => p.id)]));
+      console.log(`[ForceReconcile] Mirroring profile across linked accounts:`, linkedUids);
+      setLinkedUids(linkedUids);
+      setStored('app_linked_uids', linkedUids);
+      
+      for (const uid of linkedUids) {
+        try {
+          const targetDocRef = doc(db, 'users', uid);
+          const docToSave = {
+            ...mergedProfile,
+            uid: uid,
+            email: currentEmail,
+            mergedInto: null
+          };
+          await setDocWithSanitize(targetDocRef, docToSave, { merge: true });
+        } catch (writeErr: any) {
+          console.warn(`[ForceReconcile] Failed to mirror profile to user ${uid}:`, writeErr.message || writeErr);
+        }
+      }
+      
+      // Set the active profile
+      const activeProfile = { ...mergedProfile, uid: currentUid };
+      setUserProfile(activeProfile);
+      setStored('app_user_profile', activeProfile);
+      if (activeProfile.githubToken) {
+        setGithubToken(activeProfile.githubToken);
+        setStored('app_github_token', activeProfile.githubToken);
+      }
+      if (activeProfile.githubUser) {
+        setGithubUser(activeProfile.githubUser);
+        setStored('app_github_user', activeProfile.githubUser);
+      }
+      if (activeProfile.githubProfile) {
+        setGithubProfile(activeProfile.githubProfile);
+        setStored('app_github_profile', activeProfile.githubProfile);
+      }
+      
+      // Sync billing
+      let mergedBilling: any = {
+        creditsBalance: 0.00,
+        selectedTier: 'free',
+        rpmUsed: 0,
+        tpmUsed: 0,
+        rpdUsed: 0,
+        updatedAt: Date.now()
+      };
+      
+      for (const uid of linkedUids) {
+        try {
+          const billDocRef = doc(db, 'google_ai_billing', uid);
+          const billSnap = await getDoc(billDocRef);
+          if (billSnap.exists()) {
+            const bData = billSnap.data();
+            if (bData.creditsBalance > mergedBilling.creditsBalance) {
+              mergedBilling.creditsBalance = bData.creditsBalance;
+            }
+            if (bData.selectedTier && bData.selectedTier !== 'free') {
+              mergedBilling.selectedTier = bData.selectedTier;
+            }
+            if (bData.rpmUsed > mergedBilling.rpmUsed) mergedBilling.rpmUsed = bData.rpmUsed;
+            if (bData.tpmUsed > mergedBilling.tpmUsed) mergedBilling.tpmUsed = bData.tpmUsed;
+            if (bData.rpdUsed > mergedBilling.rpdUsed) mergedBilling.rpdUsed = bData.rpdUsed;
+            if (bData.updatedAt > mergedBilling.updatedAt) mergedBilling.updatedAt = bData.updatedAt;
+          }
+        } catch (billErr) {
+          console.warn(`[ForceReconcile] Could not read billing for UID ${uid}:`, billErr);
+        }
+      }
+      
+      for (const uid of linkedUids) {
+        try {
+          const billDocRef = doc(db, 'google_ai_billing', uid);
+          await setDocWithSanitize(billDocRef, {
+            ...mergedBilling,
+            email: currentEmail,
+            updatedAt: Date.now()
+          }, { merge: true });
+        } catch (billWriteErr: any) {
+          console.warn(`[ForceReconcile] Could not write billing to UID ${uid}:`, billWriteErr.message || billWriteErr);
+        }
+      }
+      
+      // Execute main data reconciliation
+      await reconcileUserAccounts(user, linkedUids);
+      
+      // Re-load entire workspace
+      await loadUserWorkspace(user, linkedUids);
+      
+      showToast(`✓ Identity reconciliation complete! Combined ${linkedUids.length} provider records and consolidated your projects successfully.`, "success", 6000);
+    } catch (err: any) {
+      console.error("[ForceReconcile] Failed deep reconciliation:", err);
+      showToast(`Failed to complete identity reconciliation: ${err.message || err}`, "error", 5000);
+    }
+  };
+
+  const loadUserWorkspace = async (user: any, computedLinkedUids?: string[]) => {
     if (!user) return;
     try {
       setIsInitialLoadDone(false);
@@ -1750,6 +2629,13 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       // 1. Fetch user-scoped server cache
       let finalProjects: Project[] = [];
       let finalIssues: Issue[] = [];
+      let finalNotes: Note[] = [];
+      let finalCortexSynapses: CortexSynapse[] = [];
+      let finalPhases: any[] = [];
+      let finalAgents: any[] = [];
+      let finalAiContextRules: string = "";
+      let finalAetherPersonalityRules: string[] = [];
+      let finalPasscodePin: string = "1234";
       
       try {
         const res = await fetch('/api/voice/sync-cache', {
@@ -1762,12 +2648,20 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           if (data) {
             finalProjects = data.projects || [];
             finalIssues = data.issues || [];
+            finalNotes = data.notes || [];
+            finalCortexSynapses = data.cortexSynapses || [];
+            finalPhases = data.phases || [];
+            finalAgents = data.agents || [];
+            finalAiContextRules = data.aiContextRules || "";
+            finalAetherPersonalityRules = data.aetherPersonalityRules || [];
+            finalPasscodePin = data.passcodePin || "1234";
+
             setProjects(finalProjects);
             setIssues(finalIssues);
-            setNotes(data.notes || []);
-            setPhases(data.phases || []);
-            setAgents(data.agents || []);
-            setCortexSynapses(data.cortexSynapses || []);
+            setNotes(finalNotes);
+            setPhases(finalPhases);
+            setAgents(finalAgents);
+            setCortexSynapses(finalCortexSynapses);
             if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
             if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
             if (typeof data.passcodePin === 'string') {
@@ -1792,13 +2686,17 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         }
       }
 
-      // 2. Query Firestore directly for owned and collab projects
+      // 2. Query Firestore directly for owned and collab projects (checking all linked accounts for same-email merge)
       let fbProjects: Project[] = [];
       try {
-        const ownedQuery = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
+        const uidsToQuery = Array.from(new Set([user.uid, ...(computedLinkedUids || linkedUids || [])]));
+        const ownedQuery = query(collection(db, 'projects'), where('ownerId', 'in', uidsToQuery));
         const ownedSnap = await getDocs(ownedQuery);
         ownedSnap.forEach((docSnap) => {
-          fbProjects.push(docSnap.data() as Project);
+          const proj = docSnap.data() as Project;
+          if (!fbProjects.some(p => p.id === proj.id)) {
+            fbProjects.push(proj);
+          }
         });
       } catch (err) {
         console.warn("Failed to fetch owned projects:", err);
@@ -1975,39 +2873,60 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       if (fbIssues.length > 0) {
         setIssues(fbIssues);
         setStored('app_issues', fbIssues);
+        lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(fbIssues));
       } else {
         if (finalIssues.length > 0) {
           setIssues(finalIssues);
           setStored('app_issues', finalIssues);
+          lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(finalIssues));
         } else {
           setIssues([]);
           setStored('app_issues', []);
+          lastFirestoreIssuesRef.current = [];
         }
       }
 
       if (fbNotes.length > 0) {
         setNotes(fbNotes);
         setStored('app_notes', fbNotes);
+        lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(fbNotes));
       } else {
-        const localNotes = getStored<Note[]>('app_notes', []);
-        if (localNotes.length > 0) {
-          setNotes(localNotes);
+        if (finalNotes.length > 0) {
+          setNotes(finalNotes);
+          setStored('app_notes', finalNotes);
+          lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(finalNotes));
         } else {
-          setNotes([]);
-          setStored('app_notes', []);
+          const localNotes = getStored<Note[]>('app_notes', []);
+          if (localNotes.length > 0) {
+            setNotes(localNotes);
+            lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(localNotes));
+          } else {
+            setNotes([]);
+            setStored('app_notes', []);
+            lastFirestoreNotesRef.current = [];
+          }
         }
       }
 
       if (fbSynapses.length > 0) {
         setCortexSynapses(fbSynapses);
         setStored('app_cortex_synapses', fbSynapses);
+        lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(fbSynapses));
       } else {
-        const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
-        if (localSynapses.length > 0) {
-          setCortexSynapses(localSynapses);
+        if (finalCortexSynapses.length > 0) {
+          setCortexSynapses(finalCortexSynapses);
+          setStored('app_cortex_synapses', finalCortexSynapses);
+          lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(finalCortexSynapses));
         } else {
-          setCortexSynapses([]);
-          setStored('app_cortex_synapses', []);
+          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+          if (localSynapses.length > 0) {
+            setCortexSynapses(localSynapses);
+            lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(localSynapses));
+          } else {
+            setCortexSynapses([]);
+            setStored('app_cortex_synapses', []);
+            lastFirestoreSynapsesRef.current = [];
+          }
         }
       }
 
@@ -2020,15 +2939,15 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
             'Authorization': `Bearer ${idToken}`
           },
           body: JSON.stringify({
-            projects: fbProjects,
-            issues: fbIssues,
-            notes: fbNotes,
-            cortexSynapses: fbSynapses,
-            phases: [],
-            agents: [],
-            aiContextRules: "",
-            aetherPersonalityRules: [],
-            passcodePin: "1234"
+            projects: fbProjects.length > 0 ? fbProjects : finalProjects,
+            issues: fbIssues.length > 0 ? fbIssues : finalIssues,
+            notes: fbNotes.length > 0 ? fbNotes : finalNotes,
+            cortexSynapses: fbSynapses.length > 0 ? fbSynapses : finalCortexSynapses,
+            phases: finalPhases,
+            agents: finalAgents,
+            aiContextRules: finalAiContextRules,
+            aetherPersonalityRules: finalAetherPersonalityRules,
+            passcodePin: finalPasscodePin
           })
         });
       } catch (postErr: any) {
@@ -2069,8 +2988,10 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   useEffect(() => {
     let unsubNotifications: (() => void) | null = null;
     let unsubInvitations: (() => void) | null = null;
+    let unsubOutgoingInvitations: (() => void) | null = null;
 
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      try {
       if (unsubNotifications) {
         unsubNotifications();
         unsubNotifications = null;
@@ -2078,6 +2999,10 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       if (unsubInvitations) {
         unsubInvitations();
         unsubInvitations = null;
+      }
+      if (unsubOutgoingInvitations) {
+        unsubOutgoingInvitations();
+        unsubOutgoingInvitations = null;
       }
 
       let isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
@@ -2127,88 +3052,249 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         setGoogleUser(cleanUser);
         setStored('app_google_user', cleanUser);
         
-        // Fetch or initialize user profile
+        // Fetch or initialize user profile (Unified multi-provider account sync engine)
+        let activeProfile: any = null;
+        let computedLinkedUids: string[] = [user.uid];
+        let currentEmail = user.email?.toLowerCase().trim() || '';
+        
         try {
-          const profileDoc = await getDoc(doc(db, 'users', user.uid));
-          if (profileDoc.exists()) {
-            const data = profileDoc.data();
-            setUserProfile(data);
-            setStored('app_user_profile', data);
-            
-            // Restore persistent GitHub credentials from Firestore
-            if (data.githubToken) {
-              setGithubToken(data.githubToken);
-              setStored('app_github_token', data.githubToken);
+          const myDocRef = doc(db, 'users', user.uid);
+          const mySnap = await getDoc(myDocRef);
+          if (mySnap.exists()) {
+            activeProfile = mySnap.data();
+            if (!currentEmail) {
+              currentEmail = (activeProfile.email || activeProfile.githubEmail || activeProfile.githubUser?.email || activeProfile.githubProfile?.email || '').toLowerCase().trim();
             }
-            if (data.githubUser) {
-              setGithubUser(data.githubUser);
-              setStored('app_github_user', data.githubUser);
-            }
-            if (data.githubProfile) {
-              setGithubProfile(data.githubProfile);
-              setStored('app_github_profile', data.githubProfile);
-            }
-          } else {
-            if (typeof window !== 'undefined') {
-              window.sessionStorage.setItem('is_new_signup', 'true');
-            }
-            const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
-            const initialProfile = {
-              uid: user.uid,
-              email: user.email || '',
-              username: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
-              displayName: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
-              avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
-              title: 'Full-Stack Developer',
-              bio: 'Active DevSpace collaborator and software designer.',
-              createdAt: Date.now(),
-              updatedAt: Date.now()
-            };
-            try {
-              await setDoc(doc(db, 'users', user.uid), initialProfile);
-            } catch (setErr) {
-              console.warn("Failed to save initial profile to Firestore (offline fallback):", setErr);
-            }
-            setUserProfile(initialProfile);
-            setStored('app_user_profile', initialProfile);
           }
-        } catch (e) {
-          console.warn("Failed to fetch/initialize user profile from Firestore, using offline fallback:", e);
-          const cachedProfile = getStored<any>('app_user_profile', null);
-          if (cachedProfile && cachedProfile.uid === user.uid) {
-            setUserProfile(cachedProfile);
-          } else {
-            const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
-            const fallbackProfile = {
-              uid: user.uid,
-              email: user.email || '',
-              username: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
-              displayName: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
-              avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
-              title: 'Full-Stack Developer',
-              bio: 'Active DevSpace collaborator and software designer.',
-              createdAt: Date.now(),
+        } catch (err) {
+          console.warn("[AutoMerge] Could not fetch profile on auth state change:", err);
+        }
+        
+        const currentUid = user.uid;
+        try {
+          console.log(`[AutoMerge] Running unified login sync using robust identity engine...`);
+          const allProfiles = await findRelatedProfiles(user, activeProfile);
+          
+          // Register current user's profile to the local identity registry to ensure they are forever linked locally too
+          registerLocalIdentity(currentUid, currentEmail || activeProfile?.email || user.email, activeProfile);
+
+          // Compute unified profile attributes
+          const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
+          let mergedProfile: any = {
+            uid: currentUid,
+            email: currentEmail || activeProfile?.email || user.email || '',
+            username: savedUsername || user.displayName || (currentEmail || activeProfile?.email || user.email || '').split('@')[0] || 'User',
+            displayName: savedUsername || user.displayName || (currentEmail || activeProfile?.email || user.email || '').split('@')[0] || 'User',
+            avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+            title: 'Full-Stack Developer',
+            bio: 'Active DevSpace collaborator.',
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          
+          // If active logged-in provider is Google or GitHub, ensure those are preset
+          if (user.providerData.some(p => p.providerId === 'google.com')) mergedProfile.googleLinked = true;
+          if (user.providerData.some(p => p.providerId === 'github.com')) mergedProfile.githubLinked = true;
+
+          allProfiles.forEach(prof => {
+            if (prof.githubToken) mergedProfile.githubToken = prof.githubToken;
+            if (prof.githubUser) mergedProfile.githubUser = prof.githubUser;
+            if (prof.githubProfile) mergedProfile.githubProfile = prof.githubProfile;
+            if (prof.googleLinked) mergedProfile.googleLinked = true;
+            if (prof.githubLinked) mergedProfile.githubLinked = true;
+            
+            if (prof.displayName && prof.displayName !== currentEmail && prof.displayName !== currentEmail.split('@')[0]) {
+              mergedProfile.displayName = prof.displayName;
+            }
+            if (prof.username && prof.username !== currentEmail && prof.username !== currentEmail.split('@')[0]) {
+              mergedProfile.username = prof.username;
+            }
+            if (prof.avatarColor) mergedProfile.avatarColor = prof.avatarColor;
+            if (prof.title) mergedProfile.title = prof.title;
+            if (prof.bio) mergedProfile.bio = prof.bio;
+            if (prof.createdAt && prof.createdAt < mergedProfile.createdAt) {
+              mergedProfile.createdAt = prof.createdAt;
+            }
+          });
+            
+            // Save the merged profile to all associated UIDs so they are perfectly mirrored
+            const linkedUids = Array.from(new Set([currentUid, ...allProfiles.map(p => p.id)]));
+            computedLinkedUids = linkedUids;
+            console.log(`[AutoMerge] Mirroring profile across identical-email accounts:`, linkedUids);
+            setLinkedUids(linkedUids);
+            setStored('app_linked_uids', linkedUids);
+            
+            for (const uid of linkedUids) {
+              try {
+                const targetDocRef = doc(db, 'users', uid);
+                // Keep the target document's own UID field
+                const docToSave = {
+                  ...mergedProfile,
+                  uid: uid,
+                  email: currentEmail,
+                  mergedInto: null
+                };
+                await setDocWithSanitize(targetDocRef, docToSave, { merge: true });
+              } catch (writeErr: any) {
+                console.warn(`[AutoMerge] Failed to mirror profile to user ${uid}:`, writeErr.message || writeErr);
+              }
+            }
+            
+            // Set the state user profile
+            activeProfile = { ...mergedProfile, uid: currentUid };
+            setUserProfile(activeProfile);
+            setStored('app_user_profile', activeProfile);
+            if (activeProfile.githubToken) {
+              setGithubToken(activeProfile.githubToken);
+              setStored('app_github_token', activeProfile.githubToken);
+            }
+            if (activeProfile.githubUser) {
+              setGithubUser(activeProfile.githubUser);
+              setStored('app_github_user', activeProfile.githubUser);
+            }
+            if (activeProfile.githubProfile) {
+              setGithubProfile(activeProfile.githubProfile);
+              setStored('app_github_profile', activeProfile.githubProfile);
+            }
+            
+            // Sync billing settings across all linked UIDs
+            let mergedBilling: any = {
+              creditsBalance: 0.00,
+              selectedTier: 'free',
+              rpmUsed: 0,
+              tpmUsed: 0,
+              rpdUsed: 0,
               updatedAt: Date.now()
             };
-            setUserProfile(fallbackProfile);
-            setStored('app_user_profile', fallbackProfile);
+            
+            let billingFound = false;
+            for (const uid of linkedUids) {
+              try {
+                const billDocRef = doc(db, 'google_ai_billing', uid);
+                const billSnap = await getDoc(billDocRef);
+                if (billSnap.exists()) {
+                  const bData = billSnap.data();
+                  billingFound = true;
+                  if (bData.creditsBalance > mergedBilling.creditsBalance) {
+                    mergedBilling.creditsBalance = bData.creditsBalance;
+                  }
+                  if (bData.selectedTier && bData.selectedTier !== 'free') {
+                    mergedBilling.selectedTier = bData.selectedTier;
+                  }
+                  if (bData.rpmUsed > mergedBilling.rpmUsed) mergedBilling.rpmUsed = bData.rpmUsed;
+                  if (bData.tpmUsed > mergedBilling.tpmUsed) mergedBilling.tpmUsed = bData.tpmUsed;
+                  if (bData.rpdUsed > mergedBilling.rpdUsed) mergedBilling.rpdUsed = bData.rpdUsed;
+                  if (bData.updatedAt > mergedBilling.updatedAt) mergedBilling.updatedAt = bData.updatedAt;
+                }
+              } catch (billErr) {
+                console.warn(`[AutoMerge] Could not read billing for UID ${uid}:`, billErr);
+              }
+            }
+            
+            // Mirror merged billing doc to all linked UIDs
+            for (const uid of linkedUids) {
+              try {
+                const billDocRef = doc(db, 'google_ai_billing', uid);
+                await setDocWithSanitize(billDocRef, {
+                  ...mergedBilling,
+                  email: currentEmail, // Critical for cross-UID read security rules!
+                  updatedAt: Date.now()
+                }, { merge: true });
+              } catch (billWriteErr: any) {
+                console.warn(`[AutoMerge] Could not write billing to UID ${uid}:`, billWriteErr.message || billWriteErr);
+              }
+            }
+            
+            if (linkedUids.length > 1) {
+              showToast('✓ Linked developer profiles and billing settings synchronized successfully!', 'success', 4000);
+            }
+            
+          } catch (mergeError: any) {
+            console.error("[AutoMerge] Failed unified same-email synchronization:", mergeError);
+          }
+
+        if (!activeProfile) {
+          // Normal profile loading/initialization fallback if email check failed or email is missing
+          try {
+            const userDocRef = doc(db, 'users', user.uid);
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setUserProfile(data);
+              setStored('app_user_profile', data);
+              if (data.githubToken) {
+                setGithubToken(data.githubToken);
+                setStored('app_github_token', data.githubToken);
+              }
+              if (data.githubUser) {
+                setGithubUser(data.githubUser);
+                setStored('app_github_user', data.githubUser);
+              }
+              if (data.githubProfile) {
+                setGithubProfile(data.githubProfile);
+                setStored('app_github_profile', data.githubProfile);
+              }
+            } else {
+              const savedUsername = typeof window !== 'undefined' ? window.sessionStorage.getItem('signup_username') : null;
+              const fallbackProfile = {
+                uid: user.uid,
+                email: user.email || '',
+                username: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
+                displayName: savedUsername || user.displayName || user.email?.split('@')[0] || 'User',
+                avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
+                title: 'Full-Stack Developer',
+                bio: 'Active DevSpace collaborator.',
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+              };
+              await setDocWithSanitize(userDocRef, fallbackProfile);
+              setUserProfile(fallbackProfile);
+              setStored('app_user_profile', fallbackProfile);
+            }
+          } catch (e) {
+            console.warn("Failed to fetch/initialize user profile in fallback:", e);
           }
         }
 
-        // Fetch user invitations inside real-time listener
+        // Fetch user invitations (both incoming and outgoing) inside real-time listeners
+        let incomingInvList: any[] = [];
+        let outgoingInvList: any[] = [];
+
+        const updateMergedInvitations = () => {
+          const mergedMap = new Map();
+          incomingInvList.forEach(i => mergedMap.set(i.id, i));
+          outgoingInvList.forEach(i => mergedMap.set(i.id, i));
+          setInvitations(Array.from(mergedMap.values()));
+        };
+
         try {
           const invQuery = query(collection(db, 'invitations'), where('receiverEmail', '==', (user.email || '').trim().toLowerCase()));
           unsubInvitations = onSnapshot(invQuery, (snapshot) => {
-            const fbInvitations: any[] = [];
+            incomingInvList = [];
             snapshot.forEach((docSnap) => {
-              fbInvitations.push(docSnap.data());
+              incomingInvList.push(docSnap.data());
             });
-            setInvitations(fbInvitations);
+            updateMergedInvitations();
           }, (err) => {
-            console.warn("Real-time invitations error:", err);
+            console.warn("Real-time incoming invitations error:", err);
           });
         } catch (e) {
-          console.warn("Failed to subscribe to user invitations from Firestore:", e);
+          console.warn("Failed to subscribe to incoming user invitations from Firestore:", e);
+        }
+
+        try {
+          const outgoingInvQuery = query(collection(db, 'invitations'), where('senderId', '==', user.uid));
+          unsubOutgoingInvitations = onSnapshot(outgoingInvQuery, (snapshot) => {
+            outgoingInvList = [];
+            snapshot.forEach((docSnap) => {
+              outgoingInvList.push(docSnap.data());
+            });
+            updateMergedInvitations();
+          }, (err) => {
+            console.warn("Real-time outgoing invitations error:", err);
+          });
+        } catch (e) {
+          console.warn("Failed to subscribe to outgoing user invitations from Firestore:", e);
         }
 
         // Fetch notifications inside real-time listener
@@ -2229,7 +3315,8 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         }
 
         // Load the full isolated user workspace data
-        await loadUserWorkspace(user);
+        await reconcileUserAccounts(user, computedLinkedUids);
+        await loadUserWorkspace(user, computedLinkedUids);
       } else {
         setIsInitialLoadDone(false);
         setGoogleUser(null);
@@ -2238,22 +3325,22 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         setInvitations([]);
         setNotifications([]);
         
-        // Clear workspace data on logout to completely isolate sessions
-        setProjects([]);
-        setIssues([]);
-        setNotes([]);
-        setCortexSynapses([]);
-        setStored('app_projects', []);
-        setStored('app_issues', []);
-        setStored('app_notes', []);
-        setStored('app_cortex_synapses', []);
-        setIsInitialLoadDone(true);
+        const localProjects = getStored<Project[]>('app_projects', []);
+        if (localProjects.length > 0) {
+          setProjects(localProjects);
+        }
       }
-    });
+    } catch (authErr) {
+      console.warn("[AuthInit] Handled error during auth state initialization:", authErr);
+    } finally {
+      setIsInitialLoadDone(true);
+    }
+  });
     return () => {
       unsubscribe();
       if (unsubNotifications) unsubNotifications();
       if (unsubInvitations) unsubInvitations();
+      if (unsubOutgoingInvitations) unsubOutgoingInvitations();
     };
   }, []);
 
@@ -2269,7 +3356,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   }) => {
     try {
       const id = `notif_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-      await setDoc(doc(db, 'notifications', id), {
+      await setDocWithSanitize(doc(db, 'notifications', id), {
         id,
         ...notification,
         read: false,
@@ -2282,7 +3369,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
   const markNotificationRead = async (id: string) => {
     try {
-      await setDoc(doc(db, 'notifications', id), { read: true }, { merge: true });
+      await setDocWithSanitize(doc(db, 'notifications', id), { read: true }, { merge: true });
     } catch (err) {
       console.error("Failed to mark notification read:", err);
     }
@@ -2291,7 +3378,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   const clearAllNotifications = async () => {
     try {
       for (const notif of notifications) {
-        await deleteDoc(doc(db, 'notifications', notif.id));
+        await deleteDocWithSanitize(doc(db, 'notifications', notif.id));
       }
     } catch (err) {
       console.error("Failed to clear notifications:", err);
@@ -2391,10 +3478,10 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
     // 2. Add user to project collaborators
     try {
-      const projSnap = await getDocs(query(collection(db, 'projects'), where('id', '==', invite.projectId)));
-      if (!projSnap.empty) {
-        const projDoc = projSnap.docs[0];
-        const projData = projDoc.data() as Project;
+      const projDocRef = doc(db, 'projects', invite.projectId);
+      const projSnap = await getDoc(projDocRef);
+      if (projSnap.exists()) {
+        const projData = projSnap.data() as Project;
         const collaborators = projData.collaborators || [];
         const emailLower = (auth.currentUser.email || '').trim().toLowerCase();
         if (!collaborators.includes(emailLower)) {
@@ -2417,7 +3504,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           collaboratorRoles, 
           collaboratorPermissions 
         };
-        await setDocWithSanitize(doc(db, 'projects', invite.projectId), updatedProj);
+        await setDocWithSanitize(projDocRef, updatedProj);
         setProjects(prev => prev.map(p => p.id === invite.projectId ? updatedProj : p));
       }
     } catch (e) {
@@ -2568,13 +3655,31 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     const id = crypto.randomUUID();
     const ownerId = auth.currentUser?.uid || googleUser?.uid || 'anonymous';
     const email = auth.currentUser?.email || googleUser?.email || '';
+    
+    const collaborators = email ? [email.trim().toLowerCase()] : [];
+    if (p.collaborators && Array.isArray(p.collaborators)) {
+      p.collaborators.forEach(c => {
+        const clower = c.trim().toLowerCase();
+        if (clower && !collaborators.includes(clower)) {
+          collaborators.push(clower);
+        }
+      });
+    }
+
+    const collaboratorRoles: Record<string, 'admin' | 'editor' | 'viewer'> = email ? { [email.trim().toLowerCase()]: 'admin' } : {};
+    if (p.collaboratorRoles) {
+      Object.keys(p.collaboratorRoles).forEach(k => {
+        collaboratorRoles[k.trim().toLowerCase()] = p.collaboratorRoles[k];
+      });
+    }
+
     const newProj = { 
       ...p, 
       id, 
       createdAt: Date.now(),
       ownerId,
-      collaborators: email ? [email.trim().toLowerCase()] : [],
-      collaboratorRoles: email ? { [email.trim().toLowerCase()]: 'admin' as const } : {}
+      collaborators,
+      collaboratorRoles
     };
     setProjects(prev => [...prev, newProj]);
     setDocWithSanitize(doc(db, 'projects', id), newProj).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
@@ -2594,7 +3699,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     // Clean up project issues in Firestore
     const associatedIssues = issues.filter(i => i.projectId === id);
     associatedIssues.forEach(i => {
-      deleteDoc(doc(db, 'issues', i.id)).catch(() => {});
+      deleteDocWithSanitize(doc(db, 'issues', i.id)).catch(() => {});
     });
 
     setProjects(prev => prev.filter(proj => proj.id !== id));
@@ -2604,7 +3709,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     setAssets(prev => prev.filter(a => a.projectId !== id));
     if (activeProjectId === id) setActiveProjectId(null);
 
-    deleteDoc(doc(db, 'projects', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `projects/${id}`));
+    deleteDocWithSanitize(doc(db, 'projects', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `projects/${id}`));
   };
 
   const addIssue = (i: Omit<Issue, 'id' | 'createdAt'>): string => {
@@ -2626,7 +3731,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   };
   const deleteIssue = (id: string) => {
     setIssues(prev => prev.filter(iss => iss.id !== id));
-    deleteDoc(doc(db, 'issues', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `issues/${id}`));
+    deleteDocWithSanitize(doc(db, 'issues', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `issues/${id}`));
   };
 
   const addPhase = (p: Omit<Phase, 'id'>) => {
@@ -2659,7 +3764,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   };
   const deleteNote = (id: string) => {
     setNotes(prev => prev.filter(note => note.id !== id));
-    deleteDoc(doc(db, 'notes', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `notes/${id}`));
+    deleteDocWithSanitize(doc(db, 'notes', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `notes/${id}`));
   };
 
   const startProjectDreaming = async (
@@ -3795,7 +4900,7 @@ Description of fix or enhancement recommendation
       const macroRef = doc(db, 'shared_macros', macroId);
       const snap = await getDoc(macroRef);
       if (snap.exists() && snap.data().creatorId === user.uid) {
-        await deleteDoc(macroRef);
+        await deleteDocWithSanitize(macroRef);
         showToast("Successfully removed your shared macro from the public library.", "success", 3000);
       } else {
         showToast("Permission denied: You can only delete your own published items.", "error", 3000);
@@ -3942,6 +5047,7 @@ Description of fix or enhancement recommendation
 
       syncStatus,
       lastSyncedTime,
+      isQuotaExceeded,
       toasts,
       showToast,
       removeToast,
@@ -3960,7 +5066,11 @@ Description of fix or enhancement recommendation
       publishMacro,
       deleteSharedMacro,
       likeSharedMacro,
-      incrementDownloadsSharedMacro
+      incrementDownloadsSharedMacro,
+      linkedUids,
+      setLinkedUids,
+      reconcileUserAccounts,
+      forceReconcileIdentities
     }}>
       {children}
       <ToastContainer toasts={toasts} removeToast={removeToast} />

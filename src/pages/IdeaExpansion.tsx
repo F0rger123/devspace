@@ -873,7 +873,7 @@ export function IdeaExpansion() {
                 <button 
                   onClick={() => { haptic.medium(); handleAutoSortIntoProject(); }} 
                   disabled={isPushing} 
-                  className="text-[10px] bg-indigo-700 hover:bg-indigo-600 px-2 py-1.5 rounded text-indigo-50 hover:text-white transition flex items-center gap-1.5 border border-indigo-500/30 disabled:opacity-50 font-semibold select-none cursor-pointer shadow-md shadow-indigo-950/45"
+                  className="text-[10px] bg-yellow-500 hover:bg-yellow-400 px-2 py-1.5 rounded text-black font-extrabold transition flex items-center gap-1.5 border border-yellow-400/30 disabled:opacity-50 select-none cursor-pointer shadow-md shadow-yellow-950/45"
                   title="Auto-extract elements, create a project space, and sort all milestones/tasks"
                 >
                   <FolderPlus size={12} /> <span>Auto-Create</span><span className="hidden sm:inline"> & Sort</span> ⚡

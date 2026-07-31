@@ -88,6 +88,43 @@ export function GitHubIntelligence() {
     ];
   });
   const [prs, setPrs] = useState<any[]>([]);
+  const [mergingPrId, setMergingPrId] = useState<string | null>(null);
+
+  const handleAcceptMergePR = async (prId: string) => {
+    if (!githubToken) {
+      showToast('Please connect your GitHub account in Sandbox Loop or Settings to merge pull requests directly.', 'error');
+      return;
+    }
+    const pullNum = parseInt(prId.replace('#', ''), 10);
+    if (isNaN(pullNum)) return;
+
+    setMergingPrId(prId);
+    try {
+      const res = await fetch('/api/github/merge-pr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo,
+          pullNumber: pullNum,
+          token: githubToken
+        })
+      });
+
+      if (res.ok) {
+        showToast(`Pull request ${prId} successfully merged on GitHub!`, 'success');
+        setPrs(prev => prev.map(p => p.id === prId ? { ...p, status: 'closed', merged: true } : p));
+      } else {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to merge PR');
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast(e.message || 'Error merging pull request.', 'error');
+    } finally {
+      setMergingPrId(null);
+    }
+  };
+
   const [loading, setLoading] = useState(false);
   const [backgroundSyncing, setBackgroundSyncing] = useState(false);
   const [isAutoPullActive, setIsAutoPullActive] = useState(true);
@@ -748,7 +785,7 @@ export function GitHubIntelligence() {
           <button 
             onClick={() => syncCommits(false)}
             disabled={loading || !repo}
-            className="px-3 py-1.5 text-[11px] font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-md transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 text-[11px] font-bold bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <GitPullRequest size={12} />} Reload context
           </button>
@@ -763,7 +800,7 @@ export function GitHubIntelligence() {
           {/* Active project code assignments */}
           <div className="border border-zinc-900 bg-[#121214]/60 rounded-xl p-4">
             <h3 className="font-bold text-xs text-zinc-200 flex items-center gap-2 mb-3">
-              <Layers size={13} className="text-blue-400" />
+              <Layers size={13} className="text-yellow-500" />
               <span>Project Code Mappings</span>
             </h3>
             <p className="text-[10px] text-zinc-500 mb-4 leading-relaxed">Assign connected GitHub repositories to DevSpace projects below. Active assigned repos feed context to agents watching that scope.</p>
@@ -773,11 +810,11 @@ export function GitHubIntelligence() {
                 const assignedRepos = proj.githubRepos || [];
                 const isActive = proj.id === activeProjectId;
                 return (
-                  <div key={proj.id} className={`p-3 bg-[#09090b] border rounded-lg transition-colors flex flex-col justify-between ${isActive ? 'border-blue-600/50 bg-blue-950/5' : 'border-zinc-850'}`}>
+                  <div key={proj.id} className={`p-3 bg-[#09090b] border rounded-lg transition-colors flex flex-col justify-between ${isActive ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-zinc-850'}`}>
                     <div>
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-xs text-zinc-200 block truncate">{proj.name}</span>
-                        {isActive && <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1 py-0.2 rounded uppercase font-bold font-mono">Active</span>}
+                        {isActive && <span className="text-[8px] bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-1 py-0.2 rounded uppercase font-bold font-mono">Active</span>}
                       </div>
                       <p className="text-[10px] text-zinc-500 mt-1 lines-clamp-1">{proj.description}</p>
                     </div>
@@ -791,7 +828,7 @@ export function GitHubIntelligence() {
                           <div key={ar} className="flex items-center justify-between p-1 px-2 bg-zinc-950 border border-zinc-850 rounded text-[10px]">
                             <button 
                               onClick={() => { setRepo(ar); }}
-                              className="text-zinc-300 font-medium font-mono hover:text-blue-400 hover:underline text-left truncate flex-1 block"
+                              className="text-zinc-300 font-medium font-mono hover:text-yellow-400 hover:underline text-left truncate flex-1 block"
                             >
                               {ar}
                             </button>
@@ -834,11 +871,11 @@ export function GitHubIntelligence() {
           </div>
 
           {/* AI Commit Watcher Feed */}
-          <div className="border border-blue-500/20 bg-blue-500/5 rounded-xl p-4 space-y-3">
+          <div className="border border-yellow-500/20 bg-yellow-500/5 rounded-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="text-left">
                 <h3 className="font-bold text-xs text-zinc-200 flex items-center gap-2">
-                  <Sparkles size={13} className="text-blue-400 animate-pulse" />
+                  <Sparkles size={13} className="text-yellow-400 animate-pulse" />
                   <span>Gemini AI Commit Watcher</span>
                 </h3>
                 <p className="text-[10px] text-zinc-400 leading-normal mt-0.5">
@@ -859,16 +896,16 @@ export function GitHubIntelligence() {
                     }
                   }}
                   disabled={analyzingCommitsId === activeProjectId}
-                  className="shrink-0 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-1.5 px-3.5 rounded-lg flex items-center gap-1.5 transition-all shadow-md cursor-pointer disabled:opacity-50"
+                  className="shrink-0 bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold text-xs py-1.5 px-3.5 rounded-lg flex items-center gap-1.5 transition-all shadow-md cursor-pointer disabled:opacity-50"
                 >
                   {analyzingCommitsId === activeProjectId ? (
                     <>
-                      <Loader2 size={11} className="animate-spin text-white" />
+                      <Loader2 size={11} className="animate-spin text-black" />
                       <span>Analyzing...</span>
                     </>
                   ) : (
                     <>
-                      <Bot size={11} className="text-white" />
+                      <Bot size={11} className="text-black" />
                       <span>Watch & Analyze Commits</span>
                     </>
                   )}
@@ -942,7 +979,7 @@ export function GitHubIntelligence() {
 
                         {ac.summary && (
                           <div className="p-2.5 bg-[#09090b] rounded-lg border border-zinc-900 text-[10px] text-zinc-350 leading-relaxed font-sans">
-                            <span className="text-blue-400 font-bold block mb-1">🤖 AI TECH SUMMARY:</span>
+                            <span className="text-yellow-400 font-bold block mb-1">🤖 AI TECH SUMMARY:</span>
                             {ac.summary}
                           </div>
                         )}
@@ -954,7 +991,7 @@ export function GitHubIntelligence() {
                             </span>
                           )}
                           {ac.suggestedNoteId && (
-                            <span className="bg-blue-500/5 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold">
+                            <span className="bg-yellow-500/5 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold">
                               📝 Auto-Documented in Notes
                             </span>
                           )}
@@ -983,7 +1020,7 @@ export function GitHubIntelligence() {
             <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-zinc-800">
               {loading ? (
                 <div className="flex flex-col items-center justify-center p-24 text-zinc-500">
-                  <Loader2 size={18} className="animate-spin text-blue-400 mb-2" />
+                  <Loader2 size={18} className="animate-spin text-yellow-400 mb-2" />
                   <span className="text-[11px]">Syncing remote git commits...</span>
                 </div>
               ) : commits.length === 0 ? (
@@ -1002,7 +1039,7 @@ export function GitHubIntelligence() {
                       transition={{ delay: i * 0.05 }}
                       className="relative pl-6 group"
                     >
-                      <div className="absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full bg-zinc-900 border-2 border-zinc-700 group-hover:border-blue-400 transition-colors"></div>
+                      <div className="absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full bg-zinc-900 border-2 border-zinc-700 group-hover:border-yellow-400 transition-colors"></div>
                       <div className="bg-zinc-950/60 border border-zinc-850 p-3 rounded-lg hover:border-zinc-700 hover:bg-[#18181b] transition-all cursor-pointer">
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-xs font-semibold text-zinc-200">{c.msg}</span>
@@ -1039,27 +1076,63 @@ export function GitHubIntelligence() {
                 </h3>
                 <span className="text-[9px] font-mono text-zinc-500 font-bold bg-zinc-900 shrink-0 px-2.5 rounded-full py-0.3 border border-zinc-800">Open: {prs.length}</span>
             </div>
-            
-            <div className="p-3 space-y-2 relative flex-1 overflow-y-auto">
+               <div className="p-3 space-y-2 relative flex-1 overflow-y-auto">
                {loading && prs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-12 text-zinc-500">
-                      <Loader2 size={16} className="animate-spin mb-2 text-blue-400" />
+                      <Loader2 size={16} className="animate-spin mb-2 text-yellow-400" />
                       <span className="text-xs">Fetching pull requests...</span>
                   </div>
                ) : prs.length === 0 ? (
                   <div className="text-zinc-500 text-xs text-center py-12 italic">No open Pull Requests found.</div>
                ) : prs.map((pr) => (
-                  <div key={pr.id} className="p-3 bg-[#09090b] border border-zinc-850 rounded-lg group hover:border-zinc-700 transition-colors cursor-pointer">
+                  <div key={pr.id} className="p-3 bg-[#09090b] border border-zinc-850 rounded-lg group hover:border-zinc-700 transition-colors">
                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="text-[11px] font-medium text-zinc-200 leading-snug pr-2 group-hover:text-blue-400 transition-colors">{pr.title}</h4>
-                        <span className="text-[9px] font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0">Open</span>
+                        <div className="flex-1 min-w-0 pr-2 text-left">
+                           <h4 className="text-[11px] font-medium text-zinc-200 leading-snug group-hover:text-yellow-400 transition-colors">{pr.title}</h4>
+                           <p className="text-[9.5px] text-zinc-500 mt-0.5">Author: {pr.author}</p>
+                        </div>
+                        {pr.merged || pr.status === 'closed' ? (
+                           <span className="text-[9px] font-medium text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 shrink-0">Merged</span>
+                        ) : (
+                           <span className="text-[9px] font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0">Open</span>
+                        )}
                      </div>
-                     <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                     <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-1 border-t border-zinc-900/50 mt-1">
                        <span className="font-mono bg-zinc-950 border border-zinc-850 px-1 rounded">{pr.id}</span>
-                       <div className="flex items-center gap-1.5">
-                         <CheckCircle2 size={12} className="text-emerald-500"/>
-                         <span>CI / Passed</span>
-                       </div>
+                       
+                       {pr.merged || pr.status === 'closed' ? (
+                          <div className="flex items-center gap-1.5 text-purple-400 font-mono text-[9.5px]">
+                            <GitMerge size={12} />
+                            <span>Merged ✓</span>
+                          </div>
+                       ) : (
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1">
+                              <CheckCircle2 size={11} className="text-emerald-500"/>
+                              <span className="text-[9.5px]">CI / OK</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAcceptMergePR(pr.id);
+                              }}
+                              disabled={mergingPrId !== null}
+                              className="text-[9px] font-bold text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1 shadow-sm"
+                            >
+                              {mergingPrId === pr.id ? (
+                                <>
+                                  <Loader2 size={9} className="animate-spin" />
+                                  <span>Merging...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <GitMerge size={9} />
+                                  <span>Accept & Merge</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                       )}
                      </div>
                   </div>
                ))}
@@ -1081,15 +1154,15 @@ export function GitHubIntelligence() {
           </div>
 
           {/* AI Repository Insights Panel */}
-          <div className="border border-blue-500/20 bg-gradient-to-br from-[#121214] to-blue-950/10 rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden group">
+          <div className="border border-yellow-500/20 bg-gradient-to-br from-[#121214] to-yellow-950/10 rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden group">
              <div className="flex items-center justify-between mb-1">
-                <div className="text-blue-400 flex items-center gap-2 text-xs font-semibold">
+                <div className="text-yellow-400 flex items-center gap-2 text-xs font-semibold">
                    <Bot size={14} /> Repository AI Insights
                 </div>
                 <button 
                   onClick={generateInsights}
                   disabled={insightGenerating || commits.length === 0}
-                  className="text-[9px] uppercase tracking-wider bg-blue-500/25 hover:bg-blue-500/40 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30 transition-colors disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                  className="text-[9px] uppercase tracking-wider bg-yellow-500/25 hover:bg-yellow-500/40 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/30 transition-colors disabled:opacity-50 flex items-center gap-1 cursor-pointer"
                 >
                   {insightGenerating ? <Loader2 size={10} className="animate-spin inline" /> : <Sparkles size={10} />}
                   <span>Analyze</span>
@@ -1107,13 +1180,13 @@ export function GitHubIntelligence() {
               <div className="flex items-center gap-2">
                 <div className="relative flex h-2 w-2">
                   {autopilotEnabled && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
                   )}
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${autopilotEnabled ? 'bg-blue-500' : 'bg-zinc-600'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${autopilotEnabled ? 'bg-yellow-500' : 'bg-zinc-600'}`}></span>
                 </div>
                 <span className="text-xs font-bold text-zinc-200 tracking-wide uppercase">Aether Autopilot</span>
               </div>
-              <span className="text-[9px] font-mono font-bold bg-blue-950/40 text-blue-400 border border-blue-900/30 px-2 py-0.5 rounded uppercase">
+              <span className="text-[9px] font-mono font-bold bg-yellow-950/40 text-yellow-400 border border-yellow-900/30 px-2 py-0.5 rounded uppercase">
                 Active 24/7 Engine
               </span>
             </div>
@@ -1130,7 +1203,7 @@ export function GitHubIntelligence() {
                 onClick={() => saveAutopilotConfig(!autopilotEnabled, autopilotBranchMode)}
                 disabled={autopilotLoading}
                 className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  autopilotEnabled ? 'bg-blue-600' : 'bg-zinc-800'
+                  autopilotEnabled ? 'bg-yellow-500' : 'bg-zinc-800'
                 }`}
               >
                 <span
@@ -1164,9 +1237,9 @@ export function GitHubIntelligence() {
               className="w-full py-1.5 px-3 bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
             >
               {triggeringAutopilot ? (
-                <Loader2 size={12} className="animate-spin text-blue-400" />
+                <Loader2 size={12} className="animate-spin text-yellow-400" />
               ) : (
-                <Sparkles size={12} className="text-blue-400" />
+                <Sparkles size={12} className="text-yellow-400" />
               )}
               <span>Scan & Deploy Approved Features Now</span>
             </button>
@@ -1197,7 +1270,7 @@ export function GitHubIntelligence() {
                       colorClass = "text-amber-400";
                       icon = "⚠";
                     } else if (log.type === "info") {
-                      colorClass = "text-blue-400";
+                      colorClass = "text-yellow-400";
                       icon = "⚡";
                     }
 
@@ -1221,7 +1294,7 @@ export function GitHubIntelligence() {
                   onClick={() => setAutopilotTab('queue')}
                   className={`flex-1 py-1.5 px-2.5 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     autopilotTab === 'queue'
-                      ? 'bg-zinc-900 text-blue-400 shadow-sm border border-zinc-800'
+                      ? 'bg-zinc-900 text-yellow-400 shadow-sm border border-zinc-800'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -1232,7 +1305,7 @@ export function GitHubIntelligence() {
                   onClick={() => setAutopilotTab('recurring')}
                   className={`flex-1 py-1.5 px-2.5 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     autopilotTab === 'recurring'
-                      ? 'bg-zinc-900 text-blue-400 shadow-sm border border-zinc-800'
+                      ? 'bg-zinc-900 text-yellow-400 shadow-sm border border-zinc-800'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
@@ -1243,7 +1316,7 @@ export function GitHubIntelligence() {
                   onClick={() => setAutopilotTab('webhooks')}
                   className={`flex-1 py-1.5 px-2.5 rounded-md text-[10px] font-bold tracking-wide uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     autopilotTab === 'webhooks'
-                      ? 'bg-zinc-900 text-blue-400 shadow-sm border border-zinc-800'
+                      ? 'bg-zinc-900 text-yellow-400 shadow-sm border border-zinc-800'
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >

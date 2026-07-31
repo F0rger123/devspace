@@ -476,8 +476,8 @@ export function Brain() {
 
       <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
         {viewMode === 'both' && graphType === 'github' && (
-          <div className="w-full lg:w-64 h-48 lg:h-auto border border-zinc-800 bg-[#121214] rounded-xl flex flex-col flex-shrink-0 overflow-hidden relative">
-            <div className="flex items-center gap-2 p-3 border-b border-zinc-800 bg-[#09090b]">
+          <div className="w-full lg:w-64 h-48 lg:h-auto rounded-xl flex flex-col flex-shrink-0 overflow-hidden relative glass-card">
+            <div className="flex items-center gap-2 p-3 border-b border-zinc-800 bg-[#09090b]/40">
               <ListTree size={14} className="text-zinc-400" />
               <h3 className="text-xs font-semibold text-zinc-200">Explorer</h3>
             </div>
@@ -501,10 +501,10 @@ export function Brain() {
         )}
 
         {/* SW SYNAPSTICS ROUTE MARKER */}
-        <div className={`border border-zinc-800 bg-[#121214] rounded-xl relative overflow-hidden flex items-center justify-center transition-all duration-300 ${
+        <div className={`rounded-xl relative overflow-hidden flex items-center justify-center transition-all duration-300 glass-card ${
           isFullscreen 
             ? 'fixed inset-0 z-50 p-4 m-0 rounded-none bg-[#0c0c0f]' 
-            : 'w-full h-[500px] lg:h-auto lg:flex-1'
+            : 'w-full min-h-[600px] h-full lg:flex-1'
         }`}>
           {/* Fullscreen control button */}
           <button
@@ -655,7 +655,7 @@ export function Brain() {
                   <div className="text-zinc-500 text-xs">No graph data.</div>
                )}
 
-               <div className="absolute bottom-4 left-4 p-3 bg-[#09090b]/90 backdrop-blur-md rounded-lg border border-zinc-800 max-w-sm pointer-events-none">
+               <div className="absolute bottom-4 left-4 p-3 rounded-lg max-w-sm pointer-events-none glass-card">
                   <h3 className="text-xs font-semibold text-zinc-200 mb-1 flex items-center gap-2"><Sparkles size={12} className="text-blue-400"/> System Architecture</h3>
                   <p className="text-[10px] text-zinc-400 leading-relaxed max-h-24 overflow-hidden text-ellipsis mb-2">
                     {graphType === 'project' 

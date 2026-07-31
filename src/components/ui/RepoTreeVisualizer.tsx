@@ -17,6 +17,20 @@ interface FileNode {
   type: 'blob' | 'tree';
 }
 
+function safeDecodeBase64(str: string): string {
+  try {
+    const binString = atob(str);
+    const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    try {
+      return decodeURIComponent(escape(atob(str)));
+    } catch (err) {
+      return atob(str);
+    }
+  }
+}
+
 export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProps) {
   const { githubToken, updateProject } = useData();
   const [treeData, setTreeData] = useState<FileNode[]>([]);
@@ -353,7 +367,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
       });
       if (!fileRes.ok) throw new Error("Failed to load file content");
       const fileData = await fileRes.json();
-      const content = fileData.content ? atob(fileData.content) : (fileData.body || "");
+      const content = fileData.content ? safeDecodeBase64(fileData.content) : (fileData.body || "");
       setFileContent(content);
 
       // 2. Request Gemini audit analysis
@@ -474,7 +488,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
             body: JSON.stringify({ repo: repoName, path: pkgFile.path, token: githubToken || undefined }),
           });
           const d = await res.json();
-          const raw = d.content ? atob(d.content) : (d.body || "");
+          const raw = d.content ? safeDecodeBase64(d.content) : (d.body || "");
           packageDetails = raw.substring(0, 2000);
         } catch (e) {}
       }
@@ -487,7 +501,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
             body: JSON.stringify({ repo: repoName, path: readmeFile.path, token: githubToken || undefined }),
           });
           const d = await res.json();
-          const raw = d.content ? atob(d.content) : (d.body || "");
+          const raw = d.content ? safeDecodeBase64(d.content) : (d.body || "");
           readmeDetails = raw.substring(0, 3000);
         } catch (e) {}
       }
@@ -660,7 +674,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
       {/* Visual Workspace Tab / Selector */}
       <div className="flex items-center justify-between bg-zinc-950 border border-zinc-900 rounded-xl p-3.5">
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 bg-blue-500/10 rounded-lg text-blue-400">
+          <div className="p-1.5 bg-yellow-500/10 rounded-lg text-yellow-400">
             <Network size={15} />
           </div>
           <div>
@@ -737,7 +751,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
           <div className="bg-[#09090c] border border-zinc-850 rounded-2xl p-4 space-y-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Bot size={15} className="text-blue-400" />
+                <Bot size={15} className="text-yellow-400" />
                 <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider font-mono">
                   Autonomous Codebase Dreamer
                 </h4>
@@ -745,7 +759,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
               <button
                 onClick={handleFullRepoDream}
                 disabled={isDreaming || isLoading}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-900 border border-blue-500/20 text-white disabled:text-zinc-600 font-bold text-[10px] rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-900 border border-yellow-400/30 text-black font-extrabold text-[10px] rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-[0_0_12px_rgba(234,179,8,0.2)]"
               >
                 {isDreaming ? (
                   <>
@@ -779,8 +793,8 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
 
                 {/* Stream output */}
                 {dreamOutput && (
-                  <div className="p-3 bg-blue-950/10 border border-blue-500/10 rounded-xl space-y-2 max-h-[150px] overflow-y-auto">
-                    <span className="text-[8.5px] font-bold text-blue-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                  <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl space-y-2 max-h-[150px] overflow-y-auto">
+                    <span className="text-[8.5px] font-bold text-yellow-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
                       <Sparkles size={10} /> Synthesized AI Code Concepts:
                     </span>
                     <p className="text-[10px] text-zinc-350 leading-relaxed font-mono whitespace-pre-line">

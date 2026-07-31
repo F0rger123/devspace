@@ -43,6 +43,7 @@ import {
   ShieldCheck,
   HeartPulse,
   Sparkle,
+  Settings,
   Rocket,
   Activity,
   GitCommit,
@@ -51,15 +52,35 @@ import {
   BookMarked,
   Bot,
   Users,
+  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
-import { motion } from "motion/react";
-import { useSearchParams } from "react-router-dom";
+import { motion, AnimatePresence } from "motion/react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useData } from "../context/DataProvider";
+import { ProfileView } from "../components/ProfileView";
+import { db } from "../lib/auth";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { ProjectStepper } from "../components/ProjectStepper";
 import { ProjectInviteWizard } from "../components/ui/ProjectInviteWizard";
 import { RepoTreeVisualizer } from "../components/ui/RepoTreeVisualizer";
+import { BackendIntegrationTab } from "../components/BackendIntegrationTab";
+import { DreamSwipeDeck } from "../components/DreamSwipeDeck";
 import { extractRepoName } from "../lib/utils";
+
+function safeDecodeBase64(str: string): string {
+  try {
+    const binString = atob(str);
+    const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
+    return new TextDecoder().decode(bytes);
+  } catch (e) {
+    try {
+      return decodeURIComponent(escape(atob(str)));
+    } catch (err) {
+      return atob(str);
+    }
+  }
+}
 
 export function Projects() {
   const [githubReposList, setGithubReposList] = useState<any[]>([]);
@@ -95,9 +116,47 @@ export function Projects() {
     updateCollaboratorRole,
     removeCollaborator,
     googleUser,
+    linkedUids,
+    showToast,
+    userProfile,
   } = useData();
 
+  const navigate = useNavigate();
+  const [selectedDeveloper, setSelectedDeveloper] = useState<any | null>(null);
+  const [selectedDevLoading, setSelectedDevLoading] = useState(false);
+
+  const openCollabProfile = async (email: string) => {
+    if (!email) return;
+    setSelectedDevLoading(true);
+    showToast("Retrieving collaborator synapse...", "success");
+    try {
+      const q = query(collection(db, "users"), where("email", "==", email.trim().toLowerCase()));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const userData = snap.docs[0].data();
+        setSelectedDeveloper(userData);
+      } else {
+        setSelectedDeveloper({
+          uid: "placeholder_" + email.replace(/[^a-zA-Z0-9]/g, ""),
+          email: email,
+          username: email.split("@")[0],
+          displayName: email.split("@")[0],
+          avatarColor: "#71717a",
+          title: "DevSpace Contributor",
+          bio: "This contributor is active in the project workspace but has not fully configured their public synaptic profile synapse yet.",
+          createdAt: Date.now()
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load collaborator profile:", err);
+      showToast("Failed to retrieve profile synapse.", "error");
+    } finally {
+      setSelectedDevLoading(false);
+    }
+  };
+
   const [showModal, setShowModal] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<any | null>(null);
 
   // WORKSPACE DETAILED VIEWS & AGENTS STATES
   const [searchParams, setSearchParams] = useSearchParams();
@@ -112,7 +171,7 @@ export function Projects() {
     }
   };
   const [workspaceTab, setWorkspaceTab] = useState<
-    "goals" | "brainstorm" | "dream" | "stack" | "ship" | "collaboration"
+    "goals" | "brainstorm" | "dream" | "stack" | "ship" | "collaboration" | "backend"
   >(() => {
     const saved = localStorage.getItem('projects_workspace_tab');
     return (saved as any) || "goals";
@@ -342,7 +401,7 @@ export function Projects() {
       });
       if (!fileRes.ok) throw new Error("Failed to fetch file content");
       const fileData = await fileRes.json();
-      const content = fileData.content ? atob(fileData.content) : (fileData.body || "");
+      const content = fileData.content ? safeDecodeBase64(fileData.content) : (fileData.body || "");
       setScannedFileContent(content);
       setLoadingFileContent(false);
 
@@ -748,7 +807,7 @@ Then, suggest ONE concrete feature suggestion that we can add to the brainstorm 
     if (!voiceSyncTranscript.trim()) return;
     setSyncStep("processing");
     setSyncLoading(true);
-    setSyncProcessingLog(["Initializing synaptic analyzer...", "Transcribing raw dictation signals..."]);
+    setSyncProcessingLog(["Initializing audio analyzer...", "Transcribing raw dictation signals..."]);
     
     try {
       await new Promise(resolve => setTimeout(resolve, 600));
@@ -795,7 +854,7 @@ Codeblock format:
       const decoder = new TextDecoder();
       let accumulatedText = "";
       
-      setSyncProcessingLog(prev => [...prev, "Streaming synaptic response from Gemini..."]);
+      setSyncProcessingLog(prev => [...prev, "Streaming response from Gemini..."]);
       
       while (reader) {
         const { value, done } = await reader.read();
@@ -826,7 +885,7 @@ Codeblock format:
       }
     } catch (err: any) {
       console.error(err);
-      setSyncProcessingLog(prev => [...prev, `❌ Error: ${err.message || "Failed synaptic processing"}`]);
+      setSyncProcessingLog(prev => [...prev, `❌ Error: ${err.message || "Failed voice processing"}`]);
       alert(`Error processing update: ${err.message || "Unrecognized payload"}`);
       setSyncStep("input");
     } finally {
@@ -854,7 +913,7 @@ Codeblock format:
           priority: "Medium",
           type: "Feature",
           dueDate: "",
-          description: t.details || "Parsed via synaptic voice update."
+          description: t.details || "Parsed via voice status update."
         });
       });
     }
@@ -869,7 +928,7 @@ Codeblock format:
           priority: t.priority || "Medium",
           type: "Feature",
           dueDate: syncReport.targetFinishDate || "",
-          description: t.details || "Parsed via synaptic voice update."
+          description: t.details || "Parsed via voice status update."
         });
       });
     }
@@ -884,7 +943,7 @@ Codeblock format:
           priority: b.priority || "High",
           type: "Bug",
           dueDate: "",
-          description: b.details || "Parsed via synaptic voice update."
+          description: b.details || "Parsed via voice status update."
         });
       });
     }
@@ -1401,7 +1460,7 @@ Description of fix or enhancement recommendation
           <div>
             <button
               onClick={() => setViewingWorkspaceId(null)}
-              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 mb-2 font-semibold transition-colors"
+              className="text-xs text-yellow-400 hover:text-yellow-300 flex items-center gap-1 mb-2 font-semibold transition-colors cursor-pointer"
             >
               &larr; Back to Projects Gallery
             </button>
@@ -1414,14 +1473,14 @@ Description of fix or enhancement recommendation
               </span>
               {(() => {
                 const myEmail = (googleUser?.email || '').trim().toLowerCase();
-                const isOwner = project.ownerId === googleUser?.uid || project.ownerId === 'anonymous' || !project.ownerId;
+                const isOwner = project.ownerId === googleUser?.uid || (linkedUids && linkedUids.includes(project.ownerId)) || project.ownerId === 'anonymous' || !project.ownerId;
                 const myRole = isOwner ? 'admin' : (project.collaboratorRoles?.[myEmail] || 'editor');
                 return (
                   <span className={`text-[10px] border px-2 py-0.5 rounded font-mono uppercase tracking-wider ${
                     myRole === 'admin'
                       ? 'bg-purple-500/10 text-purple-400 border-purple-500/25'
                       : myRole === 'editor'
-                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/25'
+                        ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/25'
                         : 'bg-zinc-800 text-zinc-400 border-zinc-700'
                   }`}>
                     {myRole} ACCESS
@@ -1452,28 +1511,32 @@ Description of fix or enhancement recommendation
             )}
             <button
               onClick={() => {
+                setActiveProjectId(project.id);
+                navigate(`/create?projectId=${project.id}`);
+              }}
+              className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold px-3.5 py-1.5 rounded-lg border border-yellow-400/40 shadow-md shadow-yellow-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Code2 size={13} /> Open Code Editor & AI Sandbox
+            </button>
+            <button
+              onClick={() => {
                 setVoiceSyncTranscript("");
                 setSyncStep("input");
                 setSyncReport(null);
                 setShowVoiceSyncModal(true);
               }}
-              className="text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg border border-amber-500/20 shadow-md shadow-amber-500/10 transition-colors flex items-center gap-1.5 font-bold cursor-pointer"
+              className="text-xs bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-bold cursor-pointer"
             >
               <Mic size={12} /> Sync Voice Update
             </button>
             <button
               onClick={() => handleOpenEditModal(project)}
-              className="text-xs bg-zinc-850 hover:bg-zinc-750 text-zinc-300 hover:text-white border border-zinc-700/60 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
+              className="text-xs bg-zinc-900 hover:bg-zinc-800 text-yellow-400 border border-yellow-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-semibold cursor-pointer"
             >
-              <Code2 size={12} /> Edit Settings
+              <Settings size={12} className="text-yellow-400" /> Project Edit
             </button>
             <button
-              onClick={() => {
-                if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
-                  deleteProject(project.id);
-                  setViewingWorkspaceId(null);
-                }
-              }}
+              onClick={() => setProjectToDelete(project)}
               className="text-xs bg-red-950/20 hover:bg-red-950/60 text-red-400 border border-red-500/10 hover:border-red-500/30 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium cursor-pointer"
             >
               <Trash size={12} /> Delete Space
@@ -1482,7 +1545,7 @@ Description of fix or enhancement recommendation
         </div>
 
         {/* WORKSPACE NAVIGATION TABS */}
-        <div className="flex border-b border-zinc-800/80 mb-6 gap-1 overflow-x-auto pb-1 max-w-full">
+        <div className="flex p-1 bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-xl mb-6 gap-1.5 overflow-x-auto max-w-full">
           {[
             {
               id: "goals",
@@ -1501,6 +1564,11 @@ Description of fix or enhancement recommendation
             },
             { id: "stack", label: "📁 Custom Stack & Assets", icon: Layers },
             {
+              id: "backend",
+              label: "⚡ Supabase Backend & RLS",
+              icon: Database,
+            },
+            {
               id: "ship",
               label: "🚀 Git Operations & Shipping",
               icon: Rocket,
@@ -1517,10 +1585,10 @@ Description of fix or enhancement recommendation
               <button
                 key={tab.id}
                 onClick={() => setWorkspaceTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-2 border-b-2 font-medium text-xs rounded-t-lg transition-all shrink-0 select-none ${
+                className={`flex items-center gap-2 px-4 py-2.5 font-semibold text-xs rounded-lg transition-all shrink-0 select-none cursor-pointer ${
                   isActive
-                    ? "border-blue-500 text-blue-400 bg-blue-500/5"
-                    : "border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                    ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 shadow-[0_2px_12px_rgba(234,179,8,0.15)]"
+                    : "border border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]"
                 }`}
               >
                 <Icon size={13} />
@@ -1562,7 +1630,7 @@ Description of fix or enhancement recommendation
 
                     <div className="bg-[#18181b] border border-zinc-800/60 rounded-xl p-4 relative overflow-hidden">
                       <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">
-                        AETHER PRODUCTIVITY SCORE
+                        PROJECT MOMENTUM
                       </div>
                       <div className="text-2xl font-bold text-cyan-400 mt-1">
                         {calculatedScore}%
@@ -1715,7 +1783,7 @@ Description of fix or enhancement recommendation
                 </div>
 
                 {/* GOAL FEEDBACK BOARDS */}
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5">
+                <div className="glass-card rounded-xl p-5">
                   <h2 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
                     <CheckSquare size={16} className="text-emerald-400" />{" "}
                     Milestone Checkpoints Checklist
@@ -1779,7 +1847,7 @@ Description of fix or enhancement recommendation
                 </div>
 
                 {/* DYNAMIC PROJECT OKR & TARGETS TRACKER */}
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5">
+                <div className="glass-card rounded-xl p-5">
                   <h2 className="text-sm font-semibold text-[#a855f7] mb-3 flex items-center justify-between select-none font-sans">
                     <div className="flex items-center gap-2">
                       <Target size={16} className="text-purple-400" /> Granular
@@ -1947,7 +2015,7 @@ Description of fix or enhancement recommendation
 
               {/* RIGHT PANEL: WEBSITE LINK & META CONFIG */}
               <div className="space-y-6">
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg">
+                <div className="glass-card rounded-xl p-5 shadow-lg">
                   <h2 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
                     <Globe size={16} className="text-zinc-250" /> Connect
                     Project Website
@@ -2116,7 +2184,7 @@ Description of fix or enhancement recommendation
 
               {/* LIVE GENERATION CARDS ZONE */}
               {generatedIdeas.length > 0 && (
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 animate-in fade-in slide-in-from-top duration-300">
+                <div className="glass-card rounded-xl p-5 animate-in fade-in slide-in-from-top duration-300">
                   <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-4">
                     Gemini Recommended Proposal Sandbox
                   </h3>
@@ -2125,7 +2193,7 @@ Description of fix or enhancement recommendation
                     {generatedIdeas.map((idea) => (
                       <div
                         key={idea.id}
-                        className="bg-[#18181b] border border-zinc-800/80 rounded-xl p-4 flex flex-col justify-between"
+                        className="glass-card rounded-xl p-4 flex flex-col justify-between"
                       >
                         <div>
                           <h4 className="text-xs font-bold text-zinc-200 mb-1">
@@ -2191,7 +2259,7 @@ Description of fix or enhancement recommendation
               )}
 
               {/* ACTIVE BRAINSTORMS LIST */}
-              <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5">
+              <div className="glass-card rounded-xl p-5">
                 <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest mb-4 flex items-center gap-1.5">
                   <Brain size={14} className="text-zinc-500" /> Active
                   Brainstorm Project Pool
@@ -2310,7 +2378,7 @@ Description of fix or enhancement recommendation
                         return (
                           <div
                             key={idea.id}
-                            className="bg-zinc-900 border border-zinc-800/60 p-4 rounded-xl flex flex-col justify-between group relative overflow-hidden transition-all duration-300 hover:border-cyan-500/30"
+                            className="glass-card bg-zinc-900/30 p-4 rounded-xl flex flex-col justify-between group relative overflow-hidden transition-all duration-300 hover:border-cyan-500/30"
                           >
                             <div>
                               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">
@@ -2439,7 +2507,7 @@ Description of fix or enhancement recommendation
             <div className="space-y-6 animate-in fade-in duration-200 text-left">
               {/* THOMAS A. DREAMING SUMMARY METRICS DASHBOARD */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-[#111113] border border-zinc-800/80 p-4 rounded-xl flex flex-col justify-between shadow-md">
+                <div className="glass-card p-4 rounded-xl flex flex-col justify-between shadow-md">
                   <div>
                     <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono block">Optimizations Dreamed</span>
                     <h3 className="text-2xl font-bold text-indigo-400 mt-1 font-mono">
@@ -2449,7 +2517,7 @@ Description of fix or enhancement recommendation
                   <p className="text-[10px] text-zinc-500 mt-2 leading-snug">Autonomous self-improving code recommendations compiled.</p>
                 </div>
 
-                <div className="bg-[#111113] border border-zinc-800/80 p-4 rounded-xl flex flex-col justify-between shadow-md">
+                <div className="glass-card p-4 rounded-xl flex flex-col justify-between shadow-md">
                   <div>
                     <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono block">Sandbox Concepts</span>
                     <h3 className="text-2xl font-bold text-emerald-400 mt-1 font-mono">
@@ -2459,7 +2527,7 @@ Description of fix or enhancement recommendation
                   <p className="text-[10px] text-zinc-500 mt-2 leading-snug">Structured ideas pushed to the project's brainstorm sandbox pool.</p>
                 </div>
 
-                <div className="bg-[#111113] border border-zinc-800/80 p-4 rounded-xl flex flex-col justify-between shadow-md">
+                <div className="glass-card p-4 rounded-xl flex flex-col justify-between shadow-md">
                   <div>
                     <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest font-mono block">Cortex Cognitive Sync</span>
                     <h3 className="text-2xl font-bold text-purple-400 mt-1 font-mono">
@@ -2469,7 +2537,7 @@ Description of fix or enhancement recommendation
                   <p className="text-[10px] text-zinc-500 mt-2 leading-snug">Active rules integrated directly with the parent Memory Cortex.</p>
                 </div>
 
-                <div className="bg-[#111113] border border-zinc-800/80 p-4 rounded-xl flex flex-col justify-between shadow-md">
+                <div className="glass-card p-4 rounded-xl flex flex-col justify-between shadow-md">
                   <div>
                     <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono block">AI Swarm Subnets</span>
                     <h3 className="text-2xl font-bold text-blue-400 mt-1 font-mono">3 Active</h3>
@@ -2479,7 +2547,7 @@ Description of fix or enhancement recommendation
               </div>
 
               {/* QUICK CLICK ACTIONS DASHBOARD */}
-              <div className="bg-[#18181b]/30 border border-zinc-850 rounded-xl p-4">
+              <div className="glass-card rounded-xl p-4">
                 <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider font-mono block mb-3">Quick Click Action Panel</span>
                 <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                   <button
@@ -2714,7 +2782,7 @@ Description of fix or enhancement recommendation
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* ROBOT DIAGNOSTIC PANEL */}
                 <div className="lg:col-span-2 space-y-6">
-                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 relative overflow-hidden">
+                  <div className="glass-card rounded-xl p-5 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 blur-3xl rounded-full"></div>
                     <div className="flex items-center justify-between mb-4">
                       <h2 className="text-sm font-semibold text-zinc-150 flex items-center gap-2">
@@ -2837,7 +2905,28 @@ Description of fix or enhancement recommendation
                     )}
                   </div>
 
-                  {/* DREAM RECOMMENDATIONS */}
+                  {/* DREAM RECOMMENDATIONS INTERACTIVE DECK & SWIPE UI */}
+                  <div className="space-y-4 animate-in fade-in slide-in-from-top duration-300 text-left">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-850 pb-2">
+                      <h3 className="text-xs font-bold text-[#818cf8] uppercase tracking-wider font-mono flex items-center gap-1.5">
+                        🔮 Interactive AI Dream Deck & Learning Loop
+                      </h3>
+                      <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-mono">
+                        Swipe / Decide per Project
+                      </span>
+                    </div>
+
+                    <DreamSwipeDeck
+                      projects={projects}
+                      activeProjectId={project.id}
+                      updateProject={updateProject}
+                      addIssue={addIssue}
+                      setCortexSynapses={setCortexSynapses}
+                      cortexSynapses={cortexSynapses}
+                    />
+                  </div>
+
+                  {/* ADVANCED RECOMMENDATIONS CATALOGUE */}
                   {(project.dreamRecommendations || []).length > 0 && (
                     <div className="space-y-4 animate-in fade-in slide-in-from-top duration-300 text-left">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-850 pb-2">
@@ -3202,7 +3291,7 @@ Description of fix or enhancement recommendation
 
                 {/* AGENT TEAM RIGHT SIDEBAR */}
                 <div className="space-y-6">
-                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg text-left">
+                  <div className="glass-card rounded-xl p-5 shadow-lg text-left">
                     <h3 className="text-xs font-semibold text-zinc-350 uppercase tracking-widest mb-4 font-mono">
                       BACKGROUND DREAM AGENTS
                     </h3>
@@ -3257,10 +3346,10 @@ Description of fix or enhancement recommendation
                   onDragOver={handleDrag}
                   onDragLeave={handleDrag}
                   onDrop={(e) => handleDrop(e, project.id)}
-                  className={`bg-[#121214] border-2 border-dashed rounded-xl p-8 relative overflow-hidden transition-all text-center ${
+                  className={`glass-card border-2 border-dashed rounded-xl p-8 relative overflow-hidden transition-all text-center ${
                     dragActive
                       ? "border-blue-500 bg-blue-950/10"
-                      : "border-zinc-800 bg-[#121214]"
+                      : "border-zinc-800/40"
                   }`}
                 >
                   <FileUp size={32} className="mx-auto text-zinc-400 mb-3" />
@@ -3301,7 +3390,7 @@ Description of fix or enhancement recommendation
                 </div>
 
                 {/* ACTIVE FILES LIST */}
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5">
+                <div className="glass-card rounded-xl p-5">
                   <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest mb-4">
                     Workspace Asset Ledger
                   </h3>
@@ -3349,7 +3438,7 @@ Description of fix or enhancement recommendation
 
               {/* RIGHT PANEL: STACK MANAGER */}
               <div className="space-y-6">
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg">
+                <div className="glass-card rounded-xl p-5 shadow-lg">
                   <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest mb-3">
                     CUSTOM TECH STACK PRESETS
                   </h3>
@@ -3432,12 +3521,12 @@ Description of fix or enhancement recommendation
               <div className="lg:col-span-2 space-y-6">
                 
                 {/* SUB-SECTOR NAV */}
-                <div className="flex bg-[#121214] p-1 rounded-lg border border-zinc-800 gap-1 select-none">
+                <div className="flex bg-white/[0.02] backdrop-blur-md p-1 rounded-lg border border-white/[0.06] gap-1 select-none">
                   <button
                     type="button"
                     onClick={() => setGitOperationTab("code")}
-                    className={`flex-grow sm:flex-1 text-center py-1.5 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      gitOperationTab === "code" ? "bg-zinc-805 bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                    className={`flex-grow sm:flex-1 text-center py-1.5 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      gitOperationTab === "code" ? "bg-white/[0.08] text-yellow-400 border border-white/[0.12] shadow-[0_2px_10px_rgba(234,179,8,0.08)]" : "text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
                     <Code2 size={13} /> Edit Code & Prepare Commit
@@ -3445,8 +3534,8 @@ Description of fix or enhancement recommendation
                   <button
                     type="button"
                     onClick={() => setGitOperationTab("pipeline")}
-                    className={`flex-grow sm:flex-1 text-center py-1.5 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      gitOperationTab === "pipeline" ? "bg-zinc-805 bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                    className={`flex-grow sm:flex-1 text-center py-1.5 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      gitOperationTab === "pipeline" ? "bg-white/[0.08] text-yellow-400 border border-white/[0.12] shadow-[0_2px_10px_rgba(234,179,8,0.08)]" : "text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
                     <Activity size={13} /> CI/CD Pipeline & Tests
@@ -3454,8 +3543,8 @@ Description of fix or enhancement recommendation
                   <button
                     type="button"
                     onClick={() => setGitOperationTab("agents")}
-                    className={`flex-grow sm:flex-1 text-center py-1.5 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                      gitOperationTab === "agents" ? "bg-zinc-805 bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                    className={`flex-grow sm:flex-1 text-center py-1.5 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      gitOperationTab === "agents" ? "bg-white/[0.08] text-yellow-400 border border-white/[0.12] shadow-[0_2px_10px_rgba(234,179,8,0.08)]" : "text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
                     <Zap size={13} /> AI Agent Dispatches
@@ -3468,7 +3557,7 @@ Description of fix or enhancement recommendation
                       <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest">
                         Workspace Active Sandbox Editor
                       </h3>
-                      <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2.5 py-0.5 rounded font-bold uppercase tracking-wider animate-pulse">
+                      <span className="text-[10px] bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 px-2.5 py-0.5 rounded font-bold uppercase tracking-wider animate-pulse">
                         ● Staged In-Memory
                       </span>
                     </div>
@@ -3505,7 +3594,7 @@ Description of fix or enhancement recommendation
                               setShipFilePath(`src/components/${compName}.tsx`);
                               setShipCommitMsg(`feat: implement core ${compName.toLowerCase()} and test models`);
                               setShipCode(
-                                `import React from "react";\n\n/**\n * Feature: ${title}\n * Description: ${desc}\n */\nexport default function ${compName}() {\n  return (\n    <div className="p-6 bg-zinc-950 border border-zinc-855 rounded-xl max-w-md mx-auto text-center space-y-3 shadow-2xl">\n      <h3 className="text-sm font-bold text-zinc-100">${title}</h3>\n      <p className="text-xs text-zinc-400 leading-relaxed">${desc}</p>\n      <div className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-1 rounded inline-block font-mono">Status: Connected</div>\n    </div>\n  );\n}`
+                                `import React from "react";\n\n/**\n * Feature: ${title}\n * Description: ${desc}\n */\nexport default function ${compName}() {\n  return (\n    <div className="p-6 bg-zinc-950 border border-zinc-855 rounded-xl max-w-md mx-auto text-center space-y-3 shadow-2xl">\n      <h3 className="text-sm font-bold text-zinc-100">${title}</h3>\n      <p className="text-xs text-zinc-400 leading-relaxed">${desc}</p>\n      <div className="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-1 rounded inline-block font-mono">Status: Connected</div>\n    </div>\n  );\n}`
                               );
                             }
                           }}
@@ -3581,7 +3670,7 @@ Description of fix or enhancement recommendation
                         />
                         {(() => {
                           const myEmail = (googleUser?.email || '').trim().toLowerCase();
-                          const isOwner = project.ownerId === googleUser?.uid || project.ownerId === 'anonymous' || !project.ownerId;
+                          const isOwner = project.ownerId === googleUser?.uid || (linkedUids && linkedUids.includes(project.ownerId)) || project.ownerId === 'anonymous' || !project.ownerId;
                           const myRole = isOwner ? 'admin' : (project.collaboratorRoles?.[myEmail] || 'editor');
                           
                           const pushPolicy = project.githubPushPolicy || 'editors';
@@ -3616,7 +3705,7 @@ Description of fix or enhancement recommendation
                               type="button"
                               disabled={isShippingActive}
                               onClick={() => handlePushGitCode(project)}
-                              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/10 border border-blue-500/20 cursor-pointer"
+                              className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-yellow-500/20 border border-yellow-400/30 cursor-pointer"
                             >
                               {isShippingActive ? (
                                 <>
@@ -3633,9 +3722,9 @@ Description of fix or enhancement recommendation
                       </div>
                     </div>
 
-                    {/* Console Output logs */}
+                {/* Console Output logs */}
                     {shippingLogs.length > 0 && (
-                      <div className="bg-[#070709] border border-zinc-900 rounded-lg p-4 font-mono text-[10px] text-zinc-400 space-y-1.5">
+                      <div className="glass-card rounded-lg p-4 font-mono text-[10px] text-zinc-400 space-y-1.5">
                         <div className="flex items-center justify-between border-b border-zinc-900 pb-1.5 mb-1.5">
                           <span className="text-zinc-500 text-[9px] uppercase tracking-wider font-bold">Deploy Console Pipeline Output</span>
                           <span className={`w-1.5 h-1.5 rounded-full ${isShippingActive ? 'bg-orange-400 animate-pulse' : 'bg-emerald-400'}`} />
@@ -3651,7 +3740,7 @@ Description of fix or enhancement recommendation
                 )}
 
                 {gitOperationTab === "pipeline" && (
-                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg space-y-4">
+                  <div className="glass-card rounded-xl p-5 shadow-lg space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest">
                         🧪 Vitest Sandbox Regression Suite
@@ -3682,7 +3771,7 @@ Description of fix or enhancement recommendation
                 )}
 
                 {gitOperationTab === "agents" && (
-                  <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg space-y-4">
+                  <div className="glass-card rounded-xl p-5 shadow-lg space-y-4">
                     <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest">
                       🤖 Deploy AI Agents On Repository Tasks
                     </h3>
@@ -3693,7 +3782,7 @@ Description of fix or enhancement recommendation
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1.5">
                       {agents.slice(0, 4).map((agent) => {
                         return (
-                          <div key={agent.id} className="p-4 bg-zinc-900 border border-zinc-850 rounded-xl space-y-3.5 flex flex-col justify-between">
+                          <div key={agent.id} className="p-4 glass-card rounded-xl space-y-3.5 flex flex-col justify-between">
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-xs font-semibold text-zinc-200">{agent.name}</span>
@@ -3722,7 +3811,7 @@ Description of fix or enhancement recommendation
 
                                 alert(`✓ Dispatched AI Agent "${agent.name}" on task: "${firstIssue}"! Instructions loaded into terminal.`);
                               }}
-                              className="w-full text-center py-1.5 border border-zinc-800 hover:border-blue-500/30 hover:bg-blue-950/10 text-zinc-300 hover:text-blue-400 text-[10px] rounded font-bold transition-all"
+                              className="w-full text-center py-1.5 border border-zinc-800 hover:border-yellow-500/30 hover:bg-yellow-950/10 text-zinc-300 hover:text-yellow-400 text-[10px] rounded font-bold transition-all cursor-pointer"
                             >
                               ⚡ Dispatch Agent On Task Backlog
                             </button>
@@ -3736,10 +3825,10 @@ Description of fix or enhancement recommendation
 
               {/* RIGHT CONTAINER (1 COL) - REPOSITORY SPECIFICS */}
               <div className="space-y-6">
-                <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg space-y-4">
+                <div className="glass-card rounded-xl p-5 shadow-lg space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest flex items-center gap-2">
-                      <Github size={14} className="text-blue-400" /> Linked Repository
+                      <Github size={14} className="text-yellow-400" /> Linked Repository
                     </h3>
                     {project.githubRepos?.[0] && (
                       <button
@@ -3751,7 +3840,7 @@ Description of fix or enhancement recommendation
                             alert(`Repository bound to ${normalized}!`);
                           }
                         }}
-                        className="text-[10px] text-blue-400 hover:text-blue-300 hover:underline font-semibold"
+                        className="text-[10px] text-yellow-400 hover:text-yellow-300 hover:underline font-semibold cursor-pointer"
                       >
                         Change Bind
                       </button>
@@ -3760,7 +3849,7 @@ Description of fix or enhancement recommendation
 
                   {!project.githubRepos?.[0] ? (
                     <div className="space-y-4 pt-2">
-                      <div className="p-3 bg-blue-950/15 border border-blue-500/20 rounded-lg text-[10px] text-zinc-400 leading-relaxed">
+                      <div className="p-3 bg-yellow-950/15 border border-yellow-500/20 rounded-lg text-[10px] text-zinc-400 leading-relaxed">
                         ⚡ This workspace is currently <strong className="text-zinc-200">Local-Only</strong>. Easily link it to a GitHub repository to unlock autonomous agent code generation, recent commit telemetry, and live pipeline builds.
                       </div>
 
@@ -3976,11 +4065,11 @@ Description of fix or enhancement recommendation
                               }
                               setIsInlineCreating(false);
                             }}
-                            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded text-[10px] font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                            className="w-full bg-yellow-500 hover:bg-yellow-400 text-black py-1.5 rounded text-[10px] font-extrabold transition-all flex items-center justify-center gap-1 disabled:opacity-50 cursor-pointer shadow-md shadow-yellow-500/10"
                           >
                             {isInlineCreating ? (
                               <>
-                                <Loader2 size={11} className="animate-spin" /> Creating...
+                                <Loader2 size={11} className="animate-spin text-black" /> Creating...
                               </>
                             ) : (
                               <>
@@ -4003,7 +4092,7 @@ Description of fix or enhancement recommendation
                               value={inlineDirectRepo}
                               onChange={(e) => setInlineDirectRepo(e.target.value)}
                               placeholder="e.g. facebook/react"
-                              className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-250 outline-none focus:border-blue-500 font-mono"
+                              className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-250 outline-none focus:border-yellow-500/50 font-mono"
                             />
                             <button
                               type="button"
@@ -4016,7 +4105,7 @@ Description of fix or enhancement recommendation
                                 updateProject(project.id, { githubRepos: [normalized] });
                                 alert(`✓ Repository bound to ${normalized}`);
                               }}
-                              className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-bold transition-all shrink-0"
+                              className="bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-1 rounded text-xs font-extrabold transition-all shrink-0 cursor-pointer"
                             >
                               Link
                             </button>
@@ -4100,19 +4189,19 @@ Description of fix or enhancement recommendation
                         <div className="border-t border-zinc-800/80 pt-3 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                              <Bot size={12} className="text-blue-400" /> AI Tech Lead Context Summary
+                              <Bot size={12} className="text-yellow-400" /> AI Tech Lead Context Summary
                             </span>
                             <button
                               onClick={() => handleSummarizeCommits(project.githubRepos[0])}
                               disabled={summaryLoading}
-                              className="text-[9px] uppercase tracking-wider bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded font-semibold transition-all"
+                              className="text-[9px] uppercase tracking-wider bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded font-semibold transition-all cursor-pointer"
                             >
                               {summaryLoading ? "Summarizing..." : "Analyze Commits"}
                             </button>
                           </div>
 
                           {commitsSummary !== null && (
-                            <div className="p-2.5 bg-blue-950/10 border border-blue-500/10 rounded-lg text-[11px] text-zinc-300 leading-relaxed font-mono">
+                            <div className="p-2.5 bg-yellow-950/10 border border-yellow-500/20 rounded-lg text-[11px] text-zinc-300 leading-relaxed font-mono">
                               {summaryLoading && !commitsSummary ? (
                                 <span className="animate-pulse">Thinking and reading repository commits...</span>
                               ) : (
@@ -4150,7 +4239,7 @@ Description of fix or enhancement recommendation
                       project.brainstormIdeas.map((idea: any) => (
                         <div key={idea.id} className="p-2 bg-zinc-950 rounded border border-zinc-900 flex items-center justify-between gap-1.5">
                           <span className="text-[10px] text-zinc-305 truncate flex-grow font-medium">💡 {idea.text || idea.title}</span>
-                          <span className="text-[8px] bg-blue-500/10 text-blue-300 block px-1 py-0.5 rounded uppercase font-bold shrink-0">STAGED</span>
+                          <span className="text-[8px] bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 block px-1 py-0.5 rounded uppercase font-bold shrink-0">STAGED</span>
                         </div>
                       ))
                     ) : (
@@ -4166,7 +4255,7 @@ Description of fix or enhancement recommendation
 
           {workspaceTab === "collaboration" && (() => {
             const myEmail = (googleUser?.email || '').trim().toLowerCase();
-            const isOwner = project.ownerId === googleUser?.uid || project.ownerId === 'anonymous' || !project.ownerId;
+            const isOwner = project.ownerId === googleUser?.uid || (linkedUids && linkedUids.includes(project.ownerId)) || project.ownerId === 'anonymous' || !project.ownerId;
             const myRole = isOwner ? 'admin' : (project.collaboratorRoles?.[myEmail] || 'editor');
             const isAdmin = myRole === 'admin';
 
@@ -4192,15 +4281,15 @@ Description of fix or enhancement recommendation
                       
                       <div className="space-y-2.5 mb-6 text-[11px] text-zinc-400 font-mono">
                         <div className="flex items-start gap-2">
-                          <span className="text-blue-500 font-bold">1.</span>
+                          <span className="text-yellow-400 font-bold">1.</span>
                           <span>Identify the user by either email or unique DevSpace handle.</span>
                         </div>
                         <div className="flex items-start gap-2">
-                          <span className="text-blue-500 font-bold">2.</span>
+                          <span className="text-yellow-400 font-bold">2.</span>
                           <span>Assign role levels (Viewer, Editor, or Admin permissions).</span>
                         </div>
                         <div className="flex items-start gap-2">
-                          <span className="text-blue-500 font-bold">3.</span>
+                          <span className="text-yellow-400 font-bold">3.</span>
                           <span>Audit fine-grained toggles like Git Push and structural reviews.</span>
                         </div>
                       </div>
@@ -4209,9 +4298,9 @@ Description of fix or enhancement recommendation
                     <button
                       type="button"
                       onClick={() => setShowInviteWizard(true)}
-                      className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded py-3 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_12px_rgba(59,130,246,0.25)]"
+                      className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold rounded py-3 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_12px_rgba(234,179,8,0.25)] border border-yellow-400/30"
                     >
-                      <Sparkles size={13} className="text-yellow-400" />
+                      <Sparkles size={13} className="text-black" />
                       <span>Launch Step-by-Step Invite Wizard</span>
                     </button>
                   </div>
@@ -4224,7 +4313,7 @@ Description of fix or enhancement recommendation
                     <div className="space-y-3">
                       <div className="flex items-center justify-between p-3 bg-zinc-900/60 border border-zinc-850 rounded">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 font-mono text-xs flex items-center justify-center font-bold">
+                          <div className="w-8 h-8 rounded-full bg-yellow-500/15 text-yellow-400 font-mono text-xs flex items-center justify-center font-bold">
                             OWN
                           </div>
                           <div>
@@ -4232,7 +4321,7 @@ Description of fix or enhancement recommendation
                             <p className="text-[10px] text-zinc-500">{project.ownerId === 'anonymous' ? 'Local Default User' : 'Workspace Creator'}</p>
                           </div>
                         </div>
-                        <span className="text-[10px] bg-blue-500/10 text-blue-400 font-mono px-2 py-0.5 rounded border border-blue-500/20">OWNER / ADMIN</span>
+                        <span className="text-[10px] bg-yellow-500/10 text-yellow-400 font-mono px-2 py-0.5 rounded border border-yellow-500/20">OWNER / ADMIN</span>
                       </div>
 
                       {project.collaborators?.filter((c: string) => c !== (googleUser?.email || '') || !isOwner).map((collab: string, idx: number) => {
@@ -4242,12 +4331,15 @@ Description of fix or enhancement recommendation
                         return (
                           <div key={idx} className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-xl animate-in fade-in duration-200 space-y-3">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 font-mono text-xs flex items-center justify-center font-bold">
+                              <div 
+                                onClick={() => openCollabProfile(collab)}
+                                className="flex items-center gap-3 cursor-pointer group"
+                              >
+                                <div className="w-8 h-8 rounded-full bg-zinc-800 text-zinc-300 font-mono text-xs flex items-center justify-center font-bold group-hover:bg-yellow-500/10 group-hover:text-yellow-400 group-hover:border-yellow-500/20 border border-transparent transition-all">
                                   {collab.charAt(0).toUpperCase()}
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-zinc-200 truncate">{collab}</p>
+                                  <p className="text-xs font-semibold text-zinc-200 truncate group-hover:text-yellow-400 transition-colors">{collab}</p>
                                   <p className="text-[10px] text-zinc-500 capitalize">{collabRole} Access</p>
                                 </div>
                               </div>
@@ -4379,7 +4471,7 @@ Description of fix or enhancement recommendation
                 <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 shadow-lg space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-                      <Github size={14} className="text-blue-400" /> GitHub Repo Push Authorization Policy
+                      <Github size={14} className="text-yellow-400" /> GitHub Repo Push Authorization Policy
                     </h2>
                     <span className="text-[9px] font-mono bg-zinc-950 border border-zinc-850 text-zinc-500 px-1.5 py-0.5 rounded uppercase">Repository Gatekeeper</span>
                   </div>
@@ -4399,7 +4491,7 @@ Description of fix or enhancement recommendation
                         onChange={(e) => {
                           updateProject(project.id, { githubPushPolicy: e.target.value as any });
                         }}
-                        className="w-full bg-[#1c1c1f] border border-zinc-850 hover:border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                        className="w-full bg-[#1c1c1f] border border-zinc-855 hover:border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-yellow-500/50 transition-colors font-sans"
                       >
                         <option value="owner">👑 Owner Only (Strict lock)</option>
                         <option value="admins">🔑 Admins Only (Project Executives)</option>
@@ -4430,10 +4522,10 @@ Description of fix or enhancement recommendation
 
                         <div className="flex items-center justify-between p-2 bg-zinc-950 rounded border border-zinc-900">
                           <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
                             <span className="text-zinc-400 text-[10px]">Active Git Deploy Key Mapping:</span>
                           </div>
-                          <span className="font-mono text-[9px] text-blue-400 uppercase bg-blue-950/20 px-1.5 py-0.5 rounded border border-blue-900/30">Devspace SSH Key</span>
+                          <span className="font-mono text-[9px] text-yellow-400 uppercase bg-yellow-950/20 px-1.5 py-0.5 rounded border border-yellow-900/30">Devspace SSH Key</span>
                         </div>
 
                         <div className="p-2 bg-zinc-950/50 border border-zinc-900 rounded text-[10px] text-zinc-500 leading-relaxed font-sans">
@@ -4517,6 +4609,10 @@ Description of fix or enhancement recommendation
               </div>
             );
           })()}
+
+          {workspaceTab === "backend" && (
+            <BackendIntegrationTab project={project} updateProject={updateProject} />
+          )}
         </div>
 
         {showVoiceSyncModal && project && (
@@ -4779,7 +4875,7 @@ Description of fix or enhancement recommendation
                       type="button"
                       disabled={!voiceSyncTranscript.trim()}
                       onClick={() => handleProcessVoiceSync(project)}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold rounded-lg transition-colors border border-amber-500/20 shadow-md shadow-amber-500/10 flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors border border-indigo-500/20 shadow-md shadow-indigo-500/10 flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
                     >
                       <Sparkles size={13} /> Compile with Aether
                     </button>
@@ -4817,6 +4913,186 @@ Description of fix or enhancement recommendation
             </div>
           </div>
         )}
+
+        {showInviteWizard && (
+          <ProjectInviteWizard
+            projectId={project.id}
+            onClose={() => setShowInviteWizard(false)}
+          />
+        )}
+
+        {editingProject && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-[#121214] border border-zinc-800 rounded-xl w-full max-w-md shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+              <div className="flex justify-between items-center p-5 border-b border-zinc-800/60 shrink-0">
+                <div>
+                  <span className="text-[10px] uppercase tracking-widest text-blue-500 font-bold">
+                    Workspace Settings
+                  </span>
+                  <h2 className="text-base font-semibold text-zinc-100 mt-0.5">
+                    Edit "{editingProject.name}"
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setEditingProject(null)}
+                  className="text-zinc-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-[#1e1e24] cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateProject} className="flex flex-col flex-1 min-h-0">
+                <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                      Project Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      required
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors"
+                      placeholder="e.g. My Awesome App"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                      Description
+                    </label>
+                    <textarea
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors resize-none h-24"
+                      placeholder="Brief summary of project goals..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                      Linked GitHub Repository
+                    </label>
+                    <input
+                      value={editFormData.githubRepo}
+                      onChange={(e) => setEditFormData({ ...editFormData, githubRepo: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors font-mono"
+                      placeholder="e.g. user/repo-name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                      Project Status
+                    </label>
+                    <select
+                      value={editFormData.status}
+                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as any })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Planning">Planning</option>
+                      <option value="Paused">Paused</option>
+                      <option value="Completed">Completed</option>
+                    </select>
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={editFormData.isPublic}
+                        onChange={(e) => setEditFormData({ ...editFormData, isPublic: e.target.checked })}
+                        className="rounded bg-zinc-900 border-zinc-800 text-yellow-500 focus:ring-0 focus:ring-offset-0 h-4 w-4"
+                      />
+                      <span className="text-xs font-semibold text-zinc-350 group-hover:text-white transition-colors">
+                        Go Public (Visible to DevSpace Community)
+                      </span>
+                    </label>
+                    <p className="text-[10px] text-zinc-500 mt-1 pl-6">
+                      Public projects are listed in the Explore feed. Developers can star, comment, and inspect them.
+                    </p>
+                  </div>
+
+                  {editFormData.isPublic && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-zinc-400 mb-1 uppercase tracking-wider">
+                        Hashtags / Tags (comma-separated)
+                      </label>
+                      <input
+                        value={editFormData.tags}
+                        onChange={(e) => setEditFormData({ ...editFormData, tags: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors placeholder:text-zinc-600 font-mono"
+                        placeholder="e.g. react, ai, automation, terminal"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 border-t border-zinc-800/60 bg-[#0c0c0e] flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setEditingProject(null)}
+                    className="px-3.5 py-1.5 text-xs font-medium text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 text-xs font-semibold text-black bg-yellow-500 hover:bg-yellow-400 rounded-lg transition-colors cursor-pointer shadow-lg shadow-yellow-500/20"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Deletion Confirmation Modal inside Workspace */}
+        <AnimatePresence>
+          {projectToDelete && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+                onClick={() => setProjectToDelete(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                className="relative bg-[#121214] border border-zinc-800 rounded-xl p-6 max-w-md w-full shadow-2xl z-[120]"
+              >
+                <h3 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mb-2">
+                  <AlertTriangle className="text-red-500 shrink-0" size={18} /> Confirm Deletion
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed mb-6">
+                  Are you sure you want to delete the space <strong className="text-zinc-200">"{projectToDelete.name}"</strong>? This will permanently remove all associated tasks, goals, phases, and brain memory logs. This action cannot be undone.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setProjectToDelete(null)}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-850 hover:text-white transition-colors text-xs font-medium cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      deleteProject(projectToDelete.id);
+                      setViewingWorkspaceId(null);
+                      setProjectToDelete(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-red-600 border border-red-500/20 text-white hover:bg-red-500 transition-colors text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash size={12} /> Yes, Delete Space
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
       </div>
     );
@@ -4842,7 +5118,7 @@ Description of fix or enhancement recommendation
         </div>
         <button
           onClick={handleOpenModal}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md font-medium text-xs transition-colors shadow-lg shadow-blue-500/10 border border-blue-500/20"
+          className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-black px-3.5 py-2 rounded-lg font-bold text-xs transition-all shadow-md shadow-yellow-500/20 border border-yellow-400/30 cursor-pointer hover:scale-[1.02]"
         >
           <Plus size={14} /> New Project
         </button>
@@ -4873,7 +5149,7 @@ Description of fix or enhancement recommendation
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => acceptInvitation(invite.id)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[10px] rounded transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold text-[10px] rounded transition-colors flex items-center gap-1 cursor-pointer"
                   >
                     <Check size={11} /> Accept
                   </button>
@@ -4892,15 +5168,23 @@ Description of fix or enhancement recommendation
 
       <div className="flex-1 overflow-y-auto relative pb-8">
         {projects.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center text-zinc-500 z-10 text-xs">
-            No local projects created yet. Let's build something.
+          <div className="flex flex-col items-center justify-center p-12 text-center text-zinc-500 text-xs border border-dashed border-zinc-800 rounded-2xl bg-[#0d0d0f] my-6">
+            <FolderGit2 size={32} className="text-zinc-600 mb-3" />
+            <p className="text-sm font-medium text-zinc-400">No projects in workspace yet</p>
+            <p className="text-xs text-zinc-500 mt-1 mb-4">Create your first space to start building and tracking momentum.</p>
+            <button
+              onClick={handleOpenModal}
+              className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-black px-4 py-2 rounded-lg font-bold text-xs transition-all shadow-md shadow-yellow-500/20 border border-yellow-400/30 cursor-pointer"
+            >
+              <Plus size={14} /> Create New Space
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {projects.map((project, idx) => {
               const isActive = activeProjectId === project.id;
 
-              // Dynamic score calculation for the gallery cards
+              // Fair & accurate score calculation per individual project
               const projIssues = issues.filter((iss) => iss.projectId === project.id);
               const featIssues = projIssues.filter((iss) => (iss.type || '').toLowerCase() === 'feature');
               const totFeat = featIssues.length > 0 ? featIssues.length : (project.totalFeaturesCount || 10);
@@ -4908,15 +5192,22 @@ Description of fix or enhancement recommendation
                 ? featIssues.filter((iss) => (iss.status || '').toLowerCase() === 'done' || (iss.status || '').toLowerCase() === 'resolved').length
                 : (project.featuresCount || 0);
 
-              let calculatedCardScore = 100;
-              if (projIssues.length > 0) {
+              let calculatedCardScore = 0;
+              if (typeof (project as any).momentumScore === 'number') {
+                calculatedCardScore = (project as any).momentumScore;
+              } else if (projIssues.length > 0) {
                 const solved = projIssues.filter((iss) => (iss.status || '').toLowerCase() === 'done' || (iss.status || '').toLowerCase() === 'resolved').length;
-                const highPrio = projIssues.filter((iss) => iss.priority === 'Critical' || iss.priority === 'High').length;
-                const scoreComp = solved / projIssues.length;
-                const scorePrio = (projIssues.length - highPrio) / projIssues.length;
-                calculatedCardScore = Math.min(100, Math.max(10, Math.round(scoreComp * 70 + scorePrio * 30)));
+                calculatedCardScore = Math.round((solved / projIssues.length) * 100);
+              } else if ((project as any).tasks && (project as any).tasks.length > 0) {
+                const done = (project as any).tasks.filter((t: any) => t.completed || t.status === 'Done').length;
+                calculatedCardScore = Math.round((done / (project as any).tasks.length) * 100);
+              } else if (compFeat > 0 && totFeat > 0) {
+                calculatedCardScore = Math.round((compFeat / totFeat) * 100);
               } else {
-                calculatedCardScore = Math.min(100, Math.max(15, Math.round((compFeat / totFeat) * 70 + 30)));
+                if (project.status === 'Completed') calculatedCardScore = 100;
+                else if (project.status === 'Active') calculatedCardScore = 50;
+                else if (project.status === 'Planning') calculatedCardScore = 20;
+                else calculatedCardScore = 15;
               }
 
               return (
@@ -4929,116 +5220,118 @@ Description of fix or enhancement recommendation
                       setGithubRepo(project.githubRepos[0]);
                     }
                   }}
-                  className={`group border transition-colors duration-200 rounded-xl p-4 flex flex-col h-48 relative cursor-pointer ${
+                  className={`group relative border transition-all duration-200 rounded-xl p-5 flex flex-col justify-between cursor-pointer overflow-hidden ${
                     isActive
-                      ? "border-blue-500 bg-blue-950/15 shadow-lg shadow-blue-500/10"
-                      : "border-zinc-800 bg-[#121214] hover:bg-[#18181b] hover:border-zinc-700"
+                      ? "border-yellow-500/80 bg-yellow-950/15 shadow-xl shadow-yellow-500/10 ring-1 ring-yellow-500/30"
+                      : "border-zinc-800/80 bg-[#121214] hover:bg-[#161619] hover:border-zinc-700/80 hover:shadow-lg hover:shadow-black/40"
                   }`}
                 >
-                  <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity z-10">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenEditModal(project);
-                      }}
-                      className="text-zinc-500 hover:text-blue-400 p-1.5 rounded hover:bg-zinc-800/80 transition-all"
-                      title="Edit / Rename Project"
-                    >
-                      <Edit2 size={13} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
-                          deleteProject(project.id);
-                        }
-                      }}
-                      className="text-zinc-500 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800/80 transition-all"
-                      title="Delete Space"
-                    >
-                      <Trash size={13} />
-                    </button>
-                  </div>
-                  <div className="flex items-start justify-between mb-2">
-                    <div
-                      className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${
-                        isActive
-                          ? "bg-blue-900/40 border-blue-500/40 text-blue-400"
-                          : "bg-zinc-900 border-zinc-800 text-zinc-300"
-                      }`}
-                    >
-                      <FolderGit2 size={16} />
-                    </div>
-                    {project.frameworks && project.frameworks.length > 0 && (
-                      <div className="flex flex-wrap gap-1 justify-end max-w-[60%]">
-                        {project.frameworks.slice(0, 3).map((f) => (
-                          <span
-                            key={f}
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50 truncate max-w-[60px]"
-                            title={f}
-                          >
-                            {f}
-                          </span>
-                        ))}
-                        {project.frameworks.length > 3 && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50">
-                            +{project.frameworks.length - 3}
-                          </span>
-                        )}
+                  {/* Top Header Row */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${
+                            isActive
+                              ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-400"
+                              : "bg-zinc-900 border-zinc-800 text-zinc-300 group-hover:border-zinc-700 group-hover:bg-zinc-850"
+                          }`}
+                        >
+                          <FolderGit2 size={16} />
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-md font-mono font-semibold border uppercase tracking-wider ${
+                          project.status === 'Active'
+                            ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                            : project.status === 'Completed'
+                              ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                              : project.status === 'Planning'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                        }`}>
+                          {project.status || 'Active'}
+                        </span>
                       </div>
-                    )}
+
+                      {/* Quick Actions */}
+                      <div className="flex items-center gap-1 opacity-80 md:opacity-40 md:group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditModal(project);
+                          }}
+                          className="text-zinc-400 hover:text-yellow-400 p-1.5 rounded-md hover:bg-zinc-800/80 transition-all"
+                          title="Edit Project Settings"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Are you sure you want to delete the space "${project.name}"? This action cannot be undone.`)) {
+                              deleteProject(project.id);
+                            }
+                          }}
+                          className="text-zinc-400 hover:text-red-400 p-1.5 rounded-md hover:bg-zinc-800/80 transition-all"
+                          title="Delete Project Space"
+                        >
+                          <Trash size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Title & Description */}
+                    <h3 className="font-sans font-bold text-base text-zinc-100 group-hover:text-yellow-400 transition-colors mb-1 line-clamp-1">
+                      {project.name}
+                    </h3>
+                    <p className="text-xs text-zinc-400/90 line-clamp-2 leading-relaxed mb-3 min-h-[2.25rem] font-sans">
+                      {project.description || "No description provided."}
+                    </p>
+
+                    {/* Tech Stack Chips & Linked Repo */}
+                    <div className="flex flex-wrap items-center gap-1.5 mb-4">
+                      {project.githubRepos && project.githubRepos.length > 0 ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900/90 text-zinc-300 border border-zinc-800 flex items-center gap-1 font-mono">
+                          <Github size={11} className="text-zinc-400" />
+                          {project.githubRepos[0].split("/").pop()}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900/60 text-zinc-500 border border-zinc-850 italic">
+                          Local Workspace
+                        </span>
+                      )}
+
+                      {project.frameworks?.slice(0, 3).map((f) => (
+                        <span
+                          key={f}
+                          className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900 text-zinc-400 border border-zinc-850 truncate max-w-[80px]"
+                          title={f}
+                        >
+                          {f}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
-                  <h3 className="font-semibold text-sm text-zinc-100 mb-1">
-                    {project.name}
-                  </h3>
-                  <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed flex-grow">
-                    {project.description || "No description provided."}
-                  </p>
+                  {/* Bottom Footer Section */}
+                  <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between gap-2 mt-auto">
+                    {/* Project Momentum Badge */}
+                    <div className="flex items-center gap-1.5 bg-yellow-950/30 border border-yellow-500/20 px-2.5 py-1 rounded-md text-[10px] font-mono font-medium text-yellow-400 shrink-0">
+                      <Activity size={12} className="text-yellow-400 shrink-0" />
+                      <span>Project Momentum: <strong className="text-yellow-300">{calculatedCardScore}%</strong></span>
+                    </div>
 
-                  <div className="mt-2.5 flex items-center justify-between">
+                    {/* Enter Project Button */}
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setViewingWorkspaceId(project.id);
                       }}
-                      className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded font-semibold transition-all flex items-center gap-1 shadow-md shadow-blue-500/10 border border-blue-500/30"
+                      className="text-xs bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 shadow-md shadow-yellow-500/20 border border-yellow-400/30 group-hover:scale-[1.02] cursor-pointer shrink-0"
                     >
-                      <Sparkle
-                        size={10}
-                        className="text-cyan-300 animate-pulse"
-                      />{" "}
-                      Enter Workspace →
+                      <Sparkle size={12} className="text-black animate-pulse" />
+                      Enter Project &rarr;
                     </button>
-                    <div className="flex items-center gap-2">
-                      <div className="px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-400 border border-cyan-500/20 text-[9px] font-mono font-bold tracking-tight">
-                        Score: {calculatedCardScore}%
-                      </div>
-                      <div className="text-[10px] uppercase tracking-wider font-semibold text-emerald-500">
-                        {project.status}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 pt-2.5 border-t border-zinc-800/80 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-                      {project.githubRepos && project.githubRepos.length > 0 ? (
-                        <div className="flex items-center gap-1 hover:text-zinc-300 transition-colors">
-                          <Github size={12} />{" "}
-                          {project.githubRepos[0].split("/").pop()}
-                        </div>
-                      ) : (
-                        <span className="italic text-zinc-650">
-                          Local Space
-                        </span>
-                      )}
-                      {project.launchTarget && (
-                        <span className="bg-amber-500/10 text-amber-500 px-1.5 relative border border-amber-500/20 rounded">
-                          {project.launchTarget}
-                        </span>
-                      )}
-                    </div>
                   </div>
                 </div>
               );
@@ -5054,7 +5347,7 @@ Description of fix or enhancement recommendation
             {/* Header */}
             <div className="flex justify-between items-center p-5 border-b border-zinc-800/60 shrink-0">
               <div>
-                <span className="text-[10px] uppercase tracking-widest text-blue-500 font-bold">
+                <span className="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">
                   Workspace Settings
                 </span>
                 <h2 className="text-base font-semibold text-zinc-100 mt-0.5">
@@ -5079,7 +5372,7 @@ Description of fix or enhancement recommendation
                     required
                     value={editFormData.name}
                     onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500/50 transition-colors"
                     placeholder="e.g. My Awesome App"
                   />
                 </div>
@@ -5091,7 +5384,7 @@ Description of fix or enhancement recommendation
                   <textarea
                     value={editFormData.description}
                     onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors resize-none h-24"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500/50 transition-colors resize-none h-24"
                     placeholder="Brief summary of project goals..."
                   />
                 </div>
@@ -5103,7 +5396,7 @@ Description of fix or enhancement recommendation
                   <input
                     value={editFormData.githubRepo}
                     onChange={(e) => setEditFormData({ ...editFormData, githubRepo: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors font-mono"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500/50 transition-colors font-mono"
                     placeholder="e.g. user/repo-name"
                   />
                 </div>
@@ -5115,7 +5408,7 @@ Description of fix or enhancement recommendation
                   <select
                     value={editFormData.status}
                     onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as any })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500/50 transition-colors"
                   >
                     <option value="Active">Active</option>
                     <option value="Planning">Planning</option>
@@ -5130,7 +5423,7 @@ Description of fix or enhancement recommendation
                       type="checkbox"
                       checked={editFormData.isPublic}
                       onChange={(e) => setEditFormData({ ...editFormData, isPublic: e.target.checked })}
-                      className="rounded bg-zinc-900 border-zinc-800 text-blue-600 focus:ring-0 focus:ring-offset-0 h-4 w-4"
+                      className="rounded bg-zinc-900 border-zinc-800 text-yellow-500 accent-yellow-500 focus:ring-0 focus:ring-offset-0 h-4 w-4"
                     />
                     <span className="text-xs font-semibold text-zinc-350 group-hover:text-white transition-colors">
                       Go Public (Visible to DevSpace Community)
@@ -5149,7 +5442,7 @@ Description of fix or enhancement recommendation
                     <input
                       value={editFormData.tags}
                       onChange={(e) => setEditFormData({ ...editFormData, tags: e.target.value })}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600 font-mono"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500/50 transition-colors placeholder:text-zinc-600 font-mono"
                       placeholder="e.g. react, ai, automation, terminal"
                     />
                   </div>
@@ -5167,7 +5460,7 @@ Description of fix or enhancement recommendation
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors border border-blue-500/20 shadow-md shadow-blue-500/10 cursor-pointer"
+                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black text-xs font-bold rounded-lg transition-colors border border-yellow-400/30 shadow-md shadow-yellow-500/20 cursor-pointer"
                 >
                   Save Changes
                 </button>
@@ -5196,6 +5489,67 @@ Description of fix or enhancement recommendation
         <ProjectInviteWizard
           projectId={viewingWorkspaceId || ''}
           onClose={() => setShowInviteWizard(false)}
+        />
+      )}
+
+      {/* Custom Sandbox-Proof Confirmation Modal */}
+      <AnimatePresence>
+        {projectToDelete && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setProjectToDelete(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-[#121214] border border-zinc-800 rounded-xl p-6 max-w-md w-full shadow-2xl z-[120]"
+            >
+              <h3 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mb-2">
+                <AlertTriangle className="text-red-500 shrink-0" size={18} /> Confirm Deletion
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed mb-6">
+                Are you sure you want to delete the space <strong className="text-zinc-200">"{projectToDelete.name}"</strong>? This will permanently remove all associated tasks, goals, phases, and brain memory logs. This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setProjectToDelete(null)}
+                  className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-850 hover:text-white transition-colors text-xs font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    deleteProject(projectToDelete.id);
+                    setViewingWorkspaceId(null);
+                    setProjectToDelete(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-red-600 border border-red-500/20 text-white hover:bg-red-500 transition-colors text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash size={12} /> Yes, Delete Space
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {selectedDeveloper && (
+        <ProfileView
+          developer={selectedDeveloper}
+          currentUid={googleUser?.uid || ''}
+          currentEmail={googleUser?.email || ''}
+          currentUserProfile={userProfile}
+          onClose={() => setSelectedDeveloper(null)}
+          onInitiateChat={(dev) => {
+            setSelectedDeveloper(null);
+            navigate(`/community?chatWith=${dev.uid}`);
+          }}
+          showToast={showToast}
         />
       )}
     </div>

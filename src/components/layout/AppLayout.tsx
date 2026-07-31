@@ -8,6 +8,7 @@ import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
 import { KineticController } from '../ui/KineticController';
 import { KineticHUDOverlay } from '../ui/KineticHUDOverlay';
 import { CursorDrawContext } from '../ui/CursorDrawContext';
+import { GlobalHotkeyHandler } from '../ui/GlobalHotkeyHandler';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
@@ -278,12 +279,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
       if (Math.abs(diffX) > minDistance && Math.abs(diffX) > Math.abs(diffY) * angleRatio) {
         if (diffX > 0) {
           // Swipe right -> Open sidebar (initiated in the left 60% of the screen for easier reach)
-          if (window.innerWidth < 1280 && startX < window.innerWidth * 0.6) {
+          if (window.innerWidth < 768 && startX < window.innerWidth * 0.6) {
             setSidebarOpen(true);
           }
         } else {
           // Swipe left -> Close sidebar (initiated anywhere on the screen)
-          if (window.innerWidth < 1280) {
+          if (window.innerWidth < 768) {
             setSidebarOpen(false);
           }
         }
@@ -302,6 +303,19 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
   const isWhatsAppRoute = location.pathname === '/whatsapp-companion';
+
+  useEffect(() => {
+    // Force reset of main content scroll containers back to top on page route change
+    window.scrollTo(0, 0);
+    const mainContent = document.querySelector('main');
+    if (mainContent) {
+      mainContent.scrollTop = 0;
+      const scrollables = mainContent.querySelectorAll('.overflow-y-auto');
+      scrollables.forEach((el) => {
+        el.scrollTop = 0;
+      });
+    }
+  }, [location.pathname]);
 
   const [activeInvite, setActiveInvite] = useState<any | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -351,6 +365,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('aether-pc-navigate', handleNavigate);
   }, [navigate]);
 
+  const [isStandaloneMode, setIsStandaloneMode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('desktop') === 'true' || params.get('standalone') === 'true' || params.get('mode') === 'desktop') {
+      localStorage.setItem('devspace_standalone_mode', 'true');
+      return true;
+    }
+    return localStorage.getItem('devspace_standalone_mode') === 'true';
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('desktop') === 'true' || params.get('standalone') === 'true' || params.get('mode') === 'desktop') {
+      localStorage.setItem('devspace_standalone_mode', 'true');
+      setIsStandaloneMode(true);
+    }
+
+    const handleToggle = () => {
+      setIsStandaloneMode(localStorage.getItem('devspace_standalone_mode') === 'true');
+    };
+    window.addEventListener('devspace-standalone-toggle', handleToggle);
+    return () => window.removeEventListener('devspace-standalone-toggle', handleToggle);
+  }, [location.search]);
+
   if (!googleUser) {
     return <AuthScreen />;
   }
@@ -387,7 +424,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </div>
     );
   }
-
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#030305] starry-background text-zinc-300 font-sans overflow-hidden select-none selection:bg-yellow-400/30 relative">
@@ -431,17 +467,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="lg:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 cursor-pointer"
+                className="md:hidden absolute inset-0 bg-black/70 backdrop-blur-xs z-35 cursor-pointer"
                 onClick={toggleSidebar}
               />
             )}
           </AnimatePresence>
 
-          <main className={`flex-grow flex flex-col min-w-0 ${isAssistantRoute ? 'h-full overflow-hidden' : 'lg:overflow-hidden overflow-y-auto'} bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            isAssistantOpen && isAssistantMinimized ? 'lg:mr-[440px]' : ''
+          <main className={`flex-grow flex flex-col min-w-0 ${isAssistantRoute ? 'h-full overflow-hidden' : 'md:overflow-hidden overflow-y-auto'} bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            isAssistantOpen && isAssistantMinimized ? 'md:mr-[440px]' : ''
           }`}>
-            <div className={`flex-grow ${isAssistantRoute ? 'p-0 h-full overflow-hidden' : 'lg:overflow-hidden overflow-y-auto p-3 lg:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
-              <div className={`w-full flex flex-col ${isAssistantRoute ? 'h-full overflow-hidden' : 'h-auto lg:h-full lg:overflow-hidden'}`}>
+            <div className={`flex-grow ${isAssistantRoute ? 'p-0 h-full overflow-hidden' : 'md:overflow-hidden overflow-y-auto p-3 md:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
+              <div className={`w-full flex flex-col ${isAssistantRoute ? 'h-full overflow-hidden' : 'h-auto md:h-full md:overflow-hidden'}`}>
                 {children}
               </div>
             </div>
@@ -468,6 +504,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <KineticController />
         <KineticHUDOverlay />
         <CursorDrawContext />
+        <GlobalHotkeyHandler />
         {userProfile && <SetupWizard />}
       </div>
 

@@ -17,7 +17,7 @@ import {
   Maximize2
 } from "lucide-react";
 
-import { CortexSynapse } from "../context/DataProvider";
+import { CortexSynapse, useData } from "../context/DataProvider";
 
 interface MemoryCortexProps {
   aiContextRules: string;
@@ -95,6 +95,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
   cortexSynapses = [],
   setCortexSynapses
 }) => {
+  const { showToast } = useData();
   const [selectedDetailSynapse, setSelectedDetailSynapse] = useState<any | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -104,10 +105,28 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [newMemoryName, setNewMemoryName] = useState("");
   const [newMemoryDesc, setNewMemoryDesc] = useState("");
-  const [customMemories, setCustomMemories] = useState<Array<{ id: string, name: string, desc: string }>>([
-     { id: 'mem_1', name: 'Authentication Rules', desc: 'Secure Firestore security rules require write verification on auth != null.' },
-     { id: 'mem_2', name: 'UI Margin Standards', desc: 'Maintain clean margins on all screen sizes with comfortable gutters.' }
-  ]);
+  const [customMemories, setCustomMemories] = useState<Array<{ id: string, name: string, desc: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('aether_custom_memories');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [
+       { id: 'mem_1', name: 'Authentication Rules', desc: 'Secure Firestore security rules require write verification on auth != null.' },
+       { id: 'mem_2', name: 'UI Margin Standards', desc: 'Maintain clean margins on all screen sizes with comfortable gutters.' }
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aether_custom_memories', JSON.stringify(customMemories));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [customMemories]);
 
   const handleAddMemory = () => {
     if (!newMemoryName.trim() || !newMemoryDesc.trim()) return;
@@ -121,6 +140,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
        return prev ? prev.trim() + ruleText : ruleText;
     });
     
+    showToast(`Memory node "${newMemoryName}" successfully spawned!`, 'success');
     setNewMemoryName("");
     setNewMemoryDesc("");
   };
@@ -598,7 +618,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         let sType: 'custom_synapse' | 'dream_synapse' = 'custom_synapse';
 
         if (d.id === 'persona' || d.id === 'core') {
-           des = "Guides the core tone, behavior rules, and visual aesthetics of development agents (e.g., Scrum Master, Principal Architect). It influences text prompts sent to LLMs so they respect project roles.";
+           des = "Guides the core tone, behavior rules, and visual aesthetics of development agents (e.g., Dynamic Briefing, Principal Architect). It influences text prompts sent to LLMs so they respect project roles.";
         } else if (d.id === 'stack') {
            des = "Locks in development defaults such as React 18, Vite, Type-Safe modules, and Tailwind CSS configuration so that all asset generators share matched constraints.";
         } else if (d.id === 'mobile') {
@@ -857,10 +877,10 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
   }, [dimensions, searchQuery, projects, customMemories]);
 
   return (
-    <div className="absolute inset-0 w-full h-full flex flex-col xl:flex-row p-3 sm:p-6 gap-4 sm:gap-6 overflow-y-auto xl:overflow-hidden bg-[#07070a]/90 animate-in fade-in duration-300 font-sans z-20">
+    <div className="w-full h-full min-h-[600px] flex flex-col xl:flex-row p-3 sm:p-5 gap-4 overflow-y-auto custom-scrollbar bg-[#07070a]/95 animate-in fade-in duration-300 font-sans z-20">
       
       {/* 1. OBSIDIAN-STYLE INTERACTIVE VISUAL SYNAPSE BRAIN */}
-      <div className="flex-1 flex flex-col border border-zinc-800/80 bg-[#0e0e11]/80 rounded-2xl p-4 sm:p-5 overflow-hidden min-h-0 relative group shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+      <div className="flex-1 min-h-[500px] xl:min-h-0 flex flex-col rounded-2xl p-4 sm:p-5 overflow-hidden relative group shadow-[0_4px_30px_rgba(0,0,0,0.5)] glass-card">
         <div className="flex items-center justify-between mb-3 shrink-0 z-10">
           <div className="flex items-center gap-2">
             <Network size={14} className="text-yellow-400 animate-pulse" />
@@ -870,7 +890,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         </div>
         
         {/* Interactive Node Graph Area - EXPANDED TO BE PHYSICALLY BIGGER FOR OBSIDIAN VIEW */}
-        <div ref={containerRef} className="h-[350px] sm:h-[450px] xl:flex-1 relative bg-gradient-to-br from-[#020205] via-[#121002] to-[#010103] rounded-xl border border-zinc-800/80 overflow-hidden xl:min-h-[500px] shadow-[inset_0_4px_40px_rgba(0,0,0,0.95)]">
+        <div ref={containerRef} className="h-[400px] xl:flex-1 relative bg-gradient-to-br from-[#020205] via-[#121002] to-[#010103] rounded-xl border border-zinc-800/80 overflow-hidden min-h-[360px] shadow-[inset_0_4px_40px_rgba(0,0,0,0.95)]">
           {/* Constellation star grid lines */}
           <div className="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:32px_32px] opacity-[0.09]" />
           <div className="absolute inset-0 bg-[radial-gradient(#eab308_1px,transparent_1px)] [background-size:64px_64px] opacity-[0.08]" />
@@ -937,7 +957,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
             <p className="text-zinc-300"><strong className="text-zinc-100 font-semibold font-mono">🌌 AI Core Synapse:</strong> This is your workspace's high-level memory pool. It maps real-time user-focused code directives directly into upcoming code refinement prompts.</p>
           )}
           {selectedHighlightMemory === "Persona Config" && (
-            <p className="text-zinc-300"><strong className="text-yellow-400 font-semibold font-mono">👤 Persona Config:</strong> Guides the core tone, behavior rules, and visual aesthetics of development agents (e.g., Scrum Master, Principal Architect).</p>
+            <p className="text-zinc-300"><strong className="text-yellow-400 font-semibold font-mono">👤 Persona Config:</strong> Guides the core tone, behavior rules, and visual aesthetics of development agents (e.g., Dynamic Briefing, Principal Architect).</p>
           )}
           {selectedHighlightMemory === "Preferred Stack" && (
             <p className="text-zinc-300"><strong className="text-amber-400 font-semibold font-mono">🛠 Preferred Stack:</strong> Locks in framework defaults (React, TS, Tailwind CSS) to enforce architectural consistency across simple or complex views.</p>
@@ -957,7 +977,21 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
               const matchedCortex = cortexSynapses.find(s => s.name === selectedHighlightMemory);
               const matchedProj = projects.find(p => `Project: ${p.name}` === selectedHighlightMemory);
               if (matchedCustom) {
-                return <p className="text-zinc-300"><strong className="text-cyan-400 font-semibold font-mono">🧠 {matchedCustom.name}:</strong> {cleanTextToPlainEnglish(matchedCustom.desc)}</p>;
+                return (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-zinc-300"><strong className="text-cyan-400 font-semibold font-mono">🧠 {matchedCustom.name}:</strong> {cleanTextToPlainEnglish(matchedCustom.desc)}</p>
+                    <button
+                      onClick={() => {
+                        setCustomMemories(prev => prev.filter(m => m.id !== matchedCustom.id));
+                        setSelectedHighlightMemory("AI Core Synapse");
+                        showToast(`Deleted memory node "${matchedCustom.name}"`, "success");
+                      }}
+                      className="mt-1 self-start text-[9px] font-mono font-bold uppercase tracking-wider text-red-400 hover:text-red-300 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 px-2 py-0.5 rounded cursor-pointer transition-all active:scale-95"
+                    >
+                      Delete Memory Node
+                    </button>
+                  </div>
+                );
               }
               if (matchedCortex) {
                 return (
@@ -976,7 +1010,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       </div>
 
       {/* 2. MIDDLE CARD: RULES WRITER MEMORY STORAGE */}
-      <div className="w-full xl:w-96 flex flex-col border border-zinc-800/80 bg-[#121214]/65 rounded-xl p-4 overflow-hidden min-h-0 shrink-0">
+      <div className="w-full xl:w-96 flex flex-col rounded-xl p-4 min-h-[420px] xl:min-h-0 shrink-0 glass-card overflow-y-auto custom-scrollbar">
         <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -1134,7 +1168,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       </div>
 
       {/* 3. RIGHT CARD: CHAT WITH SYSTEM BRAIN (Vocal / Oral & Waveforms!) */}
-      <div className="w-full xl:w-76 shrink-0 flex flex-col border border-zinc-800/80 bg-[#121214]/65 rounded-xl p-4 overflow-hidden min-h-0">
+      <div className="w-full xl:w-76 shrink-0 flex flex-col rounded-xl p-4 overflow-hidden min-h-0 glass-card">
         <div className="flex items-center gap-1.5 mb-3 shrink-0">
           <Volume2 size={15} className="text-pink-400" />
           <span className="text-xs font-bold text-zinc-200 uppercase tracking-wide">Speech Memory Sync</span>

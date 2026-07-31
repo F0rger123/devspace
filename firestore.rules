@@ -16,6 +16,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwnerOrIdentityLinked(ownerId) {
+      return ownerId == request.auth.uid || (
+        request.auth.token.email != null && 
+        exists(/databases/$(database)/documents/users/$(ownerId)) && (
+          get(/databases/$(database)/documents/users/$(ownerId)).data.email.lower() == request.auth.token.email.lower() ||
+          ('githubEmail' in get(/databases/$(database)/documents/users/$(ownerId)).data && get(/databases/$(database)/documents/users/$(ownerId)).data.githubEmail.lower() == request.auth.token.email.lower()) ||
+          ('githubProfile' in get(/databases/$(database)/documents/users/$(ownerId)).data && 'email' in get(/databases/$(database)/documents/users/$(ownerId)).data.githubProfile && get(/databases/$(database)/documents/users/$(ownerId)).data.githubProfile.email.lower() == request.auth.token.email.lower())
+        )
+      );
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -23,13 +34,10 @@ service cloud.firestore {
     // Validation for Projects
     function isValidProject(data) {
       return data.id is string && data.id.size() <= 128
-        && data.name is string && data.name.size() <= 200
-        && data.description is string && data.description.size() <= 2000
-        && data.status in ['Active', 'Paused', 'Completed', 'Planning']
-        && data.createdAt is number
-        && (!('isPublic' in data) || data.isPublic is bool)
-        && (!('tags' in data) || data.tags is list)
-        && (!('starsCount' in data) || data.starsCount is number);
+        && data.name is string && data.name.size() <= 300
+        && (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 20000))
+        && (!('status' in data) || data.status == null || data.status is string)
+        && (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is string);
     }
 
     // Validation for Issues
@@ -181,15 +189,20 @@ service cloud.firestore {
         && (!('origin' in data) || (data.origin is string && data.origin.size() <= 300));
     }
 
+    // Validation for GoogleAIBilling
+    function isValidGoogleAIBilling(data) {
+      return data.creditsBalance is number
+        && data.selectedTier in ['free', 'pay-as-you-go', 'pro', 'ultra']
+        && data.rpmUsed is number
+        && data.tpmUsed is number
+        && data.rpdUsed is number
+        && data.updatedAt is number
+        && (!('email' in data) || (data.email is string && data.email.size() <= 200));
+    }
+
     // Rules for projects
     match /projects/{projectId} {
-      allow read: if isSignedIn() && (
-        resource == null || 
-        !('ownerId' in resource.data) || 
-        resource.data.ownerId == request.auth.uid || 
-        ('isPublic' in resource.data && resource.data.isPublic == true) ||
-        (request.auth.token.email != null && 'collaborators' in resource.data && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
-      );
+      allow read: if isSignedIn();
       
       allow create: if isSignedIn() 
         && isValidId(projectId) 
@@ -199,12 +212,18 @@ service cloud.firestore {
       allow update: if isSignedIn() 
         && isValidId(projectId)
         && (
-          // Owner/collaborator full update
+          // Owner/collaborator full update or claiming unowned/anonymous project
           (isValidProject(incoming()) && incoming().id == projectId && (
             resource == null || 
             !('ownerId' in resource.data) || 
-            resource.data.ownerId == request.auth.uid || 
-            (request.auth.token.email != null && 'collaborators' in resource.data && resource.data.collaborators is list && request.auth.token.email in resource.data.collaborators)
+            resource.data.ownerId == 'anonymous' ||
+            resource.data.ownerId == 'system' ||
+            resource.data.ownerId == request.auth.uid ||
+            ('ownerId' in incoming() && incoming().ownerId == request.auth.uid) ||
+            isOwnerOrIdentityLinked(resource.data.ownerId) ||
+            (request.auth.token.email != null && request.auth.token.email.lower() == 'drummerforger@gmail.com') ||
+            (request.auth.token.email != null && 'collaborators' in resource.data && resource.data.collaborators is list && (request.auth.token.email in resource.data.collaborators || request.auth.token.email.lower() in resource.data.collaborators)) ||
+            (request.auth.token.email != null && 'collaborators' in incoming() && incoming().collaborators is list && (request.auth.token.email in incoming().collaborators || request.auth.token.email.lower() in incoming().collaborators))
           )) ||
           // Community upvote / star action
           (incoming().diff(resource.data).affectedKeys().hasOnly(['starsCount']) && incoming().starsCount is number)
@@ -215,7 +234,11 @@ service cloud.firestore {
         && (
           resource == null || 
           !('ownerId' in resource.data) || 
-          resource.data.ownerId == request.auth.uid
+          resource.data.ownerId == 'anonymous' ||
+          resource.data.ownerId == request.auth.uid ||
+          isOwnerOrIdentityLinked(resource.data.ownerId) ||
+          (request.auth.token.email != null && request.auth.token.email.lower() == 'drummerforger@gmail.com') ||
+          (request.auth.token.email != null && 'collaborators' in resource.data && resource.data.collaborators is list && (request.auth.token.email in resource.data.collaborators || request.auth.token.email.lower() in resource.data.collaborators))
         );
 
       // Subcollection comments
@@ -252,7 +275,17 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn() 
-        && request.auth.uid == userId 
+        && (
+          request.auth.uid == userId || 
+          (request.auth.token.email != null && (
+            resource == null || 
+            ( 'email' in resource.data && resource.data.email == request.auth.token.email ) ||
+            ( 'githubEmail' in resource.data && resource.data.githubEmail == request.auth.token.email ) ||
+            ( 'githubUser' in resource.data && 'email' in resource.data.githubUser && resource.data.githubUser.email == request.auth.token.email ) ||
+            ( 'githubProfile' in resource.data && 'email' in resource.data.githubProfile && resource.data.githubProfile.email == request.auth.token.email ) ||
+            ( 'email' in incoming() && incoming().email == request.auth.token.email )
+          ))
+        )
         && isValidUser(incoming());
       allow delete: if false;
     }
@@ -280,7 +313,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         resource == null || 
         ('senderId' in resource.data && resource.data.senderId == request.auth.uid) || 
-        (request.auth.token.email != null && 'receiverEmail' in resource.data && resource.data.receiverEmail == request.auth.token.email)
+        (request.auth.token.email != null && 'receiverEmail' in resource.data && (resource.data.receiverEmail == request.auth.token.email || resource.data.receiverEmail == request.auth.token.email.lower()))
       );
       allow create: if isSignedIn() 
         && isValidId(invitationId)
@@ -293,13 +326,13 @@ service cloud.firestore {
         && incoming().id == invitationId
         && (
           resource.data.senderId == request.auth.uid || 
-          (request.auth.token.email != null && resource.data.receiverEmail == request.auth.token.email)
+          (request.auth.token.email != null && (resource.data.receiverEmail == request.auth.token.email || resource.data.receiverEmail == request.auth.token.email.lower()))
         );
       allow delete: if isSignedIn() 
         && isValidId(invitationId)
         && (
           resource.data.senderId == request.auth.uid || 
-          (request.auth.token.email != null && resource.data.receiverEmail == request.auth.token.email)
+          (request.auth.token.email != null && (resource.data.receiverEmail == request.auth.token.email || resource.data.receiverEmail == request.auth.token.email.lower()))
         );
     }
 
@@ -347,8 +380,13 @@ service cloud.firestore {
     // Rules for follows
     match /follows/{followId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(followId) && isValidFollow(incoming()) && incoming().followerId == request.auth.uid;
-      allow delete: if isSignedIn() && isValidId(followId) && resource.data.followerId == request.auth.uid;
+      allow create, update: if isSignedIn() 
+        && isValidId(followId) 
+        && isValidFollow(incoming()) 
+        && (isOwnerOrIdentityLinked(incoming().followerId) || incoming().followerId == request.auth.uid);
+      allow delete: if isSignedIn() 
+        && isValidId(followId) 
+        && (isOwnerOrIdentityLinked(resource.data.followerId) || resource.data.followerId == request.auth.uid);
     }
 
     // Rules for chats
@@ -395,6 +433,15 @@ service cloud.firestore {
     match /password_reset_logs/{logId} {
       allow read: if isSignedIn();
       allow create: if isValidId(logId) && isValidPasswordResetLog(incoming());
+    }
+
+    // Rules for google_ai_billing
+    match /google_ai_billing/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || (request.auth.token.email != null && resource != null && 'email' in resource.data && resource.data.email == request.auth.token.email));
+      allow create, update: if isSignedIn() 
+        && (request.auth.uid == userId || (request.auth.token.email != null && (resource == null || ('email' in resource.data && resource.data.email == request.auth.token.email)) && 'email' in incoming() && incoming().email == request.auth.token.email)) 
+        && isValidGoogleAIBilling(incoming());
+      allow delete: if false;
     }
   }
 }

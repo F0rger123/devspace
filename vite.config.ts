@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
-import {defineConfig} from 'vite';
+import {defineConfig, splitVendorChunkPlugin} from 'vite';
 
 // Automatically bootstrap firebase-applet-config.json if missing to prevent build failures during deployment
 const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
@@ -27,11 +27,15 @@ if (!fs.existsSync(configPath)) {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    build: {
+      chunkSizeWarningLimit: 3000,
+      sourcemap: false,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

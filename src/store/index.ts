@@ -108,9 +108,13 @@ interface StoreState {
     timestamp: number;
   }) => void;
   clearCircledContexts: () => void;
+  lastSpeechTranscript: string;
+  setLastSpeechTranscript: (text: string) => void;
+  lastAiResponse: string;
+  setLastAiResponse: (text: string) => void;
 }
 
-const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 const initialSidebarOpen = localStorage.getItem('isSidebarOpen') !== null
   ? localStorage.getItem('isSidebarOpen') !== 'false'
   : !isMobile;
@@ -420,5 +424,9 @@ export const useStore = create<StoreState>((set) => {
     circledContexts: [...state.circledContexts, context] 
   })),
   clearCircledContexts: () => set(() => ({ circledContexts: [] })),
+  lastSpeechTranscript: '',
+  setLastSpeechTranscript: (text) => set(() => ({ lastSpeechTranscript: text })),
+  lastAiResponse: '',
+  setLastAiResponse: (text) => set(() => ({ lastAiResponse: text })),
   };
 });

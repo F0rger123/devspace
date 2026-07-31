@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { haptic } from '../../utils/haptics';
-import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass } from 'lucide-react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass, Cpu, Plus, PencilRuler } from 'lucide-react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
@@ -10,9 +10,12 @@ import { motion } from 'motion/react';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: PencilRuler, label: 'Design', path: '/design' },
+  { icon: Plus, label: 'Create', path: '/create' },
   { icon: Sparkles, label: 'AI Assistant', path: '/assistant' },
   { icon: CheckSquare, label: 'Issues', path: '/issues' },
   { icon: FolderGit2, label: 'Projects', path: '/projects' },
+  { icon: Cpu, label: 'Sandbox Loop', path: '/sandbox-loop' },
   { icon: Compass, label: 'Explore Hub', path: '/community' },
   { icon: FileText, label: 'Notes', path: '/notes' },
   { icon: ImageIcon, label: 'Assets', path: '/assets' },
@@ -31,9 +34,10 @@ export function Sidebar() {
   const { isSidebarOpen, isSidebarMinimized, toggleSidebarMinimized, setSidebarOpen } = useStore();
   const { projects, activeProjectId, setActiveProjectId, userProfile, googleUser } = useData();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLinkClick = () => {
-    if (window.innerWidth < 1280) {
+    if (window.innerWidth < 640) {
       setSidebarOpen(false);
     }
   };
@@ -50,16 +54,23 @@ export function Sidebar() {
 
   return (
     <nav className={cn(
-      "fixed lg:relative z-40 h-full shrink-0 border-r border-[#1f1f23] bg-[#0c0c0e] flex flex-col p-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl lg:shadow-none overflow-hidden",
-      isSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-full lg:translate-x-0",
-      !isSidebarOpen && "lg:w-0 lg:p-0 lg:border-r-0 lg:opacity-0 lg:pointer-events-none",
+      "fixed md:relative z-40 h-full shrink-0 border-r border-zinc-800/80 bg-[#0c0c0e]/70 backdrop-blur-md flex flex-col p-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl md:shadow-none overflow-hidden",
+      isSidebarOpen ? "translate-x-0 opacity-100" : "-translate-x-full md:translate-x-0",
+      !isSidebarOpen && "md:w-0 md:p-0 md:border-r-0 md:opacity-0 md:pointer-events-none",
       isSidebarMinimized ? "w-16 gap-4 items-center" : "w-60 gap-6",
       "left-0 top-0 bottom-0"
     )}>
       
       {/* Sidebar Header & Toggle */}
       <div className={cn("flex items-center w-full mt-1", isSidebarMinimized ? "justify-center mb-1" : "justify-between mb-1 pl-2")}>
-        {!isSidebarMinimized && <span className="text-[11px] font-display font-light text-zinc-300 tracking-[0.25em] uppercase">DEVSPACE</span>}
+        {!isSidebarMinimized && (
+          <span 
+            className="tasteful-glitch text-[11px] font-display font-light text-zinc-300 tracking-[0.25em] uppercase"
+            data-text="DEVSPACE"
+          >
+            DEVSPACE
+          </span>
+        )}
         <button 
           onClick={() => { haptic.light(); toggleSidebarMinimized(); }}
           className="p-1 rounded bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-850 hover:border-zinc-700 text-zinc-400 hover:text-white transition-all shadow-inner cursor-pointer"
@@ -159,7 +170,9 @@ export function Sidebar() {
                     onClick={() => {
                       haptic.light();
                       setActiveProjectId(project.id);
-                      navigate(`/projects?id=${project.id}`);
+                      if (location.pathname === '/projects') {
+                        navigate(`/projects?id=${project.id}`);
+                      }
                       handleLinkClick();
                     }}
                     className="relative cursor-pointer"

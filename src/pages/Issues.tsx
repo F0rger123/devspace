@@ -757,7 +757,7 @@ Example:
               if (activeProjectId) setShowModal(true);
             }}
             disabled={!activeProjectId}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md font-medium text-xs transition-colors shadow-lg shadow-blue-500/10 border border-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-1.5 rounded-md font-bold text-xs transition-colors shadow-lg shadow-yellow-500/10 border border-yellow-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus size={14} /> New Issue
           </button>

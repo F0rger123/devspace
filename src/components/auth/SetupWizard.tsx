@@ -15,7 +15,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useData } from '../../context/DataProvider';
-import { auth, linkProvider } from '../../lib/auth';
+import { auth, linkProvider, googleSignIn, githubSignIn } from '../../lib/auth';
 
 const ACCENT_COLORS = [
   { hex: '#eab308', name: 'Amber' },
@@ -44,19 +44,22 @@ export function SetupWizard() {
   const [avatarColor, setAvatarColor] = useState(userProfile?.avatarColor || '#eab308');
   
   // GitHub Setup
-  const initialGithubLinked = auth.currentUser?.providerData.some(p => p.providerId === 'github.com') || false;
-  const initialGithubUsername = auth.currentUser?.providerData.find(p => p.providerId === 'github.com')?.displayName || '';
+  const initialGithubLinked = auth.currentUser?.providerData.some(p => p.providerId === 'github.com') || !!userProfile?.githubLinked || !!userProfile?.githubUser || !!userProfile?.githubToken;
+  const initialGithubUsername = auth.currentUser?.providerData.find(p => p.providerId === 'github.com')?.displayName || userProfile?.githubUser || '';
   const [githubUser, setGithubUser] = useState(initialGithubUsername);
   const [isGithubConnecting, setIsGithubConnecting] = useState(false);
   const [isGithubConnected, setIsGithubConnected] = useState(initialGithubLinked);
+  const [githubLinkError, setGithubLinkError] = useState(false);
   
   // Google Setup
-  const initialGoogleLinked = auth.currentUser?.providerData.some(p => p.providerId === 'google.com') || false;
+  const initialGoogleLinked = auth.currentUser?.providerData.some(p => p.providerId === 'google.com') || !!userProfile?.googleLinked;
   const [isGoogleConnected, setIsGoogleConnected] = useState(initialGoogleLinked);
   const [isGoogleConnecting, setIsGoogleConnecting] = useState(false);
+  const [googleLinkError, setGoogleLinkError] = useState(false);
 
   const handleConnectGithub = async () => {
     setIsGithubConnecting(true);
+    setGithubLinkError(false);
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
@@ -72,8 +75,9 @@ export function SetupWizard() {
       showToast(`✓ GitHub profile @${ghUsername} securely linked!`, 'success', 2500);
     } catch (err: any) {
       console.error('Failed to link GitHub:', err);
-      if (err.code === 'auth/credential-already-in-use') {
-        showToast('This GitHub account is already linked to another user profile.', 'error', 4000);
+      if (err.code === 'auth/credential-already-in-use' || err.message?.includes('credential-already-in-use') || err.message?.includes('already registered') || err.message?.includes('already-in-use')) {
+        setGithubLinkError(true);
+        showToast('The selected GitHub account is already registered as a separate developer profile. Please sign in to that account directly.', 'error', 6000);
       } else {
         showToast('Failed to link GitHub: ' + (err.message || String(err)), 'error', 4000);
       }
@@ -84,6 +88,7 @@ export function SetupWizard() {
 
   const handleConnectGoogle = async () => {
     setIsGoogleConnecting(true);
+    setGoogleLinkError(false);
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
@@ -95,8 +100,9 @@ export function SetupWizard() {
       showToast('✓ Google Workspace securely linked!', 'success', 2500);
     } catch (err: any) {
       console.error('Failed to link Google:', err);
-      if (err.code === 'auth/credential-already-in-use') {
-        showToast('This Google account is already linked to another user profile.', 'error', 4000);
+      if (err.code === 'auth/credential-already-in-use' || err.message?.includes('credential-already-in-use') || err.message?.includes('already registered') || err.message?.includes('already-in-use')) {
+        setGoogleLinkError(true);
+        showToast('The selected Google account is already registered as a separate developer profile. Please sign in to that account directly.', 'error', 6000);
       } else {
         showToast('Failed to link Google: ' + (err.message || String(err)), 'error', 4000);
       }
@@ -298,25 +304,63 @@ export function SetupWizard() {
                       <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center mx-auto border border-zinc-800">
                         <Github size={24} className="text-zinc-400 animate-pulse" />
                       </div>
-                      <div className="space-y-1">
-                        <h4 className="text-xs font-bold text-zinc-300">Authorize GitHub Integration</h4>
-                        <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">Authorize DevSpace OS to access your branches, sync pull requests, and manage issue tickets.</p>
-                      </div>
-                      <button
-                        onClick={handleConnectGithub}
-                        disabled={isGithubConnecting}
-                        className="w-full sm:w-auto px-6 py-2.5 bg-zinc-100 hover:bg-white text-black font-bold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 mx-auto cursor-pointer"
-                      >
-                        {isGithubConnecting ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" /> Authenticating...
-                          </>
-                        ) : (
-                          <>
-                            <Github size={14} /> Log in & Link GitHub
-                          </>
-                        )}
-                      </button>
+                      {githubLinkError ? (
+                        <>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-yellow-500">Separate Developer Profile Detected</h4>
+                            <p className="text-[11px] text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                              This GitHub account is already registered under a separate profile. You can sign in to that account directly instead.
+                            </p>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
+                            <button
+                              onClick={async () => {
+                                setIsGithubConnecting(true);
+                                try {
+                                  await githubSignIn();
+                                  showToast('Successfully signed in with GitHub!', 'success', 2500);
+                                  window.location.reload();
+                                } catch (signInErr: any) {
+                                  showToast(signInErr.message || 'Failed to sign in with GitHub.', 'error', 3000);
+                                } finally {
+                                  setIsGithubConnecting(false);
+                                }
+                              }}
+                              className="px-4 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              <Github size={14} /> Sign In Directly with GitHub
+                            </button>
+                            <button
+                              onClick={() => setGithubLinkError(false)}
+                              className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-850 text-zinc-300 font-bold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              Try Again
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-zinc-300">Authorize GitHub Integration</h4>
+                            <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">Authorize DevSpace OS to access your branches, sync pull requests, and manage issue tickets.</p>
+                          </div>
+                          <button
+                            onClick={handleConnectGithub}
+                            disabled={isGithubConnecting}
+                            className="w-full sm:w-auto px-6 py-2.5 bg-zinc-100 hover:bg-white text-black font-bold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 mx-auto cursor-pointer"
+                          >
+                            {isGithubConnecting ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" /> Authenticating...
+                              </>
+                            ) : (
+                              <>
+                                <Github size={14} /> Log in & Link GitHub
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -372,25 +416,63 @@ export function SetupWizard() {
                       <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center mx-auto border border-zinc-800">
                         <Chrome size={24} className="text-zinc-400 animate-pulse" />
                       </div>
-                      <div className="space-y-1">
-                        <h4 className="text-xs font-bold text-zinc-300">Authorize Google workspace</h4>
-                        <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">Link Google Drive for referencing repository assets and Google Calendar for deadlines.</p>
-                      </div>
-                      <button
-                        onClick={handleConnectGoogle}
-                        disabled={isGoogleConnecting}
-                        className="w-full sm:w-auto px-6 py-2.5 bg-zinc-100 hover:bg-white text-black font-bold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 mx-auto cursor-pointer"
-                      >
-                        {isGoogleConnecting ? (
-                          <>
-                            <Loader2 size={14} className="animate-spin" /> Authenticating...
-                          </>
-                        ) : (
-                          <>
-                            <Chrome size={14} /> Log in & Link Google
-                          </>
-                        )}
-                      </button>
+                      {googleLinkError ? (
+                        <>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-yellow-500">Separate Developer Profile Detected</h4>
+                            <p className="text-[11px] text-zinc-400 max-w-xs mx-auto leading-relaxed">
+                              This Google account is already registered under a separate profile. You can sign in to that account directly instead.
+                            </p>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
+                            <button
+                              onClick={async () => {
+                                setIsGoogleConnecting(true);
+                                try {
+                                  await googleSignIn();
+                                  showToast('Successfully signed in with Google!', 'success', 2500);
+                                  window.location.reload();
+                                } catch (signInErr: any) {
+                                  showToast(signInErr.message || 'Failed to sign in with Google.', 'error', 3000);
+                                } finally {
+                                  setIsGoogleConnecting(false);
+                                }
+                              }}
+                              className="px-4 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-extrabold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              <Chrome size={14} /> Sign In Directly with Google
+                            </button>
+                            <button
+                              onClick={() => setGoogleLinkError(false)}
+                              className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-850 text-zinc-300 font-bold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              Try Again
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-zinc-300">Authorize Google workspace</h4>
+                            <p className="text-[11px] text-zinc-500 max-w-xs mx-auto">Link Google Drive for referencing repository assets and Google Calendar for deadlines.</p>
+                          </div>
+                          <button
+                            onClick={handleConnectGoogle}
+                            disabled={isGoogleConnecting}
+                            className="w-full sm:w-auto px-6 py-2.5 bg-zinc-100 hover:bg-white text-black font-bold font-mono text-xs rounded-lg transition-colors flex items-center justify-center gap-2 mx-auto cursor-pointer"
+                          >
+                            {isGoogleConnecting ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" /> Authenticating...
+                              </>
+                            ) : (
+                              <>
+                                <Chrome size={14} /> Log in & Link Google
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Sparkles, Bot, Clock, Trash2, Play, Check, AlertTriangle, Filter, Plus, Loader2, ChevronDown, ChevronRight, CheckSquare, Database, CheckCircle, Zap, Cpu } from 'lucide-react';
+import { Sparkles, Bot, Clock, Trash2, Play, Check, AlertTriangle, Filter, Plus, Loader2, ChevronDown, ChevronRight, CheckSquare, Database, CheckCircle, Zap, Cpu, Layers, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { DreamSwipeDeck } from './DreamSwipeDeck';
 
 interface DreamRecommendation {
   id: string;
@@ -49,6 +50,23 @@ export function DreamLogView({
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'deck' | 'list'>('deck');
+
+  // Rate Limit & Frequency States
+  const todayKey = `aether_dreams_count_${new Date().toISOString().slice(0, 10)}`;
+  const [dailyLimit, setDailyLimit] = useState<string>(() => localStorage.getItem('aether_dream_daily_limit') || '5');
+  const [dreamsToday, setDreamsToday] = useState<number>(() => parseInt(localStorage.getItem(todayKey) || '0', 10));
+
+  useEffect(() => {
+    localStorage.setItem('aether_dream_daily_limit', dailyLimit);
+  }, [dailyLimit]);
+
+  useEffect(() => {
+    localStorage.setItem(todayKey, dreamsToday.toString());
+  }, [dreamsToday, todayKey]);
+
+  const numericLimit = dailyLimit === 'unlimited' ? Infinity : parseInt(dailyLimit, 10);
+  const isLimitReached = dreamsToday >= numericLimit;
 
   // Dreaming Form
   const [triggerProjectId, setTriggerProjectId] = useState<string>(projects[0]?.id || '');
@@ -104,7 +122,12 @@ export function DreamLogView({
   // Handle triggering a dream session
   const handleTriggerDream = async () => {
     if (!triggerProjectId) return;
+    if (isLimitReached) {
+      setActionAlert({ type: 'info', message: `Daily Dream Rate Limit Reached (${dreamsToday}/${dailyLimit}). Adjust frequency in settings below to allow more cycles.` });
+      return;
+    }
     setLocalDreaming(true);
+    setDreamsToday(prev => prev + 1);
     setActionAlert({ type: 'info', message: 'Triggered autonomous Dreaming Cycle in background...' });
     try {
       await startProjectDreaming(triggerProjectId, triggerFocus);
@@ -201,7 +224,7 @@ export function DreamLogView({
       <div className="w-full md:w-[340px] shrink-0 flex flex-col gap-4 overflow-y-auto">
         
         {/* Dreaming Core State Card */}
-        <div className="border border-zinc-800 bg-[#121214] rounded-xl p-5 relative overflow-hidden flex flex-col gap-3">
+        <div className="rounded-xl p-5 relative overflow-hidden flex flex-col gap-3 glass-card">
           <div className="absolute top-0 right-0 p-3 opacity-5">
             <Sparkles size={60} className="text-yellow-500" />
           </div>
@@ -236,7 +259,7 @@ export function DreamLogView({
         </div>
 
         {/* Trigger Dreaming Engine Card */}
-        <div className="border border-zinc-800 bg-[#121214] rounded-xl p-5 flex flex-col gap-4">
+        <div className="rounded-xl p-5 flex flex-col gap-4 glass-card">
           <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider font-mono flex items-center gap-1.5">
             <Zap size={14} className="text-yellow-500" /> Trigger Dreaming Cycle
           </h4>
@@ -294,8 +317,75 @@ export function DreamLogView({
           </div>
         </div>
 
+        {/* Rate Limit & Frequency Settings Card */}
+        <div className="rounded-xl p-5 flex flex-col gap-3 glass-card">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider font-mono flex items-center gap-1.5">
+              <Clock size={14} className="text-yellow-500" /> Schedule & Rate Limits
+            </h4>
+            <span className="text-[9px] bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded font-mono">
+              Customizable
+            </span>
+          </div>
+
+          <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+            Control background AI dreaming frequency to conserve your API quotas or rate limits.
+          </p>
+
+          <div className="space-y-2.5">
+            <div>
+              <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                Daily Dreaming Limit
+              </label>
+              <select
+                value={dailyLimit}
+                onChange={(e) => setDailyLimit(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2 text-xs text-zinc-200 outline-none focus:border-yellow-500/40 cursor-pointer font-mono"
+              >
+                <option value="1">1 time / day (Ultra Eco)</option>
+                <option value="5">5 times / day (Balanced Default)</option>
+                <option value="10">10 times / day (Active Developer)</option>
+                <option value="25">25 times / day (High Throughput)</option>
+                <option value="unlimited">Unlimited (Maximum Rate)</option>
+              </select>
+            </div>
+
+            {/* Daily Usage Bar */}
+            <div className="bg-zinc-950 border border-zinc-850 p-3 rounded-lg space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-mono">
+                <span className="text-zinc-400">Today's Usage:</span>
+                <span className={`font-bold ${isLimitReached ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {dreamsToday} / {dailyLimit === 'unlimited' ? '∞' : dailyLimit} Dreams
+                </span>
+              </div>
+              <div className="h-2 w-full bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    isLimitReached ? 'bg-red-500' : 'bg-yellow-400'
+                  }`}
+                  style={{
+                    width: dailyLimit === 'unlimited' 
+                      ? '100%' 
+                      : `${Math.min(100, Math.round((dreamsToday / parseInt(dailyLimit, 10)) * 100))}%`
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between pt-1 text-[9px] text-zinc-500 font-mono">
+                <span>{isLimitReached ? '⚠️ Daily quota reached' : `${numericLimit === Infinity ? 'Unlimited cycles' : `${numericLimit - dreamsToday} cycles remaining today`}`}</span>
+                <button
+                  onClick={() => setDreamsToday(0)}
+                  className="text-zinc-400 hover:text-yellow-400 underline cursor-pointer"
+                  type="button"
+                >
+                  Reset Count
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Real-time Dreamer Console Logs */}
-        <div className="border border-zinc-800 bg-[#121214] rounded-xl p-4 flex-1 flex flex-col min-h-[220px]">
+        <div className="rounded-xl p-4 flex-1 flex flex-col min-h-[220px] glass-card">
           <h4 className="text-xs font-bold text-zinc-200 mb-3 flex items-center gap-1.5 shrink-0 font-mono">
             <Cpu size={14} className="text-yellow-500" /> Dreaming System Logs
           </h4>
@@ -341,7 +431,7 @@ export function DreamLogView({
         </AnimatePresence>
 
         {/* Filters and search bar */}
-        <div className="border border-zinc-800 bg-[#121214] rounded-xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between shrink-0">
+        <div className="rounded-xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between shrink-0 glass-card">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
             <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1">
               <Filter size={12} className="text-zinc-500" />
@@ -376,20 +466,53 @@ export function DreamLogView({
             </div>
           </div>
 
-          <div className="w-full md:w-64">
-            <input
-              type="text"
-              placeholder="Search captured ideas & snippets..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-850 hover:border-zinc-800 rounded-lg py-1.5 px-3 text-[11px] outline-none text-zinc-300 placeholder:text-zinc-650 focus:border-yellow-500/40"
-            />
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex bg-zinc-950 border border-zinc-850 p-0.5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setViewMode('deck')}
+                className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  viewMode === 'deck' ? 'bg-yellow-500 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Layers size={12} /> Swipe Deck 🃏
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  viewMode === 'list' ? 'bg-yellow-500 text-black shadow' : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <List size={12} /> List View 📑
+              </button>
+            </div>
+
+            <div className="w-full md:w-60">
+              <input
+                type="text"
+                placeholder="Search captured ideas..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-850 hover:border-zinc-800 rounded-lg py-1 px-3 text-[11px] outline-none text-zinc-300 placeholder:text-zinc-650 focus:border-yellow-500/40"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Captures Lists / Grid */}
+        {/* Captures Lists / Deck */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-3.5 custom-scrollbar">
-          {filteredDreams.length === 0 ? (
+          {viewMode === 'deck' ? (
+            <DreamSwipeDeck
+              projects={projects}
+              activeProjectId={selectedProjectId}
+              onSelectProject={setSelectedProjectId}
+              updateProject={updateProject}
+              addIssue={addIssue}
+              setCortexSynapses={setCortexSynapses}
+              cortexSynapses={cortexSynapses}
+            />
+          ) : filteredDreams.length === 0 ? (
             <div className="h-64 rounded-xl border border-dashed border-zinc-800/80 bg-[#121214]/20 flex flex-col items-center justify-center text-center p-8 text-zinc-500 gap-3">
               <div className="p-3 bg-zinc-900 border border-zinc-850 rounded-full text-zinc-650">
                 <Sparkles size={20} />
@@ -419,9 +542,9 @@ export function DreamLogView({
               return (
                 <div 
                   key={dream.id}
-                  className={`rounded-xl border bg-zinc-950/40 p-4 transition-all duration-300 text-left flex flex-col gap-3.5 ${
-                    isExpanded ? 'border-zinc-700 shadow-lg bg-[#121214]/65' : 'border-zinc-800/80 hover:border-zinc-750'
-                  } ${isApproved ? 'opacity-70 border-zinc-900' : ''}`}
+                  className={`rounded-xl p-4 transition-all duration-300 text-left flex flex-col gap-3.5 glass-card ${
+                    isExpanded ? 'shadow-lg' : ''
+                  } ${isApproved ? 'opacity-60' : ''}`}
                 >
                   
                   {/* Card Header Info */}

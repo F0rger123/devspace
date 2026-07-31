@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2, FolderArchive, BookOpen } from 'lucide-react';
+import { Settings as SettingsIcon, Key, CreditCard, Mail, Database, Users, Github, ShieldAlert, CheckCircle2, Bot, Sparkles, ShieldCheck, Eye, Settings2, Activity, Terminal, AlertCircle, RefreshCw, Mic, Volume2, Compass, Trash2, Plus, Upload, LogOut, Camera, CameraOff, X, GripVertical, Home, Notebook, Zap, FileText, Cpu, AlertTriangle, Edit2, Cloud, Heart, Download, Search, Share2, FolderArchive, BookOpen, Laptop } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
-import { logout, auth, linkProvider, unlinkProvider } from '../lib/auth';
+import { logout, auth, linkProvider, unlinkProvider, googleSignIn, githubSignIn } from '../lib/auth';
 import { WakeWordEngine } from '../components/ui/WakeWordEngine';
 import { useStore, KineticGesture } from '../store';
+import { LocalModelSettingsTab } from '../components/ui/LocalModelSettingsTab';
+import { KeyboardMapperTab } from '../components/ui/KeyboardMapperTab';
+import { AutonomousAppWatcher } from '../components/ui/AutonomousAppWatcher';
+import { HandGestureCenter } from '../components/ui/HandGestureCenter';
+import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 
 function KineticSandboxVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -450,9 +455,19 @@ export function Settings() {
     publishMacro,
     deleteSharedMacro,
     likeSharedMacro,
-    incrementDownloadsSharedMacro
+    incrementDownloadsSharedMacro,
+    forceReconcileIdentities
   } = useData();
+  const isGoogleConnected = auth?.currentUser?.providerData.some(p => p.providerId === 'google.com') || !!userProfile?.googleLinked;
+  const isGithubConnected = auth?.currentUser?.providerData.some(p => p.providerId === 'github.com') || !!userProfile?.githubLinked || !!userProfile?.githubUser || !!userProfile?.githubToken;
+
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('settings_active_tab') || 'profile'); // Default to profile to showcase first-class user profiles
+  const [googleLinkError, setGoogleLinkError] = useState(false);
+  const [githubLinkError, setGithubLinkError] = useState(false);
+  const [isLinkingGoogle, setIsLinkingGoogle] = useState(false);
+  const [isLinkingGithub, setIsLinkingGithub] = useState(false);
+  const [showReconcileConfirm, setShowReconcileConfirm] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('settings_active_tab', activeTab);
@@ -1094,8 +1109,8 @@ export function Settings() {
         if (stepId !== 'custom_record') {
           // It's a phrase verification
           let phraseText = "";
-          if (stepId === 'phrase_1') phraseText = "K-Aether, scan workspace synapses!";
-          else if (stepId === 'phrase_2') phraseText = "Enable synaptic dreamweaver deck!";
+          if (stepId === 'phrase_1') phraseText = "K-Aether, check active workspace!";
+          else if (stepId === 'phrase_2') phraseText = "Enable the smart assistant dashboard!";
           else if (stepId === 'phrase_3') phraseText = "Aether, commit scratchnote idea!";
           
           setTrainedPhrases(prev => {
@@ -1106,7 +1121,7 @@ export function Settings() {
             return updated;
           });
           
-          setCalibrationFeedback(`Success! Synapse verified phonetic signature of "${phraseText}" inside upload track.`);
+          setCalibrationFeedback(`Success! Voice verified phonetic signature of "${phraseText}".`);
           addVocalDiagnostic(`CALIBRATION SUCCESS: File aligned with phonemes for target: "${phraseText}". Match score: 98%.`);
           
           setTimeout(() => {
@@ -1535,7 +1550,7 @@ export function Settings() {
       <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         {/* Settings Navigation */}
         <div className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-x-visible shrink-0 pb-2 md:pb-0 w-full md:w-48 border-b md:border-b-0 md:border-r border-zinc-900 md:pr-4">
-          {['profile', 'aether', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
+          {['profile', 'aether', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1545,7 +1560,7 @@ export function Settings() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
           <div className="hidden md:block my-2 border-t border-zinc-900" />
@@ -1874,27 +1889,34 @@ export function Settings() {
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {[
+                      { text: "Curse at me, use profanity and swear words in every answer", label: "Curse at me 🤬" },
+                      { text: "Be ornery, cranky, and sarcastic in every answer", label: "Be Ornery & Cranky 💥" },
+                      { text: "Call me Sir in every response", label: "Address as 'Sir' 👑" },
+                      { text: "Always start replies with 'Listen here pal:'", label: "Say 'Listen here pal:' 💬" },
                       { text: "Aether be 30% more funny", label: "30% More Funny 🎯" },
-                      { text: "aether curse more", label: "Curse More 🤬" },
-                      { text: "Aether call me Sir from now on", label: "Address as 'Sir' 👑" },
                       { text: "Aether be extremely sarcastic & witty", label: "Sarcastic & Witty 💻" },
-                    ].map((preset) => (
-                      <button
-                        key={preset.text}
-                        onClick={() => {
-                          if (!aetherPersonalityRules.includes(preset.text)) {
-                            setAetherPersonalityRules([...aetherPersonalityRules, preset.text]);
-                          }
-                        }}
-                        className={`px-2.5 py-1.5 rounded-md border text-[11px] transition-all cursor-pointer flex items-center gap-1 ${
-                          aetherPersonalityRules.includes(preset.text)
-                            ? "bg-purple-500/15 border-purple-500/40 text-purple-300"
-                            : "bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
+                    ].map((preset) => {
+                      const isActive = aetherPersonalityRules.some(r => r.toLowerCase().includes(preset.label.toLowerCase().slice(0, 5)) || r === preset.text);
+                      return (
+                        <button
+                          key={preset.label}
+                          onClick={() => {
+                            if (isActive) {
+                              setAetherPersonalityRules(aetherPersonalityRules.filter(r => r !== preset.text && !r.toLowerCase().includes(preset.label.toLowerCase().slice(0, 5))));
+                            } else {
+                              setAetherPersonalityRules([...aetherPersonalityRules, preset.text]);
+                            }
+                          }}
+                          className={`px-2.5 py-1.5 rounded-md border text-[11px] transition-all cursor-pointer flex items-center gap-1 ${
+                            isActive
+                              ? "bg-purple-500/20 border-purple-500/50 text-purple-200 font-semibold shadow-sm"
+                              : "bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2007,12 +2029,21 @@ export function Settings() {
                         onChange={(e) => setAetherModel(e.target.value)}
                         className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-zinc-200 focus:outline-none focus:border-zinc-700 cursor-pointer"
                       >
-                        <option value="gemini-3.5-flash">Balanced (Gemini 3.5 Flash)</option>
-                        <option value="gemini-3.1-pro-preview">Cognitive Pro (Gemini 3.1 Pro - Paid Key)</option>
-                        <option value="gemini-3.1-flash-lite">Ultra Fast Lite (Gemini 3.1 Flash Lite)</option>
+                        <optgroup label="☁️ Cloud Gemini & Anthropic Models">
+                          {getAllAvailableModels().filter(m => m.category === 'cloud').map(m => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="💻 Local LLM Engines (Ollama / LM Studio / Hugging Face GGUF)">
+                          {getAllAvailableModels().filter(m => m.category === 'local').map(m => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </optgroup>
                       </select>
                       <p className="text-[9px] text-zinc-500 leading-normal">
-                        {aetherModel === 'gemini-3.1-pro-preview' 
+                        {aetherModel?.startsWith('local:')
+                          ? '💻 Local Mode: Routing execution directly through localhost local LLM server.'
+                          : aetherModel === 'gemini-3.1-pro-preview' 
                           ? '⚡ Paid Flow: Maximum reasoning competence for coding and logical planning.'
                           : aetherModel === 'gemini-3.1-flash-lite'
                           ? '🚀 Lowest Latency: Strips overhead to maximize streaming throughput.'
@@ -2064,6 +2095,55 @@ export function Settings() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'desktop_local' && (
+            <div className="space-y-6 animate-fade-in text-zinc-300">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+                <div>
+                  <h3 className="text-sm font-bold text-white mb-1 font-mono uppercase tracking-wider flex items-center gap-2">
+                    <Laptop size={16} className="text-yellow-400" /> DevSpace Desktop & Local AI Operations Center
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Re-configure local LLMs, Hugging Face models, standalone PC app installer, Claude CLI watcher, key shortcuts, and hand gestures anytime.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => window.dispatchEvent(new Event('devspace-open-download-modal'))}
+                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-mono text-xs font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.25)] flex items-center gap-2 shrink-0 cursor-pointer"
+                >
+                  <Download size={14} />
+                  <span>Launch Desktop Installer Wizard</span>
+                </button>
+              </div>
+
+              {/* Embedded Local Models & Hugging Face Hub */}
+              <div className="space-y-4">
+                <LocalModelSettingsTab />
+              </div>
+
+              <div className="pt-6 border-t border-zinc-850 space-y-4">
+                <h4 className="text-xs font-bold font-mono text-white uppercase tracking-wider">
+                  Claude Code CLI & Desktop App Permission Watcher
+                </h4>
+                <AutonomousAppWatcher />
+              </div>
+
+              <div className="pt-6 border-t border-zinc-850 space-y-4">
+                <h4 className="text-xs font-bold font-mono text-white uppercase tracking-wider">
+                  Global System Keyboard Shortcuts & Key Mapper
+                </h4>
+                <KeyboardMapperTab />
+              </div>
+
+              <div className="pt-6 border-t border-zinc-850 space-y-4">
+                <h4 className="text-xs font-bold font-mono text-white uppercase tracking-wider">
+                  Hand Gesture HUD & Motion Tracking
+                </h4>
+                <HandGestureCenter />
               </div>
             </div>
           )}
@@ -2752,7 +2832,7 @@ export function Settings() {
                       setNavNotesShortcutMouse('none');
                       setNavRoadmapShortcutKey('Alt+r');
                       setNavRoadmapShortcutMouse('none');
-                      addVocalDiagnostic("CALIBRATION: Reset synaptic keyboard shortcuts to default presets.");
+                      addVocalDiagnostic("CALIBRATION: Reset helper keyboard shortcuts to default presets.");
                     }}
                     className="text-yellow-500 font-semibold hover:text-yellow-400 transition-colors uppercase font-mono tracking-wider text-[9px] cursor-pointer"
                   >
@@ -2984,8 +3064,8 @@ export function Settings() {
                           
                           <div className="space-y-1.5 pt-1">
                             {[
-                              { id: 'phrase_1', text: "K-Aether, scan workspace synapses!" },
-                              { id: 'phrase_2', text: "Enable synaptic dreamweaver deck!" },
+                              { id: 'phrase_1', text: "K-Aether, check active workspace!" },
+                              { id: 'phrase_2', text: "Enable the smart assistant dashboard!" },
                               { id: 'phrase_3', text: "Aether, commit scratchnote idea!" }
                             ].map((ph, idx) => {
                               const isCompleted = trainedPhrases.includes(ph.text);
@@ -5807,7 +5887,7 @@ export function Settings() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { name: 'Scrum Master', description: 'Strict, highly task-oriented, pushes for speed and sprint deliverables.' },
+                    { name: 'Dynamic Briefing', description: 'Strictly objective, dynamic analysis, pushes for actionable deliverables, daily stats, and progress.' },
                     { name: 'Architect Sage', description: 'Philosophical, focusing on elegant code architecture, design systems, and decoupling.' },
                     { name: 'Cynical Security Auditor', description: 'Extremely security-conscious, skeptical, hunts for edge-cases and visual flaws.' },
                     { name: 'Optimistic Copilot', description: 'Encouraging, helpful, celebrates milestones and focuses on developers emotional well-being.' }
@@ -5946,8 +6026,8 @@ export function Settings() {
                       <div>
                         <p className="text-xs font-semibold text-zinc-200">Google Credentials</p>
                         <p className="text-[10px] text-zinc-500 font-mono truncate max-w-[180px]">
-                          {auth?.currentUser?.providerData.some(p => p.providerId === 'google.com') 
-                            ? (auth.currentUser.providerData.find(p => p.providerId === 'google.com')?.email || 'Active Synapse')
+                          {isGoogleConnected 
+                            ? (auth?.currentUser?.providerData.find(p => p.providerId === 'google.com')?.email || userProfile?.email || 'Active Synapse')
                             : 'Unlinked'}
                         </p>
                       </div>
@@ -5957,16 +6037,16 @@ export function Settings() {
                         <button
                           onClick={async () => {
                             if (auth?.currentUser?.providerData.filter(p => p.providerId !== 'custom').length <= 1) {
-                              alert("Safety Protocol: You cannot unlink your only authentication provider as you would lock yourself out of your account!");
+                              showToast("Safety Protocol: You cannot unlink your only authentication provider as you would lock yourself out of your account!", "error");
                               return;
                             }
                             if (confirm("Disconnect Google Credentials? You will no longer be able to log in using Google.")) {
                               try {
                                 await unlinkProvider(auth.currentUser!, 'google.com');
-                                alert("Google Credentials unlinked successfully.");
+                                showToast("Google Credentials unlinked successfully.", "success");
                                 window.location.reload();
                               } catch (err: any) {
-                                alert(err.message || "Failed to unlink Google credentials.");
+                                showToast(err.message || "Failed to unlink Google credentials.", "error");
                               }
                             }
                           }}
@@ -5974,21 +6054,62 @@ export function Settings() {
                         >
                           Unlink
                         </button>
+                      ) : isGoogleConnected ? (
+                        <span className="px-2 py-0.5 text-[8px] font-bold font-mono uppercase bg-green-950/40 text-green-400 border border-green-900/40 rounded-full">
+                          Synced
+                        </span>
                       ) : (
-                        <button
-                          onClick={async () => {
-                            try {
-                              await linkProvider(auth.currentUser!, 'google');
-                              alert("Successfully linked Google Credentials!");
-                              window.location.reload();
-                            } catch (err: any) {
-                              alert(err.message || "Failed to link Google Credentials.");
-                            }
-                          }}
-                          className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors"
-                        >
-                          Link
-                        </button>
+                        googleLinkError ? (
+                          <button
+                            disabled={isLinkingGoogle}
+                            onClick={async () => {
+                              setIsLinkingGoogle(true);
+                              try {
+                                await googleSignIn();
+                                showToast("Successfully signed in with Google!", "success");
+                                window.location.reload();
+                              } catch (signInErr: any) {
+                                if (signInErr.code === 'auth/cancelled-popup-request' || signInErr.message?.includes('cancelled-popup-request')) {
+                                  showToast("Sign in process was cancelled or superseded.", "info");
+                                } else {
+                                  showToast(signInErr.message || "Failed to sign in with Google.", "error");
+                                }
+                              } finally {
+                                setIsLinkingGoogle(false);
+                              }
+                            }}
+                            className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isLinkingGoogle ? "Signing In..." : "Sign In Instead"}
+                          </button>
+                        ) : (
+                          <button
+                            disabled={isLinkingGoogle}
+                            onClick={async () => {
+                              setIsLinkingGoogle(true);
+                              try {
+                                await linkProvider(auth.currentUser!, 'google');
+                                showToast("Successfully linked Google Credentials!", "success");
+                                window.location.reload();
+                              } catch (err: any) {
+                                console.error(err);
+                                if (err.code === 'auth/cancelled-popup-request' || err.message?.includes('cancelled-popup-request')) {
+                                  showToast("Linking process was cancelled or superseded.", "info");
+                                } else if (err.code === 'auth/credential-already-in-use' || err.message?.includes('credential-already-in-use') || err.message?.includes('already registered') || err.message?.includes('already-in-use')) {
+                                  setGoogleLinkError(true);
+                                  showToast("This Google account is already registered as a separate developer profile. Click 'Sign In Instead' to switch, and all your projects, profile attributes, and Google AI billing settings will unify automatically!", "info", 8000);
+                                } else {
+                                  showToast(err.message || "Failed to link Google Credentials.", "error");
+                                }
+                              } finally {
+                                setIsLinkingGoogle(false);
+                              }
+                            }}
+                            className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isLinkingGoogle ? "Linking..." : "Link"}
+                          </button>
+                        )
                       )}
                     </div>
                   </div>
@@ -6002,8 +6123,8 @@ export function Settings() {
                       <div>
                         <p className="text-xs font-semibold text-zinc-200">GitHub Credentials</p>
                         <p className="text-[10px] text-zinc-500 font-mono truncate max-w-[180px]">
-                          {auth?.currentUser?.providerData.some(p => p.providerId === 'github.com') 
-                            ? (auth.currentUser.providerData.find(p => p.providerId === 'github.com')?.email || 'Active Synapse')
+                          {isGithubConnected 
+                            ? (auth?.currentUser?.providerData.find(p => p.providerId === 'github.com')?.email || userProfile?.githubUser || 'Active Synapse')
                             : 'Unlinked'}
                         </p>
                       </div>
@@ -6013,16 +6134,16 @@ export function Settings() {
                         <button
                           onClick={async () => {
                             if (auth?.currentUser?.providerData.filter(p => p.providerId !== 'custom').length <= 1) {
-                              alert("Safety Protocol: You cannot unlink your only authentication provider as you would lock yourself out of your account!");
+                              showToast("Safety Protocol: You cannot unlink your only authentication provider as you would lock yourself out of your account!", "error");
                               return;
                             }
                             if (confirm("Disconnect GitHub Credentials? You will no longer be able to log in using GitHub.")) {
                               try {
                                 await unlinkProvider(auth.currentUser!, 'github.com');
-                                alert("GitHub Credentials unlinked successfully.");
+                                showToast("GitHub Credentials unlinked successfully.", "success");
                                 window.location.reload();
                               } catch (err: any) {
-                                alert(err.message || "Failed to unlink GitHub credentials.");
+                                showToast(err.message || "Failed to unlink GitHub credentials.", "error");
                               }
                             }
                           }}
@@ -6030,21 +6151,64 @@ export function Settings() {
                         >
                           Unlink
                         </button>
+                      ) : isGithubConnected ? (
+                        <span className="px-2 py-0.5 text-[8px] font-bold font-mono uppercase bg-green-950/40 text-green-400 border border-green-900/40 rounded-full">
+                          Synced
+                        </span>
                       ) : (
-                        <button
-                          onClick={async () => {
-                            try {
-                              await linkProvider(auth.currentUser!, 'github');
-                              alert("Successfully linked GitHub Credentials!");
-                              window.location.reload();
-                            } catch (err: any) {
-                              alert(err.message || "Failed to link GitHub Credentials.");
-                            }
-                          }}
-                          className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors"
-                        >
-                          Link
-                        </button>
+                        <div>
+                          {githubLinkError ? (
+                            <button
+                              disabled={isLinkingGithub}
+                              onClick={async () => {
+                                setIsLinkingGithub(true);
+                                try {
+                                  await githubSignIn();
+                                  showToast("Successfully signed in with GitHub!", "success");
+                                  window.location.reload();
+                                } catch (signInErr: any) {
+                                  if (signInErr.code === 'auth/cancelled-popup-request' || signInErr.message?.includes('cancelled-popup-request')) {
+                                    showToast("Sign in process was cancelled or superseded.", "info");
+                                  } else {
+                                    showToast(signInErr.message || "Failed to sign in with GitHub.", "error");
+                                  }
+                                } finally {
+                                  setIsLinkingGithub(false);
+                                }
+                              }}
+                              className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isLinkingGithub ? "Signing In..." : "Sign In Instead"}
+                            </button>
+                          ) : (
+                            <button
+                              disabled={isLinkingGithub}
+                              onClick={async () => {
+                                setIsLinkingGithub(true);
+                                try {
+                                  await linkProvider(auth.currentUser!, 'github');
+                                  showToast("Successfully linked GitHub Credentials!", "success");
+                                  window.location.reload();
+                                } catch (err: any) {
+                                  console.error(err);
+                                  if (err.code === 'auth/cancelled-popup-request' || err.message?.includes('cancelled-popup-request')) {
+                                    showToast("Linking process was cancelled or superseded.", "info");
+                                  } else if (err.code === 'auth/credential-already-in-use' || err.message?.includes('credential-already-in-use') || err.message?.includes('already registered') || err.message?.includes('already-in-use')) {
+                                    setGithubLinkError(true);
+                                    showToast("This GitHub account is already registered as a separate developer profile. Click 'Sign In Instead' to switch, and all your projects, profile attributes, and Google AI billing settings will unify automatically!", "info", 8000);
+                                  } else {
+                                    showToast(err.message || "Failed to link GitHub Credentials.", "error");
+                                  }
+                                } finally {
+                                  setIsLinkingGithub(false);
+                                }
+                              }}
+                              className="px-2.5 py-1 text-[10px] font-semibold tracking-wider font-mono uppercase bg-yellow-500 hover:bg-yellow-450 text-black rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isLinkingGithub ? "Linking..." : "Link"}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -6093,6 +6257,68 @@ export function Settings() {
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100 mb-1">Advanced Controls</h3>
                 <p className="text-xs text-zinc-400">Manage low-level environment directives, custom triggers, and clear workspace caches.</p>
+              </div>
+
+              {/* Identity Reconciliation Core */}
+              <div className="border border-zinc-800 rounded-lg bg-[#09090b]">
+                <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-zinc-200 flex items-center gap-1.5">
+                    <Users size={14} className="text-yellow-500" /> Identity Reconciliation Core
+                  </h4>
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Multi-Provider Merger</span>
+                </div>
+                <div className="p-4 space-y-4">
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    If you log in using different providers (such as Google, GitHub, or standard Email) that share the same email address, some of your projects, settings, and billing balances may be split across multiple accounts. Reconciling identities will deeply scan, mirror, and consolidate all databases under a single unified profile.
+                  </p>
+                  
+                  <div className="space-y-3 pt-1">
+                    {!showReconcileConfirm ? (
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                        <button 
+                          onClick={() => setShowReconcileConfirm(true)}
+                          disabled={isReconciling}
+                          className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/25 rounded text-xs font-semibold flex items-center gap-2 transition-colors w-fit cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw size={14} className={isReconciling ? "animate-spin" : ""} /> Force Reconcile Identities
+                        </button>
+                        <span className="text-[10px] text-zinc-500 italic">
+                          Recommended if you recently signed in with a new provider.
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="p-3 border border-yellow-500/20 rounded bg-yellow-500/5 space-y-3">
+                        <p className="text-xs text-yellow-500/90 leading-relaxed font-medium">
+                          ⚠️ Are you sure you want to force deep identity reconciliation? This will scan for other provider profiles sharing your email and deeply merge all project databases under your active profile.
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={async () => {
+                              setIsReconciling(true);
+                              try {
+                                await forceReconcileIdentities();
+                              } finally {
+                                setIsReconciling(false);
+                                setShowReconcileConfirm(false);
+                              }
+                            }}
+                            disabled={isReconciling}
+                            className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-black rounded text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {isReconciling ? "Merging..." : "Yes, Merge Profiles"}
+                          </button>
+                          <button
+                            onClick={() => setShowReconcileConfirm(false)}
+                            disabled={isReconciling}
+                            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Sync Configuration / Cleardown */}

@@ -26,7 +26,7 @@ export function Roadmap() {
     goal: '',
     startMonth: 0, 
     duration: 1, 
-    color: 'text-blue-500 bg-blue-500 border-blue-500' 
+    color: 'text-yellow-500 bg-yellow-500 border-yellow-500' 
   });
 
   // Voice Command & Natural Language Smart Architect Console states
@@ -379,7 +379,7 @@ JSON Schema format:
           <button 
             onClick={() => { if(activeProjectId) { setCurrentStep(1); setShowModal(true); } }}
             disabled={!activeProjectId}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md font-medium text-xs transition-colors shadow-lg shadow-blue-500/10 border border-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-1.5 rounded-md font-bold text-xs transition-colors shadow-lg shadow-yellow-500/10 border border-yellow-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus size={14} /> New Phase
           </button>
@@ -390,7 +390,7 @@ JSON Schema format:
          <div className="bg-[#121214] border border-zinc-800 rounded-xl p-4 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top duration-350">
             <div>
                <div className="flex items-center gap-2">
-                  <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded font-semibold border border-blue-500/20">WORKSPACE HEALTH</span>
+                  <span className="text-[10px] bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 rounded font-semibold border border-yellow-500/20">WORKSPACE HEALTH</span>
                   {activeProject.websiteUrl ? (
                      <a href={activeProject.websiteUrl.startsWith('http') ? activeProject.websiteUrl : `https://${activeProject.websiteUrl}`} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 text-[11px]">
                          <ExternalLink size={10} /> {activeProject.websiteUrl}
@@ -409,7 +409,7 @@ JSON Schema format:
                     <span className="font-semibold text-zinc-100">{activeProject.featuresCount || 0} / {activeProject.totalFeaturesCount || 10} Built</span>
                </div>
                <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden border border-zinc-800/80">
-                    <div className="bg-gradient-to-r from-blue-600 to-cyan-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.round(((activeProject.featuresCount || 0) / (activeProject.totalFeaturesCount || 10)) * 100))}%` }} />
+                    <div className="bg-gradient-to-r from-yellow-500 to-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.round(((activeProject.featuresCount || 0) / (activeProject.totalFeaturesCount || 10)) * 100))}%` }} />
                </div>
                <p className="text-[9px] text-zinc-500 mt-1 flex justify-between font-mono">
                   <span>Going public progress: {activeProject.progressPercent || 0}%</span>
@@ -484,12 +484,12 @@ JSON Schema format:
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleExecuteVoiceCommand();
                 }}
-                className="w-full bg-zinc-900 border border-zinc-800 disabled:opacity-50 rounded-lg pl-3 pr-10 py-2.5 text-xs text-zinc-200 outline-none focus:border-blue-500 transition-colors placeholder:text-zinc-600"
+                className="w-full bg-zinc-900 border border-zinc-800 disabled:opacity-50 rounded-lg pl-3 pr-10 py-2.5 text-xs text-zinc-200 outline-none focus:border-yellow-500 transition-colors placeholder:text-zinc-600"
               />
               <button
                 onClick={() => handleExecuteVoiceCommand()}
                 disabled={isProcessingVoice || !voiceText.trim()}
-                className="absolute right-1.5 top-1.5 p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:hover:bg-blue-600 transition-colors cursor-pointer"
+                className="absolute right-1.5 top-1.5 p-1.5 rounded bg-yellow-500 hover:bg-yellow-400 text-black disabled:opacity-40 transition-colors cursor-pointer"
               >
                 <Send size={12} />
               </button>
@@ -581,18 +581,18 @@ JSON Schema format:
             <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 blur-3xl rounded-full translate-x-12 -translate-y-12"></div>
         </div>
 
-        <div className="bg-gradient-to-br from-[#121214] to-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex-1 flex flex-col justify-center relative overflow-hidden hover:border-blue-500/40 transition-all">
-            <div className="text-xs font-medium text-blue-500/70 mb-1 flex items-center gap-1.5"><Presentation size={12}/> Issue Resolution</div>
+        <div className="bg-gradient-to-br from-[#121214] to-amber-900/10 border border-amber-500/20 rounded-xl p-4 flex-1 flex flex-col justify-center relative overflow-hidden hover:border-amber-500/40 transition-all">
+            <div className="text-xs font-medium text-amber-500/70 mb-1 flex items-center gap-1.5"><Presentation size={12}/> Issue Resolution</div>
             <div className="flex items-end gap-2 text-zinc-100 font-semibold z-10">
-               <span className="text-2xl text-blue-400">{overallStats.closedIssues}</span>
+               <span className="text-2xl text-amber-400">{overallStats.closedIssues}</span>
                <span className="text-xs text-zinc-500 mb-1 font-medium">/ {overallStats.totalIssues} closed</span>
             </div>
             <div className="mt-2 text-[10px] text-zinc-500 flex items-center gap-1.5 z-10">
-               <div className="w-full bg-blue-900/30 h-1.5 rounded-full overflow-hidden flex">
-                  <div className="bg-blue-500 h-full rounded-full transition-all duration-1000 origin-left" style={{ width: `${overallStats.totalIssues > 0 ? (overallStats.closedIssues / overallStats.totalIssues) * 100 : 0}%`}}></div>
+               <div className="w-full bg-amber-900/30 h-1.5 rounded-full overflow-hidden flex">
+                  <div className="bg-amber-500 h-full rounded-full transition-all duration-1000 origin-left" style={{ width: `${overallStats.totalIssues > 0 ? (overallStats.closedIssues / overallStats.totalIssues) * 100 : 0}%`}}></div>
                </div>
             </div>
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-500/5 blur-2xl rounded-full -translate-x-8 translate-y-8"></div>
+            <div className="absolute bottom-0 left-0 w-32 h-32 bg-amber-500/5 blur-2xl rounded-full -translate-x-8 translate-y-8"></div>
         </div>
 
         <div className="bg-gradient-to-br from-[#121214] to-purple-900/10 border border-purple-500/20 rounded-xl p-4 flex-1 flex flex-col justify-center relative overflow-hidden hover:border-purple-500/40 transition-all">
@@ -619,8 +619,8 @@ JSON Schema format:
                  {m}
               </div>
             ))}
-            <div className="absolute top-0 bottom-0 border-l border-blue-500/50 z-20 pointer-events-none" style={{ left: `${(new Date().getMonth() / 12) * 100}%` }}>
-               <div className="w-1.5 h-1.5 rounded-full bg-blue-500 -ml-[3px] -mt-0.5 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
+            <div className="absolute top-0 bottom-0 border-l border-yellow-500/50 z-20 pointer-events-none" style={{ left: `${(new Date().getMonth() / 12) * 100}%` }}>
+               <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 -ml-[3px] -mt-0.5 shadow-[0_0_8px_rgba(234,179,8,0.8)]"></div>
             </div>
           </div>
         </div>
@@ -877,7 +877,7 @@ JSON Schema format:
                           value={formData.name}
                           onChange={e => setFormData({...formData, name: e.target.value})}
                           placeholder="e.g. Q1 Public Release / Alpha Launch"
-                          className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors animate-in fade-in"
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors animate-in fade-in"
                         />
                       </div>
                       <div>
@@ -887,7 +887,7 @@ JSON Schema format:
                           value={formData.goal}
                           onChange={e => setFormData({...formData, goal: e.target.value})}
                           placeholder="What is the critical path/outcome of this phase? e.g. Resolve 100% of P0 blocks, test production server gateways with high traffic."
-                          className="w-full h-24 bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed"
+                          className="w-full h-24 bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors resize-none leading-relaxed"
                         />
                       </div>
                     </div>
@@ -902,7 +902,7 @@ JSON Schema format:
                           <select 
                             value={formData.startMonth}
                             onChange={(e) => setFormData({...formData, startMonth: parseInt(e.target.value)})}
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors"
                           >
                             {months.map((m, i) => <option key={i} value={i}>{m}</option>)}
                           </select>
@@ -914,7 +914,7 @@ JSON Schema format:
                             min="1" max="12"
                             value={formData.duration}
                             onChange={(e) => setFormData({...formData, duration: parseInt(e.target.value)})}
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-yellow-500 transition-colors"
                           />
                         </div>
                       </div>
@@ -973,7 +973,7 @@ JSON Schema format:
                       <div 
                         key={stepIndex} 
                         className={`w-1.5 h-1.5 rounded-full transition-all ${
-                          currentStep === stepIndex ? 'bg-blue-500 w-3' : 'bg-zinc-700'
+                          currentStep === stepIndex ? 'bg-yellow-500 w-3' : 'bg-zinc-700'
                         }`}
                       />
                     ))}
@@ -992,7 +992,7 @@ JSON Schema format:
                     <button 
                       type="submit"
                       disabled={!formData.name || !formData.goal}
-                      className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-colors shadow-lg shadow-blue-500/10 border border-blue-500/20 disabled:opacity-50"
+                      className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded text-xs font-bold transition-colors shadow-lg shadow-yellow-500/10 border border-yellow-500/20 disabled:opacity-50"
                     >
                       Deploy Phase
                     </button>

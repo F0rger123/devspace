@@ -1,11 +1,16 @@
 node_modules/
 build/
-# dist_removed_to_allow_artifact_upload
+dist/
+dist-electron/
+release/
 coverage/
+*.exe
+*.zip
+*.tar.gz
+*.dmg
+*.AppImage
 .DS_Store
 *.log
-
-# Sensitive environment and credentials
 .env
 .env.*
 !.env.example
@@ -16,8 +21,12 @@ creds.json
 credentials.json
 serviceAccountKey.json
 service-account*.json
-
-# Local configurations and cache
 .firebase/
 .parcel-cache/
 .eslintcache
+aether_state_persistence.json
+test_*.cjs
+compile-incremental.ts
+full-nested-checker.ts
+
+

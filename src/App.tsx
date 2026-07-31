@@ -16,6 +16,9 @@ import { AgenticOS } from './pages/AgenticOS';
 import { WhatsAppCompanion } from './pages/WhatsAppCompanion';
 import { Automations } from './pages/Automations';
 import { Community } from './pages/Community';
+import { SandboxLoop } from './pages/SandboxLoop';
+import { Create } from './pages/Create';
+import { Design } from './pages/Design';
 
 export default function App() {
   return (
@@ -23,8 +26,11 @@ export default function App() {
       <AppLayout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/create" element={<Create />} />
+          <Route path="/design" element={<Design />} />
           <Route path="/assistant" element={<AssistantChat />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/sandbox-loop" element={<SandboxLoop />} />
           <Route path="/notes" element={<Notes />} />
           <Route path="/assets" element={<Assets />} />
           <Route path="/ideas" element={<IdeaExpansion />} />

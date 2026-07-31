@@ -471,6 +471,38 @@ export function ProjectStepper({
                             pName: "Developer Case Log Portfolio",
                             pDesc: "Highly interactive developer portfolio showcasing timeline case files, sandbox experiments, and system documentation nodes.",
                           },
+                          {
+                            name: "Collab Canvas",
+                            desc: "Real-time collaborative canvas with multiplayer cursors and drawings.",
+                            icon: Link,
+                            color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+                            pName: "Collab Canvas Workspace",
+                            pDesc: "Real-time collaborative workspace containing interactive team drawing elements, sticky notes, and active voice channel links.",
+                          },
+                          {
+                            name: "SecOps Guardian",
+                            desc: "Posture tracking with vulnerability monitoring and key scans.",
+                            icon: Shield,
+                            color: "text-rose-400 bg-rose-500/10 border-rose-500/20",
+                            pName: "SecOps Guardian Node",
+                            pDesc: "End-to-end security posture tracking dashboard with continuous monitoring, auto vulnerabilities patches, and secret key scans.",
+                          },
+                          {
+                            name: "API Gateway Hub",
+                            desc: "Robust API gateway featuring rate-limits and proxy mappings.",
+                            icon: Server,
+                            color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+                            pName: "Nexus API Gate",
+                            pDesc: "A robust API middleware gateway featuring custom rate-limit rules, microservices route mapping, and authentication proxy layers.",
+                          },
+                          {
+                            name: "Other / Custom",
+                            desc: "Empty workspace. Type your own custom title and details below.",
+                            icon: Sparkle,
+                            color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+                            pName: "My Custom Project",
+                            pDesc: "",
+                          },
                         ].map((preset) => {
                           const isSelected = formData.name === preset.pName;
                           return (
@@ -484,7 +516,7 @@ export function ProjectStepper({
                                   description: preset.pDesc,
                                 })
                               }
-                              className={`text-left p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between h-28 hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                              className={`text-left p-3 rounded-xl border transition-all duration-200 flex flex-col justify-between h-28 hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
                                 isSelected
                                   ? "border-blue-500 bg-blue-500/10 text-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
                                   : "border-zinc-800/80 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-750 text-zinc-300"
@@ -1018,7 +1050,7 @@ export function ProjectStepper({
                       <label className="block text-[11px] font-bold text-zinc-400 mb-2 uppercase tracking-widest flex items-center gap-1">
                         <Code2 size={12} className="text-blue-400" /> Primary Runtime Stack Preset
                       </label>
-                      <div className="grid grid-cols-1 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {[
                           {
                             id: "React, Next.js, Tailwind",
@@ -1031,6 +1063,11 @@ export function ProjectStepper({
                             details: "Elegant, high-performance modular frontend stack utilizing Tailwind and light runtime footprints.",
                           },
                           {
+                            id: "SvelteKit, Tailwind",
+                            title: "SvelteKit Reactive Pipeline",
+                            details: "Ultra-lightweight reactive fullstack with declarative stores and fast page load compiling.",
+                          },
+                          {
                             id: "Node.js, Express, MongoDB",
                             title: "Express / Node REST API Hub",
                             details: "Scalable backend service architecture featuring robust routing, controllers, and environment parameters.",
@@ -1039,6 +1076,21 @@ export function ProjectStepper({
                             id: "Python, Django",
                             title: "Python / Django Web Framework",
                             details: "Ideal for machine learning models, structured REST APIs, and database adapters.",
+                          },
+                          {
+                            id: "Go, Gin, PostgreSQL",
+                            title: "Go / Gin Microservice Suite",
+                            details: "Blazing fast HTTP router, highly optimized database queries, and lightweight binaries.",
+                          },
+                          {
+                            id: "Rust, Actix-web, WebAssembly",
+                            title: "Rust / WASM System Backend",
+                            details: "Memory-safe high-throughput web server with compiling targets for WebAssembly speed.",
+                          },
+                          {
+                            id: "Spring Boot, Kotlin",
+                            title: "Kotlin / Spring Boot Core",
+                            details: "Enterprise-grade robust Java ecosystem with dependency injection and reactive streams.",
                           },
                         ].map((framework) => {
                           const isSelected = formData.frameworks === framework.id;
@@ -1052,7 +1104,7 @@ export function ProjectStepper({
                                   frameworks: framework.id,
                                 })
                               }
-                              className={`text-left p-3.5 rounded-xl border text-xs transition-all flex items-start gap-3 w-full cursor-pointer ${
+                              className={`text-left p-3 rounded-xl border text-xs transition-all flex items-start gap-3 w-full cursor-pointer h-24 hover:scale-[1.01] ${
                                 isSelected
                                   ? "border-blue-500 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]"
                                   : "border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850"
@@ -1067,11 +1119,11 @@ export function ProjectStepper({
                               >
                                 {isSelected && <Check size={11} />}
                               </div>
-                              <div>
-                                <div className={`font-bold text-xs ${isSelected ? "text-blue-300" : "text-zinc-200"}`}>
+                              <div className="min-w-0">
+                                <div className={`font-bold text-[11px] truncate ${isSelected ? "text-blue-300" : "text-zinc-200"}`}>
                                   {framework.title}
                                 </div>
-                                <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
+                                <p className="text-[9px] text-zinc-400 mt-1 leading-snug line-clamp-2">
                                   {framework.details}
                                 </p>
                               </div>
@@ -1089,7 +1141,7 @@ export function ProjectStepper({
                         {[
                           {
                             id: "Stripe",
-                            name: "Stripe Payment",
+                            name: "Stripe Payments",
                             desc: "Invoices, billing portals, and recurring checkout models.",
                           },
                           {
@@ -1104,8 +1156,28 @@ export function ProjectStepper({
                           },
                           {
                             id: "OpenAI",
-                            name: "OpenAI / LLM Node",
+                            name: "OpenAI / LLM Nodes",
                             desc: "Conversational generative models and prompt tools.",
+                          },
+                          {
+                            id: "Prisma",
+                            name: "Prisma ORM Node",
+                            desc: "Type-safe database client and automated schema migrations.",
+                          },
+                          {
+                            id: "Twilio",
+                            name: "Twilio SMS & Voice",
+                            desc: "Dispatch phone codes, dynamic SMS alerts, and call pipelines.",
+                          },
+                          {
+                            id: "SendGrid",
+                            name: "SendGrid SMTP Email",
+                            desc: "High deliverability transactional mail and newsletters.",
+                          },
+                          {
+                            id: "Redis",
+                            name: "Redis Key Cache",
+                            desc: "High throughput in-memory database and websocket queues.",
                           },
                         ].map((api) => {
                           const selectedList = formData.apiConnections
@@ -1210,6 +1282,12 @@ export function ProjectStepper({
                           <option value="AWS">AWS Server Solutions (EC2/ECS)</option>
                           <option value="Cloudflare Pages">Cloudflare Pages Edge</option>
                           <option value="Netlify">Netlify Portal</option>
+                          <option value="GitHub Pages">GitHub Pages (Static Docs)</option>
+                          <option value="Railway">Railway.app (Container Host)</option>
+                          <option value="Render">Render App Platform</option>
+                          <option value="Heroku">Heroku Dyno Instance</option>
+                          <option value="DigitalOcean">DigitalOcean App Platform</option>
+                          <option value="Self-hosted VPS">Self-hosted VPS (Docker/Portainer)</option>
                         </select>
                       </div>
 

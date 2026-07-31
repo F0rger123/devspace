@@ -159,7 +159,7 @@ export function AuthScreen() {
         } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
           setAuthErrorType('operation-not-allowed');
           setError(
-            'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method, or continue in local Sandbox Mode below.'
+            'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method.'
           );
         } else {
           setError(err.message || 'An error occurred during registration.');
@@ -189,7 +189,7 @@ export function AuthScreen() {
         } else if (err.code === 'auth/operation-not-allowed' || err.message?.includes('operation-not-allowed')) {
           setAuthErrorType('operation-not-allowed');
           setError(
-            'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method, or continue in local Sandbox Mode below.'
+            'Firebase Auth: Email/Password sign-in is not enabled in your Firebase Console. Please enable it under Authentication -> Sign-in method.'
           );
         } else {
           setError(err.message || 'Failed to sign in. Please try again.');
@@ -372,42 +372,7 @@ export function AuthScreen() {
     }
   };
 
-  const handleSandboxBypass = () => {
-    const fallbackEmail = email.trim() || 'developer@devspace.io';
-    const fallbackUsername = username.trim() || fallbackEmail.split('@')[0] || 'SandboxDev';
-    
-    const mockUser = {
-      uid: `sandbox-${crypto.randomUUID()}`,
-      email: fallbackEmail,
-      displayName: fallbackUsername,
-      photoURL: null,
-    };
 
-    const fallbackProfile = {
-      uid: mockUser.uid,
-      email: mockUser.email,
-      username: fallbackUsername,
-      displayName: fallbackUsername,
-      avatarColor: ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#f97316'][Math.floor(Math.random() * 6)],
-      title: 'Full-Stack Developer (Sandbox)',
-      bio: 'Active DevSpace collaborator and sandbox designer.',
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('app_google_user', JSON.stringify(mockUser));
-      window.localStorage.setItem('app_user_profile', JSON.stringify(fallbackProfile));
-      window.localStorage.setItem('app_auth_mode', 'sandbox');
-      
-      // Seed basic sandbox projects if empty to ensure instant dashboard value
-      if (!window.localStorage.getItem('app_projects')) {
-        window.localStorage.setItem('app_projects', JSON.stringify([]));
-      }
-      
-      window.location.reload();
-    }
-  };
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 bg-[#030305] relative overflow-hidden select-none">
@@ -419,24 +384,53 @@ export function AuthScreen() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md bg-[#09090b]/90 border border-zinc-850 rounded-xl p-8 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md relative z-10"
+        className="w-full max-w-md my-auto bg-[#09090b]/95 border border-zinc-800 rounded-2xl p-5 sm:p-8 shadow-[0_0_60px_rgba(0,0,0,0.9)] backdrop-blur-md relative z-10 max-h-[94vh] overflow-y-auto font-sans"
       >
         {/* Header App Brand */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 bg-yellow-500 rounded-lg flex items-center justify-center mb-3 shadow-[0_0_20px_rgba(234,179,8,0.45)]">
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-11 h-11 bg-yellow-500 rounded-xl flex items-center justify-center mb-2.5 shadow-[0_0_24px_rgba(234,179,8,0.4)]">
             <span className="text-black font-extrabold text-xl font-mono">D</span>
           </div>
           <h1 className="text-zinc-100 text-lg font-bold tracking-tight">DEVSPACE</h1>
-          <p className="text-zinc-500 text-xs mt-1 text-center font-mono animate-pulse">
+          <p className="text-zinc-500 text-xs mt-0.5 text-center font-mono">
             {pendingCredential ? 'CONSOLIDATING DUPLICATE IDENTITY SYNAPSES' : (
               <>
-                {mode === 'login' && 'DEVELOPER WORKSPACE SYNC ENGINE'}
-                {mode === 'register' && 'CREATE A SECURE CREDENTIAL SYNAPSE'}
-                {mode === 'forgot' && 'INITIATE PASSWORD RESET LOOP'}
+                {mode === 'login' && 'Developer Workspace Authentication'}
+                {mode === 'register' && 'Create Your Developer Account'}
+                {mode === 'forgot' && 'Reset Workspace Password'}
+                {mode === 'resetPassword' && 'Update Your Account Password'}
               </>
             )}
           </p>
         </div>
+
+        {/* Auth Mode Toggle Tabs (Log In vs Sign Up) */}
+        {!pendingCredential && (mode === 'login' || mode === 'register') && (
+          <div className="flex bg-[#121215] p-1 rounded-xl border border-zinc-850 mb-6">
+            <button
+              type="button"
+              onClick={() => handleModeChange('login')}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                mode === 'login'
+                  ? 'bg-yellow-500 text-black shadow-md font-bold'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
+              }`}
+            >
+              Log In
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('register')}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                mode === 'register'
+                  ? 'bg-yellow-500 text-black shadow-md font-bold'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
 
         {/* Action Notifications */}
         <AnimatePresence mode="wait">
@@ -445,20 +439,9 @@ export function AuthScreen() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mb-4 p-3 bg-red-950/40 border border-red-900/50 rounded text-red-400 text-xs leading-relaxed"
+              className="mb-4 p-3 bg-red-950/40 border border-red-900/50 rounded-lg text-red-400 text-xs leading-relaxed"
             >
               <div>{error}</div>
-              {(error.includes("provider not enabled") || error.includes("operation-not-allowed") || error.includes("Auth Error") || error.includes("not enabled")) && (
-                <div className="mt-2.5 pt-2.5 border-t border-red-900/30">
-                  <button
-                    type="button"
-                    onClick={handleSandboxBypass}
-                    className="w-full bg-yellow-500 hover:bg-yellow-450 text-black text-[10px] font-bold py-1.5 px-3 rounded transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    ⚡ Launch local Sandbox Mode (Bypass Setup)
-                  </button>
-                </div>
-              )}
             </motion.div>
           )}
 
@@ -467,7 +450,7 @@ export function AuthScreen() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mb-4 p-3 bg-emerald-950/40 border border-emerald-900/50 rounded text-emerald-400 text-xs leading-relaxed"
+              className="mb-4 p-3 bg-emerald-950/40 border border-emerald-900/50 rounded-lg text-emerald-400 text-xs leading-relaxed"
             >
               {successMsg}
             </motion.div>
@@ -497,7 +480,7 @@ export function AuthScreen() {
                   type="button"
                   onClick={handleConsolidationGoogle}
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
                 >
                   <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -512,7 +495,7 @@ export function AuthScreen() {
                   type="button"
                   onClick={handleConsolidationGithub}
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
                 >
                   <Github size={15} className="mr-1" />
                   Verify using GitHub Account
@@ -522,7 +505,7 @@ export function AuthScreen() {
                   type="button"
                   onClick={() => setConsolidationMode('password')}
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer font-sans"
                 >
                   <KeyRound size={15} className="mr-1 text-yellow-500/85" />
                   Verify using Email & Password
@@ -541,7 +524,7 @@ export function AuthScreen() {
                     value={consolidationPassword}
                     onChange={(e) => setConsolidationPassword(e.target.value)}
                     disabled={loading}
-                    className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                    className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
                   />
                 </div>
 
@@ -550,14 +533,14 @@ export function AuthScreen() {
                     type="button"
                     onClick={() => setConsolidationMode('options')}
                     disabled={loading}
-                    className="w-1/2 py-2 px-4 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 text-xs transition-colors cursor-pointer"
+                    className="w-1/2 py-2.5 px-4 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 text-xs transition-colors cursor-pointer"
                   >
                     Back
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-1/2 py-2 px-4 rounded bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-semibold text-xs transition-colors cursor-pointer shadow-[0_4px_12px_rgba(234,179,8,0.15)]"
+                    className="w-1/2 py-2.5 px-4 rounded-lg bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-semibold text-xs transition-colors cursor-pointer shadow-[0_4px_12px_rgba(234,179,8,0.15)]"
                   >
                     {loading ? 'Verifying...' : 'Verify & Link'}
                   </button>
@@ -600,11 +583,12 @@ export function AuthScreen() {
                     <input 
                       type="text" 
                       required
+                      autoComplete="username"
                       placeholder="e.g. cyber_architect"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       disabled={loading}
-                      className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                      className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
                     />
                   </motion.div>
                 )}
@@ -618,11 +602,12 @@ export function AuthScreen() {
                   <input 
                     type="email" 
                     required
+                    autoComplete="email"
                     placeholder="you@domain.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={loading}
-                    className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                    className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
                   />
                 </div>
               )}
@@ -645,9 +630,9 @@ export function AuthScreen() {
                           <button 
                             type="button" 
                             onClick={() => handleModeChange('forgot')}
-                            className="text-[11px] text-yellow-500/70 hover:text-yellow-500 hover:underline transition-colors focus:outline-none"
+                            className="text-[11px] text-yellow-500/80 hover:text-yellow-400 hover:underline transition-colors focus:outline-none font-medium"
                           >
-                            Forgot?
+                            Forgot Password?
                           </button>
                         )}
                       </div>
@@ -655,16 +640,17 @@ export function AuthScreen() {
                         <input 
                           type={showPassword ? 'text' : 'password'} 
                           required
+                          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                           placeholder="••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           disabled={loading}
-                          className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 pl-3 pr-10 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                          className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded-lg py-2.5 pl-3 pr-10 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute inset-y-0 right-3 flex items-center text-zinc-550 hover:text-zinc-300 transition-colors"
+                          className="absolute inset-y-0 right-3 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors"
                         >
                           {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
@@ -679,11 +665,12 @@ export function AuthScreen() {
                         <input 
                           type="password" 
                           required
+                          autoComplete="new-password"
                           placeholder="••••••••"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           disabled={loading}
-                          className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded py-2 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
+                          className="w-full bg-[#101012] border border-zinc-800 hover:border-zinc-700 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-yellow-500/80 text-zinc-200 transition-colors"
                         />
                       </div>
                     )}
@@ -695,20 +682,20 @@ export function AuthScreen() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-semibold rounded py-2.5 px-4 text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_12px_rgba(234,179,8,0.15)] hover:shadow-[0_4px_16px_rgba(234,179,8,0.3)]"
+                className="w-full mt-2 bg-yellow-500 hover:bg-yellow-400 disabled:bg-zinc-800 disabled:text-zinc-500 text-black font-extrabold rounded-lg py-3 px-4 text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_16px_rgba(234,179,8,0.2)] hover:shadow-[0_4px_20px_rgba(234,179,8,0.35)]"
               >
                 {loading ? (
                   <>
                     <Loader2 size={14} className="animate-spin" />
-                    <span>PROCESSING SECURE TRANSMISSION...</span>
+                    <span>AUTHENTICATING...</span>
                   </>
                 ) : (
                   <>
                     <span>
-                      {mode === 'login' && 'LOG IN TO DEVSPACE'}
-                      {mode === 'register' && 'GENERATE ACCOUNT PROFILE'}
-                      {mode === 'forgot' && 'SEND PASSWORD RESET DECODE'}
-                      {mode === 'resetPassword' && 'UPDATE PROFILE PASSWORD'}
+                      {mode === 'login' && 'Log In with Email'}
+                      {mode === 'register' && 'Create Developer Account'}
+                      {mode === 'forgot' && 'Send Password Reset Link'}
+                      {mode === 'resetPassword' && 'Update Password'}
                     </span>
                   </>
                 )}
@@ -716,15 +703,15 @@ export function AuthScreen() {
             </form>
 
             {mode === 'forgot' && (
-              <div className="mt-6 p-4 rounded bg-zinc-900/50 border border-zinc-800 text-xs leading-relaxed space-y-3 font-sans shadow-md">
+              <div className="mt-4 p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800 text-xs leading-relaxed space-y-3 font-sans shadow-md">
                 <div className="flex items-start gap-2 text-zinc-300">
                   <span className="text-sm">✨</span>
                   <div>
                     <h4 className="font-semibold text-zinc-200 font-sans text-[11px] uppercase tracking-wider mb-0.5">
-                      Zero-Setup Reset (Active by Default)
+                      Zero-Setup Reset Link
                     </h4>
                     <p className="text-zinc-400 text-[11px]">
-                      Just enter your email and request a reset. Firebase will send you a standard, secure reset link. You can reset your password on the default Firebase page in 5 seconds with <strong>zero manual configuration</strong> needed!
+                      Enter your email address above to receive an official password reset link directly in your inbox.
                     </p>
                   </div>
                 </div>
@@ -733,22 +720,21 @@ export function AuthScreen() {
                   <details className="group cursor-pointer">
                     <summary className="font-semibold text-zinc-400 hover:text-zinc-300 flex items-center gap-1.5 font-sans text-[10.5px] uppercase tracking-wider select-none outline-none">
                       <span className="transition-transform group-open:rotate-90 text-[8px] font-mono">▶</span>
-                      Optional: In-App Reset & Safelinks Bypass
+                      Optional: In-App Reset Settings
                     </summary>
                     <div className="mt-2 space-y-2 text-[11px] text-zinc-400 pl-3 border-l border-zinc-800">
                       <p>
-                        Email scanners (like Microsoft SafeLinks) can sometimes pre-fetch links, which can consume single-use reset codes prematurely.
+                        Email scanners (like Microsoft SafeLinks) can sometimes pre-fetch links, consuming single-use reset codes prematurely.
                       </p>
                       <p className="font-semibold text-zinc-300">
-                        To redirect the reset process entirely back inside this app instead:
+                        To direct the reset process back into this application:
                       </p>
                       <ol className="list-decimal pl-4 space-y-1 text-zinc-400 font-sans text-[10.5px]">
-                        <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Firebase Console</a></li>
+                        <li>Go to your <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-yellow-500 hover:underline">Firebase Console</a></li>
                         <li>Navigate to <strong>Authentication</strong> &rarr; <strong>Templates</strong></li>
-                        <li>Select <strong>Password reset</strong>, click the edit pencil</li>
-                        <li>Click <strong>Customize action URL</strong> at the bottom</li>
+                        <li>Select <strong>Password reset</strong> &rarr; <strong>Customize action URL</strong></li>
                         <li>
-                          Set the Action URL exactly to:
+                          Set Action URL to:
                           <div className="inline-flex flex-wrap items-center gap-1.5 mt-1 bg-[#101012] border border-zinc-800 rounded px-2 py-0.5 max-w-full">
                             <span className="text-yellow-500 select-all font-mono text-[10px] break-all">
                               {typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://'}
@@ -777,47 +763,23 @@ export function AuthScreen() {
               </div>
             )}
 
-            {/* Back and alternative modes toggle links */}
-            <div className="mt-6 flex flex-col items-center justify-center gap-2">
-              {mode === 'forgot' || mode === 'resetPassword' ? (
+            {/* Back to Sign In button if in forgot/reset password mode */}
+            {(mode === 'forgot' || mode === 'resetPassword') && (
+              <div className="mt-4 flex justify-center">
                 <button
                   onClick={() => handleModeChange('login')}
-                  className="text-xs text-zinc-400 hover:text-zinc-250 flex items-center gap-1.5 transition-colors focus:outline-none"
+                  className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors focus:outline-none py-1"
                 >
-                  <ArrowLeft size={13} /> Back to Sign In
+                  <ArrowLeft size={13} /> Back to Log In
                 </button>
-              ) : (
-                <div className="text-xs text-zinc-500 text-center">
-                  {mode === 'login' ? (
-                    <>
-                      Don't have an account?{' '}
-                      <button
-                        onClick={() => handleModeChange('register')}
-                        className="text-yellow-500 hover:underline hover:text-yellow-400 font-medium transition-colors focus:outline-none"
-                      >
-                        Create credential profile
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      Already registered?{' '}
-                      <button
-                        onClick={() => handleModeChange('login')}
-                        className="text-yellow-500 hover:underline hover:text-yellow-400 font-medium transition-colors focus:outline-none"
-                      >
-                        Log in with password
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Divider & OAuth Integrations */}
+            {/* Divider & Social Single Sign-On Options */}
             {mode !== 'forgot' && mode !== 'resetPassword' && (
-              <div className="mt-8 pt-6 border-t border-zinc-850/60">
-                <div className="relative flex justify-center text-xs mb-5">
-                  <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">SECURE SINGLE SIGN-ON OPTIONS</span>
+              <div className="mt-6 pt-5 border-t border-zinc-850/60">
+                <div className="relative flex justify-center text-xs mb-4">
+                  <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px] uppercase tracking-wider">OR CONTINUE WITH SOCIAL ACCOUNT</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -825,9 +787,9 @@ export function AuthScreen() {
                     type="button"
                     onClick={handleOAuthGoogle}
                     disabled={loading}
-                    className="flex items-center justify-center gap-2 py-2 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-200 hover:text-white text-xs font-medium transition-all cursor-pointer shadow-sm active:scale-98"
                   >
-                    <svg className="w-3.5 h-3.5 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
                       <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
                       <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
@@ -839,65 +801,53 @@ export function AuthScreen() {
                     type="button"
                     onClick={handleOAuthGithub}
                     disabled={loading}
-                    className="flex items-center justify-center gap-2 py-2 px-4 rounded bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-300 hover:text-zinc-100 text-xs transition-colors cursor-pointer"
+                    className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#101012] border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 text-zinc-200 hover:text-white text-xs font-medium transition-all cursor-pointer shadow-sm active:scale-98"
                   >
-                    <Github size={14} className="mr-1" />
+                    <Github size={15} className="shrink-0 text-white" />
                     GitHub
                   </button>
                 </div>
 
-                <div className="relative flex justify-center text-xs my-5">
-                  <span className="bg-[#09090b] px-3 text-zinc-500 font-mono text-[10px]">OR RUN WITH LOCAL BYPASS</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSandboxBypass}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded bg-yellow-500/10 border border-yellow-500/20 hover:border-yellow-500/50 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 text-xs font-semibold tracking-wide transition-all cursor-pointer shadow-[0_0_15px_rgba(234,179,8,0.02)]"
-                >
-                  ⚡ Enter DevSpace Sandbox (Local Bypass)
-                </button>
-
-                <div className="mt-4 text-center">
+                {/* Collapsible Firebase Connection / Authorization Setup Guide */}
+                <div className="mt-6 pt-4 border-t border-zinc-850/60">
                   <button
                     type="button"
                     onClick={() => setShowSetupGuide(!showSetupGuide)}
-                    className="text-[11px] text-zinc-500 hover:text-yellow-500 font-mono transition-colors flex items-center justify-center gap-1.5 mx-auto"
+                    className="w-full flex items-center justify-between py-2 px-3 bg-[#121215] hover:bg-[#18181c] rounded-xl border border-zinc-800 text-[11px] text-zinc-400 hover:text-zinc-200 font-mono transition-colors cursor-pointer"
                   >
-                    🛠️ {showSetupGuide ? "Hide Auth Connection Config" : "Show Firebase Auth Setup Guide"}
+                    <span className="flex items-center gap-1.5">
+                      {authErrorType ? (
+                        <ShieldAlert size={14} className="text-red-400 animate-pulse shrink-0" />
+                      ) : (
+                        <span className="text-zinc-400 text-xs">🛠️</span>
+                      )}
+                      <span className={authErrorType ? "text-red-400 font-semibold" : ""}>
+                        {authErrorType ? "Domain / Provider Authorization Guide" : "Firebase Auth Connection Details"}
+                      </span>
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-bold bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                      {showSetupGuide || authErrorType ? 'Hide ▲' : 'Show Details ▼'}
+                    </span>
                   </button>
-                </div>
 
-                {/* Firebase Connection / Authorization Setup Guide */}
-                <AnimatePresence>
                   {(showSetupGuide || authErrorType) && (
-                    <motion.div
+                    <motion.div 
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className={`mt-6 pt-5 border-t ${authErrorType ? 'border-red-900/30' : 'border-zinc-800'} space-y-4`}
+                      className="mt-3 space-y-3 p-3 bg-[#0c0c0e] rounded-xl border border-zinc-850"
                     >
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider font-mono">
-                        {authErrorType ? (
-                          <span className="text-red-400 flex items-center gap-1.5">
-                            <ShieldAlert size={14} className="text-red-500 animate-pulse" /> Domain Error Resolution Required
-                          </span>
-                        ) : (
-                          <span className="text-zinc-300">🛠️ Firebase Auth Connection Details</span>
-                        )}
-                      </div>
-
                       <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
                         {authErrorType === 'unauthorized-domain' 
                           ? 'To authorize this environment to sign in with GitHub or Google, please register your active domain as an Authorized Domain in your Firebase Console.' 
                           : 'To enable OAuth sign-ins, configure the OAuth providers in your Firebase console and map their callback URIs appropriately.'}
                       </p>
 
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         {/* Section 1: Authorized Domains */}
-                        <div className="bg-[#0c0c0e] rounded p-3 border border-zinc-850 space-y-2">
+                        <div className="bg-[#121215] rounded-lg p-2.5 border border-zinc-800 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-zinc-300 font-mono">1. AUTHORIZE ACTIVE DOMAINS</span>
+                            <span className="text-[10px] font-bold text-zinc-300 font-mono">1. AUTHORIZE ACTIVE DOMAINS</span>
                             <a 
                               href={`https://console.firebase.google.com/project/${firebaseConfig.projectId || 'project-id'}/authentication/settings`} 
                               target="_blank" 
@@ -908,14 +858,14 @@ export function AuthScreen() {
                             </a>
                           </div>
                           <p className="text-[10px] text-zinc-500 font-sans">
-                            Add these domains to your Firebase Console under: <br />
+                            Add these domains under: <br />
                             <strong>Authentication &rarr; Settings &rarr; Authorized domains &rarr; Add domain</strong>
                           </p>
                           
-                          <div className="space-y-1.5 pt-1">
+                          <div className="space-y-1.5 pt-0.5">
                             {/* Active Host */}
-                            <div className="flex items-center justify-between bg-[#121215] py-1.5 px-2 rounded border border-zinc-800 text-[10px] font-mono">
-                              <span className="text-zinc-400 truncate pr-2">
+                            <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
+                              <span className="text-zinc-400 truncate pr-2 text-[9px]">
                                 {typeof window !== 'undefined' ? window.location.hostname : 'localhost'}
                               </span>
                               <button
@@ -924,7 +874,7 @@ export function AuthScreen() {
                                   typeof window !== 'undefined' ? window.location.hostname : 'localhost',
                                   'domain-active'
                                 )}
-                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium"
+                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
                               >
                                 {copiedText === 'domain-active' ? (
                                   <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
@@ -935,8 +885,8 @@ export function AuthScreen() {
                             </div>
 
                             {/* Shared Host */}
-                            <div className="flex items-center justify-between bg-[#121215] py-1.5 px-2 rounded border border-zinc-800 text-[10px] font-mono">
-                              <span className="text-zinc-400 truncate pr-2">
+                            <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
+                              <span className="text-zinc-400 truncate pr-2 text-[9px]">
                                 ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app
                               </span>
                               <button
@@ -945,7 +895,7 @@ export function AuthScreen() {
                                   'ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app',
                                   'domain-shared'
                                 )}
-                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium"
+                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
                               >
                                 {copiedText === 'domain-shared' ? (
                                   <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
@@ -958,9 +908,9 @@ export function AuthScreen() {
                         </div>
 
                         {/* Section 2: GitHub Sign-in provider */}
-                        <div className="bg-[#0c0c0e] rounded p-3 border border-zinc-850 space-y-2">
+                        <div className="bg-[#121215] rounded-lg p-2.5 border border-zinc-800 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-zinc-300 font-mono font-sans">2. GITHUB OAUTH REDIRECT URI</span>
+                            <span className="text-[10px] font-bold text-zinc-300 font-mono">2. GITHUB OAUTH REDIRECT URI</span>
                             <a 
                               href="https://github.com/settings/developers" 
                               target="_blank" 
@@ -971,10 +921,10 @@ export function AuthScreen() {
                             </a>
                           </div>
                           <p className="text-[10px] text-zinc-500 font-sans">
-                            Copy the Firebase OAuth Callback URL below and paste it as the <strong>Authorization callback URL</strong> in your GitHub Developer Settings OAuth App:
+                            Paste as <strong>Authorization callback URL</strong> in GitHub Settings:
                           </p>
 
-                          <div className="flex items-center justify-between bg-[#121215] py-1.5 px-2 rounded border border-zinc-800 text-[10px] font-mono">
+                          <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
                             <span className="text-zinc-400 truncate pr-2 text-[9px]">
                               {`https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`}
                             </span>
@@ -984,7 +934,7 @@ export function AuthScreen() {
                                 `https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`,
                                 'redirect-uri'
                               )}
-                              className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium"
+                              className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
                             >
                               {copiedText === 'redirect-uri' ? (
                                 <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
@@ -993,14 +943,14 @@ export function AuthScreen() {
                               )}
                             </button>
                           </div>
-                          <div className="text-[9px] text-zinc-500 flex flex-col gap-1 list-none font-sans mt-1">
-                            <span className="flex items-start gap-1">📌 <strong>Firebase Console Settings</strong>: Enter Authentication &rarr; Sign-in method &rarr; Add new provider &rarr; select <strong>GitHub</strong>, toggle to enable, paste client ID and client secret, then copy/verify this same redirect URI.</span>
+                          <div className="text-[9px] text-zinc-500 flex flex-col gap-1 font-sans mt-1">
+                            <span>📌 <strong>Firebase Settings</strong>: Authentication &rarr; Sign-in method &rarr; Add <strong>GitHub</strong> / <strong>Google</strong>.</span>
                           </div>
                         </div>
                       </div>
                     </motion.div>
                   )}
-                </AnimatePresence>
+                </div>
               </div>
             )}
           </>

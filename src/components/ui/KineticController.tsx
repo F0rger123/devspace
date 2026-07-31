@@ -671,9 +671,9 @@ export function KineticController() {
 
         hands.setOptions({
           maxNumHands: storeRef.current.kineticHandsMode === 'two' ? 2 : 1,
-          modelComplexity: 0, // Lite model for extreme high-speed and ultra-low lag tracking!
-          minDetectionConfidence: 0.50,
-          minTrackingConfidence: 0.50
+          modelComplexity: 1, // Upgrade to Full model for precise landmark detection
+          minDetectionConfidence: 0.60,
+          minTrackingConfidence: 0.60
         });
 
         handsRef.current = hands;
@@ -1183,23 +1183,30 @@ export function KineticController() {
           );
           const minPinchDist = Math.min(distThumbIndex, distThumbMiddle);
           
-          // Highly robust scale-invariant pinch metric (thumb-to-fingertip ratio relative to hand size)
+          // Highly robust scale-invariant pinch metric with hysteresis thresholding
           const ratio = minPinchDist / handScale;
-          const isPinchingNow = ratio < 0.48;
+          const wasPinching = store.isPinching;
+          // Hysteresis: enter pinch at <0.44, exit pinch at >0.54 to eliminate drag disconnect flicker
+          const pinchThreshold = wasPinching ? 0.54 : 0.44;
+          const isPinchingNow = ratio < pinchThreshold;
           
           if (store.isPinching !== isPinchingNow) {
             store.setIsPinching(isPinchingNow);
           }
 
           // Smart Screen Coordinates mapping using a widened central bounding box.
-          // This ensures comfortable hand movements cover the entire screen without reaching physical camera limits.
+          // Combine index tip with index MCP joint to stabilize cursor during pinch and gestures
+          const indexMcp = landmarks1[5];
+          const trackX = indexTip.x * 0.70 + indexMcp.x * 0.30;
+          const trackY = indexTip.y * 0.70 + indexMcp.y * 0.30;
+
           const minX = 0.20;
           const maxX = 0.80;
           const minY = 0.24;
           const maxY = 0.76;
 
-          const rawNormX = (indexTip.x - minX) / (maxX - minX);
-          const rawNormY = (indexTip.y - minY) / (maxY - minY);
+          const rawNormX = (trackX - minX) / (maxX - minX);
+          const rawNormY = (trackY - minY) / (maxY - minY);
 
           let handX = (1 - rawNormX) * window.innerWidth;
           let handY = rawNormY * window.innerHeight;

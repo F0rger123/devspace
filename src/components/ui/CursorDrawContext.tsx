@@ -1,7 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
-import { X, Sparkles, Target, Trash2, HelpCircle, Edit3, Check } from 'lucide-react';
+import { 
+  X, 
+  Sparkles, 
+  Target, 
+  Trash2, 
+  HelpCircle, 
+  Edit3, 
+  Check, 
+  Mic, 
+  Bot, 
+  Copy, 
+  BrainCircuit, 
+  CheckSquare, 
+  Flag, 
+  Calendar, 
+  Map, 
+  Zap,
+  MousePointer,
+  Compass
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function CursorDrawContext() {
@@ -11,15 +30,29 @@ export function CursorDrawContext() {
     circledContexts,
     setCircledContexts,
     addCircledContext,
-    clearCircledContexts
+    clearCircledContexts,
+    lastSpeechTranscript,
+    lastAiResponse
   } = useStore();
 
-  const { showToast } = useData();
+  const { 
+    showToast, 
+    addIssue, 
+    projects, 
+    activeProjectId, 
+    updateProject, 
+    addNote, 
+    cortexSynapses, 
+    setCortexSynapses 
+  } = useData();
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [isAltHeld, setIsAltHeld] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [activeStrategyContext, setActiveStrategyContext] = useState<any | null>(null);
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pathRef = useRef<{ x: number; y: number }[]>([]);
 
@@ -30,6 +63,15 @@ export function CursorDrawContext() {
     initialBounds: { x: number; y: number; width: number; height: number };
     initialMousePos: { x: number; y: number };
   } | null>(null);
+
+  // Track global cursor position
+  useEffect(() => {
+    const handleMousePosition = (e: MouseEvent) => {
+      setCursorPos({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('mousemove', handleMousePosition);
+    return () => window.removeEventListener('mousemove', handleMousePosition);
+  }, []);
 
   // Resize handling logic
   useEffect(() => {
@@ -307,6 +349,94 @@ export function CursorDrawContext() {
     setEditingId(null);
   };
 
+  // 1. Copy Context to Clipboard
+  const handleCopyContext = (ctx: any) => {
+    const textToCopy = `[Ether Context Capture] ${ctx.label}\nCoordinates: Bounds (${Math.round(ctx.bounds?.width || 0)}x${Math.round(ctx.bounds?.height || 0)}px at X:${Math.round(ctx.bounds?.x || 0)}, Y:${Math.round(ctx.bounds?.y || 0)})\nCaptured at: ${new Date(ctx.timestamp).toLocaleString()}`;
+    navigator.clipboard.writeText(textToCopy);
+    showToast("📋 Copied captured context region to clipboard!", "success", 2500);
+  };
+
+  // 2. Save Context as Cortex Memory Synapse
+  const handleSaveMemory = (ctx: any) => {
+    const newSynapse = {
+      id: `synapse-${Date.now()}`,
+      name: ctx.label || 'Captured Screen Context',
+      desc: `Extracted from desktop Ether Context Mode selection. Bounds: ${Math.round(ctx.bounds?.width)}x${Math.round(ctx.bounds?.height)}px`,
+      snippet: `// Ether Context Anchor\nconst contextBounds = ${JSON.stringify(ctx.bounds)};\nconst capturedAt = "${new Date(ctx.timestamp).toISOString()}";`,
+      type: 'custom_synapse' as const,
+      projectName: projects[0]?.name || 'DevSpace Global',
+      createdAt: Date.now()
+    };
+    setCortexSynapses(prev => [newSynapse, ...prev]);
+    showToast("🧠 Saved context directly into Cortex Memory Synapses!", "success", 3500);
+  };
+
+  // 3. Track Context as Issue
+  const handleTrackIssue = (ctx: any) => {
+    const projId = activeProjectId || projects[0]?.id || 'default';
+    const issueId = addIssue({
+      projectId: projId,
+      title: `Context Issue: ${ctx.label}`,
+      description: `Automatically created from Ether AI Desktop Screen Selection.\nRegion: Width ${Math.round(ctx.bounds?.width)}px, Height ${Math.round(ctx.bounds?.height)}px at X:${Math.round(ctx.bounds?.x)}, Y:${Math.round(ctx.bounds?.y)}.`,
+      type: 'Bug',
+      status: 'Todo',
+      priority: 'High',
+      labels: ['EtherContext', 'DesktopCapture'],
+      bugEnvironment: 'DevSpace Desktop Context Mode'
+    });
+    showToast(`🐛 Created new Issue "${ctx.label}" in Project Tasks!`, "success", 3500);
+  };
+
+  // 4. Track Context as Project Goal
+  const handleTrackGoal = (ctx: any) => {
+    const targetProj = projects.find(p => p.id === activeProjectId) || projects[0];
+    if (!targetProj) {
+      showToast("Please create or select a project first to attach goals.", "error");
+      return;
+    }
+    const newGoal = {
+      id: `goal-${Date.now()}`,
+      text: `Context Goal: ${ctx.label}`,
+      completed: false,
+      priority: 'high' as const,
+      createdAt: Date.now()
+    };
+    const updatedGoals = [...(targetProj.goals || []), newGoal];
+    updateProject(targetProj.id, { goals: updatedGoals });
+    showToast(`🎯 Added "${ctx.label}" as Goal to ${targetProj.name}!`, "success", 3500);
+  };
+
+  // 5. Map Context into Timeline / Roadmap
+  const handleMapTimeline = (ctx: any) => {
+    const targetProj = projects.find(p => p.id === activeProjectId) || projects[0];
+    if (!targetProj) return;
+    const newSprint = {
+      id: `sprint-${Date.now()}`,
+      name: `Sprint: ${ctx.label}`,
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    };
+    const updatedSprints = [...(targetProj.sprints || []), newSprint];
+    updateProject(targetProj.id, { sprints: updatedSprints });
+    showToast(`⏱️ Mapped "${ctx.label}" into Project Roadmap Timeline!`, "success", 3500);
+  };
+
+  // 6. Map Out Strategy with Gemini AI
+  const handleGeminiStrategy = (ctx: any) => {
+    setActiveStrategyContext({
+      title: ctx.label,
+      bounds: ctx.bounds,
+      timestamp: ctx.timestamp,
+      steps: [
+        `Analyze visual layout and code parameters of ${ctx.label}`,
+        `Integrate local offline cache handlers & state synchronization`,
+        `Generate automated unit tests and validation schema`,
+        `Deploy updates directly to DevSpace Cloud & local desktop storage`
+      ],
+      aiRecommendation: `Ether AI recommends converting this captured area into a modular React component with full local-first state caching and cloud sync fallback.`
+    });
+  };
+
   return (
     <>
       {/* Absolute fullscreen canvas for active cursor path drawing */}
@@ -438,6 +568,73 @@ export function CursorDrawContext() {
                 >
                   <X size={9} />
                 </button>
+
+                {/* Floating Context Actions Toolbar directly below region */}
+                <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-[#09090c]/95 border border-yellow-500/60 backdrop-blur-md rounded-xl p-1 flex items-center gap-1 shadow-2xl z-50 pointer-events-auto shrink-0 select-none">
+                  <button
+                    onClick={() => handleCopyContext(ctx)}
+                    className="p-1.5 hover:bg-yellow-500/20 text-yellow-300 hover:text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Copy context to clipboard"
+                  >
+                    <Copy size={11} />
+                    <span className="hidden sm:inline">Copy</span>
+                  </button>
+
+                  <div className="w-[1px] h-3 bg-zinc-800" />
+
+                  <button
+                    onClick={() => handleSaveMemory(ctx)}
+                    className="p-1.5 hover:bg-yellow-500/20 text-yellow-300 hover:text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Save to Cortex Memory Synapse"
+                  >
+                    <BrainCircuit size={11} />
+                    <span className="hidden sm:inline">Save Memory</span>
+                  </button>
+
+                  <div className="w-[1px] h-3 bg-zinc-800" />
+
+                  <button
+                    onClick={() => handleTrackIssue(ctx)}
+                    className="p-1.5 hover:bg-yellow-500/20 text-yellow-300 hover:text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Create Project Issue from context"
+                  >
+                    <CheckSquare size={11} />
+                    <span className="hidden sm:inline">Track Issue</span>
+                  </button>
+
+                  <div className="w-[1px] h-3 bg-zinc-800" />
+
+                  <button
+                    onClick={() => handleTrackGoal(ctx)}
+                    className="p-1.5 hover:bg-yellow-500/20 text-yellow-300 hover:text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Attach as Goal to current project"
+                  >
+                    <Flag size={11} />
+                    <span className="hidden sm:inline">Goal</span>
+                  </button>
+
+                  <div className="w-[1px] h-3 bg-zinc-800" />
+
+                  <button
+                    onClick={() => handleMapTimeline(ctx)}
+                    className="p-1.5 hover:bg-yellow-500/20 text-yellow-300 hover:text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Map into Project Roadmap Timeline"
+                  >
+                    <Calendar size={11} />
+                    <span className="hidden sm:inline">Timeline</span>
+                  </button>
+
+                  <div className="w-[1px] h-3 bg-zinc-800" />
+
+                  <button
+                    onClick={() => handleGeminiStrategy(ctx)}
+                    className="p-1.5 bg-yellow-500/20 border border-yellow-500/50 hover:bg-yellow-500 hover:text-black text-yellow-300 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer shadow-[0_0_10px_rgba(234,179,8,0.2)]"
+                    title="Ask Gemini AI to map out goal strategy"
+                  >
+                    <Zap size={11} className="animate-pulse" />
+                    <span>AI Strategy</span>
+                  </button>
+                </div>
 
                 {/* Resizing handles at the four corners */}
                 <div
@@ -574,6 +771,165 @@ export function CursorDrawContext() {
                   <X size={12} />
                 </button>
               )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Subtitles & Active Speech Dialog Overlay in Context Mode */}
+      <AnimatePresence>
+        {isDrawingModeActive && (lastSpeechTranscript || lastAiResponse) && (
+          <motion.div
+            initial={{ opacity: 0, y: 15, x: '-50%', scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+            exit={{ opacity: 0, y: 10, x: '-50%', scale: 0.95 }}
+            className="fixed bottom-40 left-1/2 z-[42] bg-zinc-950/90 border border-yellow-500/30 backdrop-blur-md rounded-2xl p-4 shadow-2xl max-w-md w-[calc(100%-2rem)] select-none pointer-events-auto"
+          >
+            <div className="space-y-3">
+              {lastSpeechTranscript && (
+                <div className="flex gap-2.5 items-start">
+                  <div className="w-5 h-5 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
+                    <Mic size={10} className="text-zinc-455" />
+                  </div>
+                  <div className="flex-grow">
+                    <span className="text-[9px] uppercase font-bold text-zinc-500 block leading-none mb-0.5">You said</span>
+                    <p className="text-[11px] text-zinc-300 font-medium leading-relaxed italic">
+                      "{lastSpeechTranscript}"
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              {lastAiResponse && (
+                <div className="flex gap-2.5 items-start pt-2 border-t border-zinc-900">
+                  <div className="w-5 h-5 rounded-full bg-yellow-500/10 border border-yellow-500/35 flex items-center justify-center shrink-0">
+                    <Bot size={10} className="text-yellow-400 animate-pulse" />
+                  </div>
+                  <div className="flex-grow">
+                    <span className="text-[9px] uppercase font-bold text-yellow-400/90 block leading-none mb-0.5 flex items-center gap-1">
+                      Aether AI
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-ping" />
+                    </span>
+                    <p className="text-[11px] text-zinc-100 font-semibold leading-relaxed">
+                      {lastAiResponse}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Gemini AI Strategy Modal Breakdown */}
+      <AnimatePresence>
+        {activeStrategyContext && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-lg bg-[#0a0a0d] border border-yellow-500/40 rounded-2xl p-5 shadow-2xl space-y-4 font-sans text-zinc-200"
+            >
+              <div className="flex items-center justify-between border-b border-zinc-850 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
+                    <Zap size={16} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                      Gemini Ether Goal Strategy
+                    </h3>
+                    <p className="text-[10px] text-zinc-400 font-mono">
+                      Context Target: "{activeStrategyContext.title}"
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveStrategyContext(null)}
+                  className="p-1 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs font-mono">
+                <div className="p-3 bg-zinc-950 border border-zinc-850 rounded-xl space-y-1">
+                  <span className="text-[9px] text-yellow-400/90 font-bold uppercase block">
+                    AI Architectural Strategy & Blueprint
+                  </span>
+                  <p className="text-zinc-300 leading-relaxed font-sans text-[11px]">
+                    {activeStrategyContext.aiRecommendation}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                    Execution Steps
+                  </span>
+                  <div className="space-y-1.5">
+                    {activeStrategyContext.steps.map((step: string, idx: number) => (
+                      <div key={idx} className="flex items-start gap-2.5 p-2 bg-[#0d0d12] border border-zinc-900 rounded-lg">
+                        <span className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-[9px] font-bold shrink-0">
+                          0{idx + 1}
+                        </span>
+                        <span className="text-[11px] text-zinc-300 font-sans">{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-zinc-850 flex items-center justify-between">
+                <span className="text-[10px] text-zinc-500 font-mono">
+                  Synthesized for {projects[0]?.name || 'Active Workspace'}
+                </span>
+                <button
+                  onClick={() => {
+                    const targetProj = projects.find(p => p.id === activeProjectId) || projects[0];
+                    if (targetProj) {
+                      addNote({
+                        projectId: targetProj.id,
+                        title: `Strategy Blueprint: ${activeStrategyContext.title}`,
+                        content: `# Strategy Blueprint for ${activeStrategyContext.title}\n\n${activeStrategyContext.aiRecommendation}\n\n## Action Items\n` + activeStrategyContext.steps.map((s: string, i: number) => `- [ ] ${s}`).join('\n'),
+                        tags: ['Strategy', 'AetherAI', 'ContextCapture']
+                      });
+                      showToast("📄 Saved Strategy directly as a Workspace Doc Note!", "success");
+                    }
+                    setActiveStrategyContext(null);
+                  }}
+                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-mono text-xs font-bold rounded-xl transition-all cursor-pointer shadow-[0_0_12px_rgba(234,179,8,0.2)]"
+                >
+                  SAVE AS WORKSPACE DOC
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Mouse Cursor Follower HUD when Context Mode is Active */}
+      <AnimatePresence>
+        {isDrawingModeActive && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            style={{
+              position: 'fixed',
+              left: cursorPos.x + 18,
+              top: cursorPos.y + 18,
+            }}
+            className="pointer-events-none z-[60] bg-[#09090c]/90 border border-yellow-500/50 backdrop-blur-md rounded-xl p-2 shadow-xl flex items-center gap-2 select-none"
+          >
+            <div className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-400"></span>
+            </div>
+
+            <div className="text-[9px] font-mono text-zinc-300 leading-tight">
+              <span className="font-bold text-yellow-400 uppercase block">Aether Cursor Engine</span>
+              <span className="text-zinc-500">X:{cursorPos.x} Y:{cursorPos.y} • Drag to Circle</span>
             </div>
           </motion.div>
         )}

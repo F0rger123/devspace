@@ -214,9 +214,27 @@
         "origin": { "type": "string", "description": "Domain origin of the request" }
       },
       "required": ["email", "action", "status", "timestamp"]
+    },
+    "GoogleAIBilling": {
+      "title": "GoogleAIBilling",
+      "description": "Google AI Sandbox user billing status, balance, active pricing tier, and consumed rate limits",
+      "type": "object",
+      "properties": {
+        "creditsBalance": { "type": "number", "description": "The current remaining credit balance in USD" },
+        "selectedTier": { "type": "string", "enum": ["free", "pay-as-you-go", "pro", "ultra"], "description": "Pricing tier currently selected by the user" },
+        "rpmUsed": { "type": "number", "description": "Count of requests dispatched in the current minute (RPM)" },
+        "tpmUsed": { "type": "number", "description": "Count of tokens consumed in the current minute (TPM)" },
+        "rpdUsed": { "type": "number", "description": "Count of requests dispatched in the current day (RPD)" },
+        "updatedAt": { "type": "number", "description": "The timestamp of the last local or cloud modification" }
+      },
+      "required": ["creditsBalance", "selectedTier", "rpmUsed", "tpmUsed", "rpdUsed", "updatedAt"]
     }
   },
   "firestore": {
+    "/google_ai_billing/{userId}": {
+      "schema": "GoogleAIBilling",
+      "description": "Google AI Sandbox user credits balance, selected pricing tier, and API rate limit usage"
+    },
     "/projects/{projectId}": {
       "schema": "Project",
       "description": "Collection of projects defined in the workspace"

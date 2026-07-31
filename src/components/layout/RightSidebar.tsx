@@ -53,7 +53,9 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { useData } from '../../context/DataProvider';
+import { TypewriterText } from '../ui/TypewriterText';
+import { useData, setDocWithSanitize, deleteDocWithSanitize } from '../../context/DataProvider';
+import { getAllAvailableModels } from '../../lib/localModelEngine';
 import { useStore } from '../../store';
 import { db } from '../../lib/auth';
 import { collection, getDocs, setDoc, doc, deleteDoc } from 'firebase/firestore';
@@ -150,23 +152,18 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     const rulesCount = cortexSynapses?.length || 0;
     const hasDreams = projects?.some(p => (p.dreamRecommendations || []).length > 0);
 
-    let welcome = `${timeGreeting}, drummerforger! Aether online and synchronized.\n\n`;
-    welcome += `I am holding our continuous synaptic memory of **${rulesCount} custom rules** and **${projectsCount} active projects** fully loaded.\n\n`;
+     let welcome = `${timeGreeting}, drummerforger! Aether online and synchronized.\n\n`;
+    welcome += `I am holding our continuous memory of **${rulesCount} custom rules** and **${projectsCount} active projects** fully loaded.\n\n`;
     if (hasDreams) {
       welcome += `Last night, I dreamed up several fresh optimizations and code refactors for your active branches. Let me know if you would like me to retrieve my latest dream recommendations or review outstanding tasks!`;
     } else {
-      welcome += `I am standing by as your central brain orchestrator. Let's design some incredible features today. What are we building next?`;
+      welcome += `I am standing by as your central assistant. Let's design some incredible features today. What are we building next?`;
     }
     return welcome;
   };
 
   // Session states for past conversations
-  const [showSessionsSidebar, setShowSessionsSidebar] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth >= 768;
-    }
-    return false;
-  });
+  const [showSessionsSidebar, setShowSessionsSidebar] = useState(false);
   const [isSessionsLoaded, setIsSessionsLoaded] = useState(false);
   const [chatSessions, setChatSessions] = useState<any[]>(() => {
     try {
@@ -179,13 +176,13 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     return [
       {
         id: 'session-default',
-        title: 'Central Orchestrator Session',
+        title: 'Central Assistant Session',
         createdAt: Date.now(),
         messages: [
           {
             id: '1',
             role: 'agent',
-            content: 'System online. I am Aether, your central brain orchestrator. I have full synaptic mapping to your Obsidian Notes, Maps of Spring, and AgenticOS. How can I assist you today?'
+            content: 'System online. I am Aether, your central assistant. I have full connection to your Obsidian Notes, Maps, and AgenticOS. How can I assist you today?'
           }
         ]
       },
@@ -408,9 +405,9 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       if (googleUser) {
         try {
           const snap = await getDocs(collection(db, 'chatSessions'));
-          const batchDeletes = snap.docs.map(docSnap => deleteDoc(doc(db, 'chatSessions', docSnap.id)));
+          const batchDeletes = snap.docs.map(docSnap => deleteDocWithSanitize(doc(db, 'chatSessions', docSnap.id)));
           await Promise.all(batchDeletes);
-          await setDoc(doc(db, 'chatSessions', 'session-default'), defaultSessions[0]);
+          await setDocWithSanitize(doc(db, 'chatSessions', 'session-default'), defaultSessions[0]);
         } catch (err) {
           console.error("Failed to sync cleared chats to Firestore:", err);
         }
@@ -466,7 +463,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
         } else {
           // Empty in Firestore, seed with current local sessions
           for (const s of chatSessions) {
-            await setDoc(doc(db, 'chatSessions', s.id), s);
+            await setDocWithSanitize(doc(db, 'chatSessions', s.id), s);
           }
         }
       } catch (e: any) {
@@ -492,7 +489,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     const timer = setTimeout(async () => {
       try {
         for (const s of chatSessions) {
-          await setDoc(doc(db, 'chatSessions', s.id), s);
+          await setDocWithSanitize(doc(db, 'chatSessions', s.id), s);
         }
       } catch (e: any) {
         if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'permission-denied') {
@@ -640,7 +637,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   const [attachedFiles, setAttachedFiles] = useState<{name: string, data: string, mime: string}[]>([]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
   };
 
   useEffect(() => {
@@ -1421,7 +1418,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       {
         id: '1',
         role: 'agent',
-        content: 'Conversation history flushed. Aether AI synaptic channels clear. How can I assist?'
+        content: 'Conversation history cleared. Aether AI memory is ready. How can I assist you?'
       }
     ]);
   };
@@ -1602,7 +1599,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
               <div>
                 <div className="text-xs font-semibold text-zinc-100 uppercase tracking-widest flex items-center gap-1.5">
                   Aether AI Workspace 
-                  <span className="text-[9px] bg-indigo-950/40 text-indigo-400 py-0.5 px-2 rounded-full border border-indigo-500/20 font-mono">
+                  <span className="text-[9px] bg-yellow-950/40 text-yellow-400 py-0.5 px-2 rounded-full border border-yellow-500/20 font-mono">
                     {chatSessions.find(s => s.id === currentSessionId)?.title || 'Aether Active'}
                   </span>
                 </div>
@@ -1620,7 +1617,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                 }}
                 className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-all outline-none ${
                   voiceAudioEnabled 
-                    ? 'bg-indigo-950/40 transition-colors border-indigo-500/20 text-indigo-400' 
+                    ? 'bg-yellow-950/40 transition-colors border-yellow-500/30 text-yellow-400' 
                     : 'bg-zinc-900 text-zinc-500 border-zinc-800'
                 }`}
                 title="Vocal feedback toggle"
@@ -1658,7 +1655,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             className={`flex-1 overflow-y-auto p-6 space-y-6 bg-[#08080a] select-text ${isSpeechPlaying ? 'cursor-pointer' : ''}`}
           >
             <div className="max-w-3xl mx-auto space-y-6">
-              {messages.map((msg) => (
+              {messages.map((msg, idx) => (
                 <motion.div
                    key={msg.id}
                    initial={{ opacity: 0, y: 15 }}
@@ -1679,14 +1676,14 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
                     <div className={`px-5 py-3.5 rounded-2xl shadow-xl leading-relaxed text-xs sm:text-sm ${
                       msg.role === 'user'
-                        ? 'bg-indigo-650 text-indigo-50 border border-indigo-600 rounded-tr-none shadow-indigo-950/10'
+                        ? 'bg-yellow-500/20 text-yellow-200 border border-yellow-500/40 rounded-tr-none shadow-yellow-950/10'
                         : 'bg-[#121214] border border-[#27272a] text-zinc-300 rounded-tl-none'
                     }`}>
                       {msg.role === 'user' ? (
                         <div className="whitespace-pre-wrap">{msg.content}</div>
                       ) : (
                         <div className="markdown-body prose prose-invert prose-p:leading-relaxed prose-pre:bg-[#09090b] prose-pre:border prose-pre:border-zinc-800 prose-sm text-zinc-300 max-w-none">
-                          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.content}</Markdown>
+                          <TypewriterText content={msg.content} isNew={idx === messages.length - 1} />
                         </div>
                       )}
 
@@ -1701,7 +1698,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                     {msg.role === 'agent' && (
                       <button
                         onClick={() => speakVoiceReply(msg.content)}
-                        className="text-[10px] text-zinc-500 hover:text-indigo-450 font-mono mt-1 px-1 flex items-center gap-1.5 uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
+                        className="text-[10px] text-zinc-500 hover:text-yellow-400 font-mono mt-1 px-1 flex items-center gap-1.5 uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
                       >
                         <Volume2 size={11} /> Speak Aloud
                       </button>
@@ -1712,13 +1709,13 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
               {isProcessing && (
                 <div className="flex gap-4 items-start justify-start">
-                  <div className="w-8 h-8 rounded-full bg-indigo-950 border border-indigo-500/20 flex items-center justify-center shrink-0">
-                    <Loader2 size={14} className="text-indigo-400 animate-spin" />
+                  <div className="w-8 h-8 rounded-full bg-yellow-950 border border-yellow-500/20 flex items-center justify-center shrink-0">
+                    <Loader2 size={14} className="text-yellow-400 animate-spin" />
                   </div>
                   <div className="flex flex-col">
                     <div className="text-[10px] text-zinc-650 font-mono mb-1">Aether Thinking</div>
                     <div className="bg-[#121214] border border-[#27272a] px-5 py-3.5 rounded-2xl rounded-tl-none flex items-center gap-3 text-xs sm:text-sm text-zinc-500 font-mono animate-pulse">
-                      Consulting workspace synaptics & models...
+                      Consulting workspace files & models...
                     </div>
                   </div>
                 </div>
@@ -1804,7 +1801,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
               )}
 
               {/* Input Core */}
-              <div className="relative flex flex-col gap-3 bg-[#121214] border border-[#27272a] rounded-2xl p-3 focus-within:border-indigo-500/60 shadow-xl">
+              <div className="relative flex flex-col gap-3 bg-[#121214] border border-[#27272a] rounded-2xl p-3 focus-within:border-yellow-500/60 shadow-xl">
                 <div className="flex items-center gap-2">
                   <Terminal size={14} className="text-zinc-650 shrink-0 ml-1" />
                   <input
@@ -1830,7 +1827,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                     >
                       <Paperclip size={14} />
                       {attachedFiles.length > 0 && (
-                        <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-indigo-500 text-[9px] flex items-center justify-center rounded-full text-white font-bold shadow-md">{attachedFiles.length}</span>
+                        <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-yellow-500 text-[9px] flex items-center justify-center rounded-full text-black font-bold shadow-md">{attachedFiles.length}</span>
                       )}
                     </button>
 
@@ -1850,7 +1847,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                       className={`p-2 rounded-lg transition-all border relative overflow-hidden ${
                         isRecording 
                           ? 'bg-red-950/40 text-red-400 border-red-500 px-3 shadow-[0_0_15px_rgba(239,68,68,0.25)]' 
-                          : 'text-indigo-400 hover:bg-zinc-800 border-transparent hover:border-[#27272a]'
+                          : 'text-yellow-400 hover:bg-zinc-800 border-transparent hover:border-[#27272a]'
                       }`}
                       title="Vocal voice directive"
                     >
@@ -1880,7 +1877,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                   <button
                     onClick={() => handleSend()}
                     disabled={isProcessing}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-550 disabled:opacity-45 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-transform shadow-lg shadow-indigo-600/10 cursor-pointer"
+                    className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 disabled:opacity-45 text-black rounded-xl text-xs font-bold flex items-center gap-2 transition-transform shadow-lg shadow-yellow-500/10 cursor-pointer"
                   >
                     <span>Execute Synapse</span>
                     <Send size={12} />
@@ -1914,7 +1911,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                       : 'text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
-                  <tab.Icon size={13} className={tabIsActive ? 'text-indigo-400' : ''} />
+                  <tab.Icon size={13} className={tabIsActive ? 'text-yellow-400' : ''} />
                   <span className="tracking-wide uppercase text-[8px]">{tab.label}</span>
                 </button>
               );
@@ -2193,11 +2190,18 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                     <select
                       value={aiSettings.modelName}
                       onChange={(e) => setAiSettings({ ...aiSettings, modelName: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-[10px] text-zinc-300"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-[10px] text-zinc-300 cursor-pointer"
                     >
-                      <option value="gemini-3.5-flash">gemini-3.5-flash (Orchestrator)</option>
-                      <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Executive)</option>
-                      <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Fast)</option>
+                      <optgroup label="☁️ Cloud AI Models">
+                        {getAllAvailableModels().filter(m => m.category === 'cloud').map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="💻 Local LLMs (Ollama / LM Studio / Hugging Face)">
+                        {getAllAvailableModels().filter(m => m.category === 'local').map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </optgroup>
                     </select>
                   </div>
 

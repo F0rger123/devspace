@@ -11,7 +11,7 @@ import {
   deleteDoc, updateDoc, onSnapshot, orderBy, limit, addDoc 
 } from 'firebase/firestore';
 import { db, auth } from '../lib/auth';
-import { useData } from '../context/DataProvider';
+import { useData, setDocWithSanitize, updateDocWithSanitize, addDocWithSanitize, deleteDocWithSanitize } from '../context/DataProvider';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -207,19 +207,21 @@ export function Community() {
     setLoadingFeed(true);
     setFeedRateLimited(false);
     try {
-      const res = await fetch('/api/github/personalized-feed', {
+      const res = await fetch('/api/github/custom-recs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           preferences: githubPreferences,
-          token: githubToken
+          token: githubToken,
+          githubUser: storeGithubUser,
+          ignoreStarred: true
         })
       });
       if (res.ok) {
         const data = await res.json();
         setPersonalizedFeed(data.items || []);
         setFeedExplanation(data.explanation || '');
-        setStarredCount(data.starredCount || 0);
+        setStarredCount(0);
         if (data.isRateLimited) {
           setFeedRateLimited(true);
         }
@@ -255,6 +257,10 @@ export function Community() {
 
   useEffect(() => {
     if (activeTab === 'github') {
+      const saved = localStorage.getItem('app_explore_github_prefs') || '';
+      if (saved && saved !== githubPreferences) {
+        setGithubPreferences(saved);
+      }
       fetchPersonalizedFeed();
       fetchTrendingReposList();
     }
@@ -296,6 +302,47 @@ export function Community() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [follows, setFollows] = useState<Record<string, boolean>>({}); // followeeId -> boolean
   const [starredProjects, setStarredProjects] = useState<Record<string, boolean>>({}); // projectId -> boolean
+  
+  const [starredGithubRepos, setStarredGithubRepos] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('app_starred_github_repos') || '{}');
+    } catch { return {}; }
+  });
+
+  useEffect(() => {
+    if (!githubToken) return;
+
+    const fetchRealStarredRepos = async () => {
+      try {
+        const res = await fetch('/api/github/starred-list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: githubToken })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.starred)) {
+            setStarredGithubRepos(prev => {
+              const nextMap = { ...prev };
+              data.starred.forEach((fullName: string) => {
+                nextMap[fullName] = true;
+                const nameOnly = fullName.split('/')[1];
+                if (nameOnly) {
+                  nextMap[nameOnly] = true;
+                }
+              });
+              localStorage.setItem('app_starred_github_repos', JSON.stringify(nextMap));
+              return nextMap;
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch real starred repositories from GitHub:", err);
+      }
+    };
+
+    fetchRealStarredRepos();
+  }, [githubToken]);
   
   // Selection / Modals
   const [selectedProject, setSelectedProject] = useState<PublicProject | null>(null);
@@ -651,7 +698,9 @@ export function Community() {
       const reqRef = collection(db, 'friend_requests');
       const q = query(reqRef, where('receiverId', '==', currentUid));
       const snapshot = await getDocs(q);
-      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
+      const list = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() } as FriendRequest))
+        .filter(r => r.status === 'pending');
       setFriendRequests(list);
     } catch (err) {
       console.error("Failed to load friend requests:", err);
@@ -697,6 +746,49 @@ export function Community() {
     }
   };
 
+  // GitHub Star Toggle Proxy
+  const handleGithubStarToggle = async (repoName: string) => {
+    if (!githubToken) {
+      showToast('Please connect your GitHub account in Sandbox Loop or Settings to star repositories directly.', 'error');
+      return;
+    }
+
+    const isCurrentlyStarred = starredGithubRepos[repoName];
+    const nextStarred = !isCurrentlyStarred;
+    const nextMap = { ...starredGithubRepos, [repoName]: nextStarred };
+    setStarredGithubRepos(nextMap);
+    localStorage.setItem('app_starred_github_repos', JSON.stringify(nextMap));
+
+    try {
+      const response = await fetch('/api/github/star', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoName,
+          token: githubToken,
+          action: nextStarred ? 'star' : 'unstar'
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        showToast(
+          nextStarred 
+            ? `Successfully starred ${repoName} on GitHub!` 
+            : `Successfully unstarred ${repoName} on GitHub!`, 
+          'success'
+        );
+      } else {
+        throw new Error(data.error || 'Failed to update star status');
+      }
+    } catch (err: any) {
+      console.error(err);
+      const revertedMap = { ...starredGithubRepos, [repoName]: isCurrentlyStarred };
+      setStarredGithubRepos(revertedMap);
+      localStorage.setItem('app_starred_github_repos', JSON.stringify(revertedMap));
+      showToast(err.message || 'Error updating GitHub star status.', 'error');
+    }
+  };
+
   // Star / Upvote a Project
   const handleToggleStar = async (project: PublicProject) => {
     const alreadyStarred = starredProjects[project.id];
@@ -716,14 +808,14 @@ export function Community() {
       const projectDocRef = doc(db, 'projects', project.id);
       
       if (alreadyStarred) {
-        await deleteDoc(starRef);
-        await updateDoc(projectDocRef, {
+        await deleteDocWithSanitize(starRef);
+        await updateDocWithSanitize(projectDocRef, {
           starsCount: Math.max(0, prevStars - 1)
         });
         showToast(`Removed star from "${project.name}".`);
       } else {
-        await setDoc(starRef, { id: currentUid, createdAt: Date.now() });
-        await updateDoc(projectDocRef, {
+        await setDocWithSanitize(starRef, { id: currentUid, createdAt: Date.now() });
+        await updateDocWithSanitize(projectDocRef, {
           starsCount: prevStars + 1
         });
         showToast(`Starred "${project.name}" successfully!`);
@@ -778,7 +870,7 @@ export function Community() {
         createdAt: Date.now()
       };
 
-      await setDoc(commentRef, newComment);
+      await setDocWithSanitize(commentRef, newComment);
       showToast("Comment published!");
 
       if (selectedProject.ownerId && selectedProject.ownerId !== currentUid && addNotification) {
@@ -808,7 +900,7 @@ export function Community() {
     try {
       const followRef = doc(db, 'follows', followId);
       if (following) {
-        await deleteDoc(followRef);
+        await deleteDocWithSanitize(followRef);
         setFollows(prev => {
           const updated = { ...prev };
           delete updated[dev.uid];
@@ -816,7 +908,7 @@ export function Community() {
         });
         showToast(`You stopped following ${dev.displayName || dev.username}.`);
       } else {
-        await setDoc(followRef, {
+        await setDocWithSanitize(followRef, {
           id: followId,
           followerId: currentUid,
           followingId: dev.uid,
@@ -851,7 +943,7 @@ export function Community() {
       const requestId = `req_${currentUid}_${dev.uid}`;
       const requestRef = doc(db, 'friend_requests', requestId);
       
-      await setDoc(requestRef, {
+      await setDocWithSanitize(requestRef, {
         id: requestId,
         senderId: currentUid,
         receiverId: dev.uid,
@@ -886,13 +978,21 @@ export function Community() {
     try {
       const requestRef = doc(db, 'friend_requests', req.id);
       if (accept) {
-        await updateDoc(requestRef, { status: 'accepted' });
+        await setDocWithSanitize(requestRef, {
+          id: req.id,
+          senderId: req.senderId,
+          receiverId: req.receiverId,
+          senderName: req.senderName || 'Developer',
+          receiverName: req.receiverName || userProfile?.displayName || 'User',
+          status: 'accepted',
+          createdAt: req.createdAt || Date.now()
+        }, { merge: true });
         showToast(`Friend request from ${req.senderName} accepted!`);
         
         // Auto-create chat session on mutual friend accept
         const chatId = currentUid < req.senderId ? `chat_${currentUid}_${req.senderId}` : `chat_${req.senderId}_${currentUid}`;
         const chatRef = doc(db, 'chats', chatId);
-        await setDoc(chatRef, {
+        await setDocWithSanitize(chatRef, {
           id: chatId,
           participantIds: [currentUid, req.senderId],
           status: 'accepted',
@@ -912,7 +1012,7 @@ export function Community() {
           });
         }
       } else {
-        await deleteDoc(requestRef);
+        await deleteDocWithSanitize(requestRef);
         showToast(`Friend request declined.`);
       }
       setFriendRequests(prev => prev.filter(r => r.id !== req.id));
@@ -944,7 +1044,7 @@ export function Community() {
       const chatSnap = await getDoc(chatRef);
       
       if (!chatSnap.exists()) {
-        await setDoc(chatRef, {
+        await setDocWithSanitize(chatRef, {
           id: chatId,
           participantIds: [currentUid, dev.uid],
           status: 'accepted', // default open
@@ -987,7 +1087,7 @@ export function Community() {
       const messageId = `msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const messageRef = doc(db, 'chats', activeChat.id, 'messages', messageId);
       
-      await setDoc(messageRef, {
+      await setDocWithSanitize(messageRef, {
         id: messageId,
         chatId: activeChat.id,
         senderId: currentUid,
@@ -998,7 +1098,7 @@ export function Community() {
 
       // Update parent chat node
       const chatRef = doc(db, 'chats', activeChat.id);
-      await updateDoc(chatRef, {
+      await updateDocWithSanitize(chatRef, {
         lastMessage: text,
         updatedAt: Date.now()
       });
@@ -1729,8 +1829,7 @@ export function Community() {
                   )}
                 </div>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Tailor your developer feed! Type specific topics, frameworks, design patterns, or system architectures you're actively exploring. 
-                  {githubToken ? " We will analyze your starred repositories to discover similar hidden gems." : " Connect your GitHub in Settings to enrich suggestions with your active stars."}
+                  Tailor your developer feed! Type specific topics, frameworks, design patterns, or system architectures you're actively exploring to get personalized recommendations strictly matched to your interests.
                 </p>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {['React WebGPU', 'Rust Game Engines', 'TypeScript ORM', 'Go Microservices', 'Next.js Animation', 'Tailwind Components'].map(tag => (
@@ -1793,11 +1892,9 @@ export function Community() {
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    {githubToken && (
-                      <span className="text-[10px] font-mono text-zinc-500 bg-[#0e0e11] border border-zinc-850 px-2 py-0.5 rounded">
-                        Analyzed <span className="text-zinc-300 font-bold">{starredCount || '0+'}</span> starred repos
-                      </span>
-                    )}
+                    <span className="text-[10px] font-mono text-zinc-500 bg-[#0e0e11] border border-zinc-850 px-2 py-0.5 rounded">
+                      Engineered via <span className="text-zinc-300 font-bold">Preferences</span>
+                    </span>
                   </div>
                 </div>
 
@@ -1906,14 +2003,26 @@ export function Community() {
                               {/* Interactive metrics and Stats Drawer buttons */}
                               <div className="flex flex-wrap items-center justify-between gap-2 mt-1 pt-1">
                                 <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
-                                  {/* Stargazers Tooltip */}
-                                  <div className="relative group/star-tooltip flex items-center gap-1 cursor-help">
-                                    <Star size={10} className="text-zinc-500 hover:text-amber-400 transition-colors" />
-                                    <span>{repo.stargazers_count?.toLocaleString()}</span>
+                                  {/* Stargazers Button & Tooltip */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      handleGithubStarToggle(repo.name);
+                                    }}
+                                    className={`relative group/star-tooltip flex items-center gap-1.5 px-2 py-0.5 border rounded-md transition-all cursor-pointer ${
+                                      starredGithubRepos[repo.name]
+                                        ? 'bg-yellow-500/10 border-yellow-500/35 text-yellow-500 hover:bg-yellow-500/20'
+                                        : 'border-zinc-800/85 text-zinc-500 hover:text-zinc-350 hover:border-zinc-750'
+                                    }`}
+                                    title={starredGithubRepos[repo.name] ? "Starred! Click to unstar on GitHub" : "Star on GitHub"}
+                                  >
+                                    <Star size={10} className={starredGithubRepos[repo.name] ? "fill-yellow-500 text-yellow-500" : "text-zinc-500 transition-colors"} />
+                                    <span>{((repo.stargazers_count || 0) + (starredGithubRepos[repo.name] ? 1 : 0))?.toLocaleString()}</span>
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 bg-zinc-950 border border-zinc-800 text-zinc-300 text-[9px] rounded shadow-xl opacity-0 pointer-events-none group-hover/star-tooltip:opacity-100 transition-all duration-150 z-50 whitespace-nowrap font-sans font-semibold">
-                                      Popularity: {repo.stargazers_count?.toLocaleString()} Github Stars
+                                      {starredGithubRepos[repo.name] ? "Starred! Click to unstar on GitHub" : "Click to Star on GitHub directly"}
                                     </div>
-                                  </div>
+                                  </button>
 
                                   {/* Forks Tooltip */}
                                   <div className="relative group/fork-tooltip flex items-center gap-1 cursor-help">
@@ -2177,19 +2286,31 @@ export function Community() {
                           <div className="flex flex-col gap-2 mt-2.5 pt-2 border-t border-zinc-900/40">
                             <div className="flex flex-wrap items-center justify-between gap-2 text-[9px] text-zinc-600 font-mono">
                               <div className="flex items-center gap-3">
-                                {/* Stargazers tooltip */}
-                                <div className="relative group/star-trend-tooltip flex items-center gap-0.5 cursor-help">
-                                  <Star size={8} />
-                                  <span>{repo.stargazers_count?.toLocaleString()}</span>
+                                {/* Stargazers Button & Tooltip */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    handleGithubStarToggle(repo.name);
+                                  }}
+                                  className={`relative group/star-trend-tooltip flex items-center gap-1.5 px-1.5 py-0.5 border rounded-md transition-all cursor-pointer ${
+                                    starredGithubRepos[repo.name]
+                                      ? 'bg-yellow-500/10 border-yellow-500/35 text-yellow-500 hover:bg-yellow-500/20'
+                                      : 'border-zinc-900 text-zinc-550 hover:text-zinc-350 hover:border-zinc-800'
+                                  }`}
+                                  title={starredGithubRepos[repo.name] ? "Starred! Click to unstar on GitHub" : "Star on GitHub"}
+                                >
+                                  <Star size={8} className={starredGithubRepos[repo.name] ? "fill-yellow-500 text-yellow-500" : ""} />
+                                  <span>{((repo.stargazers_count || 0) + (starredGithubRepos[repo.name] ? 1 : 0))?.toLocaleString()}</span>
                                   {repo.stars_today > 0 && (
-                                    <span className="text-orange-500 font-semibold pl-1">
-                                      +{repo.stars_today} today
+                                    <span className="text-orange-550 font-semibold pl-1 text-[8px]">
+                                      +{repo.stars_today + (starredGithubRepos[repo.name] ? 1 : 0)} today
                                     </span>
                                   )}
                                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-0.5 bg-zinc-950 border border-zinc-850 text-zinc-300 text-[8px] rounded shadow-xl opacity-0 pointer-events-none group-hover/star-trend-tooltip:opacity-100 transition-all z-50 whitespace-nowrap font-sans font-semibold">
-                                    {repo.stargazers_count?.toLocaleString()} total stars
+                                    {starredGithubRepos[repo.name] ? "Starred! Click to unstar on GitHub" : "Click to Star on GitHub directly"}
                                   </div>
-                                </div>
+                                </button>
                               </div>
                               
                               <button
@@ -2454,14 +2575,71 @@ export function Community() {
                       comments.map(c => (
                         <div key={c.id} className="bg-[#0b0b0c] border border-zinc-850 p-3 rounded-lg flex items-start gap-2.5">
                           <div 
-                            className="w-6.5 h-6.5 rounded-full border border-zinc-800 flex items-center justify-center font-bold text-[9px] text-white shrink-0"
-                            style={{ backgroundColor: c.avatarColor || '#eab308' }}
-                          >
+                            className="w-6.5 h-6.5 rounded-full border border-zinc-800 flex items-center justify-center font-bold text-[9px] text-white shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
+                             onClick={async () => {
+                               if (c.userId) {
+                                 try {
+                                   const { doc, getDoc } = await import("firebase/firestore");
+                                   const userDoc = await getDoc(doc(db, "users", c.userId));
+                                   if (userDoc.exists()) {
+                                     const uData = userDoc.data();
+                                     setSelectedDeveloper({
+                                       uid: c.userId,
+                                       email: uData.email || "",
+                                       username: uData.username || "",
+                                       displayName: uData.displayName || "",
+                                       avatarColor: uData.avatarColor || "#10b981",
+                                       title: uData.title || "Engineer",
+                                       bio: uData.bio || "",
+                                       isPrivate: uData.isPrivate || false,
+                                       createdAt: uData.createdAt || Date.now(),
+                                       githubUrl: uData.githubUrl || "",
+                                       websiteUrl: uData.websiteUrl || "",
+                                       techStack: uData.techStack || ""
+                                     });
+                                   }
+                                 } catch (err) {
+                                   console.error(err);
+                                 }
+                               }
+                             }}
+                             style={{ backgroundColor: c.avatarColor || '#eab308' }}
+                           >
                             {c.displayName?.slice(0, 2).toUpperCase() || c.username?.slice(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex justify-between items-baseline gap-1">
-                              <span className="text-[11px] font-bold text-zinc-200">{c.displayName}</span>
+                              <span 
+                                onClick={async () => {
+                                  if (c.userId) {
+                                    try {
+                                      const userDoc = await getDoc(doc(db, "users", c.userId));
+                                      if (userDoc.exists()) {
+                                        const uData = userDoc.data();
+                                        setSelectedDeveloper({
+                                          uid: c.userId,
+                                          email: uData.email || "",
+                                          username: uData.username || "",
+                                          displayName: uData.displayName || "",
+                                          avatarColor: uData.avatarColor || "#10b981",
+                                          title: uData.title || "Engineer",
+                                          bio: uData.bio || "",
+                                          isPrivate: uData.isPrivate || false,
+                                          createdAt: uData.createdAt || Date.now(),
+                                          githubUrl: uData.githubUrl || "",
+                                          websiteUrl: uData.websiteUrl || "",
+                                          techStack: uData.techStack || ""
+                                        });
+                                      }
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }
+                                }}
+                                className="text-[11px] font-bold text-zinc-200 cursor-pointer hover:text-yellow-500 hover:underline transition-colors"
+                              >
+                                {c.displayName}
+                              </span>
                               <span className="text-[8px] font-mono text-zinc-500">
                                 {new Date(c.createdAt).toLocaleDateString()}
                               </span>

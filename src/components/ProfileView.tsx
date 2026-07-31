@@ -7,6 +7,7 @@ import {
   collection, query, where, getDocs, getDoc, doc, setDoc, deleteDoc, updateDoc 
 } from 'firebase/firestore';
 import { db } from '../lib/auth';
+import { setDocWithSanitize, updateDocWithSanitize, deleteDocWithSanitize } from '../context/DataProvider';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -197,13 +198,13 @@ export function ProfileView({
     try {
       const followRef = doc(db, 'follows', followId);
       if (isFollowing) {
-        await deleteDoc(followRef);
+        await deleteDocWithSanitize(followRef);
         setIsFollowing(false);
         setFollowersCount(prev => Math.max(0, prev - 1));
         showToast(`You stopped following ${developer.displayName || developer.username}.`);
         if (onFollowToggle) onFollowToggle(developer.uid, false);
       } else {
-        await setDoc(followRef, {
+        await setDocWithSanitize(followRef, {
           id: followId,
           followerId: currentUid,
           followingId: developer.uid,
@@ -249,7 +250,7 @@ export function ProfileView({
         createdAt: Date.now()
       };
 
-      await setDoc(requestRef, newRequestData);
+      await setDocWithSanitize(requestRef, newRequestData);
       setFriendshipStatus('pending_sent');
       setActiveFriendRequestDoc({ id: requestId, ...newRequestData } as FriendRequest);
       showToast(`Friend request sent to ${developer.displayName}!`);
@@ -278,14 +279,14 @@ export function ProfileView({
     try {
       const requestRef = doc(db, 'friend_requests', activeFriendRequestDoc.id);
       if (accept) {
-        await updateDoc(requestRef, { status: 'accepted' });
+        await updateDocWithSanitize(requestRef, { status: 'accepted' });
         setFriendshipStatus('accepted');
         showToast(`Friend request accepted!`);
         
         // Auto-create chat session on mutual friend accept
         const chatId = currentUid < developer.uid ? `chat_${currentUid}_${developer.uid}` : `chat_${developer.uid}_${currentUid}`;
         const chatRef = doc(db, 'chats', chatId);
-        await setDoc(chatRef, {
+        await setDocWithSanitize(chatRef, {
           id: chatId,
           participantIds: [currentUid, developer.uid],
           status: 'accepted',
@@ -295,7 +296,7 @@ export function ProfileView({
           requestedBy: currentUid
         });
       } else {
-        await deleteDoc(requestRef);
+        await deleteDocWithSanitize(requestRef);
         setFriendshipStatus('none');
         setActiveFriendRequestDoc(null);
         showToast(`Friend request declined.`);
@@ -312,7 +313,7 @@ export function ProfileView({
     if (!activeFriendRequestDoc) return;
     setActionLoading('respond');
     try {
-      await deleteDoc(doc(db, 'friend_requests', activeFriendRequestDoc.id));
+      await deleteDocWithSanitize(doc(db, 'friend_requests', activeFriendRequestDoc.id));
       setFriendshipStatus('none');
       setActiveFriendRequestDoc(null);
       showToast("Friend disconnected.");

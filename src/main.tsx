@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { DataProvider } from './context/DataProvider.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 
 // Catch and suppress the benign "ResizeObserver loop" warnings/errors globally
 if (typeof window !== 'undefined') {
@@ -52,8 +53,10 @@ if (typeof window !== 'undefined') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <DataProvider>
-      <App />
-    </DataProvider>
+    <ErrorBoundary>
+      <DataProvider>
+        <App />
+      </DataProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

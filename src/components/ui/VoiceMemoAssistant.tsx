@@ -180,6 +180,84 @@ const extractNewProjectNameFromDecline = (command: string): string | null => {
   return null;
 };
 
+const getContextFollowUp = (path: string, projectName?: string): { feedback: string, actionName: string } => {
+  const cleanPath = path.split('?')[0];
+  switch (cleanPath) {
+    case '/projects':
+      if (projectName) {
+        return {
+          feedback: `I have opened the project "${projectName}" for you. Now that we are inside this project, can I help you brainstorm some ideas, write a note, or create an issue?`,
+          actionName: `🧭 Activated Project: ${projectName}`
+        };
+      } else {
+        return {
+          feedback: "Hey, what do you want me to do? Do you want to go into a specific project, or create a new one?",
+          actionName: "🧭 Activated Projects Center"
+        };
+      }
+    case '/issues':
+      return {
+        feedback: "Opening your Backlog Issues board. Do you want me to mark issues as resolved, or do you want me to add a new issue?",
+        actionName: "🧭 Activated Backlog Issues Board"
+      };
+    case '/notes':
+      return {
+        feedback: "Opening your Obsidian Developer Logbooks. Do you want me to add a new note or edit a different note?",
+        actionName: "🧭 Activated Notes Workspace"
+      };
+    case '/sandbox-loop':
+      return {
+        feedback: "Opening your Sandbox Loop editor. Do you want me to run the latest sandbox code, or do you want to write a new live script?",
+        actionName: "🧭 Activated Sandbox Loop"
+      };
+    case '/agents':
+      return {
+        feedback: "Opening your GenTIC OS Sandbox workspace. Do you want me to spawn a new sub-agent, configure an existing agent's prompt, or run a test in the Agentic OS workspace?",
+        actionName: "🧭 Activated Agentic OS Sandbox"
+      };
+    case '/automations':
+      return {
+        feedback: "Opening your Automations Control Panel. Do you want me to add a new recurring automation, or inspect the active queue?",
+        actionName: "🧭 Activated Automations Control"
+      };
+    case '/brain':
+      return {
+        feedback: "Opening your Memory Cortex Brain Map. Do you want me to query our memory store, add a custom system rule, or visualize the synapses?",
+        actionName: "🧭 Activated Brain Map"
+      };
+    case '/ideas':
+      return {
+        feedback: "Opening your Idea Expansion Center. Do you want me to generate a new feature brainstorm, expand an existing concept, or pitch a new project idea?",
+        actionName: "🧭 Activated Idea Planner"
+      };
+    case '/assets':
+      return {
+        feedback: "Opening your Digital Asset Repository. Do you want me to look up specific files, upload a new asset, or generate a mockup image?",
+        actionName: "🧭 Activated Assets Center"
+      };
+    case '/roadmap':
+      return {
+        feedback: "Opening your Product Roadmap Timeline. Do you want to add a new roadmap milestone, or update the release timeline?",
+        actionName: "🧭 Activated Roadmap Timeline"
+      };
+    case '/docs':
+      return {
+        feedback: "Opening your Workspace Docs Center. Do you want to search the workspace documentation, or write a new developer doc?",
+        actionName: "🧭 Activated Workspace Docs"
+      };
+    case '/settings':
+      return {
+        feedback: "Opening your Aether Vocal Preferences. Do you want me to test the microphone connection, check the wake-word engine, or change your spatial cursor sensitivity?",
+        actionName: "🧭 Activated Vocal Preferences"
+      };
+    default:
+      return {
+        feedback: "I've taken you here. What would you like us to work on?",
+        actionName: "🧭 Navigated"
+      };
+  }
+};
+
 export function VoiceMemoAssistant() {
   const { 
     isRightSidebarOpen, 
@@ -242,7 +320,10 @@ export function VoiceMemoAssistant() {
     isAssistantOpen,
     setIsAssistantOpen,
     showToast,
-    vocalDictionary
+    vocalDictionary,
+    aetherPersonalityRules,
+    setAetherPersonalityRules,
+    aiContextRules
   } = useData();
 
   const location = useLocation();
@@ -565,6 +646,23 @@ export function VoiceMemoAssistant() {
     error?: string;
   } | null>(null);
 
+  // Sync feedback to Zustand store for subtitle rendering in drawing/context mode HUD
+  const setLastSpeechTranscript = useStore((state) => state.setLastSpeechTranscript);
+  const setLastAiResponse = useStore((state) => state.setLastAiResponse);
+  
+  useEffect(() => {
+    if (aetherFeedback) {
+      if (aetherFeedback.transcript) {
+        setLastSpeechTranscript(aetherFeedback.transcript);
+      }
+      if (aetherFeedback.explanation) {
+        setLastAiResponse(aetherFeedback.explanation);
+      } else if (aetherFeedback.error) {
+        setLastAiResponse(`Error: ${aetherFeedback.error}`);
+      }
+    }
+  }, [aetherFeedback, setLastSpeechTranscript, setLastAiResponse]);
+
   // TTS Feedback controls
   const [voicePlayback, setVoicePlayback] = useState(true);
   
@@ -585,9 +683,9 @@ export function VoiceMemoAssistant() {
   const isPollingUpdateRef = useRef<boolean>(false);
 
   useEffect(() => { 
-    isHubOpenRef.current = isHubOpen; 
+    isHubOpenRef.current = isHubOpen || isDrawingModeActive; 
     // Automatically synchronize Aether mic state with the assistant's visibility popup state
-    if (isHubOpen) {
+    if (isHubOpen || isDrawingModeActive) {
       if (isAetherMuted) {
         toggleAetherMutedState(false);
       }
@@ -596,7 +694,7 @@ export function VoiceMemoAssistant() {
         toggleAetherMutedState(true);
       }
     }
-  }, [isHubOpen, isAetherMuted, isWakeWordEnabled]);
+  }, [isHubOpen, isDrawingModeActive, isAetherMuted, isWakeWordEnabled]);
   useEffect(() => { isConversingRef.current = isConversing; }, [isConversing]);
   useEffect(() => { isListeningForSpeechRef.current = isListeningForSpeech; }, [isListeningForSpeech]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
@@ -619,27 +717,27 @@ export function VoiceMemoAssistant() {
   }, []);
 
   const getGreeting = () => {
-    const todayStr = new Date().toDateString();
-    const lastGreeting = localStorage.getItem('aether_last_greeting_date');
-    
-    if (lastGreeting !== todayStr) {
-      localStorage.setItem('aether_last_greeting_date', todayStr);
-      
-      const hours = new Date().getHours();
-      let timeOfDay = "evening";
-      if (hours >= 5 && hours < 12) {
-        timeOfDay = "morning";
-      } else if (hours >= 12 && hours < 17) {
-        timeOfDay = "afternoon";
-      }
-      
-      return `Good ${timeOfDay}! Welcome back to your Cortex Command Panel. How can I help you navigate the system, brainstorm ideas, or review your workspace today?`;
+    const hours = new Date().getHours();
+    let timeOfDay = "evening";
+    if (hours >= 5 && hours < 12) {
+      timeOfDay = "morning";
+    } else if (hours >= 12 && hours < 17) {
+      timeOfDay = "afternoon";
     }
     
     const greetings = [
-      "Aether active in cooperative workspace. What core notes, tasks, or synapse ideas are we formulating today?",
-      "Vocal nodes online and listening. Tell me what we should build or analyze.",
-      "Aether visualization deck initialized. Speak or write your ideas down on the scratchnote."
+      `Good ${timeOfDay}! Aether voice deck online. What ideas are we designing or brainstorming today?`,
+      `Good ${timeOfDay}! Welcome back to your central command center. I'm listening—what shall we build next?`,
+      `Aether virtual workspace fully synchronized. Let's map out a new project or expand on an existing design.`,
+      `Vocal nodes active and calibrated. Standing by to draft objectives, name projects, or sketch layouts.`,
+      `Synaptic core online. What rough project idea can we refine and shape into a full-scale plan today?`,
+      `Aether design assistant ready. Shall we brainstorm name ideas, outline checklists, or explore interface themes?`,
+      `Listening and prepared! Share your creative vision and let's craft something spectacular together.`,
+      `Good ${timeOfDay}! Aether intelligence hub activated. Do you want to review your active workspace or design a new app?`,
+      `Vocal nodes initialized. Speak or write your thoughts, and I will help you formulate a clean blueprint layout.`,
+      `Aether active in cooperative workspace. What core notes, tasks, or custom synapse ideas are we modeling today?`,
+      `Aether visualization deck online. Tell me what we should build, analyze, or deploy today!`,
+      `Your creative engineering partner is fully prepared. Let's design some layouts or brainstorm a fresh project.`
     ];
     return greetings[Math.floor(Math.random() * greetings.length)];
   };
@@ -1283,8 +1381,8 @@ export function VoiceMemoAssistant() {
                 return false;
               });
 
-              // Enhanced responsive threshold: require at least 1 new word or a clear intense cut word to trigger interruption
-              if (newWordsCount >= 1 || hasIntenseCut) {
+              // Enhanced responsive threshold: require at least 3 new words or a clear intense cut word to trigger interruption
+              if (newWordsCount >= 3 || hasIntenseCut) {
                 isUserInterrupting = true;
               }
             } else {
@@ -1296,9 +1394,9 @@ export function VoiceMemoAssistant() {
 
             if (isUserInterrupting) {
               addVocalDiagnostic(`INTERRUPT: Voice barge-in detected ("${fullCurrentText}"). Cancelling AI speech & resetting stream.`);
-              setIsUserSpeaking(false);
-              handleIntelligentInterrupt();
-              return;
+              setIsUserSpeaking(true);
+              handleIntelligentInterrupt(true); // Pass true to preserve active speech recognition
+              // Do not return! Let the speech engine keep accumulating the sentence.
             } else {
               // Skip self-transcription echo
               return;
@@ -1333,7 +1431,7 @@ export function VoiceMemoAssistant() {
             setIsListeningForSpeech(false);
             setIsUserSpeaking(false);
             submitDirectConversationalText(fullCurrentText);
-          }, 1000); // 1000ms of quiet auto-dispatches for snappier transitions without premature cuts
+          }, 1800); // 1800ms of quiet auto-dispatches for natural pauses without premature cuts
         }
       };
 
@@ -1408,6 +1506,7 @@ export function VoiceMemoAssistant() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          aetherPersonalityRules: aetherPersonalityRules || [],
           ...payload,
           stream: true
         }),
@@ -1446,7 +1545,7 @@ export function VoiceMemoAssistant() {
           if (!cleanText) return;
 
           const utterance = new SpeechSynthesisUtterance(cleanText);
-          utterance.rate = speechRate || 1.05;
+          utterance.rate = speechRate || 1.18;
           utterance.pitch = speechPitch || 1.0;
 
           const availableVoices = window.speechSynthesis.getVoices().length > 0 
@@ -1736,7 +1835,7 @@ export function VoiceMemoAssistant() {
     }
   };
 
-  const handleIntelligentInterrupt = async () => {
+  const handleIntelligentInterrupt = async (preserveRecognition = false) => {
     isStreamAbortedRef.current = true;
     
     // Asynchronously abort any active Gemini stream
@@ -1763,6 +1862,12 @@ export function VoiceMemoAssistant() {
     setIsSpeechActive(false);
     speakActiveRef.current = false;
     
+    if (preserveRecognition) {
+      // Keep existing SpeechRecognition instance running so they can finish their sentence smoothly!
+      addVocalDiagnostic("CONVO_MIC: Preserving active SpeechRecognition loop during barge-in.");
+      return;
+    }
+
     // Use an elegant async delay before restarting the continuous conversational loop
     await new Promise(resolve => setTimeout(resolve, 150));
     
@@ -2847,27 +2952,38 @@ export function VoiceMemoAssistant() {
       return true;
     }
 
-    // Voice command: Rename / label the last circled context region
-    const areaNameRegex = /(?:from\s+now\s+on\s+)?(?:this\s+area\s+is\s+called|this\s+area\s+is\s+the|this\s+area\s+is|name\s+this\s+area|call\s+this\s+area|this\s+is\s+the|this\s+area\s+is\s+the)\s+(.+)/i;
+    // Voice command: Rename / label the last circled context region and save to Obsidian brain
+    const areaNameRegex = /(?:from\s+now\s+on\s+)?(?:this\s+area\s+is\s+called|this\s+area\s+is\s+the|this\s+area\s+is|name\s+this\s+area|call\s+this\s+area|this\s+is\s+the|this\s+area\s+is\s+the|this\s+means\s+that|this\s+means|this\s+represents|this\s+signifies)\s+(.+)/i;
     const areaMatch = cleanInput.match(areaNameRegex);
     if (areaMatch) {
       const currentContexts = [...useStore.getState().circledContexts];
       if (currentContexts.length > 0) {
         const lastIndex = currentContexts.length - 1;
+        const lastContext = currentContexts[lastIndex];
         // Match raw casing if possible by finding the substring in inputText
-        const targetLabelRaw = (inputText.match(/(?:this\s+area\s+is\s+called|this\s+area\s+is\s+the|this\s+area\s+is|name\s+this\s+area|call\s+this\s+area|this\s+is\s+the|this\s+area\s+is\s+the)\s+(.+)/i)?.[1] || areaMatch[1]).trim().replace(/[.?]/g, "");
+        const targetLabelRaw = (inputText.match(/(?:this\s+area\s+is\s+called|this\s+area\s+is\s+the|this\s+area\s+is|name\s+this\s+area|call\s+this\s+area|this\s+is\s+the|this\s+area\s+is\s+the|this\s+means\s+that|this\s+means|this\s+represents|this\s+signifies)\s+(.+)/i)?.[1] || areaMatch[1]).trim().replace(/[.?]/g, "");
         currentContexts[lastIndex] = {
           ...currentContexts[lastIndex],
           label: targetLabelRaw
         };
         useStore.getState().setCircledContexts(currentContexts);
 
-        const msg = `Acknowledged. I have labeled this circled region as "${targetLabelRaw}" and integrated it as active context.`;
+        // Also add directly as a permanent rule to the Obsidian Synaptic Cortex brain!
+        const newSyn = {
+          id: `synapse-${crypto.randomUUID()}`,
+          name: `Anchor: ${targetLabelRaw}`,
+          desc: `User defined screen context region representing: ${targetLabelRaw}. Added via active visual context mode.`,
+          type: 'custom_synapse' as const,
+          createdAt: Date.now()
+        };
+        setCortexSynapses(prev => [...(prev || []), newSyn]);
+
+        const msg = `Acknowledged. I have labeled this circled region as "${targetLabelRaw}", saved this guideline to my Obsidian brain, and integrated it into active memory context.`;
         setAetherFeedback({
           transcript: inputText,
           explanation: msg,
-          intent: 'settings_change',
-          triggeredAction: `🎯 Named Area: "${targetLabelRaw}"`
+          intent: 'add_cortex_synapse',
+          triggeredAction: `🧠 Saved brain rule: "${targetLabelRaw}"`
         });
         triggerBrowserSpeechSynthesis(msg);
         return true;
@@ -3197,20 +3313,20 @@ export function VoiceMemoAssistant() {
       setActiveProjectId(null); // Reset active project to general context
       navigate('/projects');
       setIsAssistantMinimized(true); // Minimize on navigation
-      const feedbackMsg = "Opening your Projects Center. Which project do you want me to open, or what do you want me to do?";
+      const { feedback, actionName } = getContextFollowUp('/projects');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Projects Center"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
       setTimeout(() => {
         if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
@@ -3230,20 +3346,119 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null); // Clear any pending clarification
       navigate('/notes');
       setIsAssistantMinimized(true); // Minimize on navigation
-      const feedbackMsg = "Opening your Notes workspace. Hey, do you want me to write some notes for you?";
+      const { feedback, actionName } = getContextFollowUp('/notes');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Notes Workspace"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Issues section navigation
+    const generalIssuesPhrases = [
+      'take me to issues', 'go to issues', 'open issues', 'show issues', 'issues page', 'view issues', 'issues', 'navigate to issues',
+      'take me to my issues', 'open my issues', 'show my issues', 'navigate to my issues', 'go to my issues', 'my issues',
+      'tasks', 'open tasks', 'go to tasks', 'take me to tasks', 'my tasks', 'backlog', 'go to backlog', 'view backlog'
+    ];
+    if (generalIssuesPhrases.includes(cleanInput) || cleanInput === 'issues' || cleanInput === 'issue') {
+      setPendingProjectClarification(null);
+      navigate('/issues');
+      setIsAssistantMinimized(true);
+      const { feedback, actionName } = getContextFollowUp('/issues');
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedback,
+        intent: 'navigation_trigger',
+        triggeredAction: actionName
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedback }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedback);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Sandbox Loop section navigation
+    const generalSandboxPhrases = [
+      'take me to sandbox loop', 'go to sandbox loop', 'open sandbox loop', 'show sandbox loop', 'sandbox loop page', 'view sandbox loop', 'sandbox loop', 'navigate to sandbox loop',
+      'take me to my sandbox loop', 'open my sandbox loop', 'show my sandbox loop', 'navigate to my sandbox loop', 'go to my sandbox loop', 'my sandbox loop',
+      'sandbox', 'open sandbox', 'go to sandbox', 'take me to sandbox', 'my sandbox', 'sandbox-loop'
+    ];
+    if (generalSandboxPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/sandbox-loop');
+      setIsAssistantMinimized(true);
+      const { feedback, actionName } = getContextFollowUp('/sandbox-loop');
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedback,
+        intent: 'navigation_trigger',
+        triggeredAction: actionName
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedback }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedback);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Automations section navigation
+    const generalAutomationsPhrases = [
+      'take me to automations', 'go to automations', 'open automations', 'show automations', 'automations page', 'view automations', 'automations', 'navigate to automations',
+      'take me to my automations', 'open my automations', 'show my automations', 'navigate to my automations', 'go to my automations', 'my automations',
+      'automation', 'open automation', 'go to automation', 'take me to automation', 'my automation', 'autopilot', 'recurring'
+    ];
+    if (generalAutomationsPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/automations');
+      setIsAssistantMinimized(true);
+      const { feedback, actionName } = getContextFollowUp('/automations');
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedback,
+        intent: 'navigation_trigger',
+        triggeredAction: actionName
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedback }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedback);
       }
       setTimeout(() => {
         if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
@@ -3256,7 +3471,7 @@ export function VoiceMemoAssistant() {
     // Direct/General Workspace Docs section navigation
     const generalDocsPhrases = [
       'take me to workspace docks', 'take me to my workspace docks', 'workspace docks', 'my workspace docks',
-      'take me to workspace docs', 'take me to my workspace docs', 'workspace docs', 'my workspace docs',
+      'take me to workspace docs', 'take me to my workspace docs', 'workspace docs', 'my workspace docks',
       'go to workspace docs', 'open workspace docs', 'show workspace docs',
       'take me to docs', 'go to docs', 'open docs', 'show docs', 'docs',
       'documentation', 'workspace documentation'
@@ -3265,21 +3480,26 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null);
       navigate('/docs');
       setIsAssistantMinimized(true);
-      const feedbackMsg = "Opening your Workspace Docs Center.";
+      const { feedback, actionName } = getContextFollowUp('/docs');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Workspace Docs"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
       return true;
     }
 
@@ -3294,21 +3514,26 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null);
       navigate('/agents');
       setIsAssistantMinimized(true);
-      const feedbackMsg = "Opening your Agentic OS Sandbox.";
+      const { feedback, actionName } = getContextFollowUp('/agents');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Agentic Sandbox"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
       return true;
     }
 
@@ -3323,21 +3548,26 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null);
       navigate('/brain');
       setIsAssistantMinimized(true);
-      const feedbackMsg = "Opening your Memory Cortex Brain Map.";
+      const { feedback, actionName } = getContextFollowUp('/brain');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Brain Map"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
       return true;
     }
 
@@ -3352,20 +3582,20 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null);
       navigate('/ideas');
       setIsAssistantMinimized(true);
-      const feedbackMsg = "Opening your Idea Planner Workspace. Let's expand some fresh concepts!";
+      const { feedback, actionName } = getContextFollowUp('/ideas');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Idea Planner"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
       setTimeout(() => {
         if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
@@ -3385,20 +3615,20 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null);
       navigate('/assets');
       setIsAssistantMinimized(true);
-      const feedbackMsg = "Opening your Project Assets Center.";
+      const { feedback, actionName } = getContextFollowUp('/assets');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Assets Center"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
       setTimeout(() => {
         if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
@@ -3417,21 +3647,59 @@ export function VoiceMemoAssistant() {
       setPendingProjectClarification(null);
       navigate('/roadmap');
       setIsAssistantMinimized(true);
-      const feedbackMsg = "Opening your Product Roadmap Timeline.";
+      const { feedback, actionName } = getContextFollowUp('/roadmap');
       setAetherFeedback({
         transcript: inputText,
-        explanation: feedbackMsg,
+        explanation: feedback,
         intent: 'navigation_trigger',
-        triggeredAction: "🧭 Activated Roadmap Timeline"
+        triggeredAction: actionName
       });
       setConvoHistory(prev => [
         ...prev,
         { role: 'user' as const, text: inputText },
-        { role: 'model' as const, text: feedbackMsg }
+        { role: 'model' as const, text: feedback }
       ].slice(-10));
       if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(feedbackMsg);
+        triggerBrowserSpeechSynthesis(feedback);
       }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // Direct/General Settings section navigation
+    const generalSettingsPhrases = [
+      'take me to settings', 'go to settings', 'open settings', 'show settings', 'settings page', 'view settings', 'settings', 'navigate to settings',
+      'take me to my settings', 'open my settings', 'show my settings', 'navigate to my settings', 'go to my settings', 'my settings',
+      'options', 'vocal registry', 'vocal preferences'
+    ];
+    if (generalSettingsPhrases.includes(cleanInput)) {
+      setPendingProjectClarification(null);
+      navigate('/settings');
+      setIsAssistantMinimized(true);
+      const { feedback, actionName } = getContextFollowUp('/settings');
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedback,
+        intent: 'navigation_trigger',
+        triggeredAction: actionName
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedback }
+      ].slice(-10));
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(feedback);
+      }
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
       return true;
     }
 
@@ -3474,15 +3742,15 @@ export function VoiceMemoAssistant() {
         setActiveProjectId(matchedProj.id);
         navigate(`/projects?id=${matchedProj.id}`);
         setIsAssistantMinimized(true); // Minimize on navigation
-        const feedbackMsg = `Opening your project "${matchedProj.name}" for you.`;
+        const { feedback, actionName } = getContextFollowUp('/projects', matchedProj.name);
         setAetherFeedback({
           transcript: inputText,
-          explanation: feedbackMsg,
+          explanation: feedback,
           intent: 'navigation_trigger',
-          triggeredAction: `🧭 Activated Project: ${matchedProj.name}`
+          triggeredAction: actionName
         });
         if (voicePlayback) {
-          triggerBrowserSpeechSynthesis(feedbackMsg);
+          triggerBrowserSpeechSynthesis(feedback);
         }
         return true;
       }
@@ -3497,22 +3765,22 @@ export function VoiceMemoAssistant() {
         navigate(`/projects?id=${proj.id}`);
         setIsAssistantMinimized(true); // Minimize and move to the sidebar on navigation
         
-        const feedbackMsg = `Perfect! I have opened the project "${proj.name}" for you. What do you want me to do?`;
+        const { feedback, actionName } = getContextFollowUp('/projects', proj.name);
         setAetherFeedback({
           transcript: inputText,
-          explanation: feedbackMsg,
+          explanation: feedback,
           intent: 'navigation_trigger',
-          triggeredAction: `🧭 Activated Project: ${proj.name}`
+          triggeredAction: actionName
         });
 
         setConvoHistory(prev => [
           ...prev,
           { role: 'user' as const, text: inputText },
-          { role: 'model' as const, text: feedbackMsg }
+          { role: 'model' as const, text: feedback }
         ].slice(-10));
 
         if (voicePlayback) {
-          triggerBrowserSpeechSynthesis(feedbackMsg);
+          triggerBrowserSpeechSynthesis(feedback);
         }
 
         setTimeout(() => {
@@ -3626,6 +3894,100 @@ export function VoiceMemoAssistant() {
       }
     }
 
+    // 5. Dynamic Stitch Design Style Triggers (Themes)
+    const designStylePhrases = [
+      { name: 'stitch-neon', phrases: ['neon stitch', 'stitch neon', 'neon theme', 'neon style'] },
+      { name: 'stitch-slate', phrases: ['slate stitch', 'stitch slate', 'slate theme', 'slate style', 'grey theme', 'grey stitch', 'slate design'] },
+      { name: 'stitch-emerald', phrases: ['emerald stitch', 'stitch emerald', 'emerald theme', 'emerald style', 'green theme', 'green stitch', 'emerald design'] },
+      { name: 'stitch-cyberpink', phrases: ['cyberpink stitch', 'stitch cyberpink', 'cyberpink theme', 'cyberpink style', 'pink theme', 'pink stitch', 'cyberpunk', 'cyberpink design'] },
+      { name: 'stitch-amber', phrases: ['amber stitch', 'stitch amber', 'amber theme', 'amber style', 'yellow theme', 'amber stitch', 'orange theme', 'amber design'] },
+      { name: 'stitch-indigo', phrases: ['indigo stitch', 'stitch indigo', 'indigo theme', 'indigo style', 'blue theme', 'indigo stitch', 'indigo design'] },
+    ];
+
+    const matchedDesign = designStylePhrases.find(item => 
+      item.phrases.some(phrase => cleanInput.includes(phrase))
+    );
+
+    if (matchedDesign) {
+      const designId = matchedDesign.name;
+      const displayLabel = designId === 'stitch-neon' ? 'Neon Stitch' :
+                           designId === 'stitch-slate' ? 'Slate Stitch' :
+                           designId === 'stitch-emerald' ? 'Emerald Stitch' :
+                           designId === 'stitch-cyberpink' ? 'Cyberpink Stitch' :
+                           designId === 'stitch-amber' ? 'Amber Stitch' : 'Indigo Stitch';
+
+      // Dispatch custom window event
+      window.dispatchEvent(new CustomEvent('aether-change-design', { detail: { design: designId } }));
+
+      const feedback = `Switching the interactive preview style to ${displayLabel}. Notice how the colors, borders, and layouts adapt beautifully!`;
+      triggerBrowserSpeechSynthesis(feedback);
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedback,
+        intent: 'change_design_trigger',
+        triggeredAction: `🎨 Applied Stitch Style: ${displayLabel}`
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedback }
+      ].slice(-10));
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
+    // 6. Dynamic Stitch Template Blueprint Triggers
+    const templatePhrases = [
+      { name: 'dashboard', phrases: ['dashboard', 'system metrics', 'charts', 'metrics layout', 'dashboard template'] },
+      { name: 'chatbot', phrases: ['chatbot', 'ai chat', 'conversational', 'chat bubble', 'chatbot template'] },
+      { name: 'kanban', phrases: ['kanban', 'task board', 'workflow board', 'backlog column', 'kanban template'] },
+      { name: 'saas-landing', phrases: ['saas landing', 'marketing page', 'pricing page', 'sales page', 'landing page', 'landing template'] },
+      { name: 'developer-portfolio', phrases: ['developer portfolio', 'portfolio', 'personal site', 'portfolio template'] },
+      { name: 'e-commerce', phrases: ['e commerce', 'storefront', 'shop layout', 'retail layout', 'store template'] },
+      { name: 'blog-feed', phrases: ['blog feed', 'content feed', 'article list', 'blog template'] },
+      { name: 'cli-tool', phrases: ['cli tool', 'terminal interface', 'command line', 'cli template'] },
+      { name: 'ai-generator', phrases: ['ai generator', 'image generator ui', 'token stream ui', 'generator template'] },
+      { name: 'crypto-tracker', phrases: ['crypto tracker', 'wallet tracker', 'ledger ui', 'crypto template'] },
+      { name: 'pomodoro-hub', phrases: ['pomodoro hub', 'focus timer', 'work clock', 'pomodoro template'] },
+      { name: 'api-playground', phrases: ['api playground', 'endpoint tester', 'mock builder', 'playground template'] },
+      { name: 'vanilla', phrases: ['vanilla style', 'basic template', 'blank slate', 'vanilla template'] },
+    ];
+
+    const matchedTemplate = templatePhrases.find(item =>
+      item.phrases.some(phrase => cleanInput.includes(phrase))
+    );
+
+    if (matchedTemplate) {
+      const templateId = matchedTemplate.name;
+      const displayLabel = templateId.toUpperCase();
+
+      window.dispatchEvent(new CustomEvent('aether-change-template', { detail: { template: templateId } }));
+
+      const feedback = `Setting the project blueprint template to ${displayLabel}. Rendering the responsive preview on the design canvas now!`;
+      triggerBrowserSpeechSynthesis(feedback);
+      setAetherFeedback({
+        transcript: inputText,
+        explanation: feedback,
+        intent: 'change_template_trigger',
+        triggeredAction: `🛠️ Switched Stitch Template: ${displayLabel}`
+      });
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: inputText },
+        { role: 'model' as const, text: feedback }
+      ].slice(-10));
+      setTimeout(() => {
+        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
+          startContinuousConversationalListen();
+        }
+      }, 1500);
+      return true;
+    }
+
     // Bypass local navigation/shortcut interception if there is a task action present in the command.
     // This allows Gemini to parse and run the compound action (e.g. navigation + task creation).
     const hasTaskAction = /\b(create|add|make|new|build|register|fix|fixed|resolve|resolved|complete|completed|done|update|change|set|remove|delete|brainstorm|synapse)\b/i.test(cleanInput);
@@ -3701,7 +4063,9 @@ export function VoiceMemoAssistant() {
       { phrases: ['home', 'dashboard', 'overview', 'main page', 'go to dashboard', 'show dashboard'], path: '/', name: 'Cortex Control Panel' },
       { phrases: ['asset', 'assets', 'go to assets', 'show assets', 'open assets'], path: '/assets', name: 'Digital Asset Repository' },
       { phrases: ['idea', 'ideas', 'go to ideas', 'show ideas', 'open ideas'], path: '/ideas', name: 'Idea Expansion Center' },
-      { phrases: ['agent', 'agents', 'go to agents', 'show agents', 'open agents'], path: '/agents', name: 'Agentic OS Sandbox' },
+      { phrases: ['sandbox loop', 'sandbox-loop', 'my sandbox loop', 'sandbox', 'go to sandbox loop', 'open sandbox loop', 'show sandbox loop'], path: '/sandbox-loop', name: 'Sandbox Loop' },
+      { phrases: ['agents', 'agentic', 'go to agents', 'show agents', 'open agents', 'gentic os'], path: '/agents', name: 'Agentic OS Sandbox' },
+      { phrases: ['automations', 'automation', 'autopilot', 'recurring automations', 'go to automations', 'open automations', 'show automations'], path: '/automations', name: 'Automations Control Panel' },
     ];
 
     // Flexible substring/keyword matching for "take me to" or general routing commands
@@ -3753,8 +4117,8 @@ export function VoiceMemoAssistant() {
       }
 
       // Check memory matching
-      if (clean === "memory" || clean === "memory store" || clean === "synaptic rules" || lower.includes("memory") || lower.includes("synaptic") || lower.includes("cortex")) {
-        return { path: '/brain?tab=memory', name: 'Synaptic Memory Cortex' };
+      if (clean === "memory" || clean === "memory store" || clean === "custom rules" || lower.includes("memory") || lower.includes("synaptic") || lower.includes("cortex")) {
+        return { path: '/brain?tab=memory', name: 'AI Memory & Rules' };
       }
 
       // 3. Flexible general section matching (highly forgiving of mic inputs/prepositions)
@@ -3776,8 +4140,14 @@ export function VoiceMemoAssistant() {
       if (lower.includes("brain") || lower.includes("cortex") || lower.includes("mind") || lower.includes("map")) {
         return { path: '/brain', name: 'Memory Cortex Brain Map' };
       }
-      if (lower.includes("agent") || lower.includes("sandbox") || lower.includes("agentic")) {
+      if (lower.includes("sandbox loop") || lower.includes("sandbox-loop") || (lower.includes("sandbox") && !lower.includes("agent"))) {
+        return { path: '/sandbox-loop', name: 'Sandbox Loop' };
+      }
+      if (lower.includes("agent") || lower.includes("agentic") || lower.includes("gentic")) {
         return { path: '/agents', name: 'Agentic OS Sandbox' };
+      }
+      if (lower.includes("automation") || lower.includes("autopilot") || lower.includes("recurring")) {
+        return { path: '/automations', name: 'Automations Control Panel' };
       }
       if (lower.includes("roadmap") || lower.includes("timeline") || lower.includes("milestone")) {
         return { path: '/roadmap', name: 'Product Roadmap Timeline' };
@@ -3824,20 +4194,14 @@ export function VoiceMemoAssistant() {
       navigate(matchedPath);
       setIsAssistantMinimized(true); // Minimize and move to the sidebar on navigation
       
-      const followUpPhrases = [
-        "I've taken you here. What would you like us to work on?",
-        "We're here! Let me know what you want to do next.",
-        "Here is your workspace. What's on your mind?",
-        "I've navigated to this section. What should we do now?"
-      ];
-      const randomPrompt = followUpPhrases[Math.floor(Math.random() * followUpPhrases.length)];
-      const feedbackMessage = `Opening your ${descName}. ${randomPrompt}`;
+      const { feedback, actionName } = getContextFollowUp(matchedPath);
+      const feedbackMessage = feedback;
       
       setAetherFeedback({
         transcript: inputText,
         explanation: feedbackMessage,
         intent: 'navigation_trigger',
-        triggeredAction: `🧭 Activated Vocal Synapse Link to: ${matchedPath}`
+        triggeredAction: actionName || `🧭 Activated Vocal Synapse Link to: ${matchedPath}`
       });
 
       setConvoHistory(prev => [
@@ -3984,7 +4348,9 @@ export function VoiceMemoAssistant() {
 
         setActiveProjectId(newId);
         actionTriggeredDisplay = `📁 Created & activated Project "${name}" [Planning]`;
-        navigate(`/projects?id=${newId}`);
+        if (!isDrawingModeActiveRef.current) {
+          navigate(`/create?mode=brainstorm`);
+        }
         break;
       }
 
@@ -4008,7 +4374,9 @@ export function VoiceMemoAssistant() {
             status: 'Todo'
           });
           actionTriggeredDisplay = `✓ Logged new backing task "${title}" into Project "${projRef?.name || 'Workspace'}"`;
-          navigate('/issues');
+          if (!isDrawingModeActiveRef.current) {
+            navigate('/issues');
+          }
         } else {
           actionTriggeredDisplay = `⚠️ Spoken task parsed, but no active projects found to hold it.`;
         }
@@ -4027,7 +4395,9 @@ export function VoiceMemoAssistant() {
             tags: parsedData.tags || ["Vocal"]
           });
           actionTriggeredDisplay = `📝 Transcribed Note "${noteTitle}" linked to "${projRef?.name || 'Workspace'}"`;
-          navigate('/notes');
+          if (!isDrawingModeActiveRef.current) {
+            navigate('/notes');
+          }
         } else {
           actionTriggeredDisplay = `⚠️ Note transcribed, but missing destination project context.`;
         }
@@ -4053,7 +4423,9 @@ export function VoiceMemoAssistant() {
               ]
             });
             actionTriggeredDisplay = `💡 Added Brainstorm Idea "${text}" inside project "${projRef.name}"`;
-            navigate('/ideas');
+            if (!isDrawingModeActiveRef.current) {
+              navigate('/ideas');
+            }
           }
         }
         break;
@@ -4070,7 +4442,9 @@ export function VoiceMemoAssistant() {
         };
         setCortexSynapses(prev => [...(prev || []), newSyn]);
         actionTriggeredDisplay = `🧠 Saved guideline: "${synapseName}"`;
-        navigate('/brain');
+        if (!isDrawingModeActiveRef.current) {
+          navigate('/brain');
+        }
         break;
       }
 
@@ -4194,7 +4568,9 @@ export function VoiceMemoAssistant() {
           }
         }
         actionTriggeredDisplay = `🧭 Navigated to workspace section: ${path}`;
-        navigate(path);
+        if (!isDrawingModeActiveRef.current) {
+          navigate(path);
+        }
         break;
       }
 
@@ -4214,7 +4590,9 @@ export function VoiceMemoAssistant() {
           const focusArea = parsedData.focus || 'general';
           startProjectDreaming(targetProj.id, focusArea);
           actionTriggeredDisplay = `✨ Initiated deep autonomous optimization dream on Project "${targetProj.name}" (Focus: ${focusArea})`;
-          navigate(`/projects?id=${targetProj.id}`);
+          if (!isDrawingModeActiveRef.current) {
+            navigate(`/projects?id=${targetProj.id}`);
+          }
         } else {
           actionTriggeredDisplay = `⚠️ start_dreaming invoked, but no target project was identified.`;
         }
@@ -4248,7 +4626,9 @@ export function VoiceMemoAssistant() {
 
         setAgents(prev => [...(prev || []), newAgent]);
         actionTriggeredDisplay = `🤖 Spawned and deployed specialized AI Developer Agent: "${agentName}" (${agentRole})`;
-        navigate('/agents');
+        if (!isDrawingModeActiveRef.current) {
+          navigate('/agents');
+        }
         break;
       }
 
@@ -4321,6 +4701,21 @@ export function VoiceMemoAssistant() {
   const handleProcessedResponse = (data: any, isFromStream = false) => {
     const { transcript, intent, explanation, parsedData, shouldWriteDown, noteContent } = data;
     
+    // Update personality rules if returned by AI
+    if (data.aetherPersonalityRules && Array.isArray(data.aetherPersonalityRules)) {
+      setAetherPersonalityRules(data.aetherPersonalityRules);
+    }
+    if (data.addPersonalityRule) {
+      const rule = String(data.addPersonalityRule).trim();
+      if (rule && !aetherPersonalityRules.includes(rule)) {
+        setAetherPersonalityRules(prev => [...prev, rule]);
+      }
+    }
+    if (data.removePersonalityRule) {
+      const ruleToDelete = String(data.removePersonalityRule).trim();
+      setAetherPersonalityRules(prev => prev.filter(r => r.toLowerCase() !== ruleToDelete.toLowerCase()));
+    }
+
     // Intercept with Voice Triggers matches
     if (transcript && checkVoiceTriggers(transcript)) {
       return;
@@ -4778,7 +5173,7 @@ export function VoiceMemoAssistant() {
       // Remove symbols/stars for clear speech
       const cleanText = text.replace(/[*#`_\-]/g, '');
       const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = speechRate || 1.05;
+      utterance.rate = speechRate || 1.18;
       utterance.pitch = speechPitch || 1.0; // Warm, natural voice pitch
       
       const getBestVoice = () => {
@@ -4920,7 +5315,7 @@ export function VoiceMemoAssistant() {
     <>
       {/* 1. Large Immersive Split-Dashboard Modal Overlay */}
       <AnimatePresence>
-        {isHubOpen && (
+        {isHubOpen && !isDrawingModeActive && (
           isUltraCompact ? (
             /* ULTRA COMPACT FLOATING PILL */
             <motion.div
@@ -4981,7 +5376,7 @@ export function VoiceMemoAssistant() {
               <div className="flex items-center gap-1 shrink-0">
                 {isSpeechActive && (
                   <button
-                    onClick={handleIntelligentInterrupt}
+                    onClick={() => handleIntelligentInterrupt()}
                     className="p-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-lg transition-all cursor-pointer"
                     title="Interrupt Speech"
                   >
@@ -5619,10 +6014,12 @@ export function VoiceMemoAssistant() {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
-                                      command: queryVal,
+                                      textCommand: queryVal,
                                       projectContexts: contextPayload,
                                       cortexSynapses: cortexSynapses || [],
                                       notes: notes || [],
+                                      aetherPersonalityRules: aetherPersonalityRules || [],
+                                      aiContextRules: aiContextRules || "",
                                       history: convoHistory,
                                       pendingNote: pendingNote,
                                       activeProjectId,
@@ -5750,7 +6147,7 @@ export function VoiceMemoAssistant() {
                             ) : isSpeechActive ? (
                               /* 2. AI is currently speaking - clicking anywhere cancels and listens! */
                               <div 
-                                onClick={handleIntelligentInterrupt}
+                                onClick={() => handleIntelligentInterrupt()}
                                 className="w-full bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-all animate-pulse shadow-sm"
                               >
                                 <div className="text-left font-sans flex items-center gap-2.5">

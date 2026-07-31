@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, Search, Mail, User, Shield, Key, ChevronRight, ChevronLeft, Check, 
   AlertCircle, Sparkles, Loader2, Info, Users, ShieldAlert, CheckCircle2
 } from 'lucide-react';
 import { useData } from '../../context/DataProvider';
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, query, where } from 'firebase/firestore';
 import { db } from '../../lib/auth';
 
 interface ProjectInviteWizardProps {
@@ -25,13 +26,16 @@ interface UserProfile {
 }
 
 export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectInviteWizardProps) {
-  const { projects, googleUser, updateProject } = useData();
+  const { projects, googleUser, updateProject, sendInvitation } = useData();
   const project = projects.find(p => p.id === projectId);
 
   const [step, setStep] = useState(1);
+  const [inviteMode, setInviteMode] = useState<'search' | 'email'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [friends, setFriends] = useState<UserProfile[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
   
   // Selected user state
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -47,8 +51,9 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
 
   // Load all registered users on component load for fast client-side fuzzy matching
   useEffect(() => {
-    async function fetchUsers() {
+    async function fetchUsersAndFriends() {
       setLoadingUsers(true);
+      setLoadingFriends(true);
       try {
         const querySnapshot = await getDocs(collection(db, 'users'));
         const usersList: UserProfile[] = [];
@@ -67,16 +72,40 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
             });
           }
         });
-        setAllUsers(usersList);
+
+        // Filter out current logged-in user from allUsers
+        const finalFiltered = usersList.filter(u => u.email.toLowerCase() !== googleUser?.email?.toLowerCase());
+        setAllUsers(finalFiltered);
+
+        if (googleUser?.uid) {
+          // Query accepted friends
+          const q1 = query(collection(db, 'friend_requests'), where('senderId', '==', googleUser.uid), where('status', '==', 'accepted'));
+          const q2 = query(collection(db, 'friend_requests'), where('receiverId', '==', googleUser.uid), where('status', '==', 'accepted'));
+          const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+          
+          const friendUids = new Set<string>();
+          snap1.forEach(d => {
+            const rId = d.data().receiverId;
+            if (rId) friendUids.add(rId);
+          });
+          snap2.forEach(d => {
+            const sId = d.data().senderId;
+            if (sId) friendUids.add(sId);
+          });
+
+          const friendsList = finalFiltered.filter(u => friendUids.has(u.uid));
+          setFriends(friendsList);
+        }
       } catch (err) {
-        console.warn('Failed to load registered users for autocomplete:', err);
+        console.warn('Failed to load registered users or friends for autocomplete:', err);
       } finally {
         setLoadingUsers(false);
+        setLoadingFriends(false);
       }
     }
 
     if (googleUser) {
-      fetchUsers();
+      fetchUsersAndFriends();
     }
   }, [googleUser]);
 
@@ -111,8 +140,12 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
 
   const handleNextStep = () => {
     if (step === 1) {
-      if (!selectedUser && !isCustomMode) {
-        setErrorMsg('Please search and select a user, or specify an email address.');
+      // Auto-detect a valid email address typed in the search bar if no user or custom mode is explicitly selected
+      if (!selectedUser && !isCustomMode && searchQuery.trim().includes('@')) {
+        setCustomEmail(searchQuery.trim().toLowerCase());
+        setIsCustomMode(true);
+      } else if (!selectedUser && !isCustomMode) {
+        setErrorMsg('Please search and select a user, or specify a valid guest email address.');
         return;
       }
       setErrorMsg(null);
@@ -141,54 +174,21 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
     setErrorMsg(null);
 
     try {
-      const inviteId = crypto.randomUUID();
-      const inviteLink = `${window.location.origin}/projects?inviteId=${inviteId}`;
-      
-      const newInvitation = {
-        id: inviteId,
-        projectId,
-        projectName: project.name,
-        senderId: googleUser?.uid || 'anonymous',
-        senderEmail: googleUser?.email || '',
-        senderName: googleUser?.displayName || googleUser?.email?.split('@')[0] || 'Project Owner',
-        receiverEmail: receiverEmail.trim().toLowerCase(),
-        status: 'pending',
-        role: selectedRole,
-        inviteLink,
-        createdAt: Date.now()
+      const permissionsMatrix = {
+        canPushToGit: selectedRole === 'admin' || selectedRole === 'editor',
+        canViewCode: true,
+        canEditRoadmap: selectedRole === 'admin' || selectedRole === 'editor',
+        canInviteOthers: selectedRole === 'admin'
       };
 
-      // 1. Store the pending invitation in Firestore
-      await setDoc(doc(db, 'invitations', inviteId), newInvitation);
-
-      // 2. Add email directly to the project's collaborators list field
-      const currentCollaborators = project.collaborators || [];
-      const updatedCollaborators = [...currentCollaborators];
-      if (!updatedCollaborators.includes(receiverEmail.trim().toLowerCase())) {
-        updatedCollaborators.push(receiverEmail.trim().toLowerCase());
-      }
-
-      const updatedRoles = { 
-        ...(project.collaboratorRoles || {}), 
-        [receiverEmail.trim().toLowerCase()]: selectedRole 
-      };
-
-      const updatedPermissions = {
-        ...(project.collaboratorPermissions || {}),
-        [receiverEmail.trim().toLowerCase()]: {
-          canPushToGit: selectedRole === 'admin' || selectedRole === 'editor',
-          canViewCode: true,
-          canEditRoadmap: selectedRole === 'admin' || selectedRole === 'editor',
-          canInviteOthers: selectedRole === 'admin'
-        }
-      };
-
-      // Save updated project state back to Firestore & local memory context
-      await updateProject(projectId, {
-        collaborators: updatedCollaborators,
-        collaboratorRoles: updatedRoles,
-        collaboratorPermissions: updatedPermissions
-      });
+      // Delegate to the unified and secure sendInvitation method in context
+      await sendInvitation(
+        projectId, 
+        receiverEmail.trim().toLowerCase(), 
+        selectedRole, 
+        permissionsMatrix,
+        selectedUser?.username
+      );
 
       // Show beautiful success notification
       setSuccessMsg(`✓ Pending collaboration invitation safely dispatched and saved for ${receiverEmail}!`);
@@ -204,14 +204,14 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
         }, 2000);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'An error occurred while writing collaboration state to Firestore.');
+      setErrorMsg(err.message || 'An error occurred while dispatching invitation.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans select-none">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans select-none">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -290,85 +290,220 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
                   className="space-y-4"
                 >
                   <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider font-mono">Search DevSpace Network</h4>
-                    <p className="text-[11px] text-zinc-500">Query users in the Firestore registry, or key in a guest email address to invite them.</p>
+                    <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider font-mono">Select Invitee</h4>
+                    <p className="text-[11px] text-zinc-500">Choose whether to query registered network users or invite a guest by their direct email address.</p>
                   </div>
 
-                  {/* Search Input Box */}
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
-                      {loadingUsers ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                    </div>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
+                  {/* Mode Selector Tabs */}
+                  <div className="flex border-b border-zinc-850">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInviteMode('search');
                         setErrorMsg(null);
                       }}
-                      placeholder="Type username, email, or full name..."
-                      className="w-full bg-[#121216] border border-zinc-800 hover:border-zinc-750 focus:border-blue-500 rounded-lg pl-9 pr-4 py-2.5 text-xs text-zinc-200 outline-none font-sans transition-all"
-                    />
+                      className={`flex-1 pb-2 text-center text-xs font-mono font-bold transition-all border-b-2 cursor-pointer ${
+                        inviteMode === 'search'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      Search Network
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInviteMode('email');
+                        setErrorMsg(null);
+                      }}
+                      className={`flex-1 pb-2 text-center text-xs font-mono font-bold transition-all border-b-2 cursor-pointer ${
+                        inviteMode === 'email'
+                          ? 'border-blue-500 text-blue-400'
+                          : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      Direct Email Guest
+                    </button>
                   </div>
 
-                  {/* Search Results / Matches */}
-                  <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                    {searchQuery.trim().length > 0 ? (
-                      <>
-                        {filteredUsers.length > 0 ? (
-                          filteredUsers.map((user) => (
-                            <button
-                              key={user.uid}
-                              type="button"
-                              onClick={() => handleSelectUser(user)}
-                              className={`w-full p-2.5 text-left rounded-lg border transition-all flex items-center justify-between gap-3 cursor-pointer ${
-                                selectedUser?.uid === user.uid 
-                                  ? 'bg-blue-600/10 border-blue-500' 
-                                  : 'bg-zinc-900/40 border-zinc-850 hover:bg-zinc-800/60'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div 
-                                  className="w-7 h-7 rounded-full text-[11px] font-bold font-mono flex items-center justify-center shrink-0 text-white"
-                                  style={{ backgroundColor: user.avatarColor || '#3b82f6' }}
+                  {inviteMode === 'search' ? (
+                    <>
+                      {/* Search Input Box */}
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
+                          {loadingUsers ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                        </div>
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setErrorMsg(null);
+                          }}
+                          autoFocus
+                          placeholder="Type username, email, or full name..."
+                          className="w-full bg-[#121216] border border-zinc-800 hover:border-zinc-750 focus:border-blue-500 rounded-lg pl-9 pr-4 py-2.5 text-xs text-zinc-200 outline-none font-sans transition-all"
+                        />
+                      </div>
+
+                      {/* Search Results / Matches */}
+                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                        {searchQuery.trim().length > 0 ? (
+                          <>
+                            {filteredUsers.length > 0 ? (
+                              filteredUsers.map((user) => (
+                                <button
+                                  key={user.uid}
+                                  type="button"
+                                  onClick={() => handleSelectUser(user)}
+                                  className={`w-full p-2.5 text-left rounded-lg border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                                    selectedUser?.uid === user.uid 
+                                      ? 'bg-blue-600/10 border-blue-500' 
+                                      : 'bg-zinc-900/40 border-zinc-850 hover:bg-zinc-800/60'
+                                  }`}
                                 >
-                                  {user.displayName.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-zinc-200 truncate">{user.displayName}</p>
-                                  <p className="text-[10px] text-zinc-500 font-mono truncate">@{user.username} • {user.email}</p>
-                                </div>
-                              </div>
-                              <div className="shrink-0">
-                                {selectedUser?.uid === user.uid ? (
-                                  <span className="text-[9px] font-bold font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">SELECTED</span>
-                                ) : (
-                                  <span className="text-[9px] font-bold font-mono text-zinc-500 hover:text-zinc-300">SELECT</span>
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div 
+                                      className="w-7 h-7 rounded-full text-[11px] font-bold font-mono flex items-center justify-center shrink-0 text-white"
+                                      style={{ backgroundColor: user.avatarColor || '#3b82f6' }}
+                                    >
+                                      {user.displayName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-zinc-200 truncate">{user.displayName}</p>
+                                      <p className="text-[10px] text-zinc-500 font-mono truncate">@{user.username} • {user.email}</p>
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0">
+                                    {selectedUser?.uid === user.uid ? (
+                                      <span className="text-[9px] font-bold font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">SELECTED</span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold font-mono text-zinc-500 hover:text-zinc-300">SELECT</span>
+                                    )}
+                                  </div>
+                                </button>
+                              ))
+                            ) : (
+                              <div className="text-center py-4 bg-zinc-900/20 border border-dashed border-zinc-850 rounded-lg space-y-2">
+                                <p className="text-[11px] text-zinc-500 font-mono">No matching registered user found.</p>
+                                {searchQuery.includes('@') && (
+                                  <button
+                                    type="button"
+                                    onClick={handleUseCustomEmail}
+                                    className="text-[10px] bg-zinc-850 hover:bg-zinc-800 text-zinc-200 px-3 py-1.5 rounded font-bold font-mono border border-zinc-750 inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Mail size={11} /> Invite guest email: {searchQuery.trim()}
+                                  </button>
                                 )}
                               </div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="text-center py-4 bg-zinc-900/20 border border-dashed border-zinc-850 rounded-lg space-y-2">
-                            <p className="text-[11px] text-zinc-500 font-mono">No matching registered user found.</p>
-                            {searchQuery.includes('@') && (
-                              <button
-                                type="button"
-                                onClick={handleUseCustomEmail}
-                                className="text-[10px] bg-zinc-850 hover:bg-zinc-800 text-zinc-200 px-3 py-1.5 rounded font-bold font-mono border border-zinc-750 inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <Mail size={11} /> Invite guest email: {searchQuery.trim()}
-                              </button>
                             )}
+                          </>
+                        ) : (
+                          <div className="space-y-4">
+                            {friends.length > 0 ? (
+                              <div className="space-y-2">
+                                <p className="text-[9px] font-bold font-mono uppercase tracking-wider text-yellow-500 mb-1.5 flex items-center gap-1">
+                                  <span>⭐ My Friends / Synaptic Connections ({friends.length})</span>
+                                </p>
+                                <div className="space-y-2 max-h-[160px] overflow-y-auto scrollbar-none">
+                                  {friends.map((user) => (
+                                    <button
+                                      key={user.uid}
+                                      type="button"
+                                      onClick={() => handleSelectUser(user)}
+                                      className={`w-full p-2.5 text-left rounded-lg border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                                        selectedUser?.uid === user.uid 
+                                          ? 'bg-blue-600/10 border-blue-500' 
+                                          : 'bg-zinc-900/40 border-zinc-850 hover:bg-zinc-800/60'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div 
+                                          className="w-7 h-7 rounded-full text-[11px] font-bold font-mono flex items-center justify-center shrink-0 text-white"
+                                          style={{ backgroundColor: user.avatarColor || '#3b82f6' }}
+                                        >
+                                          {user.displayName.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-semibold text-zinc-200 truncate">{user.displayName}</p>
+                                          <p className="text-[10px] text-zinc-500 font-mono truncate font-semibold">@{user.username} • {user.email}</p>
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0">
+                                        {selectedUser?.uid === user.uid ? (
+                                          <span className="text-[9px] font-bold font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">SELECTED</span>
+                                        ) : (
+                                          <span className="text-[9px] font-bold font-mono text-zinc-500 hover:text-zinc-300">ADD FRIEND</span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <div className="space-y-2">
+                              <p className="text-[9px] font-bold font-mono uppercase tracking-wider text-zinc-500 mb-1.5">Suggested Workspace Collaborators</p>
+                              {allUsers.slice(0, 4).map((user) => (
+                                <button
+                                  key={user.uid}
+                                  type="button"
+                                  onClick={() => handleSelectUser(user)}
+                                  className={`w-full p-2.5 text-left rounded-lg border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                                    selectedUser?.uid === user.uid 
+                                      ? 'bg-blue-600/10 border-blue-500' 
+                                      : 'bg-zinc-900/40 border-zinc-850 hover:bg-zinc-800/60'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div 
+                                      className="w-7 h-7 rounded-full text-[11px] font-bold font-mono flex items-center justify-center shrink-0 text-white"
+                                      style={{ backgroundColor: user.avatarColor || '#3b82f6' }}
+                                    >
+                                      {user.displayName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-zinc-200 truncate">{user.displayName}</p>
+                                      <p className="text-[10px] text-zinc-500 font-mono truncate">@{user.username} • {user.email}</p>
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0">
+                                    {selectedUser?.uid === user.uid ? (
+                                      <span className="text-[9px] font-bold font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">SELECTED</span>
+                                    ) : (
+                                      <span className="text-[9px] font-bold font-mono text-zinc-500 hover:text-zinc-300">SELECT</span>
+                                    )}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         )}
-                      </>
-                    ) : (
-                      <div className="text-center py-5 text-zinc-500 text-[10.5px] italic">
-                        Start typing above to search the workspace database.
                       </div>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    /* Direct Email Guest Input Form */
+                    <div className="space-y-3 p-3 bg-zinc-950/40 border border-zinc-850 rounded-xl text-left">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase">Guest Email Address *</label>
+                        <input
+                          type="email"
+                          value={customEmail}
+                          onChange={(e) => {
+                            setCustomEmail(e.target.value.trim().toLowerCase());
+                            setIsCustomMode(true);
+                            setSelectedUser(null);
+                            setErrorMsg(null);
+                          }}
+                          placeholder="developer@example.com"
+                          className="w-full bg-[#121216] border border-zinc-800 hover:border-zinc-750 focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-zinc-200 outline-none transition-all font-mono"
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-500">
+                        Type the exact, verified email address of the team member you wish to onboard. They will instantly gain access upon logging in.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Active Selection Indicator */}
                   {(selectedUser || isCustomMode) && (
@@ -599,6 +734,7 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
           </div>
         )}
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData, Agent } from '../context/DataProvider';
+import { getAllAvailableModels } from '../lib/localModelEngine';
 import { 
   Bot, 
   Terminal, 
@@ -2018,12 +2019,18 @@ export function AgenticOS() {
                   <select 
                     value={newAgentModelEngine}
                     onChange={(e) => setNewAgentModelEngine(e.target.value as any)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-zinc-350 outline-none focus:border-blue-500 font-mono"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-zinc-350 outline-none focus:border-blue-500 font-mono cursor-pointer"
                   >
-                    <option value="gemini-3.5-flash">GEMINI 3.5 FLASH</option>
-                    <option value="gemini-3.1-pro-preview">GEMINI 3.1 PRO (PREVIEW)</option>
-                    <option value="gemini-3.1-flash-lite">GEMINI 3.1 FLASH LITE</option>
-                    <option value="claude-3.5-sonnet">CLAUDE 3.5 SONNET</option>
+                    <optgroup label="☁️ Cloud Models">
+                      {getAllAvailableModels().filter(m => m.category === 'cloud').map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="💻 Local LLMs (Ollama / LM Studio / Hugging Face)">
+                      {getAllAvailableModels().filter(m => m.category === 'local').map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -2693,10 +2700,16 @@ export function AgenticOS() {
                               onChange={(e) => updateAgent(selectedAgent.id, { modelEngine: e.target.value as any })}
                               className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 rounded p-1.5 text-xs outline-none focus:border-blue-500 font-mono transition-colors cursor-pointer"
                            >
-                              <option value="gemini-3.5-flash">Gemini 3.5 Flash (Standard text core)</option>
-                              <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Complex coding core)</option>
-                              <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Fast, efficient core)</option>
-                              <option value="claude-3.5-sonnet">Claude 3.5 Sonnet (Simulated / Proxy core)</option>
+                               <optgroup label="☁️ Cloud Models">
+                                 {getAllAvailableModels().filter(m => m.category === 'cloud').map(m => (
+                                   <option key={m.id} value={m.id}>{m.name}</option>
+                                 ))}
+                               </optgroup>
+                               <optgroup label="💻 Local LLMs (Ollama / LM Studio / Hugging Face)">
+                                 {getAllAvailableModels().filter(m => m.category === 'local').map(m => (
+                                   <option key={m.id} value={m.id}>{m.name}</option>
+                                 ))}
+                               </optgroup>
                            </select>
                         </div>
 
@@ -2776,22 +2789,26 @@ export function AgenticOS() {
                               </button>
                            </div>
                            <div className="space-y-1 max-h-[140px] overflow-y-auto">
-                              {selectedAgent.goals?.map((goal, i) => (
-                                 <div key={i} className="flex gap-1.5 items-start p-1 bg-zinc-900 border border-zinc-850 rounded text-[10px] text-zinc-300 font-sans">
-                                    <span className="text-emerald-500 font-bold select-none shrink-0">•</span>
-                                    <span className="flex-1 leading-snug">{goal}</span>
-                                    <button
-                                       onClick={() => {
-                                          const remaining = selectedAgent.goals.filter((_, idx) => idx !== i);
-                                          updateAgent(selectedAgent.id, { goals: remaining });
-                                       }}
-                                       className="text-zinc-650 hover:text-rose-450 font-bold px-1"
-                                    >
-                                       ×
-                                    </button>
-                                 </div>
-                              ))}
-                              {(!selectedAgent.goals || selectedAgent.goals.length === 0) && (
+                              {selectedAgent.goals?.map((goal, i) => {
+                                 const cleanGoal = goal.replace(/\\n|\/n/gi, '').trim();
+                                 if (!cleanGoal) return null;
+                                 return (
+                                    <div key={i} className="flex gap-1.5 items-start p-1 bg-zinc-900 border border-zinc-850 rounded text-[10px] text-zinc-300 font-sans">
+                                       <span className="text-emerald-500 font-bold select-none shrink-0">•</span>
+                                       <span className="flex-1 leading-snug">{cleanGoal}</span>
+                                       <button
+                                          onClick={() => {
+                                             const remaining = selectedAgent.goals.filter((_, idx) => idx !== i);
+                                             updateAgent(selectedAgent.id, { goals: remaining });
+                                          }}
+                                          className="text-zinc-650 hover:text-rose-450 font-bold px-1"
+                                       >
+                                          ×
+                                       </button>
+                                    </div>
+                                 );
+                              })}
+                              {(!selectedAgent.goals || selectedAgent.goals.filter(g => g.replace(/\\n|\/n/gi, '').trim() !== '').length === 0) && (
                                  <div className="text-[10px] italic text-zinc-600 font-mono text-center py-2">No active strategic goals.</div>
                               )}
                            </div>
@@ -3236,9 +3253,11 @@ export function AgenticOS() {
                 <div className="font-sans">
                   <span className="font-semibold text-zinc-200">Execution Goals for {selectedAgent?.name}:</span>
                   <ul className="list-disc list-inside mt-1 space-y-1 pl-1 text-[11px] text-zinc-400">
-                    {selectedAgent?.goals?.map((goal, i) => (
-                      <li key={i}>{goal}</li>
-                    ))}
+                    {selectedAgent?.goals?.map((goal, i) => {
+                      const cleanGoal = goal.replace(/\\n|\/n/gi, '').trim();
+                      if (!cleanGoal) return null;
+                      return <li key={i}>{cleanGoal}</li>;
+                    })}
                   </ul>
                   <div className="mt-2.5 text-[10px] text-zinc-500 font-mono">
                     Try typing: <code className="text-pink-400 font-semibold bg-zinc-900 px-1 py-0.5 rounded">/help</code>, <code className="text-pink-400 font-semibold bg-zinc-900 px-1 py-0.5 rounded">/scan</code>, <code className="text-pink-400 font-semibold bg-zinc-900 px-1 py-0.5 rounded">/mcp</code>, or <code className="text-pink-400 font-semibold bg-zinc-900 px-1 py-0.5 rounded">/compile</code>
@@ -3861,11 +3880,15 @@ export function AgenticOS() {
                         <div className="space-y-1.5 pt-2 border-t border-zinc-900/50">
                           <span className="text-[8.5px] uppercase font-bold text-zinc-500 font-mono block">Specialized Directives</span>
                           <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar">
-                            {activeAgent?.goals?.map((g, gi) => (
-                              <div key={gi} className="text-[9px] text-zinc-400 leading-snug flex gap-1">
-                                <span className="text-blue-500 shrink-0">•</span><span>{g}</span>
-                              </div>
-                            ))}
+                            {activeAgent?.goals?.map((g, gi) => {
+                              const cleanG = g.replace(/\\n|\/n/gi, '').trim();
+                              if (!cleanG) return null;
+                              return (
+                                <div key={gi} className="text-[9px] text-zinc-400 leading-snug flex gap-1">
+                                  <span className="text-blue-500 shrink-0">•</span><span>{cleanG}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
 

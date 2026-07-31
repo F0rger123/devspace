@@ -667,6 +667,7 @@ export function VoiceHub() {
             projectContexts: contextPayload,
             cortexSynapses: cortexSynapses || [],
             notes: notes || [],
+            aetherPersonalityRules: aetherPersonalityRules || [],
             history: chatHistory.map(itm => ({
               role: itm.sender === 'user' ? 'user' : 'model',
               text: itm.text
@@ -749,6 +750,7 @@ export function VoiceHub() {
           projectContexts: contexts,
           cortexSynapses: cortexSynapses || [],
           notes: notes || [],
+          aetherPersonalityRules: aetherPersonalityRules || [],
           history: chatHistory.map(itm => ({
             role: itm.sender === 'user' ? 'user' : 'model',
             text: itm.text
