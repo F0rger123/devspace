@@ -177,6 +177,48 @@ async function startServer() {
     }
   });
 
+  async function resolveGitHubReleaseAsset(githubRepo: string) {
+    try {
+      const headers: Record<string, string> = {
+        'User-Agent': 'DevSpace-Aether-Desktop-Release-Resolver',
+        'Accept': 'application/vnd.github+json'
+      };
+      if (process.env.GITHUB_TOKEN) {
+        headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
+      }
+
+      let apiRes = await fetch(`https://api.github.com/repos/${githubRepo}/releases/latest`, { headers });
+      let releaseData: any = null;
+      if (apiRes.ok) {
+        releaseData = await apiRes.json();
+      } else {
+        const listRes = await fetch(`https://api.github.com/repos/${githubRepo}/releases?per_page=5`, { headers });
+        if (listRes.ok) {
+          const list = await listRes.json();
+          if (Array.isArray(list) && list.length > 0) {
+            releaseData = list[0];
+          }
+        }
+      }
+
+      if (releaseData && Array.isArray(releaseData.assets)) {
+        const exeAsset = releaseData.assets.find((a: any) => a.name && a.name.toLowerCase().endsWith('.exe'));
+        if (exeAsset && exeAsset.browser_download_url) {
+          return {
+            downloadUrl: exeAsset.browser_download_url as string,
+            fileName: exeAsset.name as string,
+            fileSizeMB: Math.round(((exeAsset.size || 0) / (1024 * 1024)) * 10) / 10 || 85.4,
+            publishedAt: releaseData.published_at || releaseData.created_at || new Date().toISOString(),
+            version: releaseData.tag_name || 'v2.5.0'
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[Release Resolver] Error querying GitHub API:', err);
+    }
+    return null;
+  }
+
   // Workspace API for desktop release status and download resolution
   app.get('/api/desktop/release-status', async (req, res) => {
     try {
@@ -200,6 +242,8 @@ async function startServer() {
       let available = false;
       let downloadUrl = '';
       let fileName = foundFile || 'DevSpace Aether Desktop Setup 2.5.0.exe';
+      let publishedAt = new Date().toISOString();
+      let version = 'v2.5.0';
 
       if (customUrl) {
         available = true;
@@ -208,11 +252,16 @@ async function startServer() {
         available = true;
         downloadUrl = '/api/desktop/download/windows';
       } else {
-        // Fallback: Check if a GitHub release URL is available
+        // Query GitHub API dynamically for latest published release asset
         const githubRepo = process.env.GITHUB_REPOSITORY || 'devspace/aether-desktop';
-        if (githubRepo) {
-          downloadUrl = `https://github.com/${githubRepo}/releases/latest/download/DevSpace-Aether-Desktop-Setup-2.5.0.exe`;
+        const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
+        if (ghAsset) {
           available = true;
+          downloadUrl = ghAsset.downloadUrl;
+          fileName = ghAsset.fileName;
+          fileSizeMB = ghAsset.fileSizeMB;
+          publishedAt = ghAsset.publishedAt;
+          version = ghAsset.version;
         }
       }
 
@@ -225,13 +274,13 @@ async function startServer() {
         return res.json({
           available: true,
           status: 'published',
-          version: 'v2.5.0',
-          releaseName: 'DevSpace Aether Desktop v2.5.0',
+          version,
+          releaseName: `DevSpace Aether Desktop ${version}`,
           platform: 'windows',
           fileName,
           downloadUrl,
           fileSizeMB: fileSizeMB || 85.4,
-          publishedAt: new Date().toISOString(),
+          publishedAt,
           releaseNotes,
           sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
           targetArch: 'x64 (64-bit)',
@@ -253,7 +302,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/desktop/download/windows', (req, res) => {
+  app.get('/api/desktop/download/windows', async (req, res) => {
     try {
       const releaseDir = path.join(process.cwd(), 'release');
       let filePath = '';
@@ -275,7 +324,14 @@ async function startServer() {
         return res.redirect(url!);
       } else {
         const githubRepo = process.env.GITHUB_REPOSITORY || 'devspace/aether-desktop';
-        return res.redirect(`https://github.com/${githubRepo}/releases/latest/download/DevSpace-Aether-Desktop-Setup-2.5.0.exe`);
+        const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
+        if (ghAsset) {
+          return res.redirect(ghAsset.downloadUrl);
+        }
+        return res.status(404).json({
+          available: false,
+          message: 'DevSpace Desktop for Windows is currently preparing its latest stable release. Please check back shortly.'
+        });
       }
     } catch (err: any) {
       res.status(500).json({ error: 'Download error' });
