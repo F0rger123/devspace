@@ -12,7 +12,7 @@ function createWindow() {
     title: 'DevSpace',
     frame: false,
     titleBarStyle: 'hidden',
-    icon: path.join(__dirname, '../public/favicon.svg'),
+    icon: path.join(__dirname, '../public/favicon.ico'),
     backgroundColor: '#030305',
     autoHideMenuBar: true,
     show: false,

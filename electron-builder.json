@@ -33,6 +33,9 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "DevSpace",
-    "uninstallDisplayName": "DevSpace Uninstaller"
+    "uninstallDisplayName": "DevSpace Uninstaller",
+    "installerIcon": "public/favicon.ico",
+    "uninstallerIcon": "public/favicon.ico",
+    "installerHeaderIcon": "public/favicon.ico"
   }
 }

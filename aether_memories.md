@@ -1,5 +1,5 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 8/2/2026, 6:50:29 PM*
+*Last synchronized: 8/2/2026, 7:18:20 PM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
@@ -10,10 +10,10 @@ This is the physical workspace memory file of Aether (your central brain orchest
   
   <!-- GITHUB_LEARNED_PREFERENCES_START -->
   # Learned Preferences from GitHub Repos & Stars
-  - **Focus Summary:** This developer is a highly productive builder focused on AI-driven automation, LLM integration, and modular systems. They demonstrate a strong preference for JavaScript and TypeScript, frequently leveraging open-source agent architectures to develop practical, real-world productivity tools.
-  - **Preference:** Prioritize the integration of LLM-based autonomous agents using MCP and Claude-code to accelerate development workflows.
-  - **Preference:** Maintain a modular, agent-centric architecture when building AI-assisted systems to ensure reusability and scalability.
-  - **Preference:** Focus on utilizing cloud-native automation like GitHub Actions to keep utility projects lightweight and zero-cost.
+  - **Focus Summary:** This developer is highly focused on building modular AI automation agents and productivity tools, heavily leveraging TypeScript and Python to integrate LLMs into practical workflows. They demonstrate a strong preference for open-source AI ecosystems, such as Claude-code and MCP, while prioritizing autonomous systems and seamless cross-platform utility.
+  - **Preference:** Prioritize the development of modular, agentic architectures that favor open-source integrations and LLM-powered automation.
+  - **Preference:** Utilize TypeScript for robust PWA development and Python for backend agent orchestration to maintain high levels of system portability.
+  - **Preference:** Focus on building 'always-on' productivity solutions that leverage GitHub Actions and LLM APIs for automated, cost-effective maintenance.
   <!-- GITHUB_LEARNED_PREFERENCES_END -->
 
 ## 🎭 Aether Personality Rules & Dynamic Customizations
