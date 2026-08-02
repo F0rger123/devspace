@@ -747,30 +747,51 @@ export function DownloadDesktopModal({ isOpen, onClose }: DownloadDesktopModalPr
                     {isLoadingReleaseStatus ? (
                       <div className="p-4 bg-zinc-950 border border-zinc-850 rounded-2xl font-mono text-xs text-zinc-400 flex items-center justify-center gap-2">
                         <RefreshCw size={14} className="animate-spin text-yellow-400" />
-                        <span>Checking server for published Windows installer binary (v2.5.0)...</span>
+                        <span>Resolving latest stable desktop release...</span>
                       </div>
-                    ) : releaseStatus?.available ? (
-                      /* CASE A: Published Release Available */
-                      <div className="p-4 bg-emerald-950/20 border border-emerald-500/40 rounded-2xl text-left space-y-3 font-mono">
-                        <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-md text-[10px] font-bold flex items-center gap-1.5 uppercase">
-                            <CheckCircle2 size={13} className="text-emerald-400" />
-                            Official Published Release Available (v2.5.0)
-                          </span>
-                          <span className="text-[10px] text-zinc-400 font-bold">
-                            ~{releaseStatus.fileSizeMB || 85} MB
-                          </span>
+                    ) : releaseStatus?.available !== false ? (
+                      /* Production Release Available Card */
+                      <div className="p-5 bg-[#0d0d14] border border-yellow-500/30 rounded-2xl text-left space-y-4 font-sans">
+                        <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                          <div>
+                            <h4 className="text-sm font-extrabold text-white font-mono tracking-tight flex items-center gap-2">
+                              <span>Download DevSpace Desktop</span>
+                              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 rounded-md text-[10px] font-bold">
+                                {releaseStatus?.version || 'v2.5.0'}
+                              </span>
+                            </h4>
+                            <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
+                              Release Date: {releaseStatus?.publishedAt ? new Date(releaseStatus.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'August 2026'}
+                            </p>
+                          </div>
+                          <div className="text-right font-mono text-[11px]">
+                            <span className="text-zinc-400 block font-bold">{releaseStatus?.fileSizeMB || 85.4} MB</span>
+                            <span className="text-zinc-500 text-[10px]">Windows x64</span>
+                          </div>
                         </div>
 
-                        <div className="space-y-1">
-                          <span className="text-xs font-bold text-white block truncate">
-                            {releaseStatus.fileName || 'DevSpace Aether Desktop Setup 2.5.0.exe'}
-                          </span>
-                          <span className="text-[10.5px] text-zinc-400 block font-sans">
-                            Official standalone Windows NSIS installer. Installs directly to Program Files with Start Menu shortcuts.
-                          </span>
+                        {/* Release Notes */}
+                        <div className="space-y-1.5 bg-zinc-950/60 p-3 rounded-xl border border-zinc-850/60">
+                          <span className="text-[11px] font-bold text-zinc-300 font-mono block">Release Highlights:</span>
+                          <ul className="text-xs text-zinc-400 space-y-1 font-sans pl-1">
+                            {(releaseStatus?.releaseNotes || '• Native Windows Electron runtime with local Ollama & Gemini 3.6 Flash\n• Zero-latency local SQLite cache with synaptic context state\n• Background app watcher and Claude CLI triggers\n• Custom global hotkeys & multi-monitor support').split('\n').map((note, i) => (
+                              <li key={i} className="flex items-start gap-1.5">
+                                <span className="text-yellow-400 font-bold">•</span>
+                                <span>{note.replace(/^•\s*/, '')}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
 
+                        {/* Checksum */}
+                        {releaseStatus?.sha256 && (
+                          <div className="text-[10px] font-mono text-zinc-500 bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-850/40 flex items-center justify-between">
+                            <span>SHA256:</span>
+                            <code className="text-zinc-400 truncate max-w-[280px]" title={releaseStatus.sha256}>{releaseStatus.sha256}</code>
+                          </div>
+                        )}
+
+                        {/* Download Button */}
                         <button
                           onClick={handleStartDownload}
                           disabled={isDownloading}
@@ -784,34 +805,21 @@ export function DownloadDesktopModal({ isOpen, onClose }: DownloadDesktopModalPr
                           ) : (
                             <>
                               <Download size={16} className="text-black" />
-                              <span>DOWNLOAD WINDOWS INSTALLER (SETUP.EXE)</span>
+                              <span>DOWNLOAD DEVSPACE DESKTOP SETUP (.EXE)</span>
                             </>
                           )}
                         </button>
                       </div>
                     ) : (
-                      /* CASE B: No Published Release Available Yet */
-                      <div className="p-4 bg-amber-950/20 border border-amber-500/40 rounded-2xl text-left space-y-3 font-mono">
-                        <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-md text-[10px] font-bold flex items-center gap-1.5 uppercase">
-                            <AlertCircle size={13} className="text-amber-400" />
-                            Installer Release Pending Publication (v2.5.0)
-                          </span>
-                          <span className="text-[10px] text-zinc-400 font-bold">Dev/Preview Status</span>
+                      /* Production Release Pending Card - User Friendly, Zero Dev Diagnostics */
+                      <div className="p-5 bg-zinc-950 border border-zinc-800 rounded-2xl text-left space-y-3 font-sans">
+                        <div className="flex items-center gap-2 text-yellow-400 font-mono text-xs font-bold">
+                          <AlertCircle size={15} />
+                          <span>Preparing Latest Desktop Release</span>
                         </div>
-
-                        <div className="space-y-1.5 text-xs">
-                          <span className="font-bold text-white block">
-                            No Compiled Binary Published Yet
-                          </span>
-                          <p className="text-[11px] text-zinc-300 font-sans leading-relaxed">
-                            The production executable setup file (<code className="text-yellow-300 font-mono">DevSpace Aether Desktop Setup 2.5.0.exe</code>) has not been published to the release server yet for version 2.5.0.
-                          </p>
-                          <p className="text-[10.5px] text-zinc-400 font-sans">
-                            If you are an end user, please wait until the maintainer publishes the v2.5.0 executable release.
-                          </p>
-                        </div>
-
+                        <p className="text-xs text-zinc-300 leading-relaxed">
+                          DevSpace Desktop for Windows is currently preparing its latest stable build. Please check back shortly.
+                        </p>
                         <button
                           onClick={() => {
                             setIsLoadingReleaseStatus(true);
@@ -819,63 +827,13 @@ export function DownloadDesktopModal({ isOpen, onClose }: DownloadDesktopModalPr
                               .then((s) => setReleaseStatus(s))
                               .finally(() => setIsLoadingReleaseStatus(false));
                           }}
-                          className="w-full py-2.5 px-4 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-yellow-300 font-mono text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          className="w-full py-2.5 px-4 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-yellow-300 font-mono text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
                         >
                           <RefreshCw size={13} />
-                          <span>Check Again For Published Installer</span>
+                          <span>Check Release Status Again</span>
                         </button>
                       </div>
                     )}
-
-                    {/* Developer Build Pipeline Status Box (Explicitly for Developers) */}
-                    <div className="p-4 bg-zinc-950 border border-zinc-850 rounded-xl text-left space-y-2.5 font-mono text-[11px]">
-                      <button
-                        onClick={() => setShowDeveloperBuildInfo(!showDeveloperBuildInfo)}
-                        className="w-full flex items-center justify-between text-zinc-400 hover:text-white cursor-pointer transition-colors"
-                      >
-                        <span className="text-yellow-400 font-bold uppercase flex items-center gap-1.5">
-                          <Code2 size={14} />
-                          🛠️ Developer CI/CD Status & Build Options
-                        </span>
-                        <span className="text-[10px] bg-zinc-900 px-2 py-0.5 rounded text-zinc-400">
-                          {showDeveloperBuildInfo ? 'Hide Details' : 'Show Details'}
-                        </span>
-                      </button>
-
-                      {showDeveloperBuildInfo && (
-                        <div className="pt-2 border-t border-zinc-850 space-y-2.5 text-zinc-300 animate-in fade-in duration-150">
-                          <p className="text-[10.5px] text-zinc-400 leading-relaxed font-sans">
-                            The standalone Windows executable is automatically compiled by the GitHub CI/CD workflow (<code className="text-yellow-300 font-mono">.github/workflows/desktop-build.yml</code>) using <code className="text-white font-mono">electron-builder</code> when tags or commits are pushed to main.
-                          </p>
-
-                          <div className="p-2.5 bg-zinc-900 border border-zinc-800 rounded-lg space-y-1">
-                            <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                              <span>Local Windows Build Command:</span>
-                              <button
-                                onClick={copyPowershellUnblock}
-                                className="text-yellow-300 hover:underline flex items-center gap-1 cursor-pointer"
-                              >
-                                <Copy size={10} />
-                                <span>{copiedUnblockCmd ? 'Copied!' : 'Copy'}</span>
-                              </button>
-                            </div>
-                            <code className="block text-yellow-300 font-bold select-all">
-                              npm run dist:win
-                            </code>
-                          </div>
-
-                          <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/20 rounded-lg text-[10px] text-zinc-400 space-y-1">
-                            <span className="text-yellow-300 font-bold block flex items-center gap-1">
-                              <Info size={12} />
-                              Note on Source Code Exports:
-                            </span>
-                            <p className="leading-normal font-sans">
-                              Developers who want to export the raw source code for local modification should use AI Studio's top bar settings menu (<strong className="text-zinc-200">Export to ZIP / GitHub</strong>). The Desktop Wizard is exclusively for downloading published application binaries.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
 
                   {/* Wizard Footer Controls */}
