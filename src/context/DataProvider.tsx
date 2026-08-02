@@ -210,6 +210,17 @@ export async function deleteDocWithSanitize(ref: any) {
   }
 }
 
+export function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`⏱️ [Startup Guard] Async operation exceeded ${ms}ms limit - resolving with fallback.`);
+      resolve(fallback);
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 export type Project = {
   id: string;
   name: string;
@@ -1156,17 +1167,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchWithAuth = async (url: string, options: any = {}, retries = 3, delay = 1000): Promise<Response> => {
+    if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+      return new Response(null, { status: 404, statusText: 'File protocol - API bypass' });
+    }
     const headers = { ...(options.headers || {}) };
     if (auth.currentUser) {
       try {
-        const idToken = await auth.currentUser.getIdToken();
-        headers['Authorization'] = `Bearer ${idToken}`;
+        const idToken = await withTimeout(auth.currentUser.getIdToken(), 2000, '');
+        if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
       } catch (e) {
         console.warn("Failed to get idToken for authenticated request:", e);
       }
     }
     try {
-      return await fetch(url, { ...options, headers });
+      return await withTimeout(
+        fetch(url, { ...options, headers }),
+        3000,
+        new Response(null, { status: 504, statusText: 'Gateway Timeout' })
+      );
     } catch (e: any) {
       const isNetworkError = e instanceof TypeError || e.message?.includes('fetch') || e.message?.includes('NetworkError');
       if (retries > 0 && isNetworkError) {
@@ -2127,40 +2145,42 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
     // Strategy A: Scan all profiles (if permissions allow)
     try {
-      const allUsersSnap = await getDocs(usersRef);
-      allUsersSnap.forEach(docSnap => {
-        const data = docSnap.data();
-        const docEmails = new Set<string>();
-        if (data.email) docEmails.add(data.email.toLowerCase().trim());
-        if (data.githubEmail) docEmails.add(data.githubEmail.toLowerCase().trim());
-        if (data.githubUser?.email) docEmails.add(data.githubUser.email.toLowerCase().trim());
-        if (data.githubProfile?.email) docEmails.add(data.githubProfile.email.toLowerCase().trim());
+      const allUsersSnap = await withTimeout(getDocs(usersRef), 2000, null as any);
+      if (allUsersSnap) {
+        allUsersSnap.forEach(docSnap => {
+          const data = docSnap.data();
+          const docEmails = new Set<string>();
+          if (data.email) docEmails.add(data.email.toLowerCase().trim());
+          if (data.githubEmail) docEmails.add(data.githubEmail.toLowerCase().trim());
+          if (data.githubUser?.email) docEmails.add(data.githubUser.email.toLowerCase().trim());
+          if (data.githubProfile?.email) docEmails.add(data.githubProfile.email.toLowerCase().trim());
 
-        const docUsernames = new Set<string>();
-        if (data.username) docUsernames.add(data.username.toLowerCase().trim());
-        if (data.githubUser) {
-          if (typeof data.githubUser === 'string') {
-            docUsernames.add(data.githubUser.toLowerCase().trim());
-          } else if (data.githubUser.login) {
-            docUsernames.add(data.githubUser.login.toLowerCase().trim());
+          const docUsernames = new Set<string>();
+          if (data.username) docUsernames.add(data.username.toLowerCase().trim());
+          if (data.githubUser) {
+            if (typeof data.githubUser === 'string') {
+              docUsernames.add(data.githubUser.toLowerCase().trim());
+            } else if (data.githubUser.login) {
+              docUsernames.add(data.githubUser.login.toLowerCase().trim());
+            }
           }
-        }
-        if (data.githubProfile?.login) docUsernames.add(data.githubProfile.login.toLowerCase().trim());
+          if (data.githubProfile?.login) docUsernames.add(data.githubProfile.login.toLowerCase().trim());
 
-        let matches = false;
-        emailsToScan.forEach(email => {
-          if (docEmails.has(email)) matches = true;
-        });
-        usernamesToScan.forEach(username => {
-          if (docUsernames.has(username)) matches = true;
-        });
+          let matches = false;
+          emailsToScan.forEach(email => {
+            if (docEmails.has(email)) matches = true;
+          });
+          usernamesToScan.forEach(username => {
+            if (docUsernames.has(username)) matches = true;
+          });
 
-        if (matches || data.mergedInto === currentUid || docSnap.id === currentUid) {
-          if (!allProfiles.some(p => p.id === docSnap.id)) {
-            allProfiles.push({ id: docSnap.id, ...data });
+          if (matches || data.mergedInto === currentUid || docSnap.id === currentUid) {
+            if (!allProfiles.some(p => p.id === docSnap.id)) {
+              allProfiles.push({ id: docSnap.id, ...data });
+            }
           }
-        }
-      });
+        });
+      }
     } catch (scanErr) {
       console.warn("[IdentityScanning] Full scan restricted or failed, falling back to direct queries.");
     }
@@ -2182,23 +2202,29 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
     directQueries.push(query(usersRef, where('mergedInto', '==', currentUid)));
 
-    await Promise.all(directQueries.map(async (q) => {
-      try {
-        const snap = await getDocs(q);
-        snap.forEach(docSnap => {
-          if (!allProfiles.some(p => p.id === docSnap.id)) {
-            allProfiles.push({ id: docSnap.id, ...(docSnap.data() as any) });
+    await withTimeout(
+      Promise.all(directQueries.map(async (q) => {
+        try {
+          const snap = await withTimeout(getDocs(q), 1500, null as any);
+          if (snap) {
+            snap.forEach(docSnap => {
+              if (!allProfiles.some(p => p.id === docSnap.id)) {
+                allProfiles.push({ id: docSnap.id, ...(docSnap.data() as any) });
+              }
+            });
           }
-        });
-      } catch (e) {
-        // Safe catch for nested query index requirements or transient errors
-      }
-    }));
+        } catch (e) {
+          // Safe catch for nested query index requirements or transient errors
+        }
+      })),
+      2000,
+      []
+    );
 
     if (!allProfiles.some(p => p.id === currentUid)) {
       try {
-        const mySnap = await getDoc(doc(db, 'users', currentUid));
-        if (mySnap.exists()) {
+        const mySnap = await withTimeout(getDoc(doc(db, 'users', currentUid)), 1500, null as any);
+        if (mySnap && mySnap.exists()) {
           allProfiles.push({ id: mySnap.id, ...(mySnap.data() as any) });
         }
       } catch (e) {}
@@ -2236,20 +2262,22 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       // 1. CONSOLIDATE PROJECTS
       const projectsRef = collection(db, 'projects');
       const ownedQuery = query(projectsRef, where('ownerId', 'in', linkedUids));
-      const ownedSnap = await getDocs(ownedQuery);
+      const ownedSnap = await withTimeout(getDocs(ownedQuery), 2000, null as any);
       
       let consolidatedCount = 0;
       const projectsToUpdate: any[] = [];
-      ownedSnap.forEach((docSnap) => {
-        const proj = docSnap.data();
-        if (proj.ownerId !== primaryUid) {
-          projectsToUpdate.push({
-            id: docSnap.id,
-            ...proj,
-            ownerId: primaryUid
-          });
-        }
-      });
+      if (ownedSnap) {
+        ownedSnap.forEach((docSnap) => {
+          const proj = docSnap.data();
+          if (proj.ownerId !== primaryUid) {
+            projectsToUpdate.push({
+              id: docSnap.id,
+              ...proj,
+              ownerId: primaryUid
+            });
+          }
+        });
+      }
 
       for (const proj of projectsToUpdate) {
         try {
@@ -2622,9 +2650,31 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
   const loadUserWorkspace = async (user: any, computedLinkedUids?: string[]) => {
     if (!user) return;
+    const workspaceLoadStart = performance.now();
+    console.log(`⏱️ [Startup Timing][Stage 5/6] Remote Workspace Sync starting for UID: ${user.uid}`);
     try {
-      setIsInitialLoadDone(false);
-      const idToken = await user.getIdToken();
+      // Instantly hydrate local cache into state first to ensure zero layout jump
+      const localProjects = getStored<Project[]>('app_projects', []);
+      const localIssues = getStored<Issue[]>('app_issues', []);
+      const localNotes = getStored<Note[]>('app_notes', []);
+      const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+      if (localProjects.length > 0) setProjects(localProjects);
+      if (localIssues.length > 0) setIssues(localIssues);
+      if (localNotes.length > 0) setNotes(localNotes);
+      if (localSynapses.length > 0) setCortexSynapses(localSynapses);
+
+      // Acquire ID Token with a 1500ms timeout guard
+      const idTokenPromise = user.getIdToken().catch((e: any) => {
+        console.warn("⏱️ [Startup Timing] ID Token fetch deferred:", e?.message || e);
+        return "";
+      });
+      const idToken = await Promise.race([
+        idTokenPromise,
+        new Promise<string>((res) => setTimeout(() => {
+          console.warn("⏱️ [Startup Timing] ID Token fetch exceeded 1500ms timeout guard - proceeding with local state");
+          res("");
+        }, 1500))
+      ]);
       
       // 1. Fetch user-scoped server cache
       let finalProjects: Project[] = [];
@@ -2637,52 +2687,45 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       let finalAetherPersonalityRules: string[] = [];
       let finalPasscodePin: string = "1234";
       
-      try {
-        const res = await fetch('/api/voice/sync-cache', {
-          headers: {
-            'Authorization': `Bearer ${idToken}`
-          }
-        });
-        if (res.ok) {
-          const data = await safeJsonFromResponse(res);
-          if (data) {
-            finalProjects = data.projects || [];
-            finalIssues = data.issues || [];
-            finalNotes = data.notes || [];
-            finalCortexSynapses = data.cortexSynapses || [];
-            finalPhases = data.phases || [];
-            finalAgents = data.agents || [];
-            finalAiContextRules = data.aiContextRules || "";
-            finalAetherPersonalityRules = data.aetherPersonalityRules || [];
-            finalPasscodePin = data.passcodePin || "1234";
+      if (idToken) {
+        try {
+          const syncCacheStart = performance.now();
+          const res = await Promise.race([
+            fetch('/api/voice/sync-cache', {
+              headers: { 'Authorization': `Bearer ${idToken}` }
+            }),
+            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error("Server sync cache timeout (2000ms)")), 2000))
+          ]);
+          if (res.ok) {
+            const data = await safeJsonFromResponse(res);
+            if (data) {
+              finalProjects = data.projects || [];
+              finalIssues = data.issues || [];
+              finalNotes = data.notes || [];
+              finalCortexSynapses = data.cortexSynapses || [];
+              finalPhases = data.phases || [];
+              finalAgents = data.agents || [];
+              finalAiContextRules = data.aiContextRules || "";
+              finalAetherPersonalityRules = data.aetherPersonalityRules || [];
+              finalPasscodePin = data.passcodePin || "1234";
 
-            setProjects(finalProjects);
-            setIssues(finalIssues);
-            setNotes(finalNotes);
-            setPhases(finalPhases);
-            setAgents(finalAgents);
-            setCortexSynapses(finalCortexSynapses);
-            if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
-            if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
-            if (typeof data.passcodePin === 'string') {
-              setPasscodePin(data.passcodePin);
-              localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
+              setProjects(finalProjects);
+              setIssues(finalIssues);
+              setNotes(finalNotes);
+              setPhases(finalPhases);
+              setAgents(finalAgents);
+              setCortexSynapses(finalCortexSynapses);
+              if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
+              if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
+              if (typeof data.passcodePin === 'string') {
+                setPasscodePin(data.passcodePin);
+                localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
+              }
+              console.log(`⏱️ [Startup Timing] Server sync cache fetched in ${(performance.now() - syncCacheStart).toFixed(1)}ms`);
             }
           }
-        }
-      } catch (e: any) {
-        const msg = e?.message || '';
-        if (
-          msg.includes('fetch') || 
-          msg.includes('NetworkError') || 
-          msg.toLowerCase().includes('network') || 
-          msg.toLowerCase().includes('offline') ||
-          msg.toLowerCase().includes('could not reach') ||
-          msg.toLowerCase().includes('network-request-failed')
-        ) {
-          console.warn("Failed to load user-scoped server state (network/offline):", e.message);
-        } else {
-          console.error("Failed to load user-scoped server state:", e);
+        } catch (e: any) {
+          console.warn("⏱️ [Startup Timing] Server cache sync non-fatal error/timeout:", e?.message || e);
         }
       }
 
@@ -2691,13 +2734,15 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       try {
         const uidsToQuery = Array.from(new Set([user.uid, ...(computedLinkedUids || linkedUids || [])]));
         const ownedQuery = query(collection(db, 'projects'), where('ownerId', 'in', uidsToQuery));
-        const ownedSnap = await getDocs(ownedQuery);
-        ownedSnap.forEach((docSnap) => {
-          const proj = docSnap.data() as Project;
-          if (!fbProjects.some(p => p.id === proj.id)) {
-            fbProjects.push(proj);
-          }
-        });
+        const ownedSnap = await withTimeout(getDocs(ownedQuery), 2000, null as any);
+        if (ownedSnap) {
+          ownedSnap.forEach((docSnap) => {
+            const proj = docSnap.data() as Project;
+            if (!fbProjects.some(p => p.id === proj.id)) {
+              fbProjects.push(proj);
+            }
+          });
+        }
       } catch (err) {
         console.warn("Failed to fetch owned projects:", err);
       }
@@ -2705,20 +2750,21 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       if (user.email) {
         try {
           const collabQuery = query(collection(db, 'projects'), where('collaborators', 'array-contains', user.email.trim().toLowerCase()));
-          const collabSnap = await getDocs(collabQuery);
-          collabSnap.forEach((docSnap) => {
-            const proj = docSnap.data() as Project;
-            if (!fbProjects.some(p => p.id === proj.id)) {
-              fbProjects.push(proj);
-            }
-          });
+          const collabSnap = await withTimeout(getDocs(collabQuery), 2000, null as any);
+          if (collabSnap) {
+            collabSnap.forEach((docSnap) => {
+              const proj = docSnap.data() as Project;
+              if (!fbProjects.some(p => p.id === proj.id)) {
+                fbProjects.push(proj);
+              }
+            });
+          }
         } catch (err) {
           console.warn("Failed to fetch collab projects:", err);
         }
       }
 
       // 1.5 Migrate local anonymous/sandbox projects and resources if they exist
-      const localProjects = getStored<Project[]>('app_projects', []);
       const anonProjects = localProjects.filter(p => !p.ownerId || p.ownerId === 'anonymous' || p.ownerId.startsWith('sandbox-'));
       
       if (anonProjects.length > 0) {
@@ -2788,35 +2834,43 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       const allowedProjectNames = fbProjects.map(p => (p.name || '').toLowerCase());
 
       // Fetch user's issues, notes, synapses
-      const issuesSnap = await getDocs(collection(db, 'issues'));
       const fbIssues: Issue[] = [];
-      issuesSnap.forEach((docSnap) => {
-        const item = docSnap.data() as Issue;
-        if (allowedProjectIds.includes(item.projectId)) {
-          fbIssues.push(item);
+      try {
+        const issuesSnap = await withTimeout(getDocs(collection(db, 'issues')), 2000, null as any);
+        if (issuesSnap) {
+          issuesSnap.forEach((docSnap) => {
+            const item = docSnap.data() as Issue;
+            if (allowedProjectIds.includes(item.projectId)) {
+              fbIssues.push(item);
+            }
+          });
         }
-      });
+      } catch (e) {}
 
       const fbNotes: Note[] = [];
       try {
-        const notesSnap = await getDocs(collection(db, 'notes'));
-        notesSnap.forEach((docSnap) => {
-          const item = docSnap.data() as Note;
-          if (allowedProjectIds.includes(item.projectId)) {
-            fbNotes.push(item);
-          }
-        });
+        const notesSnap = await withTimeout(getDocs(collection(db, 'notes')), 2000, null as any);
+        if (notesSnap) {
+          notesSnap.forEach((docSnap) => {
+            const item = docSnap.data() as Note;
+            if (allowedProjectIds.includes(item.projectId)) {
+              fbNotes.push(item);
+            }
+          });
+        }
       } catch (e) {}
 
       const fbSynapses: CortexSynapse[] = [];
       try {
-        const synapsesSnap = await getDocs(collection(db, 'cortexSynapses'));
-        synapsesSnap.forEach((docSnap) => {
-          const item = docSnap.data() as CortexSynapse;
-          if (!item.projectName || allowedProjectNames.includes(item.projectName.toLowerCase())) {
-            fbSynapses.push(item);
-          }
-        });
+        const synapsesSnap = await withTimeout(getDocs(collection(db, 'cortexSynapses')), 2000, null as any);
+        if (synapsesSnap) {
+          synapsesSnap.forEach((docSnap) => {
+            const item = docSnap.data() as CortexSynapse;
+            if (!item.projectName || allowedProjectNames.includes(item.projectName.toLowerCase())) {
+              fbSynapses.push(item);
+            }
+          });
+        }
       } catch (e) {}
 
       // Merge & set state
@@ -2991,76 +3045,85 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     let unsubOutgoingInvitations: (() => void) | null = null;
 
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      const authInitStartTime = performance.now();
       try {
-      if (unsubNotifications) {
-        unsubNotifications();
-        unsubNotifications = null;
-      }
-      if (unsubInvitations) {
-        unsubInvitations();
-        unsubInvitations = null;
-      }
-      if (unsubOutgoingInvitations) {
-        unsubOutgoingInvitations();
-        unsubOutgoingInvitations = null;
-      }
-
-      let isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
-      if (isSandbox && user) {
-        window.localStorage.removeItem('app_auth_mode');
-        isSandbox = false;
-      }
-      if (isSandbox) {
-        const localUser = getStored<any>('app_google_user', null);
-        if (localUser) {
-          setGoogleUser(localUser);
-          const cachedProfile = getStored<any>('app_user_profile', null) || {
-            uid: localUser.uid,
-            email: localUser.email,
-            username: localUser.displayName || 'SandboxDev',
-            displayName: localUser.displayName || 'SandboxDev',
-            avatarColor: '#eab308',
-            title: 'Full-Stack Developer (Sandbox)',
-            bio: 'Active DevSpace collaborator and sandbox designer.',
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          };
-          setUserProfile(cachedProfile);
-          
-          // Load local workspace data
-          const localProjects = getStored<Project[]>('app_projects', []);
-          const localIssues = getStored<Issue[]>('app_issues', []);
-          const localNotes = getStored<Note[]>('app_notes', []);
-          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
-          setProjects(localProjects);
-          setIssues(localIssues);
-          setNotes(localNotes);
-          setCortexSynapses(localSynapses);
-          
-          setIsInitialLoadDone(true);
-          return;
-        }
-      }
-
-      if (user) {
-        const cleanUser = {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-        };
-        setGoogleUser(cleanUser);
-        setStored('app_google_user', cleanUser);
+        console.log(`⏱️ [Startup Timing][Stage 1/5] Auth state change event fired for ${user ? `user ${user.uid}` : 'anonymous/guest session'}`);
         
-        // Fetch or initialize user profile (Unified multi-provider account sync engine)
-        let activeProfile: any = null;
-        let computedLinkedUids: string[] = [user.uid];
-        let currentEmail = user.email?.toLowerCase().trim() || '';
+        // Immediately ensure UI is unblocked with local state (0ms wait)
+        setIsInitialLoadDone(true);
+
+        if (unsubNotifications) {
+          unsubNotifications();
+          unsubNotifications = null;
+        }
+        if (unsubInvitations) {
+          unsubInvitations();
+          unsubInvitations = null;
+        }
+        if (unsubOutgoingInvitations) {
+          unsubOutgoingInvitations();
+          unsubOutgoingInvitations = null;
+        }
+
+        let isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
+        if (isSandbox && user) {
+          window.localStorage.removeItem('app_auth_mode');
+          isSandbox = false;
+        }
+        if (isSandbox) {
+          const localUser = getStored<any>('app_google_user', null);
+          if (localUser) {
+            setGoogleUser(localUser);
+            const cachedProfile = getStored<any>('app_user_profile', null) || {
+              uid: localUser.uid,
+              email: localUser.email,
+              username: localUser.displayName || 'SandboxDev',
+              displayName: localUser.displayName || 'SandboxDev',
+              avatarColor: '#eab308',
+              title: 'Full-Stack Developer (Sandbox)',
+              bio: 'Active DevSpace collaborator and sandbox designer.',
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+            setUserProfile(cachedProfile);
+            
+            // Load local workspace data
+            const localProjects = getStored<Project[]>('app_projects', []);
+            const localIssues = getStored<Issue[]>('app_issues', []);
+            const localNotes = getStored<Note[]>('app_notes', []);
+            const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+            setProjects(localProjects);
+            setIssues(localIssues);
+            setNotes(localNotes);
+            setCortexSynapses(localSynapses);
+            
+            console.log(`⏱️ [Startup Timing][Stage 5/5] Sandbox startup ready in ${(performance.now() - authInitStartTime).toFixed(1)}ms`);
+            setIsInitialLoadDone(true);
+            return;
+          }
+        }
+
+        if (user) {
+          const cleanUser = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+          };
+          setGoogleUser(cleanUser);
+          setStored('app_google_user', cleanUser);
+          
+          // Fetch or initialize user profile (Unified multi-provider account sync engine)
+          console.log(`⏱️ [Startup Timing][Stage 2/5] Identity & Profile Sync starting...`);
+          const profileSyncStart = performance.now();
+          let activeProfile: any = null;
+          let computedLinkedUids: string[] = [user.uid];
+          let currentEmail = user.email?.toLowerCase().trim() || '';
         
         try {
           const myDocRef = doc(db, 'users', user.uid);
-          const mySnap = await getDoc(myDocRef);
-          if (mySnap.exists()) {
+          const mySnap = await withTimeout(getDoc(myDocRef), 1500, null as any);
+          if (mySnap && mySnap.exists()) {
             activeProfile = mySnap.data();
             if (!currentEmail) {
               currentEmail = (activeProfile.email || activeProfile.githubEmail || activeProfile.githubUser?.email || activeProfile.githubProfile?.email || '').toLowerCase().trim();
@@ -3171,8 +3234,8 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
             for (const uid of linkedUids) {
               try {
                 const billDocRef = doc(db, 'google_ai_billing', uid);
-                const billSnap = await getDoc(billDocRef);
-                if (billSnap.exists()) {
+                const billSnap = await withTimeout(getDoc(billDocRef), 1500, null as any);
+                if (billSnap && billSnap.exists()) {
                   const bData = billSnap.data();
                   billingFound = true;
                   if (bData.creditsBalance > mergedBilling.creditsBalance) {
@@ -3217,8 +3280,8 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           // Normal profile loading/initialization fallback if email check failed or email is missing
           try {
             const userDocRef = doc(db, 'users', user.uid);
-            const docSnap = await getDoc(userDocRef);
-            if (docSnap.exists()) {
+            const docSnap = await withTimeout(getDoc(userDocRef), 1500, null as any);
+            if (docSnap && docSnap.exists()) {
               const data = docSnap.data();
               setUserProfile(data);
               setStored('app_user_profile', data);
@@ -3314,11 +3377,12 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           console.warn("Failed to subscribe to notifications:", e);
         }
 
-        // Load the full isolated user workspace data
-        await reconcileUserAccounts(user, computedLinkedUids);
-        await loadUserWorkspace(user, computedLinkedUids);
+        // Load isolated user workspace data safely with timeout guard
+        console.log(`⏱️ [Startup Timing][Stage 3/5] Reconciling user accounts...`);
+        await withTimeout(reconcileUserAccounts(user, computedLinkedUids), 2000, undefined);
+        console.log(`⏱️ [Startup Timing][Stage 4/5] Loading user workspace data...`);
+        await withTimeout(loadUserWorkspace(user, computedLinkedUids), 2000, undefined);
       } else {
-        setIsInitialLoadDone(false);
         setGoogleUser(null);
         setStored('app_google_user', null);
         setUserProfile(null);
@@ -3333,6 +3397,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     } catch (authErr) {
       console.warn("[AuthInit] Handled error during auth state initialization:", authErr);
     } finally {
+      console.log(`⏱️ [Startup Timing][Stage 5/5] DevSpace workspace startup complete in ${(performance.now() - authInitStartTime).toFixed(1)}ms`);
       setIsInitialLoadDone(true);
     }
   });

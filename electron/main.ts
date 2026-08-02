@@ -9,8 +9,11 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 720,
-    title: 'DevSpace Aether Desktop',
-    backgroundColor: '#09090c',
+    title: 'DevSpace',
+    frame: false,
+    titleBarStyle: 'hidden',
+    icon: path.join(__dirname, '../public/favicon.svg'),
+    backgroundColor: '#030305',
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -20,6 +23,18 @@ function createWindow() {
       sandbox: false,
       webSecurity: true,
     },
+  });
+
+  // Maximize the main window by default for full-screen workspace layout
+  mainWindow.maximize();
+
+  // Listen for maximize/unmaximize events to notify renderer process
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send('window:maximized-change', true);
+  });
+
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('window:maximized-change', false);
   });
 
   // Load production build or local dev server URL

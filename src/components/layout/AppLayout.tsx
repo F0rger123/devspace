@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { RightSidebar } from './RightSidebar';
 import { Header } from './Header';
+import { CustomTitleBar } from './CustomTitleBar';
+import { isElectron } from '../../lib/electronBridge';
 import { CommandPalette } from '../ui/CommandPalette';
 import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
 import { KineticController } from '../ui/KineticController';
@@ -455,7 +457,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </div>
 
       <div className="relative z-10 flex flex-col h-full w-full overflow-hidden">
-        <Header />
+        {isElectron() ? <CustomTitleBar /> : <Header />}
         <div className="flex flex-grow overflow-hidden relative">
           <Sidebar />
 
