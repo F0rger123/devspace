@@ -2093,7 +2093,7 @@ Please output a JSON document EXACTLY in the following format (no markdown tags,
 
          try {
            const geminiRes = await ai.models.generateContent({
-             model: 'gemini-3.1-flash-lite',
+             model: 'gemini-3.6-flash',
              contents: prompt,
              config: {
                responseMimeType: 'application/json',
@@ -3371,9 +3371,9 @@ Be highly technical, realistic, and structural. Ensure your output is extremely 
           config: missionConfig
         });
       } catch (missionErr: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", missionErr);
+        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", missionErr);
         response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.6-flash',
           contents: systemPrompt,
           config: missionConfig
         });
@@ -4518,7 +4518,7 @@ Keep the tone highly technical, crisp, and clean. Avoid fluff.`;
         });
       } catch (err) {
         response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.6-flash',
           contents: prompt
         });
       }
@@ -4616,9 +4616,9 @@ Output FORMAT: A JSON object containing a single array "opinions":
           config: swarmConfig
         });
       } catch (swarmErr: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", swarmErr);
+        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", swarmErr);
         response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.6-flash',
           contents: systemPrompt,
           config: swarmConfig
         });
@@ -4740,9 +4740,9 @@ CRITICAL RULES:
           config: recConfig
         });
       } catch (recErr: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", recErr);
+        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", recErr);
         response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.6-flash',
           contents: prompt,
           config: recConfig
         });
@@ -5527,9 +5527,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
           }
         });
       } catch (err: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
+        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
         response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.6-flash',
           contents: contents,
           config: {
             systemInstruction: systemPrompt,
@@ -5636,9 +5636,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
           }
         });
       } catch (err: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
+        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
         responseStream = await ai.models.generateContentStream({
-          model: 'gemini-3.1-flash-lite',
+          model: 'gemini-3.6-flash',
           contents: contents,
           config: {
             systemInstruction: systemPrompt,
@@ -7066,9 +7066,9 @@ Code:
             contents: prompt
           });
         } catch (err: any) {
-          logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
+          logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
           response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-lite',
+            model: 'gemini-3.6-flash',
             contents: prompt
           });
         }
@@ -7349,9 +7349,9 @@ Ensure filePaths are relative paths logical for this project's structure (usuall
             config: { responseMimeType: 'application/json' }
           });
         } catch (err: any) {
-          logModelFallback("gemini-3.5-flash", "gemini-3.1-flash-lite", err);
+          logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
           response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-lite',
+            model: 'gemini-3.6-flash',
             contents: prompt,
             config: { responseMimeType: 'application/json' }
           });
