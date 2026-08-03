@@ -57,7 +57,7 @@ function createWindow() {
 
   // Secure navigation: block in-app navigation to arbitrary external web pages
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://') && !url.startsWith('http://localhost:3000')) {
+    if (!url.startsWith('file://') && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')) {
       event.preventDefault();
       shell.openExternal(url);
     }
@@ -76,7 +76,7 @@ function createWindow() {
 // Security Helper: Validate IPC Sender Origin
 function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
   const senderUrl = event.senderFrame?.url || '';
-  return senderUrl.startsWith('file://') || senderUrl.startsWith('http://localhost:3000');
+  return senderUrl.startsWith('file://') || senderUrl.startsWith('http://localhost') || senderUrl.startsWith('http://127.0.0.1');
 }
 
 // App lifecycle
