@@ -112,6 +112,59 @@ export function getIsFirestoreQuotaExceeded() {
   return isFirestoreQuotaExceeded;
 }
 
+// Background Write Queue Engine - prevents any Firestore write operations from blocking UI startup
+interface QueuedWriteTask {
+  id: string;
+  name: string;
+  fn: () => Promise<void>;
+  retries: number;
+}
+
+const writeQueue: QueuedWriteTask[] = [];
+let isQueueProcessing = false;
+
+export function enqueueBackgroundWrite(name: string, fn: () => Promise<void>) {
+  writeQueue.push({
+    id: `${name}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    fn,
+    retries: 0
+  });
+  console.log(`📥 [Background Write Queue] Enqueued async task: ${name} (Queue depth: ${writeQueue.length})`);
+  
+  setTimeout(() => {
+    processBackgroundWriteQueue().catch(err => {
+      console.warn("[Background Write Queue] Warning during processing:", err);
+    });
+  }, 50);
+}
+
+async function processBackgroundWriteQueue() {
+  if (isQueueProcessing || writeQueue.length === 0) return;
+  isQueueProcessing = true;
+
+  while (writeQueue.length > 0) {
+    const task = writeQueue.shift();
+    if (!task) continue;
+
+    try {
+      console.log(`🚀 [Background Write Queue] Executing task: ${task.name}`);
+      await task.fn();
+      console.log(`✅ [Background Write Queue] Successfully finished task: ${task.name}`);
+    } catch (err: any) {
+      console.warn(`⚠️ [Background Write Queue] Task failure for ${task.name}:`, err?.message || err);
+      if (task.retries < 3 && (err?.code === 'unavailable' || err?.message?.includes('fetch') || err?.message?.includes('network'))) {
+        task.retries += 1;
+        writeQueue.push(task);
+        console.log(`🔄 [Background Write Queue] Re-queuing ${task.name} for background retry (${task.retries}/3)`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  isQueueProcessing = false;
+}
+
 export async function setDocWithSanitize(ref: any, data: any, options?: any) {
   if (isFirestoreQuotaExceeded) {
     console.debug(`[Local Mode] Bypassing Firestore setDoc to ${ref?.path || 'unknown'} due to exceeded quota.`);
@@ -1059,9 +1112,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     updateStartupRecord(record);
 
-    console.log(`⏱️ [Startup Sequence][Task: ${name}] Started...`);
+    console.log(`⏱️ [Startup Instrumentation][Task: ${name}] STARTED at t=${startTime.toFixed(1)}ms`);
 
     let timerId: any = null;
+    let thresholdTimerId: any = setTimeout(() => {
+      console.warn(`⏱️ [Startup Instrumentation][Task: ${name}] EXCEEDED 2000ms threshold! Still waiting...`);
+    }, 2000);
+
     const timeoutPromise = new Promise<{ isTimeout: true }>((resolve) => {
       timerId = setTimeout(() => resolve({ isTimeout: true }), timeoutMs);
     });
@@ -1073,6 +1130,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ]);
 
       if (timerId) clearTimeout(timerId);
+      if (thresholdTimerId) clearTimeout(thresholdTimerId);
 
       const durationMs = Math.round(performance.now() - startTime);
       record.durationMs = durationMs;
@@ -1081,25 +1139,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if ('isTimeout' in outcome && outcome.isTimeout) {
         record.status = 'timed_out';
         record.details = `Operation exceeded ${timeoutMs}ms limit. Soft-failing subsystem to prevent startup hang.`;
-        console.warn(`⏱️ [Startup Sequence][Task: ${name}] TIMED OUT (${durationMs}ms) - using fallback state.`);
+        console.warn(`⏱️ [Startup Instrumentation][Task: ${name}] TIMED OUT after ${durationMs}ms - using fallback value.`);
         updateStartupRecord(record);
         return fallbackValue;
       } else {
         record.status = 'completed';
         record.details = `Task completed successfully.`;
-        console.log(`⏱️ [Startup Sequence][Task: ${name}] COMPLETED (${durationMs}ms).`);
+        console.log(`⏱️ [Startup Instrumentation][Task: ${name}] COMPLETED in ${durationMs}ms.`);
         updateStartupRecord(record);
         return (outcome as any).res;
       }
     } catch (err: any) {
       if (timerId) clearTimeout(timerId);
+      if (thresholdTimerId) clearTimeout(thresholdTimerId);
       const durationMs = Math.round(performance.now() - startTime);
       record.status = 'failed';
       record.durationMs = durationMs;
       record.endTime = performance.now();
       record.error = err?.message || String(err);
       record.details = `Subsystem error encountered: ${err?.message || err}`;
-      console.warn(`⏱️ [Startup Sequence][Task: ${name}] FAILED (${durationMs}ms):`, err?.message || err);
+      console.warn(`⏱️ [Startup Instrumentation][Task: ${name}] FAILED after ${durationMs}ms:`, err?.message || err);
       updateStartupRecord(record);
       return fallbackValue;
     }
@@ -1507,7 +1566,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         finalIssues = getStored<Issue[]>('app_issues', []);
       }
 
-      // Synchronize with Firestore
+      // ⚡ UNBLOCK UI IMMEDIATELY: Local/server cache state is hydrated. UI is ready.
+      setIsInitialLoadDone(true);
+
+      // Synchronize with Firestore in background without blocking UI startup
       try {
         let fbProjects: Project[] = [];
         const currentUser = auth.currentUser;
@@ -1625,14 +1687,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setProjects(mergedProjects);
           finalProjects = mergedProjects;
         } else if (finalProjects.length > 0) {
-          // Empty in Firestore, seed with currently resolved projects
-          for (const proj of finalProjects) {
-            try {
-              await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
-            } catch (err: any) {
-              console.warn(`Failed to seed project ${proj.id}:`, err.message || err);
+          // Empty in Firestore, seed asynchronously in background queue without blocking
+          const projectsToSeed = [...finalProjects];
+          enqueueBackgroundWrite('seed_projects_startup', async () => {
+            for (const proj of projectsToSeed) {
+              try {
+                await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+              } catch (err: any) {
+                console.warn(`Failed to seed project ${proj.id}:`, err.message || err);
+              }
             }
-          }
+          });
         }
 
         if (fbIssues.length > 0) {
@@ -1640,14 +1705,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
           finalIssues = fbIssues;
           lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(fbIssues));
         } else if (finalIssues.length > 0) {
-          // Empty in Firestore, seed with currently resolved issues
-          for (const iss of finalIssues) {
-            try {
-              await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
-            } catch (err: any) {
-              console.warn(`Failed to seed issue ${iss.id}:`, err.message || err);
+          // Empty in Firestore, seed asynchronously in background queue
+          const issuesToSeed = [...finalIssues];
+          enqueueBackgroundWrite('seed_issues_startup', async () => {
+            for (const iss of issuesToSeed) {
+              try {
+                await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+              } catch (err: any) {
+                console.warn(`Failed to seed issue ${iss.id}:`, err.message || err);
+              }
             }
-          }
+          });
           lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(finalIssues));
         } else {
           lastFirestoreIssuesRef.current = [];
@@ -1659,13 +1727,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else {
           const localNotes = getStored<Note[]>('app_notes', []);
           if (localNotes.length > 0) {
-            for (const note of localNotes) {
-              try {
-                await setDocWithSanitize(doc(db, 'notes', note.id), note);
-              } catch (err: any) {
-                console.warn(`Failed to seed note ${note.id}:`, err.message || err);
+            enqueueBackgroundWrite('seed_notes_startup', async () => {
+              for (const note of localNotes) {
+                try {
+                  await setDocWithSanitize(doc(db, 'notes', note.id), note);
+                } catch (err: any) {
+                  console.warn(`Failed to seed note ${note.id}:`, err.message || err);
+                }
               }
-            }
+            });
           }
           lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(localNotes));
         }
@@ -1676,13 +1746,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else {
           const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
           if (localSynapses.length > 0) {
-            for (const syn of localSynapses) {
-              try {
-                await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
-              } catch (err: any) {
-                console.warn(`Failed to seed synapse ${syn.id}:`, err.message || err);
+            enqueueBackgroundWrite('seed_synapses_startup', async () => {
+              for (const syn of localSynapses) {
+                try {
+                  await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+                } catch (err: any) {
+                  console.warn(`Failed to seed synapse ${syn.id}:`, err.message || err);
+                }
               }
-            }
+            });
           }
           lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(localSynapses));
         }
@@ -1692,8 +1764,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else {
           console.error("Failed to load / seed to Firestore status:", fbErr);
         }
-      } finally {
-        setIsInitialLoadDone(true);
       }
     }
     loadServerState();
@@ -2993,45 +3063,46 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           return p;
         });
 
-        // Write migrated projects to Firestore
-        for (const proj of migratedProjects) {
-          if (proj.ownerId === user.uid) {
-            try {
-              await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
-              console.log(`[Migration] Migrated project ${proj.id} saved to Firestore.`);
-            } catch (fsErr) {
-              console.warn(`[Migration] Failed to save migrated project ${proj.id} to Firestore:`, fsErr);
+        // Enqueue migrated projects, issues, notes, synapses to Firestore in background queue
+        enqueueBackgroundWrite('migrate_anonymous_data', async () => {
+          for (const proj of migratedProjects) {
+            if (proj.ownerId === user.uid) {
+              try {
+                await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
+                console.log(`[Migration] Migrated project ${proj.id} saved to Firestore.`);
+              } catch (fsErr) {
+                console.warn(`[Migration] Failed to save migrated project ${proj.id} to Firestore:`, fsErr);
+              }
             }
           }
-        }
 
-        // Migrate local anonymous issues, notes, synapses to Firestore
-        const localIssues = getStored<Issue[]>('app_issues', []);
-        for (const iss of localIssues) {
-          try {
-            await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
-          } catch (fsErr) {
-            console.warn(`[Migration] Failed to save issues of migrated project ${iss.id} to Firestore:`, fsErr);
+          const localIssues = getStored<Issue[]>('app_issues', []);
+          for (const iss of localIssues) {
+            try {
+              await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
+            } catch (fsErr) {
+              console.warn(`[Migration] Failed to save issues of migrated project ${iss.id} to Firestore:`, fsErr);
+            }
           }
-        }
 
-        const localNotes = getStored<Note[]>('app_notes', []);
-        for (const note of localNotes) {
-          try {
-            await setDocWithSanitize(doc(db, 'notes', note.id), note);
-          } catch (fsErr) {
-            console.warn(`[Migration] Failed to save notes of migrated project ${note.id} to Firestore:`, fsErr);
+          const localNotes = getStored<Note[]>('app_notes', []);
+          for (const note of localNotes) {
+            try {
+              await setDocWithSanitize(doc(db, 'notes', note.id), note);
+            } catch (fsErr) {
+              console.warn(`[Migration] Failed to save notes of migrated project ${note.id} to Firestore:`, fsErr);
+            }
           }
-        }
 
-        const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
-        for (const syn of localSynapses) {
-          try {
-            await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
-          } catch (fsErr) {
-            console.warn(`[Migration] Failed to save synapses of migrated project ${syn.id} to Firestore:`, fsErr);
+          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
+          for (const syn of localSynapses) {
+            try {
+              await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+            } catch (fsErr) {
+              console.warn(`[Migration] Failed to save synapses of migrated project ${syn.id} to Firestore:`, fsErr);
+            }
           }
-        }
+        });
 
         // Add them to fbProjects list so they are treated as fetched
         migratedProjects.forEach(p => {
@@ -3391,28 +3462,29 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
             }
           });
             
-            // Save the merged profile to all associated UIDs so they are perfectly mirrored
+            // Save the merged profile to all associated UIDs asynchronously in background queue
             const linkedUids = Array.from(new Set([currentUid, ...allProfiles.map(p => p.id)]));
             computedLinkedUids = linkedUids;
             console.log(`[AutoMerge] Mirroring profile across identical-email accounts:`, linkedUids);
             setLinkedUids(linkedUids);
             setStored('app_linked_uids', linkedUids);
             
-            for (const uid of linkedUids) {
-              try {
-                const targetDocRef = doc(db, 'users', uid);
-                // Keep the target document's own UID field
-                const docToSave = {
-                  ...mergedProfile,
-                  uid: uid,
-                  email: currentEmail,
-                  mergedInto: null
-                };
-                await setDocWithSanitize(targetDocRef, docToSave, { merge: true });
-              } catch (writeErr: any) {
-                console.warn(`[AutoMerge] Failed to mirror profile to user ${uid}:`, writeErr.message || writeErr);
+            enqueueBackgroundWrite('mirror_profile_auth', async () => {
+              for (const uid of linkedUids) {
+                try {
+                  const targetDocRef = doc(db, 'users', uid);
+                  const docToSave = {
+                    ...mergedProfile,
+                    uid: uid,
+                    email: currentEmail,
+                    mergedInto: null
+                  };
+                  await setDocWithSanitize(targetDocRef, docToSave, { merge: true });
+                } catch (writeErr: any) {
+                  console.warn(`[AutoMerge] Failed to mirror profile to user ${uid}:`, writeErr.message || writeErr);
+                }
               }
-            }
+            });
             
             // Set the state user profile
             activeProfile = { ...mergedProfile, uid: currentUid };
@@ -3441,14 +3513,12 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
               updatedAt: Date.now()
             };
             
-            let billingFound = false;
             for (const uid of linkedUids) {
               try {
                 const billDocRef = doc(db, 'google_ai_billing', uid);
                 const billSnap = await withTimeout(getDoc(billDocRef), 1500, null as any);
                 if (billSnap && billSnap.exists()) {
                   const bData = billSnap.data();
-                  billingFound = true;
                   if (bData.creditsBalance > mergedBilling.creditsBalance) {
                     mergedBilling.creditsBalance = bData.creditsBalance;
                   }
@@ -3465,19 +3535,21 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
               }
             }
             
-            // Mirror merged billing doc to all linked UIDs
-            for (const uid of linkedUids) {
-              try {
-                const billDocRef = doc(db, 'google_ai_billing', uid);
-                await setDocWithSanitize(billDocRef, {
-                  ...mergedBilling,
-                  email: currentEmail, // Critical for cross-UID read security rules!
-                  updatedAt: Date.now()
-                }, { merge: true });
-              } catch (billWriteErr: any) {
-                console.warn(`[AutoMerge] Could not write billing to UID ${uid}:`, billWriteErr.message || billWriteErr);
+            // Mirror merged billing doc asynchronously in background queue
+            enqueueBackgroundWrite('mirror_billing_auth', async () => {
+              for (const uid of linkedUids) {
+                try {
+                  const billDocRef = doc(db, 'google_ai_billing', uid);
+                  await setDocWithSanitize(billDocRef, {
+                    ...mergedBilling,
+                    email: currentEmail, // Critical for cross-UID read security rules!
+                    updatedAt: Date.now()
+                  }, { merge: true });
+                } catch (billWriteErr: any) {
+                  console.warn(`[AutoMerge] Could not write billing to UID ${uid}:`, billWriteErr.message || billWriteErr);
+                }
               }
-            }
+            });
             
             if (linkedUids.length > 1) {
               showToast('✓ Linked developer profiles and billing settings synchronized successfully!', 'success', 4000);
@@ -3521,9 +3593,11 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
                 createdAt: Date.now(),
                 updatedAt: Date.now()
               };
-              await setDocWithSanitize(userDocRef, fallbackProfile);
               setUserProfile(fallbackProfile);
               setStored('app_user_profile', fallbackProfile);
+              enqueueBackgroundWrite('fallback_profile_auth', async () => {
+                await setDocWithSanitize(userDocRef, fallbackProfile);
+              });
             }
           } catch (e) {
             console.warn("Failed to fetch/initialize user profile in fallback:", e);
@@ -3588,11 +3662,11 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           console.warn("Failed to subscribe to notifications:", e);
         }
 
-        // Load isolated user workspace data safely with timeout guard
-        console.log(`⏱️ [Startup Timing][Stage 3/5] Reconciling user accounts...`);
-        await withTimeout(reconcileUserAccounts(user, computedLinkedUids), 2000, undefined);
-        console.log(`⏱️ [Startup Timing][Stage 4/5] Loading user workspace data...`);
-        await withTimeout(loadUserWorkspace(user, computedLinkedUids), 2000, undefined);
+        // Load isolated user workspace data safely in non-blocking background tasks
+        console.log(`⏱️ [Startup Timing][Stage 3/5] Reconciling user accounts in background...`);
+        reconcileUserAccounts(user, computedLinkedUids).catch(err => console.warn("Background reconcile warning:", err));
+        console.log(`⏱️ [Startup Timing][Stage 4/5] Loading user workspace data in background...`);
+        loadUserWorkspace(user, computedLinkedUids).catch(err => console.warn("Background workspace load warning:", err));
       } else {
         setGoogleUser(null);
         setStored('app_google_user', null);
