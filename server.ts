@@ -222,6 +222,16 @@ async function startServer() {
   // Workspace API for desktop release status and download resolution
   app.get('/api/desktop/release-status', async (req, res) => {
     try {
+      const manifestPath = path.join(process.cwd(), 'public', 'desktop-release.json');
+      let manifestData: any = null;
+      if (fs.existsSync(manifestPath)) {
+        try {
+          manifestData = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        } catch (e) {
+          console.warn('[Release API] Failed to parse desktop-release.json:', e);
+        }
+      }
+
       const releaseDir = path.join(process.cwd(), 'release');
       let foundFile = '';
       let fileSizeMB = 0;
@@ -241,9 +251,9 @@ async function startServer() {
 
       let available = false;
       let downloadUrl = '';
-      let fileName = foundFile || 'DevSpace Aether Desktop Setup 2.5.0.exe';
-      let publishedAt = new Date().toISOString();
-      let version = 'v2.5.0';
+      let fileName = manifestData?.fileName || foundFile || 'DevSpace-Aether-Desktop-Setup-2.5.0.exe';
+      let publishedAt = manifestData?.publishedAt || new Date().toISOString();
+      let version = manifestData?.version || 'v2.5.0';
 
       if (customUrl) {
         available = true;
@@ -251,6 +261,10 @@ async function startServer() {
       } else if (foundFile) {
         available = true;
         downloadUrl = '/api/desktop/download/windows';
+      } else if (manifestData && manifestData.downloadUrl) {
+        available = true;
+        downloadUrl = manifestData.downloadUrl;
+        fileSizeMB = manifestData.fileSizeMB || 85.4;
       } else {
         // Query GitHub API dynamically for latest published release asset
         const githubRepo = process.env.GITHUB_REPOSITORY || 'devspace/aether-desktop';
@@ -265,7 +279,7 @@ async function startServer() {
         }
       }
 
-      const releaseNotes = `• Native Windows Electron application with fast Ollama & Gemini 3.6 Flash integration
+      const releaseNotes = manifestData?.releaseNotes || `• Native Windows Electron application with fast Ollama & Gemini 3.6 Flash integration
 • Zero-latency local SQLite cache with synaptic context state
 • Background app watcher and Claude CLI workspace triggers
 • Custom global hotkeys & multi-monitor support`;
@@ -275,15 +289,15 @@ async function startServer() {
           available: true,
           status: 'published',
           version,
-          releaseName: `DevSpace Aether Desktop ${version}`,
+          releaseName: manifestData?.releaseName || `DevSpace Aether Desktop ${version}`,
           platform: 'windows',
           fileName,
           downloadUrl,
-          fileSizeMB: fileSizeMB || 85.4,
+          fileSizeMB: fileSizeMB || manifestData?.fileSizeMB || 85.4,
           publishedAt,
           releaseNotes,
-          sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-          targetArch: 'x64 (64-bit)',
+          sha256: manifestData?.sha256 || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          targetArch: manifestData?.targetArch || 'x64 (64-bit)',
           installerType: 'NSIS Setup Executable (.exe)'
         });
       } else {
@@ -306,7 +320,7 @@ async function startServer() {
     try {
       const releaseDir = path.join(process.cwd(), 'release');
       let filePath = '';
-      let targetFileName = 'DevSpace Aether Desktop Setup 2.5.0.exe';
+      let targetFileName = 'DevSpace-Aether-Desktop-Setup-2.5.0.exe';
 
       if (fs.existsSync(releaseDir)) {
         const files = fs.readdirSync(releaseDir);
@@ -323,6 +337,18 @@ async function startServer() {
         const url = process.env.WINDOWS_INSTALLER_URL || process.env.VITE_WINDOWS_INSTALLER_URL;
         return res.redirect(url!);
       } else {
+        const manifestPath = path.join(process.cwd(), 'public', 'desktop-release.json');
+        if (fs.existsSync(manifestPath)) {
+          try {
+            const manifestData = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+            if (manifestData?.downloadUrl) {
+              return res.redirect(manifestData.downloadUrl);
+            }
+          } catch (e) {
+            console.warn('[Download API] Error reading desktop-release.json:', e);
+          }
+        }
+
         const githubRepo = process.env.GITHUB_REPOSITORY || 'devspace/aether-desktop';
         const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
         if (ghAsset) {
