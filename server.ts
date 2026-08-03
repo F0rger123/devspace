@@ -267,7 +267,7 @@ async function startServer() {
         fileSizeMB = manifestData.fileSizeMB || 85.4;
       } else {
         // Query GitHub API dynamically for latest published release asset
-        const githubRepo = process.env.GITHUB_REPOSITORY || 'devspace/aether-desktop';
+        const githubRepo = process.env.GITHUB_REPOSITORY || 'F0rger123/devspace';
         const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
         if (ghAsset) {
           available = true;
@@ -337,11 +337,19 @@ async function startServer() {
         const url = process.env.WINDOWS_INSTALLER_URL || process.env.VITE_WINDOWS_INSTALLER_URL;
         return res.redirect(url!);
       } else {
+        // Query GitHub API for actual live published release asset
+        const githubRepo = process.env.GITHUB_REPOSITORY || 'F0rger123/devspace';
+        const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
+        if (ghAsset && ghAsset.downloadUrl) {
+          return res.redirect(ghAsset.downloadUrl);
+        }
+
+        // Check if manifest specifies an external download URL
         const manifestPath = path.join(process.cwd(), 'public', 'desktop-release.json');
         if (fs.existsSync(manifestPath)) {
           try {
             const manifestData = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-            if (manifestData?.downloadUrl) {
+            if (manifestData?.downloadUrl && manifestData.downloadUrl.startsWith('http')) {
               return res.redirect(manifestData.downloadUrl);
             }
           } catch (e) {
@@ -349,11 +357,6 @@ async function startServer() {
           }
         }
 
-        const githubRepo = process.env.GITHUB_REPOSITORY || 'devspace/aether-desktop';
-        const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
-        if (ghAsset) {
-          return res.redirect(ghAsset.downloadUrl);
-        }
         return res.status(404).json({
           available: false,
           message: 'DevSpace Desktop for Windows is currently preparing its latest stable release. Please check back shortly.'

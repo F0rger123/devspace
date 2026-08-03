@@ -52,6 +52,10 @@ export function CustomTitleBar() {
     }
   };
 
+  if (!electronAvailable) {
+    return null;
+  }
+
   return (
     <header
       onDoubleClick={handleDoubleClick}

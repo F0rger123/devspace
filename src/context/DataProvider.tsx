@@ -4,6 +4,7 @@ import { getAuth } from 'firebase/auth';
 import { db, auth } from '../lib/auth';
 import { Toast, ToastContainer } from '../components/ui/Toast';
 import { useStore, KineticGesture } from '../store';
+import { isElectron, getElectronAPI } from '../lib/electronBridge';
 
 enum OperationType {
   CREATE = 'create',
@@ -631,7 +632,19 @@ type DataContextType = {
   setLinkedUids: React.Dispatch<React.SetStateAction<string[]>>;
   reconcileUserAccounts?: (user: any, linkedUids: string[]) => Promise<void>;
   forceReconcileIdentities: () => Promise<void>;
+  startupTimeline: StartupTaskRecord[];
 };
+
+export interface StartupTaskRecord {
+  id: string;
+  name: string;
+  status: 'started' | 'completed' | 'failed' | 'timed_out';
+  startTime: number;
+  endTime?: number;
+  durationMs?: number;
+  details?: string;
+  error?: string;
+}
 
 export interface SharedMacro {
   id: string;
@@ -1016,6 +1029,204 @@ export function DataProvider({ children }: { children: ReactNode }) {
   });
 
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
+  const [startupTimeline, setStartupTimeline] = useState<StartupTaskRecord[]>([]);
+
+  const updateStartupRecord = (record: StartupTaskRecord) => {
+    setStartupTimeline(prev => {
+      const idx = prev.findIndex(item => item.id === record.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...record };
+        return updated;
+      }
+      return [...prev, { ...record }];
+    });
+  };
+
+  const executeStartupTask = async <T,>(
+    id: string,
+    name: string,
+    taskFn: () => Promise<T>,
+    timeoutMs: number,
+    fallbackValue: T
+  ): Promise<T> => {
+    const startTime = performance.now();
+    const record: StartupTaskRecord = {
+      id,
+      name,
+      status: 'started',
+      startTime,
+    };
+    updateStartupRecord(record);
+
+    console.log(`⏱️ [Startup Sequence][Task: ${name}] Started...`);
+
+    let timerId: any = null;
+    const timeoutPromise = new Promise<{ isTimeout: true }>((resolve) => {
+      timerId = setTimeout(() => resolve({ isTimeout: true }), timeoutMs);
+    });
+
+    try {
+      const outcome = await Promise.race([
+        taskFn().then((res) => ({ isTimeout: false as const, res })),
+        timeoutPromise,
+      ]);
+
+      if (timerId) clearTimeout(timerId);
+
+      const durationMs = Math.round(performance.now() - startTime);
+      record.durationMs = durationMs;
+      record.endTime = performance.now();
+
+      if ('isTimeout' in outcome && outcome.isTimeout) {
+        record.status = 'timed_out';
+        record.details = `Operation exceeded ${timeoutMs}ms limit. Soft-failing subsystem to prevent startup hang.`;
+        console.warn(`⏱️ [Startup Sequence][Task: ${name}] TIMED OUT (${durationMs}ms) - using fallback state.`);
+        updateStartupRecord(record);
+        return fallbackValue;
+      } else {
+        record.status = 'completed';
+        record.details = `Task completed successfully.`;
+        console.log(`⏱️ [Startup Sequence][Task: ${name}] COMPLETED (${durationMs}ms).`);
+        updateStartupRecord(record);
+        return (outcome as any).res;
+      }
+    } catch (err: any) {
+      if (timerId) clearTimeout(timerId);
+      const durationMs = Math.round(performance.now() - startTime);
+      record.status = 'failed';
+      record.durationMs = durationMs;
+      record.endTime = performance.now();
+      record.error = err?.message || String(err);
+      record.details = `Subsystem error encountered: ${err?.message || err}`;
+      console.warn(`⏱️ [Startup Sequence][Task: ${name}] FAILED (${durationMs}ms):`, err?.message || err);
+      updateStartupRecord(record);
+      return fallbackValue;
+    }
+  };
+
+  useEffect(() => {
+    // Immediately unblock UI so application loads instantly without waiting for telemetry steps
+    setIsInitialLoadDone(true);
+
+    const runStartupSequence = async () => {
+      // 1. Authentication
+      await executeStartupTask('task-auth', 'Authentication', async () => {
+        const current = auth.currentUser;
+        return current ? { uid: current.uid, email: current.email } : { guest: true };
+      }, 1000, { guest: true });
+
+      // 2. Firebase
+      await executeStartupTask('task-firebase', 'Firebase', async () => {
+        return { dbReady: Boolean(db), authReady: Boolean(auth) };
+      }, 1000, { dbReady: true, authReady: true });
+
+      // 3. Firestore
+      await executeStartupTask('task-firestore', 'Firestore', async () => {
+        if (auth.currentUser) {
+          const snap = await withTimeout(getDoc(doc(db, 'users', auth.currentUser.uid)), 1000, null as any);
+          return { userDocExists: Boolean(snap && snap.exists()) };
+        }
+        return { localMode: true };
+      }, 1200, { localMode: true });
+
+      // 4. Electron bridge
+      await executeStartupTask('task-electron-bridge', 'Electron bridge', async () => {
+        const isDesktop = isElectron();
+        const api = getElectronAPI();
+        if (isDesktop && api) {
+          const info = await withTimeout(api.getAppInfo(), 1000, null as any);
+          return { isDesktop: true, version: info?.version || '2.5.0' };
+        }
+        return { isDesktop: false, environment: 'web' };
+      }, 1200, { isDesktop: isElectron(), environment: 'web' });
+
+      // 5. Electron IPC
+      await executeStartupTask('task-electron-ipc', 'Electron IPC', async () => {
+        const api = getElectronAPI();
+        if (api && api.isMaximized) {
+          const isMax = await withTimeout(api.isMaximized(), 800, false);
+          return { channelReady: true, isMaximized: isMax };
+        }
+        return { channelReady: false };
+      }, 1000, { channelReady: false });
+
+      // 6. Local storage
+      await executeStartupTask('task-local-storage', 'Local storage', async () => {
+        const localProjects = getStored<Project[]>('app_projects', []);
+        const localIssues = getStored<Issue[]>('app_issues', []);
+        const localNotes = getStored<Note[]>('app_notes', []);
+        return { projectsCount: localProjects.length, issuesCount: localIssues.length, notesCount: localNotes.length };
+      }, 1000, { projectsCount: 0, issuesCount: 0, notesCount: 0 });
+
+      // 7. User profile
+      await executeStartupTask('task-user-profile', 'User profile', async () => {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const docSnap = await withTimeout(getDoc(doc(db, 'users', currentUser.uid)), 1500, null as any);
+          if (docSnap && docSnap.exists()) {
+            return docSnap.data();
+          }
+        }
+        return getStored('app_user_profile', null);
+      }, 1500, getStored('app_user_profile', null));
+
+      // 8. Workspace loading
+      await executeStartupTask('task-workspace-loading', 'Workspace loading', async () => {
+        return { loaded: true };
+      }, 1500, { loaded: true });
+
+      // 9. GitHub synchronization
+      await executeStartupTask('task-github-sync', 'GitHub synchronization', async () => {
+        const token = getStored('app_github_token', null);
+        const user = getStored('app_github_user', 'google');
+        return { githubTokenSet: Boolean(token), githubUser: user };
+      }, 1000, { githubTokenSet: false, githubUser: 'google' });
+
+      // 10. Dream initialization
+      await executeStartupTask('task-dream-init', 'Dream initialization', async () => {
+        const recs = getStored('aether_dashboard_recommendations_v2', []);
+        return { recsCount: recs.length };
+      }, 1000, { recsCount: 0 });
+
+      // 11. AI initialization
+      await executeStartupTask('task-ai-init', 'AI initialization', async () => {
+        const persona = getStored('app_ai_persona', 'Dynamic Briefing');
+        const rules = getStored('app_ai_context', '');
+        return { persona, hasContextRules: Boolean(rules) };
+      }, 1000, { persona: 'Dynamic Briefing', hasContextRules: false });
+
+      // 12. Provider loading
+      await executeStartupTask('task-provider-loading', 'Provider loading', async () => {
+        const model = getStored('app_aether_model', 'gemini-3.5-flash');
+        return { activeModel: model, status: 'ready' };
+      }, 1000, { activeModel: 'gemini-3.5-flash', status: 'ready' });
+
+      // 13. Ollama detection
+      await executeStartupTask('task-ollama-detection', 'Ollama detection', async () => {
+        try {
+          const controller = new AbortController();
+          const tid = setTimeout(() => controller.abort(), 1000);
+          const res = await fetch('http://localhost:11434/api/version', { signal: controller.signal });
+          clearTimeout(tid);
+          return { available: res.ok };
+        } catch (e) {
+          return { available: false, offline: true };
+        }
+      }, 1200, { available: false, offline: true });
+
+      // 14. Google account initialization
+      await executeStartupTask('task-google-account', 'Google account initialization', async () => {
+        const gUser = getStored('app_google_user', null);
+        const gToken = getStored('app_google_token', null);
+        return { hasGoogleUser: Boolean(gUser), hasGoogleToken: Boolean(gToken) };
+      }, 1000, { hasGoogleUser: false, hasGoogleToken: false });
+    };
+
+    runStartupSequence().catch((e) => {
+      console.warn("Non-fatal startup trace error:", e);
+    });
+  }, []);
 
   // Sync and Toast States & Handlers
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -5135,7 +5346,8 @@ Description of fix or enhancement recommendation
       linkedUids,
       setLinkedUids,
       reconcileUserAccounts,
-      forceReconcileIdentities
+      forceReconcileIdentities,
+      startupTimeline
     }}>
       {children}
       <ToastContainer toasts={toasts} removeToast={removeToast} />

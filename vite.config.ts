@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import {defineConfig, splitVendorChunkPlugin} from 'vite';
 
 // Automatically bootstrap firebase-applet-config.json if missing to prevent build failures during deployment
@@ -26,14 +27,26 @@ if (!fs.existsSync(configPath)) {
 }
 
 export default defineConfig(() => {
+  let gitCommitHash = 'ff96b25';
+  try {
+    gitCommitHash = execSync('git rev-parse --short HEAD').toString().trim();
+  } catch (e) {
+    // fallback
+  }
+
   return {
     plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
+    define: {
+      'import.meta.env.VITE_BUILD_TIMESTAMP': JSON.stringify(new Date().toISOString()),
+      'import.meta.env.VITE_GIT_COMMIT': JSON.stringify(gitCommitHash),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
     build: {
+      outDir: 'dist',
       chunkSizeWarningLimit: 3000,
       sourcemap: false,
     },

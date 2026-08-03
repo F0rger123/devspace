@@ -4,7 +4,7 @@
   "platform": "windows",
   "fileName": "DevSpace-Aether-Desktop-Setup-2.5.0.exe",
   "fileSizeMB": 85.4,
-  "downloadUrl": "https://github.com/devspace/aether-desktop/releases/download/v2.5.0/DevSpace-Aether-Desktop-Setup-2.5.0.exe",
+  "downloadUrl": "/api/desktop/download/windows",
   "publishedAt": "2026-08-02T15:00:00Z",
   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "targetArch": "x64 (64-bit)",

@@ -457,7 +457,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </div>
 
       <div className="relative z-10 flex flex-col h-full w-full overflow-hidden">
-        {isElectron() ? <CustomTitleBar /> : <Header />}
+        {isElectron() && <CustomTitleBar />}
+        <Header />
         <div className="flex flex-grow overflow-hidden relative">
           <Sidebar />
 
