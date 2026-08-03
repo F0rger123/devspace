@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
+import { isElectron } from './lib/electronBridge';
 import { AppLayout } from './components/layout/AppLayout';
 import { Dashboard } from './pages/Dashboard';
 import { AssistantChat } from './pages/AssistantChat';
@@ -21,8 +22,11 @@ import { Create } from './pages/Create';
 import { Design } from './pages/Design';
 
 export default function App() {
+  const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
+  const RouterComponent = isDesktop ? HashRouter : BrowserRouter;
+
   return (
-    <BrowserRouter>
+    <RouterComponent>
       <AppLayout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -53,6 +57,6 @@ export default function App() {
           } />
         </Routes>
       </AppLayout>
-    </BrowserRouter>
+    </RouterComponent>
   );
 }

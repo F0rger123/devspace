@@ -3978,12 +3978,22 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       deleteDocWithSanitize(doc(db, 'issues', i.id)).catch(() => {});
     });
 
-    setProjects(prev => prev.filter(proj => proj.id !== id));
+    setProjects(prev => {
+      const remaining = prev.filter(proj => proj.id !== id);
+      if (activeProjectId === id) {
+        setActiveProjectId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      return remaining;
+    });
+
+    if (lastFirestoreProjectsRef.current) {
+      lastFirestoreProjectsRef.current = lastFirestoreProjectsRef.current.filter(p => p.id !== id);
+    }
+
     setIssues(prev => prev.filter(i => i.projectId !== id));
     setPhases(prev => prev.filter(p => p.projectId !== id));
     setNotes(prev => prev.filter(n => n.projectId !== id));
     setAssets(prev => prev.filter(a => a.projectId !== id));
-    if (activeProjectId === id) setActiveProjectId(null);
 
     deleteDocWithSanitize(doc(db, 'projects', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `projects/${id}`));
   };

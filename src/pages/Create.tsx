@@ -1286,16 +1286,18 @@ Try using the following commands:
       return;
     }
     
-    const confirmDelete = confirm(`Are you sure you want to permanently delete project "${activeProject.name}"? This cannot be undone.`);
-    if (!confirmDelete) return;
+    const targetName = activeProject?.name || 'Project';
+    const targetId = activeProjectId;
 
-    deleteProject(activeProjectId);
-    const remaining = projectsList.filter(p => p.id !== activeProjectId);
-    if (remaining.length > 0) {
-      setActiveProjectId(remaining[0].id);
+    if (targetId) {
+      deleteProject(targetId);
+      const remaining = projectsList.filter(p => p.id !== targetId);
+      if (remaining.length > 0) {
+        setActiveProjectId(remaining[0].id);
+      }
+      showToast(`Project "${targetName}" deleted successfully.`, 'info');
+      addTerminalLog('system', `🗑️ Deleted active project container [${targetName}].`);
     }
-    showToast('Project deleted successfully.', 'info');
-    addTerminalLog('system', `🗑️ Deleted active project container [${activeProject.name}].`);
   };
 
   const handleUndo = () => {

@@ -6912,10 +6912,8 @@ export function WhatsAppCompanion() {
                                     addSystemLog(`SWIPE: Project "${proj.name}" was marked as ${nextStatus}`);
                                   }}
                                   onSwipeLeft={() => {
-                                    if (confirm(`Delete project "${proj.name}"? This action cannot be undone.`)) {
-                                      deleteProject(proj.id);
-                                      addSystemLog(`SWIPE: Project "${proj.name}" and references deleted from cache`);
-                                    }
+                                    deleteProject(proj.id);
+                                    addSystemLog(`SWIPE: Project "${proj.name}" and references deleted from cache`);
                                   }}
                                   leftLabel={proj.status === 'Completed' ? "Activate" : "Complete"}
                                   leftIcon={<Archive size={14} />}

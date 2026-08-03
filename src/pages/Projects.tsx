@@ -4132,11 +4132,10 @@ Description of fix or enhancement recommendation
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm(`Are you sure you want to unlink the repository "${project.githubRepos?.[0]}" from this workspace?`)) {
-                            updateProject(project.id, { githubRepos: [] });
-                          }
+                          updateProject(project.id, { githubRepos: [] });
+                          showToast(`Unlinked repository from ${project.name}`, 'info');
                         }}
-                        className="w-full mt-2 bg-zinc-900 hover:bg-zinc-800 hover:text-red-400 border border-zinc-800 text-[10px] font-semibold text-zinc-400 py-1.5 rounded transition-all flex items-center justify-center gap-1"
+                        className="w-full mt-2 bg-zinc-900 hover:bg-zinc-800 hover:text-red-400 border border-zinc-800 text-[10px] font-semibold text-zinc-400 py-1.5 rounded transition-all flex items-center justify-center gap-1 cursor-pointer"
                       >
                         <X size={10} /> Unlink Repository
                       </button>
@@ -4358,11 +4357,10 @@ Description of fix or enhancement recommendation
                                     </select>
                                     <button
                                       onClick={() => {
-                                        if (confirm(`Are you sure you want to remove ${collab} from this project?`)) {
-                                          removeCollaborator(project.id, collab);
-                                        }
+                                        removeCollaborator(project.id, collab);
+                                        showToast(`Removed ${collab} from workspace`, 'info');
                                       }}
-                                      className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded transition-colors"
+                                      className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded transition-colors cursor-pointer"
                                       title="Remove collaborator"
                                     >
                                       <Trash2 size={13} />
@@ -5267,11 +5265,9 @@ Description of fix or enhancement recommendation
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (confirm(`Are you sure you want to delete the space "${project.name}"? This action cannot be undone.`)) {
-                              deleteProject(project.id);
-                            }
+                            setProjectToDelete(project);
                           }}
-                          className="text-zinc-400 hover:text-red-400 p-1.5 rounded-md hover:bg-zinc-800/80 transition-all"
+                          className="text-zinc-400 hover:text-red-400 p-1.5 rounded-md hover:bg-zinc-800/80 transition-all cursor-pointer"
                           title="Delete Project Space"
                         >
                           <Trash size={13} />

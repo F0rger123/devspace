@@ -10,15 +10,23 @@ export function CustomTitleBar() {
     const api = getElectronAPI();
     if (!api) return;
 
-    // Query initial window maximized state
-    api.isMaximized().then(setIsMaximized).catch(() => {});
+    try {
+      // Query initial window maximized state
+      api.isMaximized()
+        .then(setIsMaximized)
+        .catch((err) => {
+          console.warn('Electron window state IPC unavailable:', err);
+        });
 
-    // Listen for window state changes from main process
-    if (api.onMaximizedChange) {
-      const cleanup = api.onMaximizedChange((maximized) => {
-        setIsMaximized(maximized);
-      });
-      return cleanup;
+      // Listen for window state changes from main process
+      if (api.onMaximizedChange) {
+        const cleanup = api.onMaximizedChange((maximized) => {
+          setIsMaximized(maximized);
+        });
+        return cleanup;
+      }
+    } catch (err) {
+      console.warn('CustomTitleBar failed to initialize IPC listeners:', err);
     }
   }, []);
 
