@@ -1,11 +1,20 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 8/3/2026, 1:48:46 AM*
+*Last synchronized: 8/3/2026, 5:45:29 PM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
 ## 👤 User Profile & Preferences
 - **Email**: drummerforger@gmail.com
-- **Core Preferences & Directives**: Active, learning in background.
+- **Core Preferences & Directives**:
+  
+  
+  <!-- GITHUB_LEARNED_PREFERENCES_START -->
+  # Learned Preferences from GitHub Repos & Stars
+  - **Focus Summary:** This developer is deeply passionate about building cutting-edge AI assistants, autonomous multi-agent systems, and practical productivity automation tools using TypeScript, Python, and JavaScript. Their recent focus centers heavily on Model Context Protocol (MCP), Claude, and modular open-source Jarvis-style workflows.
+  - **Preference:** Prioritize TypeScript and Python for all code snippets, using clean, modern async patterns and strict typing.
+  - **Preference:** Incorporate AI agent patterns, Model Context Protocol (MCP) tools, and LLM orchestration best practices into solution designs.
+  - **Preference:** Focus on modular, cost-effective automation architecture using tools like GitHub Actions, OpenRouter, and PWA integration.
+  <!-- GITHUB_LEARNED_PREFERENCES_END -->
 
 ## 🎭 Aether Personality Rules & Dynamic Customizations
 *No custom personality traits registered yet. Tell Aether to "be more funny", "curse more", or "call me Sir from now on" to shape his persona!*

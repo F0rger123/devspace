@@ -5,7 +5,7 @@
   "private": true,
   "version": "2.5.0",
   "type": "module",
-  "main": "dist/server.cjs",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && npm run build:electron",

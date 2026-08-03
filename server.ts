@@ -9163,33 +9163,9 @@ Generate ${optionsCount} distinct architectural options/blueprints for this idea
     });
   }
 
-  const initialPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  const host = '0.0.0.0';
-
-  const listenOnPort = (targetPort: number) => {
-    const serverInstance = app.listen(targetPort, host, () => {
-      const address = serverInstance.address();
-      const actualPort = typeof address === 'object' && address ? address.port : targetPort;
-      console.log(`[Server] Express server successfully listening on http://${host}:${actualPort} (requested: ${targetPort})`);
-    });
-
-    serverInstance.on('error', (err: any) => {
-      if (err.code === 'EADDRINUSE') {
-        console.warn(`[Server] Port ${targetPort} is already in use (EADDRINUSE). Selecting a free ephemeral port...`);
-        if (targetPort !== 0) {
-          listenOnPort(0);
-        } else {
-          console.warn('[Server] Could not bind to ephemeral port; process continuing safely without crashing.');
-        }
-      } else {
-        console.error('[Server] Express server encountered error:', err);
-      }
-    });
-
-    return serverInstance;
-  };
-
-  listenOnPort(initialPort);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
 
 startServer();
