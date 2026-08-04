@@ -1492,17 +1492,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const data = await safeJsonFromResponse(res);
           if (data) {
             if (data.initialized) {
-              // Server has backup disk persistence, treat it as single absolute authority (even if arrays are empty)
-              finalProjects = data.projects || [];
-              finalIssues = data.issues || [];
-              setProjects(finalProjects);
-              setIssues(finalIssues);
-              setNotes(data.notes || []);
-              setPhases(data.phases || []);
-              setAgents(data.agents || []);
-              setCortexSynapses(data.cortexSynapses || []);
-              if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
-              if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
+              // Server has backup disk persistence, treat non-empty collections as source of truth
+              if (Array.isArray(data.projects) && data.projects.length > 0) {
+                finalProjects = data.projects;
+                setProjects(finalProjects);
+              }
+              if (Array.isArray(data.issues) && data.issues.length > 0) {
+                finalIssues = data.issues;
+                setIssues(finalIssues);
+              }
+              if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes || []);
+              if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases || []);
+              if (Array.isArray(data.agents) && data.agents.length > 0) setAgents(data.agents || []);
+              if (Array.isArray(data.cortexSynapses) && data.cortexSynapses.length > 0) setCortexSynapses(data.cortexSynapses || []);
+              if (typeof data.aiContextRules === 'string' && data.aiContextRules) setAiContextRules(data.aiContextRules);
+              if (Array.isArray(data.aetherPersonalityRules) && data.aetherPersonalityRules.length > 0) setAetherPersonalityRules(data.aetherPersonalityRules);
               if (typeof data.passcodePin === 'string') {
                 setPasscodePin(data.passcodePin);
                 localStorage.setItem('whatsapp_passcode_pin', data.passcodePin);
@@ -3019,11 +3023,14 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
       // 2. Query Firestore directly for owned and collab projects (checking all linked accounts for same-email merge)
       let fbProjects: Project[] = [];
+      let ownedQuerySuccess = false;
+      let collabQuerySuccess = false;
       try {
         const uidsToQuery = Array.from(new Set([user.uid, ...(computedLinkedUids || linkedUids || [])]));
         const ownedQuery = query(collection(db, 'projects'), where('ownerId', 'in', uidsToQuery));
         const ownedSnap = await withTimeout(getDocs(ownedQuery), 2000, null as any);
         if (ownedSnap) {
+          ownedQuerySuccess = true;
           ownedSnap.forEach((docSnap) => {
             const proj = docSnap.data() as Project;
             if (!fbProjects.some(p => p.id === proj.id)) {
@@ -3040,6 +3047,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           const collabQuery = query(collection(db, 'projects'), where('collaborators', 'array-contains', user.email.trim().toLowerCase()));
           const collabSnap = await withTimeout(getDocs(collabQuery), 2000, null as any);
           if (collabSnap) {
+            collabQuerySuccess = true;
             collabSnap.forEach((docSnap) => {
               const proj = docSnap.data() as Project;
               if (!fbProjects.some(p => p.id === proj.id)) {
@@ -3050,6 +3058,8 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         } catch (err) {
           console.warn("Failed to fetch collab projects:", err);
         }
+      } else {
+        collabQuerySuccess = true;
       }
 
       // 1.5 Migrate local anonymous/sandbox projects and resources if they exist
@@ -3124,9 +3134,11 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
       // Fetch user's issues, notes, synapses
       const fbIssues: Issue[] = [];
+      let issuesQuerySuccess = false;
       try {
         const issuesSnap = await withTimeout(getDocs(collection(db, 'issues')), 2000, null as any);
         if (issuesSnap) {
+          issuesQuerySuccess = true;
           issuesSnap.forEach((docSnap) => {
             const item = docSnap.data() as Issue;
             if (allowedProjectIds.includes(item.projectId)) {
@@ -3137,9 +3149,11 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       } catch (e) {}
 
       const fbNotes: Note[] = [];
+      let notesQuerySuccess = false;
       try {
         const notesSnap = await withTimeout(getDocs(collection(db, 'notes')), 2000, null as any);
         if (notesSnap) {
+          notesQuerySuccess = true;
           notesSnap.forEach((docSnap) => {
             const item = docSnap.data() as Note;
             if (allowedProjectIds.includes(item.projectId)) {
@@ -3150,9 +3164,11 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       } catch (e) {}
 
       const fbSynapses: CortexSynapse[] = [];
+      let synapsesQuerySuccess = false;
       try {
         const synapsesSnap = await withTimeout(getDocs(collection(db, 'cortexSynapses')), 2000, null as any);
         if (synapsesSnap) {
+          synapsesQuerySuccess = true;
           synapsesSnap.forEach((docSnap) => {
             const item = docSnap.data() as CortexSynapse;
             if (!item.projectName || allowedProjectNames.includes(item.projectName.toLowerCase())) {
@@ -3162,7 +3178,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         }
       } catch (e) {}
 
-      // Merge & set state
+      // Merge & set state safely without overwriting local cache on query timeouts
       if (fbProjects.length > 0) {
         const mergedProjects = fbProjects.map(fbP => {
           const serverP = finalProjects.find(sp => sp.id === fbP.id);
@@ -3201,76 +3217,65 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         setProjects(mergedProjects);
         setStored('app_projects', mergedProjects);
         lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(mergedProjects));
+      } else if (finalProjects.length > 0) {
+        setProjects(finalProjects);
+        setStored('app_projects', finalProjects);
+        lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(finalProjects));
+      } else if (ownedQuerySuccess && collabQuerySuccess) {
+        // Successful Firestore query explicitly confirmed 0 projects for authenticated user
+        setProjects([]);
+        setStored('app_projects', []);
+        lastFirestoreProjectsRef.current = [];
       } else {
-        if (finalProjects.length > 0) {
-          setProjects(finalProjects);
-          setStored('app_projects', finalProjects);
-          lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(finalProjects));
-        } else {
-          setProjects([]);
-          setStored('app_projects', []);
-          lastFirestoreProjectsRef.current = [];
-        }
+        console.warn("⏱️ [WorkspaceSync] Cloud project query timed out or failed; retaining cached local projects.");
       }
 
       if (fbIssues.length > 0) {
         setIssues(fbIssues);
         setStored('app_issues', fbIssues);
         lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(fbIssues));
+      } else if (finalIssues.length > 0) {
+        setIssues(finalIssues);
+        setStored('app_issues', finalIssues);
+        lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(finalIssues));
+      } else if (issuesQuerySuccess) {
+        setIssues([]);
+        setStored('app_issues', []);
+        lastFirestoreIssuesRef.current = [];
       } else {
-        if (finalIssues.length > 0) {
-          setIssues(finalIssues);
-          setStored('app_issues', finalIssues);
-          lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(finalIssues));
-        } else {
-          setIssues([]);
-          setStored('app_issues', []);
-          lastFirestoreIssuesRef.current = [];
-        }
+        console.warn("⏱️ [WorkspaceSync] Cloud issues query timed out or failed; retaining cached local issues.");
       }
 
       if (fbNotes.length > 0) {
         setNotes(fbNotes);
         setStored('app_notes', fbNotes);
         lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(fbNotes));
+      } else if (finalNotes.length > 0) {
+        setNotes(finalNotes);
+        setStored('app_notes', finalNotes);
+        lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(finalNotes));
+      } else if (notesQuerySuccess) {
+        setNotes([]);
+        setStored('app_notes', []);
+        lastFirestoreNotesRef.current = [];
       } else {
-        if (finalNotes.length > 0) {
-          setNotes(finalNotes);
-          setStored('app_notes', finalNotes);
-          lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(finalNotes));
-        } else {
-          const localNotes = getStored<Note[]>('app_notes', []);
-          if (localNotes.length > 0) {
-            setNotes(localNotes);
-            lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(localNotes));
-          } else {
-            setNotes([]);
-            setStored('app_notes', []);
-            lastFirestoreNotesRef.current = [];
-          }
-        }
+        console.warn("⏱️ [WorkspaceSync] Cloud notes query timed out or failed; retaining cached local notes.");
       }
 
       if (fbSynapses.length > 0) {
         setCortexSynapses(fbSynapses);
         setStored('app_cortex_synapses', fbSynapses);
         lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(fbSynapses));
+      } else if (finalCortexSynapses.length > 0) {
+        setCortexSynapses(finalCortexSynapses);
+        setStored('app_cortex_synapses', finalCortexSynapses);
+        lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(finalCortexSynapses));
+      } else if (synapsesQuerySuccess) {
+        setCortexSynapses([]);
+        setStored('app_cortex_synapses', []);
+        lastFirestoreSynapsesRef.current = [];
       } else {
-        if (finalCortexSynapses.length > 0) {
-          setCortexSynapses(finalCortexSynapses);
-          setStored('app_cortex_synapses', finalCortexSynapses);
-          lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(finalCortexSynapses));
-        } else {
-          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
-          if (localSynapses.length > 0) {
-            setCortexSynapses(localSynapses);
-            lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(localSynapses));
-          } else {
-            setCortexSynapses([]);
-            setStored('app_cortex_synapses', []);
-            lastFirestoreSynapsesRef.current = [];
-          }
-        }
+        console.warn("⏱️ [WorkspaceSync] Cloud synapses query timed out or failed; retaining cached local synapses.");
       }
 
       // 3. Immediately POST merged state back to user-scoped server cache to initialize it
@@ -3470,7 +3475,9 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
           });
             
             // Save the merged profile to all associated UIDs asynchronously in background queue
-            const linkedUids = Array.from(new Set([currentUid, ...allProfiles.map(p => p.id)]));
+            const existingStoredLinked = getStored<string[]>('app_linked_uids', []);
+            const newlyFoundLinked = Array.from(new Set([currentUid, ...allProfiles.map(p => p.id)]));
+            const linkedUids = Array.from(new Set([...existingStoredLinked, ...newlyFoundLinked]));
             computedLinkedUids = linkedUids;
             console.log(`[AutoMerge] Mirroring profile across identical-email accounts:`, linkedUids);
             setLinkedUids(linkedUids);
@@ -3564,6 +3571,20 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
             
           } catch (mergeError: any) {
             console.error("[AutoMerge] Failed unified same-email synchronization:", mergeError);
+            const storedLinked = getStored<string[]>('app_linked_uids', [user.uid]);
+            setLinkedUids(storedLinked);
+            enqueueBackgroundWrite('retry_account_reconciliation', async () => {
+              try {
+                console.log("[AutoMerge] Retrying account reconciliation in background...");
+                const retryProfiles = await findRelatedProfiles(user, activeProfile);
+                const retryLinkedUids = Array.from(new Set([user.uid, ...retryProfiles.map(p => p.id), ...getStored<string[]>('app_linked_uids', [])]));
+                setLinkedUids(retryLinkedUids);
+                setStored('app_linked_uids', retryLinkedUids);
+                await reconcileUserAccounts(user, retryLinkedUids);
+              } catch (retryErr) {
+                console.warn("[AutoMerge] Async retry of account reconciliation failed:", retryErr);
+              }
+            });
           }
 
         if (!activeProfile) {
