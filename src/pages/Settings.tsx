@@ -11,6 +11,7 @@ import { KeyboardMapperTab } from '../components/ui/KeyboardMapperTab';
 import { AutonomousAppWatcher } from '../components/ui/AutonomousAppWatcher';
 import { HandGestureCenter } from '../components/ui/HandGestureCenter';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
+import { isElectron } from '../lib/electronBridge';
 
 function KineticSandboxVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2111,13 +2112,20 @@ export function Settings() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => window.dispatchEvent(new Event('devspace-open-download-modal'))}
-                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-mono text-xs font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.25)] flex items-center gap-2 shrink-0 cursor-pointer"
-                >
-                  <Download size={14} />
-                  <span>Launch Desktop Installer Wizard</span>
-                </button>
+                {!isElectron() ? (
+                  <button
+                    onClick={() => window.dispatchEvent(new Event('devspace-open-download-modal'))}
+                    className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-mono text-xs font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(234,179,8,0.25)] flex items-center gap-2 shrink-0 cursor-pointer"
+                  >
+                    <Download size={14} />
+                    <span>Launch Desktop Installer Wizard</span>
+                  </button>
+                ) : (
+                  <div className="px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold rounded-xl flex items-center gap-2 shrink-0">
+                    <CheckCircle2 size={14} />
+                    <span>DevSpace Desktop Active</span>
+                  </div>
+                )}
               </div>
 
               {/* Embedded Local Models & Hugging Face Hub */}

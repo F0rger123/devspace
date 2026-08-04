@@ -3161,12 +3161,14 @@ Provide:
         temperature, topP, maxOutputTokens
       } = req.body;
       
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(500).json({ error: 'GEMINI_API_KEY is not set' });
+      const effectiveApiKey = (req as any).geminiApiKey || req.headers['x-gemini-api-key'] || req.body?.apiKey || process.env.GEMINI_API_KEY;
+
+      if (!effectiveApiKey) {
+        return res.status(400).json({ error: 'GEMINI_API_KEY is not configured or provided.' });
       }
 
       const ai = new GoogleGenAI({ 
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey: effectiveApiKey as string,
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
 
@@ -3290,7 +3292,11 @@ Please use this complete "Obsidian Synaptic Brain" knowledge base to personalize
       });
 
       // Prepare execution parameters
-      const chosenModel = aetherModel || 'gemini-3.5-flash';
+      let chosenModel = aetherModel || 'gemini-2.5-flash';
+      if (chosenModel === 'gemini-3.5-flash' || chosenModel === 'gemini-3.6-flash' || chosenModel === 'gemini-1.5-flash') {
+        chosenModel = 'gemini-2.5-flash';
+      }
+
       const config: any = {
         systemInstruction: synapticBrainContext,
         safetySettings: [
@@ -3332,9 +3338,9 @@ Please use this complete "Obsidian Synaptic Brain" knowledge base to personalize
             config
           });
         } catch (streamErr: any) {
-          logModelFallback(chosenModel, "gemini-3.5-flash", streamErr);
+          logModelFallback(chosenModel, "gemini-2.5-flash", streamErr);
           responseStream = await ai.models.generateContentStream({
-            model: 'gemini-3.5-flash',
+            model: 'gemini-2.5-flash',
             contents: chatHistory,
             config
           });

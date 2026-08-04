@@ -8,6 +8,8 @@ import { SyncPopover } from '../ui/SyncPopover';
 import { DownloadDesktopModal } from '../ui/DownloadDesktopModal';
 import { haptic } from '../../utils/haptics';
 
+import { isElectron } from '../../lib/electronBridge';
+
 export function Header() {
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const { 
@@ -242,23 +244,27 @@ export function Header() {
         <button onClick={() => { haptic.light(); toggleSidebar(); }} className="p-1.5 text-zinc-500 hover:text-zinc-355 hover:bg-zinc-900 rounded transition-colors">
           <Menu size={16} />
         </button>
-        <button
-          id="aether-logo-button"
-          onClick={handleLogoClick}
-          className="flex items-center gap-2 group cursor-pointer focus:outline-none"
-          title="Go to Explore Hub / Dashboard"
-        >
-          <div className="w-6 h-6 rounded flex items-center justify-center transition-all duration-300 shrink-0 bg-yellow-500 hover:scale-105 shadow-[0_0_12px_rgba(234,179,8,0.35)]">
-            <span className="text-black font-extrabold text-[11px] font-mono">D</span>
-          </div>
-          <span 
-            className="tasteful-glitch text-zinc-150 font-display font-light tracking-[0.16em] text-xs sm:text-sm truncate max-w-[120px] min-[380px]:max-w-none group-hover:text-yellow-400 transition-all"
-            data-text="DEVSPACE"
-          >
-            DEVSPACE
-          </span>
-        </button>
-        <div className="h-4 w-[1px] bg-zinc-800 shrink-0 mx-1"></div>
+        {!isElectron() && (
+          <>
+            <button
+              id="aether-logo-button"
+              onClick={handleLogoClick}
+              className="flex items-center gap-2 group cursor-pointer focus:outline-none"
+              title="Go to Explore Hub / Dashboard"
+            >
+              <div className="w-6 h-6 rounded flex items-center justify-center transition-all duration-300 shrink-0 bg-yellow-500 hover:scale-105 shadow-[0_0_12px_rgba(234,179,8,0.35)]">
+                <span className="text-black font-extrabold text-[11px] font-mono">D</span>
+              </div>
+              <span 
+                className="tasteful-glitch text-zinc-150 font-display font-light tracking-[0.16em] text-xs sm:text-sm truncate max-w-[120px] min-[380px]:max-w-none group-hover:text-yellow-400 transition-all"
+                data-text="DEVSPACE"
+              >
+                DEVSPACE
+              </span>
+            </button>
+            <div className="h-4 w-[1px] bg-zinc-800 shrink-0 mx-1"></div>
+          </>
+        )}
         {/* Sleek Tactile Aether Voice Controller Button */}
         <button
           onClick={handleVoiceStateCycle}
@@ -516,16 +522,18 @@ export function Header() {
       <div className="flex items-center gap-2.5 sm:gap-4.5">
         <div className="flex items-center gap-2.5 sm:gap-4">
           {/* Download Desktop App Action Button */}
-          <button
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); haptic.medium(); setShowDownloadModal(true); }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 hover:text-yellow-200 transition-all cursor-pointer shadow-[0_0_12px_rgba(234,179,8,0.15)] select-none"
-            title="Download DevSpace as Native PC Software (Offline & Global Context)"
-          >
-            <Download size={12} className="text-yellow-400" />
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider hidden sm:inline">
-              Download Desktop
-            </span>
-          </button>
+          {!isElectron() && (
+            <button
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); haptic.medium(); setShowDownloadModal(true); }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 hover:text-yellow-200 transition-all cursor-pointer shadow-[0_0_12px_rgba(234,179,8,0.15)] select-none"
+              title="Download DevSpace as Native PC Software (Offline & Global Context)"
+            >
+              <Download size={12} className="text-yellow-400" />
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider hidden sm:inline">
+                Download Desktop
+              </span>
+            </button>
+          )}
 
           {/* Kinetic Gesture Status Indicator */}
           <button 

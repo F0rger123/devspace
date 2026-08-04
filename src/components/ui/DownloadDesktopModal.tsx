@@ -28,6 +28,7 @@ import { useData } from '../../context/DataProvider';
 import { auth } from '../../lib/auth';
 import { fetchDesktopReleaseStatus, triggerWindowsInstallerDownload, DesktopReleaseStatus } from '../../lib/desktopReleaseService';
 import { probeLocalServer, getLocalSettings, saveLocalSettings } from '../../lib/localModelEngine';
+import { isElectron } from '../../lib/electronBridge';
 
 interface DownloadDesktopModalProps {
   isOpen: boolean;
@@ -35,6 +36,7 @@ interface DownloadDesktopModalProps {
 }
 
 export function DownloadDesktopModal({ isOpen, onClose }: DownloadDesktopModalProps) {
+  if (isElectron()) return null;
   const { showToast } = useData();
 
   // Wizard Step State (1 through 6)

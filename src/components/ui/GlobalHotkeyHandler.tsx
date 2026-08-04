@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
 import { getKeyBindings, parseShortcut } from '../../lib/keyboardMapper';
+import { isElectron } from '../../lib/electronBridge';
 
 export function GlobalHotkeyHandler() {
   const { isDrawingModeActive, setDrawingModeActive, toggleCommandPalette } = useStore();
@@ -33,8 +34,8 @@ export function GlobalHotkeyHandler() {
         return;
       }
 
-      // Check Cmd+Shift+D or Ctrl+Shift+D for Desktop App Download Modal
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+      // Check Cmd+Shift+D or Ctrl+Shift+D for Desktop App Download Modal (Web only)
+      if (!isElectron() && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         window.dispatchEvent(new Event('devspace-open-desktop-download'));
         return;

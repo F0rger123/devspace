@@ -135,15 +135,14 @@ async function createWindow() {
   if (devServerUrl) {
     console.log(`[Electron Main] Loading Development Server URL: ${devServerUrl}`);
     await mainWindow.loadURL(devServerUrl);
+    // Open DevTools only in development mode
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const port = await startEmbeddedServer();
     const appUrl = `http://127.0.0.1:${port}`;
     console.log(`[Electron Main] Loading Production App URL: ${appUrl}`);
     await mainWindow.loadURL(appUrl);
   }
-
-  // Open DevTools automatically in detached mode for startup runtime diagnostics
-  mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -228,26 +227,30 @@ app.on('before-quit', () => {
 function setupIpcHandlers() {
   ipcMain.handle('window:minimize', (event) => {
     if (!isTrustedSender(event)) return;
-    mainWindow?.minimize();
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    win?.minimize();
   });
 
   ipcMain.handle('window:maximize', (event) => {
     if (!isTrustedSender(event)) return;
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize();
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    if (win?.isMaximized()) {
+      win.unmaximize();
     } else {
-      mainWindow?.maximize();
+      win?.maximize();
     }
   });
 
   ipcMain.handle('window:close', (event) => {
     if (!isTrustedSender(event)) return;
-    mainWindow?.close();
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    win?.close();
   });
 
   ipcMain.handle('window:isMaximized', (event) => {
     if (!isTrustedSender(event)) return false;
-    return mainWindow?.isMaximized() ?? false;
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    return win?.isMaximized() ?? false;
   });
 
   ipcMain.handle('app:getInfo', (event) => {
