@@ -1,7 +1,12 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+
+const currentDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import nodemailer from 'nodemailer';
 import * as cheerio from 'cheerio';
@@ -54,10 +59,15 @@ function getAllFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+  // Health check endpoint for desktop & container readiness verification
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   // Intercept all Gemini requests to inject user-provided Gemini API key
   app.use('/api/gemini/', (req, res, next) => {
@@ -9145,7 +9155,10 @@ Generate ${optionsCount} distinct architectural options/blueprints for this idea
   });
 
   // Vite middleware for development (with static dist fallback protection)
-  const distHtmlPath = path.join(process.cwd(), 'dist', 'index.html');
+  const distDir = fs.existsSync(path.join(currentDir, 'index.html'))
+    ? currentDir
+    : path.join(process.cwd(), 'dist');
+  const distHtmlPath = path.join(distDir, 'index.html');
   const hasBuild = fs.existsSync(distHtmlPath);
 
   if (process.env.NODE_ENV !== 'production' || !hasBuild) {
@@ -9156,8 +9169,8 @@ Generate ${optionsCount} distinct architectural options/blueprints for this idea
     });
     app.use(vite.middlewares);
   } else {
-    console.log(`[Server] Serving production static files from dist/`);
-    app.use(express.static(path.join(process.cwd(), 'dist')));
+    console.log(`[Server] Serving production static files from ${distDir}`);
+    app.use(express.static(distDir));
     app.get('*', (req, res) => {
       res.sendFile(distHtmlPath);
     });

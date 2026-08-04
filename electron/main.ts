@@ -1,9 +1,104 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import * as path from 'path';
+import * as net from 'net';
+import * as childProcess from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
+let serverProcess: childProcess.ChildProcess | null = null;
+let activeServerPort: number | null = null;
 
-function createWindow() {
+/**
+ * Finds an available TCP port on localhost starting with defaultPort.
+ * If defaultPort is occupied, requests a free dynamic port from the OS.
+ */
+function getAvailablePort(defaultPort = 3000): Promise<number> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+
+    server.on('error', () => {
+      // Default port unavailable, find any open port assigned by OS
+      const freeServer = net.createServer();
+      freeServer.unref();
+      freeServer.listen(0, '127.0.0.1', () => {
+        const port = (freeServer.address() as net.AddressInfo).port;
+        freeServer.close(() => resolve(port));
+      });
+    });
+
+    server.listen(defaultPort, '127.0.0.1', () => {
+      const port = (server.address() as net.AddressInfo).port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * Polls the embedded server health endpoint until it responds with HTTP 200 OK.
+ */
+async function waitForServer(url: string, timeoutMs = 15000): Promise<boolean> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        return true;
+      }
+    } catch {
+      // Server starting up...
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
+/**
+ * Starts the embedded Express server in production mode on an available port.
+ */
+async function startEmbeddedServer(): Promise<number> {
+  if (activeServerPort) {
+    return activeServerPort;
+  }
+
+  const port = await getAvailablePort(3000);
+  const serverPath = path.join(__dirname, '../dist/server.cjs');
+
+  console.log(`[Electron Main] Launching embedded Express backend on port ${port}...`);
+  console.log(`[Electron Main] Server entry path: ${serverPath}`);
+
+  serverProcess = childProcess.fork(serverPath, [], {
+    env: {
+      ...process.env,
+      PORT: String(port),
+      NODE_ENV: 'production',
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+  });
+
+  serverProcess.on('error', (err) => {
+    console.error('[Electron Main] Embedded Express server error:', err);
+  });
+
+  serverProcess.on('exit', (code, signal) => {
+    console.log(`[Electron Main] Embedded Express server process exited (code=${code}, signal=${signal})`);
+    serverProcess = null;
+    activeServerPort = null;
+  });
+
+  const healthUrl = `http://127.0.0.1:${port}/api/health`;
+  const isReady = await waitForServer(healthUrl, 15000);
+
+  if (isReady) {
+    console.log(`[Electron Main] Embedded Express server responds healthy at ${healthUrl}`);
+  } else {
+    console.warn(`[Electron Main] Warning: Embedded Express server did not respond within 15s timeout at ${healthUrl}`);
+  }
+
+  activeServerPort = port;
+  return port;
+}
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -25,10 +120,8 @@ function createWindow() {
     },
   });
 
-  // Maximize the main window by default for full-screen workspace layout
   mainWindow.maximize();
 
-  // Listen for maximize/unmaximize events to notify renderer process
   mainWindow.on('maximize', () => {
     mainWindow?.webContents.send('window:maximized-change', true);
   });
@@ -37,17 +130,19 @@ function createWindow() {
     mainWindow?.webContents.send('window:maximized-change', false);
   });
 
-  // Load production build or local dev server URL
+  // Load local development server URL or production localhost backend
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || process.env.ELECTRON_START_URL;
   if (devServerUrl) {
-    mainWindow.loadURL(devServerUrl);
+    console.log(`[Electron Main] Loading Development Server URL: ${devServerUrl}`);
+    await mainWindow.loadURL(devServerUrl);
   } else {
-    // In production build, load bundled static index.html from app package
-    const indexPath = path.join(__dirname, '../dist/index.html');
-    mainWindow.loadFile(indexPath);
+    const port = await startEmbeddedServer();
+    const appUrl = `http://127.0.0.1:${port}`;
+    console.log(`[Electron Main] Loading Production App URL: ${appUrl}`);
+    await mainWindow.loadURL(appUrl);
   }
 
-  // Open DevTools automatically in a detached window for debugging startup runtime
+  // Open DevTools automatically in detached mode for startup runtime diagnostics
   mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.once('ready-to-show', () => {
@@ -58,16 +153,35 @@ function createWindow() {
     mainWindow = null;
   });
 
-  // Secure navigation: block in-app navigation to arbitrary external web pages
+  // Secure navigation guard
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://') && !url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1')) {
+    if (!url.startsWith('http://localhost') && !url.startsWith('http://127.0.0.1') && !url.startsWith('file://')) {
       event.preventDefault();
       shell.openExternal(url);
     }
   });
 
-  // Handle external window links safely
+  // Handle external window links safely while enabling OAuth popups for Firebase Auth
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (
+      url.includes('firebaseapp.com') ||
+      url.includes('accounts.google.com') ||
+      url.includes('github.com/login') ||
+      url.includes('github.com/login/oauth') ||
+      url.includes('/__/auth/handler')
+    ) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          autoHideMenuBar: true,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+          },
+        },
+      };
+    }
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
       shell.openExternal(url);
       return { action: 'deny' };
@@ -76,20 +190,23 @@ function createWindow() {
   });
 }
 
-// Security Helper: Validate IPC Sender Origin
 function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
   const senderUrl = event.senderFrame?.url || '';
-  return senderUrl.startsWith('file://') || senderUrl.startsWith('http://localhost') || senderUrl.startsWith('http://127.0.0.1');
+  return (
+    senderUrl.startsWith('file://') ||
+    senderUrl.startsWith('http://localhost') ||
+    senderUrl.startsWith('http://127.0.0.1')
+  );
 }
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   setupIpcHandlers();
-  createWindow();
+  await createWindow();
 
-  app.on('activate', () => {
+  app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      await createWindow();
     }
   });
 });
@@ -100,9 +217,15 @@ app.on('window-all-closed', () => {
   }
 });
 
-// IPC Communication Setup - Runtime Foundation
+app.on('before-quit', () => {
+  if (serverProcess) {
+    console.log('[Electron Main] Terminating embedded Express server process...');
+    serverProcess.kill();
+    serverProcess = null;
+  }
+});
+
 function setupIpcHandlers() {
-  // --- Window Control APIs ---
   ipcMain.handle('window:minimize', (event) => {
     if (!isTrustedSender(event)) return;
     mainWindow?.minimize();
@@ -127,7 +250,6 @@ function setupIpcHandlers() {
     return mainWindow?.isMaximized() ?? false;
   });
 
-  // --- Desktop Runtime Info ---
   ipcMain.handle('app:getInfo', (event) => {
     if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
     return {
@@ -140,6 +262,7 @@ function setupIpcHandlers() {
       arch: process.arch,
       userDataPath: app.getPath('userData'),
       desktopPath: app.getPath('desktop'),
+      serverPort: activeServerPort,
     };
   });
 }
