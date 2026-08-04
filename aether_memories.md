@@ -1,5 +1,5 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 8/3/2026, 6:06:14 PM*
+*Last synchronized: 8/4/2026, 4:26:59 PM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
@@ -10,10 +10,9 @@ This is the physical workspace memory file of Aether (your central brain orchest
   
   <!-- GITHUB_LEARNED_PREFERENCES_START -->
   # Learned Preferences from GitHub Repos & Stars
-  - **Focus Summary:** This developer is deeply passionate about building cutting-edge AI assistants, autonomous multi-agent systems, and practical productivity automation tools using TypeScript, Python, and JavaScript. Their recent focus centers heavily on Model Context Protocol (MCP), Claude, and modular open-source Jarvis-style workflows.
-  - **Preference:** Prioritize TypeScript and Python for all code snippets, using clean, modern async patterns and strict typing.
-  - **Preference:** Incorporate AI agent patterns, Model Context Protocol (MCP) tools, and LLM orchestration best practices into solution designs.
-  - **Preference:** Focus on modular, cost-effective automation architecture using tools like GitHub Actions, OpenRouter, and PWA integration.
+  - **Focus Summary:** You are an active developer who primarily uses TypeScript, Python, JavaScript. You are interested in ai, claude-code, mcp and explore open source projects matching these patterns.
+  - **Preference:** Developer prefers modern patterns matching TypeScript specifications.
+  - **Preference:** Enforce standards focused on ai architectures.
   <!-- GITHUB_LEARNED_PREFERENCES_END -->
 
 ## 🎭 Aether Personality Rules & Dynamic Customizations

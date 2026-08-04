@@ -47,6 +47,9 @@ function createWindow() {
     mainWindow.loadFile(indexPath);
   }
 
+  // Open DevTools automatically in a detached window for debugging startup runtime
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
   });

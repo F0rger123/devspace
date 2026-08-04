@@ -25,6 +25,7 @@ export default function App() {
   const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
   const RouterComponent = isDesktop ? HashRouter : BrowserRouter;
 
+
   return (
     <RouterComponent>
       <AppLayout>

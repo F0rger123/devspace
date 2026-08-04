@@ -2971,13 +2971,20 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       if (idToken) {
         try {
           const syncCacheStart = performance.now();
+          let timer: any;
+          const timeoutPromise = new Promise<Response | null>((resolve) => {
+            timer = setTimeout(() => {
+              console.warn("⏱️ [Startup Timing] Server sync cache exceeded 2000ms timeout guard");
+              resolve(null);
+            }, 2000);
+          });
           const res = await Promise.race([
             fetch('/api/voice/sync-cache', {
               headers: { 'Authorization': `Bearer ${idToken}` }
-            }),
-            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error("Server sync cache timeout (2000ms)")), 2000))
+            }).finally(() => clearTimeout(timer)),
+            timeoutPromise
           ]);
-          if (res.ok) {
+          if (res && res.ok) {
             const data = await safeJsonFromResponse(res);
             if (data) {
               finalProjects = data.projects || [];
@@ -5104,6 +5111,13 @@ Description of fix or enhancement recommendation
       }, (error) => {
         if (error.code === 'permission-denied') {
           console.warn("Shared macros subscription permission denied (auth credentials establishing or transient):", error.message);
+        } else if (
+          error?.code === 'resource-exhausted' ||
+          error?.message?.includes('Quota exceeded') ||
+          error?.message?.includes('quota') ||
+          getIsFirestoreQuotaExceeded()
+        ) {
+          console.warn("Shared macros subscription skipped (Quota exceeded, using local state)");
         } else {
           console.error("Failed to sync shared macros:", error);
         }

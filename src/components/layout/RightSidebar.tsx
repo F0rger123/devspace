@@ -467,8 +467,15 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           }
         }
       } catch (e: any) {
-        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'permission-denied') {
-          console.warn("Skipped syncing chat sessions from Firestore (permission / offline):", e.message || e);
+        if (
+          e?.message?.includes('fetch') || 
+          e?.message?.includes('NetworkError') || 
+          e?.code === 'permission-denied' ||
+          e?.code === 'resource-exhausted' ||
+          e?.message?.includes('Quota exceeded') ||
+          e?.message?.includes('quota')
+        ) {
+          console.warn("Skipped loading chat sessions from Firestore (permission / offline / quota exceeded):", e.message || e);
         } else {
           console.error("Failed to load chat sessions from Firestore:", e);
         }
@@ -492,8 +499,15 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           await setDocWithSanitize(doc(db, 'chatSessions', s.id), s);
         }
       } catch (e: any) {
-        if (e?.message?.includes('fetch') || e?.message?.includes('NetworkError') || e?.code === 'permission-denied') {
-          console.warn("Skipped syncing chat sessions to Firestore (permission / offline):", e.message || e);
+        if (
+          e?.message?.includes('fetch') || 
+          e?.message?.includes('NetworkError') || 
+          e?.code === 'permission-denied' ||
+          e?.code === 'resource-exhausted' ||
+          e?.message?.includes('Quota exceeded') ||
+          e?.message?.includes('quota')
+        ) {
+          console.warn("Skipped syncing chat sessions to Firestore (permission / offline / quota exceeded):", e.message || e);
         } else {
           console.error("Failed to sync chat sessions to Firestore:", e);
         }
