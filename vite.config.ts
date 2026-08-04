@@ -35,6 +35,7 @@ export default defineConfig(() => {
   }
 
   return {
+    base: './',
     plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
     define: {
       'import.meta.env.VITE_BUILD_TIMESTAMP': JSON.stringify(new Date().toISOString()),
