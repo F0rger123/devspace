@@ -3001,12 +3001,12 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
               finalAetherPersonalityRules = data.aetherPersonalityRules || [];
               finalPasscodePin = data.passcodePin || "1234";
 
-              setProjects(finalProjects);
-              setIssues(finalIssues);
-              setNotes(finalNotes);
-              setPhases(finalPhases);
-              setAgents(finalAgents);
-              setCortexSynapses(finalCortexSynapses);
+              if (finalProjects.length > 0) setProjects(finalProjects);
+              if (finalIssues.length > 0) setIssues(finalIssues);
+              if (finalNotes.length > 0) setNotes(finalNotes);
+              if (finalPhases.length > 0) setPhases(finalPhases);
+              if (finalAgents.length > 0) setAgents(finalAgents);
+              if (finalCortexSynapses.length > 0) setCortexSynapses(finalCortexSynapses);
               if (typeof data.aiContextRules === 'string') setAiContextRules(data.aiContextRules);
               if (Array.isArray(data.aetherPersonalityRules)) setAetherPersonalityRules(data.aetherPersonalityRules);
               if (typeof data.passcodePin === 'string') {
@@ -3062,75 +3062,93 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         collabQuerySuccess = true;
       }
 
-      // 1.5 Migrate local anonymous/sandbox projects and resources if they exist
-      const anonProjects = localProjects.filter(p => !p.ownerId || p.ownerId === 'anonymous' || p.ownerId.startsWith('sandbox-'));
-      
-      if (anonProjects.length > 0) {
-        console.log(`[Migration] Migrating ${anonProjects.length} anonymous/sandbox projects to logged-in user ${user.uid}`);
-        const email = user.email || '';
-        const migratedProjects = localProjects.map(p => {
-          if (!p.ownerId || p.ownerId === 'anonymous' || p.ownerId.startsWith('sandbox-')) {
-            return {
-              ...p,
-              ownerId: user.uid,
-              collaborators: email ? [email.trim().toLowerCase()] : [],
-              collaboratorRoles: email ? { [email.trim().toLowerCase()]: 'admin' as const } : {}
-            };
-          }
-          return p;
+      // Merge localProjects, finalProjects from server, and fbProjects from Firestore
+      const projectsMap = new Map<string, Project>();
+
+      // 1. Seed with cached/local projects
+      localProjects.forEach(p => {
+        projectsMap.set(p.id, {
+          ...p,
+          ownerId: p.ownerId || user.uid
         });
+      });
 
-        // Enqueue migrated projects, issues, notes, synapses to Firestore in background queue
-        enqueueBackgroundWrite('migrate_anonymous_data', async () => {
-          for (const proj of migratedProjects) {
-            if (proj.ownerId === user.uid) {
-              try {
-                await setDocWithSanitize(doc(db, 'projects', proj.id), proj);
-                console.log(`[Migration] Migrated project ${proj.id} saved to Firestore.`);
-              } catch (fsErr) {
-                console.warn(`[Migration] Failed to save migrated project ${proj.id} to Firestore:`, fsErr);
-              }
+      // 2. Seed with server sync cache projects
+      finalProjects.forEach(p => {
+        projectsMap.set(p.id, p);
+      });
+
+      // 3. Merge Firestore projects
+      fbProjects.forEach(fbP => {
+        const serverP = projectsMap.get(fbP.id);
+        if (serverP) {
+          const currentRecs = fbP.dreamRecommendations || [];
+          const serverRecs = serverP.dreamRecommendations || [];
+          const mergedRecs = [...currentRecs];
+          serverRecs.forEach((sr: any) => {
+            if (!mergedRecs.some((r: any) => r.id === sr.id || r.title?.toLowerCase() === sr.title?.toLowerCase())) {
+              mergedRecs.push(sr);
             }
-          }
-
-          const localIssues = getStored<Issue[]>('app_issues', []);
-          for (const iss of localIssues) {
-            try {
-              await setDocWithSanitize(doc(db, 'issues', iss.id), iss);
-            } catch (fsErr) {
-              console.warn(`[Migration] Failed to save issues of migrated project ${iss.id} to Firestore:`, fsErr);
+          });
+          
+          const currentBrainstorms = fbP.brainstormIdeas || [];
+          const serverBrainstorms = serverP.brainstormIdeas || [];
+          const mergedBrainstorms = [...currentBrainstorms];
+          serverBrainstorms.forEach((sb: any) => {
+            if (!mergedBrainstorms.some((b: any) => b.id === sb.id || b.text?.toLowerCase() === sb.text?.toLowerCase())) {
+              mergedBrainstorms.push(sb);
             }
-          }
+          });
 
-          const localNotes = getStored<Note[]>('app_notes', []);
-          for (const note of localNotes) {
-            try {
-              await setDocWithSanitize(doc(db, 'notes', note.id), note);
-            } catch (fsErr) {
-              console.warn(`[Migration] Failed to save notes of migrated project ${note.id} to Firestore:`, fsErr);
-            }
-          }
+          projectsMap.set(fbP.id, {
+            ...fbP,
+            dreamRecommendations: mergedRecs,
+            brainstormIdeas: mergedBrainstorms,
+            isDreamingActive: fbP.isDreamingActive ?? serverP.isDreamingActive,
+            dreamProgress: fbP.dreamProgress ?? serverP.dreamProgress,
+            dreamLogs: fbP.dreamLogs || serverP.dreamLogs || [],
+            dreamFocus: fbP.dreamFocus || serverP.dreamFocus,
+            lastDreamedTime: fbP.lastDreamedTime || serverP.lastDreamedTime
+          });
+        } else {
+          projectsMap.set(fbP.id, fbP);
+        }
+      });
 
-          const localSynapses = getStored<CortexSynapse[]>('app_cortex_synapses', []);
-          for (const syn of localSynapses) {
+      const mergedProjectList = Array.from(projectsMap.values());
+
+      if (mergedProjectList.length > 0) {
+        setProjects(mergedProjectList);
+        setStored('app_projects', mergedProjectList);
+        lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(mergedProjectList));
+
+        // Background sync: Ensure all merged projects exist in Firestore under the user's UID
+        const email = (user.email || '').trim().toLowerCase();
+        enqueueBackgroundWrite('sync_merged_projects_firestore', async () => {
+          for (const proj of mergedProjectList) {
             try {
-              await setDocWithSanitize(doc(db, 'cortexSynapses', syn.id), syn);
+              const updatedProj = {
+                ...proj,
+                ownerId: proj.ownerId || user.uid,
+                collaborators: email ? Array.from(new Set([...(proj.collaborators || []), email])) : (proj.collaborators || []),
+                collaboratorRoles: email ? { ...(proj.collaboratorRoles || {}), [email]: 'admin' as const } : (proj.collaboratorRoles || {})
+              };
+              await setDocWithSanitize(doc(db, 'projects', proj.id), updatedProj, { merge: true });
             } catch (fsErr) {
-              console.warn(`[Migration] Failed to save synapses of migrated project ${syn.id} to Firestore:`, fsErr);
+              console.warn(`[WorkspaceSync] Background project save failed for ${proj.id}:`, fsErr);
             }
           }
         });
-
-        // Add them to fbProjects list so they are treated as fetched
-        migratedProjects.forEach(p => {
-          if (!fbProjects.some(fbP => fbP.id === p.id)) {
-            fbProjects.push(p);
-          }
-        });
+      } else if (ownedQuerySuccess && collabQuerySuccess && localProjects.length === 0) {
+        setProjects([]);
+        setStored('app_projects', []);
+        lastFirestoreProjectsRef.current = [];
+      } else {
+        console.warn("⏱️ [WorkspaceSync] Cloud project query completed; retaining cached local projects.");
       }
 
-      const allowedProjectIds = fbProjects.map(p => p.id);
-      const allowedProjectNames = fbProjects.map(p => (p.name || '').toLowerCase());
+      const allowedProjectIds = mergedProjectList.map(p => p.id);
+      const allowedProjectNames = mergedProjectList.map(p => (p.name || '').toLowerCase());
 
       // Fetch user's issues, notes, synapses
       const fbIssues: Issue[] = [];
@@ -3178,58 +3196,6 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         }
       } catch (e) {}
 
-      // Merge & set state safely without overwriting local cache on query timeouts
-      if (fbProjects.length > 0) {
-        const mergedProjects = fbProjects.map(fbP => {
-          const serverP = finalProjects.find(sp => sp.id === fbP.id);
-          if (serverP) {
-            const currentRecs = fbP.dreamRecommendations || [];
-            const serverRecs = serverP.dreamRecommendations || [];
-            const mergedRecs = [...currentRecs];
-            serverRecs.forEach((sr: any) => {
-              if (!mergedRecs.some((r: any) => r.id === sr.id || r.title.toLowerCase() === sr.title.toLowerCase())) {
-                mergedRecs.push(sr);
-              }
-            });
-            
-            const currentBrainstorms = fbP.brainstormIdeas || [];
-            const serverBrainstorms = serverP.brainstormIdeas || [];
-            const mergedBrainstorms = [...currentBrainstorms];
-            serverBrainstorms.forEach((sb: any) => {
-              if (!mergedBrainstorms.some((b: any) => b.id === sb.id || b.text.toLowerCase() === sb.text.toLowerCase())) {
-                mergedBrainstorms.push(sb);
-              }
-            });
-
-            return {
-              ...fbP,
-              dreamRecommendations: mergedRecs,
-              brainstormIdeas: mergedBrainstorms,
-              isDreamingActive: fbP.isDreamingActive ?? serverP.isDreamingActive,
-              dreamProgress: fbP.dreamProgress ?? serverP.dreamProgress,
-              dreamLogs: fbP.dreamLogs || serverP.dreamLogs || [],
-              dreamFocus: fbP.dreamFocus || serverP.dreamFocus,
-              lastDreamedTime: fbP.lastDreamedTime || serverP.lastDreamedTime
-            };
-          }
-          return fbP;
-        });
-        setProjects(mergedProjects);
-        setStored('app_projects', mergedProjects);
-        lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(mergedProjects));
-      } else if (finalProjects.length > 0) {
-        setProjects(finalProjects);
-        setStored('app_projects', finalProjects);
-        lastFirestoreProjectsRef.current = JSON.parse(JSON.stringify(finalProjects));
-      } else if (ownedQuerySuccess && collabQuerySuccess) {
-        // Successful Firestore query explicitly confirmed 0 projects for authenticated user
-        setProjects([]);
-        setStored('app_projects', []);
-        lastFirestoreProjectsRef.current = [];
-      } else {
-        console.warn("⏱️ [WorkspaceSync] Cloud project query timed out or failed; retaining cached local projects.");
-      }
-
       if (fbIssues.length > 0) {
         setIssues(fbIssues);
         setStored('app_issues', fbIssues);
@@ -3238,12 +3204,12 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         setIssues(finalIssues);
         setStored('app_issues', finalIssues);
         lastFirestoreIssuesRef.current = JSON.parse(JSON.stringify(finalIssues));
-      } else if (issuesQuerySuccess) {
+      } else if (issuesQuerySuccess && localIssues.length === 0) {
         setIssues([]);
         setStored('app_issues', []);
         lastFirestoreIssuesRef.current = [];
       } else {
-        console.warn("⏱️ [WorkspaceSync] Cloud issues query timed out or failed; retaining cached local issues.");
+        console.warn("⏱️ [WorkspaceSync] Cloud issues query timed out or completed; retaining cached local issues.");
       }
 
       if (fbNotes.length > 0) {
@@ -3254,12 +3220,12 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         setNotes(finalNotes);
         setStored('app_notes', finalNotes);
         lastFirestoreNotesRef.current = JSON.parse(JSON.stringify(finalNotes));
-      } else if (notesQuerySuccess) {
+      } else if (notesQuerySuccess && localNotes.length === 0) {
         setNotes([]);
         setStored('app_notes', []);
         lastFirestoreNotesRef.current = [];
       } else {
-        console.warn("⏱️ [WorkspaceSync] Cloud notes query timed out or failed; retaining cached local notes.");
+        console.warn("⏱️ [WorkspaceSync] Cloud notes query timed out or completed; retaining cached local notes.");
       }
 
       if (fbSynapses.length > 0) {
@@ -3270,12 +3236,12 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         setCortexSynapses(finalCortexSynapses);
         setStored('app_cortex_synapses', finalCortexSynapses);
         lastFirestoreSynapsesRef.current = JSON.parse(JSON.stringify(finalCortexSynapses));
-      } else if (synapsesQuerySuccess) {
+      } else if (synapsesQuerySuccess && localSynapses.length === 0) {
         setCortexSynapses([]);
         setStored('app_cortex_synapses', []);
         lastFirestoreSynapsesRef.current = [];
       } else {
-        console.warn("⏱️ [WorkspaceSync] Cloud synapses query timed out or failed; retaining cached local synapses.");
+        console.warn("⏱️ [WorkspaceSync] Cloud synapses query timed out or completed; retaining cached local synapses.");
       }
 
       // 3. Immediately POST merged state back to user-scoped server cache to initialize it

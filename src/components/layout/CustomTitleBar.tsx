@@ -37,10 +37,17 @@ export function CustomTitleBar() {
     }
   };
 
-  const handleMaximize = () => {
+  const handleMaximize = async () => {
     const api = getElectronAPI();
     if (api) {
-      api.maximizeWindow();
+      setIsMaximized(prev => !prev);
+      try {
+        await api.maximizeWindow();
+        const state = await api.isMaximized();
+        setIsMaximized(state);
+      } catch (err) {
+        console.warn('Failed to toggle window maximize state:', err);
+      }
     }
   };
 

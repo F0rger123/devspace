@@ -190,12 +190,18 @@ async function createWindow() {
 }
 
 function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
-  const senderUrl = event.senderFrame?.url || '';
+  const url = event.senderFrame?.url || event.sender?.getURL() || '';
+  if (!url) return true;
   return (
-    senderUrl.startsWith('file://') ||
-    senderUrl.startsWith('http://localhost') ||
-    senderUrl.startsWith('http://127.0.0.1')
+    url.startsWith('file://') ||
+    url.startsWith('http://localhost') ||
+    url.startsWith('http://127.0.0.1') ||
+    url === 'about:blank'
   );
+}
+
+function getTargetWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(event.sender) || mainWindow || BrowserWindow.getFocusedWindow();
 }
 
 // App lifecycle
@@ -227,29 +233,37 @@ app.on('before-quit', () => {
 function setupIpcHandlers() {
   ipcMain.handle('window:minimize', (event) => {
     if (!isTrustedSender(event)) return;
-    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const win = getTargetWindow(event);
     win?.minimize();
   });
 
   ipcMain.handle('window:maximize', (event) => {
     if (!isTrustedSender(event)) return;
-    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-    if (win?.isMaximized()) {
+    const win = getTargetWindow(event);
+    if (!win) return;
+    if (win.isMaximized()) {
       win.unmaximize();
+      if (win.isMaximized()) {
+        win.restore();
+      }
     } else {
-      win?.maximize();
+      win.maximize();
     }
   });
 
   ipcMain.handle('window:close', (event) => {
     if (!isTrustedSender(event)) return;
-    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-    win?.close();
+    const win = getTargetWindow(event);
+    if (win && !win.isDestroyed()) {
+      win.close();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
+    }
   });
 
   ipcMain.handle('window:isMaximized', (event) => {
     if (!isTrustedSender(event)) return false;
-    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const win = getTargetWindow(event);
     return win?.isMaximized() ?? false;
   });
 
