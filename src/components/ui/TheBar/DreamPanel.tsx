@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, PanInfo } from 'motion/react';
-import { Sparkles, ChevronLeft, ChevronRight, Check, RotateCw, Clock, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Sparkles, ChevronLeft, ChevronRight, Check, Clock, ArrowRight, ArrowLeft } from 'lucide-react';
 import { ActivityItem } from '../../../lib/activityCenterService';
 import { useNavigate } from 'react-router-dom';
 
@@ -24,11 +24,11 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
 
   if (dreamList.length === 0) {
     return (
-      <div className="p-8 text-center space-y-2 bg-white/3 border border-white/10 rounded-2xl font-mono">
-        <Sparkles size={28} className="text-amber-400 mx-auto" />
-        <p className="text-xs text-zinc-200 font-bold">Neural Dream Engine Idle</p>
-        <p className="text-[10.5px] text-zinc-500 max-w-md mx-auto">
-          No active or pending background dreams. Neural dreams trigger automatically when DevSpace detects codebase optimization opportunities.
+      <div className="p-8 text-center space-y-2 bg-slate-900/40 border border-white/10 rounded-2xl font-mono">
+        <Sparkles size={28} className="text-cyan-400 mx-auto" />
+        <p className="text-xs text-slate-200 font-bold">No Active Dreams for {projectName}</p>
+        <p className="text-[10.5px] text-slate-400 max-w-md mx-auto leading-relaxed">
+          Autonomous background optimizations run automatically when idle logic detects code or architecture enhancement opportunities in this project.
         </p>
       </div>
     );
@@ -58,16 +58,16 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
       <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl p-2 text-xs">
         <button
           onClick={() => setSelectedIndex((prev) => (prev - 1 + dreamList.length) % dreamList.length)}
-          className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+          className="p-1 hover:bg-white/10 rounded text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 font-medium"
         >
           <ChevronLeft size={14} /> Previous
         </button>
-        <span className="text-[11px] font-bold text-amber-300">
+        <span className="text-[11px] font-bold text-cyan-300">
           Dream {selectedIndex + 1} of {dreamList.length}
         </span>
         <button
           onClick={() => setSelectedIndex((prev) => (prev + 1) % dreamList.length)}
-          className="p-1 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+          className="p-1 hover:bg-white/10 rounded text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 font-medium"
         >
           Next <ChevronRight size={14} />
         </button>
@@ -80,16 +80,16 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
           drag="x"
           dragConstraints={{ left: -100, right: 100 }}
           onDragEnd={(e, info) => handleDragEnd(e, info, currentDream.id, currentDream.actionUrl)}
-          className="p-4 bg-gradient-to-br from-amber-950/20 via-[#0d0d16] to-[#080810] border border-amber-500/30 rounded-2xl space-y-3 shadow-lg relative overflow-hidden"
+          className="p-4 bg-slate-900/60 backdrop-blur-xl border border-white/15 rounded-2xl space-y-3 shadow-lg relative overflow-hidden"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg">
+              <span className="p-1.5 bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 rounded-lg">
                 <Sparkles size={14} />
               </span>
               <div>
-                <h4 className="text-xs font-extrabold text-zinc-100">{currentDream.title}</h4>
-                <span className="text-[9.5px] text-zinc-400">Project: {projectName}</span>
+                <h4 className="text-xs font-extrabold text-slate-100">{currentDream.title}</h4>
+                <span className="text-[9.5px] text-slate-400">{projectName}</span>
               </div>
             </div>
 
@@ -97,27 +97,27 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
               className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded-full border ${
                 currentDream.status === 'completed'
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                  : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse'
               }`}
             >
               {currentDream.status}
             </span>
           </div>
 
-          <p className="text-[11px] text-zinc-300 leading-relaxed bg-black/30 p-2.5 rounded-xl border border-white/5">
+          <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-950/40 p-2.5 rounded-xl border border-white/10">
             {currentDream.description || 'Analyzing project AST tree and generating autonomous architectural improvements.'}
           </p>
 
           {/* Progress Indicator */}
           {typeof currentDream.progress === 'number' && (
             <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-zinc-400">
-                <span>Optimization Stage</span>
-                <span className="text-amber-400 font-bold">{Math.round(currentDream.progress)}%</span>
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Progress</span>
+                <span className="text-cyan-300 font-bold">{Math.round(currentDream.progress)}%</span>
               </div>
-              <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
+              <div className="w-full h-2 bg-slate-950/60 rounded-full overflow-hidden border border-white/10">
                 <div
-                  className="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-cyan-500 via-blue-400 to-emerald-400 transition-all duration-300"
                   style={{ width: `${Math.min(100, Math.max(0, currentDream.progress))}%` }}
                 />
               </div>
@@ -125,7 +125,7 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
           )}
 
           {/* Swipe Instructions */}
-          <div className="flex items-center justify-between text-[9px] text-zinc-500 border-t border-white/5 pt-1.5">
+          <div className="flex items-center justify-between text-[9px] text-slate-400 border-t border-white/5 pt-1.5">
             <span className="flex items-center gap-1">
               <ArrowLeft size={10} /> Swipe Left: Reject
             </span>
@@ -136,7 +136,7 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
 
           {/* Interactive Action Buttons */}
           <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10">
-            <span className="text-[10px] text-zinc-500 flex items-center gap-1">
+            <span className="text-[10px] text-slate-400 flex items-center gap-1">
               <Clock size={11} /> {currentDream.estimatedTimeRemaining || 'ETA 12s'}
             </span>
 
@@ -145,19 +145,19 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
                 <>
                   <button
                     onClick={() => onReject(currentDream.id)}
-                    className="px-2.5 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-lg transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 rounded-lg transition-colors cursor-pointer font-medium"
                   >
                     Reject
                   </button>
                   <button
                     onClick={() => handleOpenResult(currentDream)}
-                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-zinc-200 border border-white/10 rounded-lg transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg transition-colors cursor-pointer font-medium"
                   >
-                    Open Result
+                    Open
                   </button>
                   <button
                     onClick={() => onApprove(currentDream.id, currentDream.actionUrl)}
-                    className="px-3 py-1 bg-emerald-500 text-black font-extrabold rounded-lg hover:bg-emerald-400 transition-colors cursor-pointer flex items-center gap-1"
+                    className="px-3 py-1 bg-emerald-400 text-slate-950 font-extrabold rounded-lg hover:bg-emerald-300 transition-colors cursor-pointer flex items-center gap-1"
                   >
                     <Check size={11} /> Approve & Merge
                   </button>
@@ -165,9 +165,9 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
               ) : (
                 <button
                   onClick={() => onCancel(currentDream.id)}
-                  className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-zinc-300 rounded-lg border border-white/10 transition-colors cursor-pointer"
+                  className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg border border-white/10 transition-colors cursor-pointer font-medium"
                 >
-                  Pause Dream
+                  Pause
                 </button>
               )}
             </div>

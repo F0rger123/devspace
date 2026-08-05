@@ -15,15 +15,15 @@ export const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
 }) => {
   return (
     <div className="space-y-2 font-mono">
-      <div className="flex items-center justify-between text-[10px] text-zinc-400 px-1">
+      <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
         <span>Persistent Desktop Notifications</span>
-        <button onClick={onMarkAllRead} className="hover:text-white underline cursor-pointer">
+        <button onClick={onMarkAllRead} className="hover:text-white underline cursor-pointer font-medium">
           Mark All Read
         </button>
       </div>
 
       {notifications.length === 0 ? (
-        <div className="p-6 text-center text-zinc-500 text-xs font-mono bg-white/3 border border-white/10 rounded-2xl">
+        <div className="p-6 text-center text-slate-400 text-xs font-mono bg-slate-900/40 border border-white/10 rounded-2xl leading-relaxed">
           No unread desktop notifications.
         </div>
       ) : (
@@ -32,19 +32,19 @@ export const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
             key={n.id}
             className={`p-3 rounded-2xl border text-xs space-y-1 ${
               n.type === 'error'
-                ? 'bg-red-950/20 border-red-500/40 text-red-200'
+                ? 'bg-red-950/30 border-red-500/40 text-red-200'
                 : n.type === 'warning'
-                ? 'bg-amber-950/20 border-amber-500/40 text-amber-200'
-                : 'bg-white/5 border-white/10 text-zinc-200'
+                ? 'bg-cyan-950/30 border-cyan-400/40 text-cyan-200'
+                : 'bg-slate-900/60 border-white/15 text-slate-200 backdrop-blur-xl'
             }`}
           >
             <div className="flex items-center justify-between font-bold">
               <span>{n.title}</span>
-              <button onClick={() => onDismiss(n.id)} className="text-zinc-500 hover:text-white p-0.5 cursor-pointer">
+              <button onClick={() => onDismiss(n.id)} className="text-slate-400 hover:text-white p-0.5 cursor-pointer">
                 <X size={11} />
               </button>
             </div>
-            <p className="text-[10.5px] text-zinc-400">{n.message}</p>
+            <p className="text-[10.5px] text-slate-300">{n.message}</p>
           </div>
         ))
       )}

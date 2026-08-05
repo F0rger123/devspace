@@ -1,6 +1,7 @@
 import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
 import { isElectron } from './lib/electronBridge';
 import { AppLayout } from './components/layout/AppLayout';
+import { BarShell } from './components/ui/TheBar/BarShell';
 import { Dashboard } from './pages/Dashboard';
 import { AssistantChat } from './pages/AssistantChat';
 import { Projects } from './pages/Projects';
@@ -25,39 +26,56 @@ export default function App() {
   const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
   const RouterComponent = isDesktop ? HashRouter : BrowserRouter;
 
-
   return (
     <RouterComponent>
-      <AppLayout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/create" element={<Create />} />
-          <Route path="/design" element={<Design />} />
-          <Route path="/assistant" element={<AssistantChat />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/sandbox-loop" element={<SandboxLoop />} />
-          <Route path="/notes" element={<Notes />} />
-          <Route path="/assets" element={<Assets />} />
-          <Route path="/ideas" element={<IdeaExpansion />} />
-          <Route path="/brain" element={<Brain />} />
-          <Route path="/agents" element={<AgenticOS />} />
-          <Route path="/issues" element={<Issues />} />
-          <Route path="/roadmap" element={<Roadmap />} />
-          <Route path="/github" element={<GitHubIntelligence />} />
-          <Route path="/docs" element={<WorkspaceDocs />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/community" element={<Community />} />
-          <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
-          <Route path="/automations" element={<Automations />} />
-          {/* Fallback for undefined routes */}
-          <Route path="*" element={
-            <div className="h-full flex items-center justify-center text-zinc-500 flex-col gap-4">
-               <h2 className="text-xl">Component under construction</h2>
-               <p className="text-sm">Use the navigation or Cmd+K to return</p>
+      <Routes>
+        <Route
+          path="/overlay"
+          element={
+            <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
+              <BarShell standalone />
             </div>
-          } />
-        </Routes>
-      </AppLayout>
+          }
+        />
+        <Route
+          path="*"
+          element={
+            <AppLayout>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/create" element={<Create />} />
+                <Route path="/design" element={<Design />} />
+                <Route path="/assistant" element={<AssistantChat />} />
+                <Route path="/projects" element={<Projects />} />
+                <Route path="/sandbox-loop" element={<SandboxLoop />} />
+                <Route path="/notes" element={<Notes />} />
+                <Route path="/assets" element={<Assets />} />
+                <Route path="/ideas" element={<IdeaExpansion />} />
+                <Route path="/brain" element={<Brain />} />
+                <Route path="/agents" element={<AgenticOS />} />
+                <Route path="/issues" element={<Issues />} />
+                <Route path="/roadmap" element={<Roadmap />} />
+                <Route path="/github" element={<GitHubIntelligence />} />
+                <Route path="/docs" element={<WorkspaceDocs />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/community" element={<Community />} />
+                <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
+                <Route path="/automations" element={<Automations />} />
+                {/* Fallback for undefined routes */}
+                <Route
+                  path="*"
+                  element={
+                    <div className="h-full flex items-center justify-center text-zinc-500 flex-col gap-4">
+                      <h2 className="text-xl">Component under construction</h2>
+                      <p className="text-sm">Use the navigation or Cmd+K to return</p>
+                    </div>
+                  }
+                />
+              </Routes>
+            </AppLayout>
+          }
+        />
+      </Routes>
     </RouterComponent>
   );
 }

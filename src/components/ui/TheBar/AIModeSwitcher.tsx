@@ -43,7 +43,7 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
 
   return (
     <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar max-w-full py-0.5">
-      {MODES.map(({ mode, label }) => {
+      {MODES.map(({ mode, label, icon }) => {
         const isActive = currentMode === mode;
         return (
           <button
@@ -51,10 +51,11 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
             onClick={() => handleModeChange(mode)}
             className={`px-2 py-1 rounded-lg text-[9.5px] font-mono font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
               isActive
-                ? 'bg-yellow-500 text-black shadow-xs font-extrabold'
-                : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-zinc-200 border border-white/5'
+                ? 'bg-cyan-400 text-slate-950 shadow-xs font-extrabold border border-cyan-300'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
             }`}
           >
+            {icon}
             {label}
           </button>
         );
