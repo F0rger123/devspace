@@ -236,6 +236,8 @@ class ActivityCenterManager {
       // Periodically check for updates
       setTimeout(() => this.checkUpdates(), 3000);
     }
+
+    this.updateCachedSnapshot();
   }
 
   // Load configuration from local storage
@@ -557,19 +559,10 @@ class ActivityCenterManager {
     await triggerUpdateRestartAndInstall();
   }
 
-  // Subscribe for state updates
-  public subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
+  private cachedSnapshot: any = null;
 
-  private notify() {
-    this.listeners.forEach((fn) => fn());
-  }
-
-  // Getters for snapshot state
-  public getSnapshot = () => {
-    return {
+  private updateCachedSnapshot() {
+    this.cachedSnapshot = {
       activities: Array.from(this.activities.values()).sort((a, b) => b.startTime - a.startTime),
       activeActivities: Array.from(this.activities.values()).filter((a) => a.status === 'active' || a.status === 'paused'),
       notifications: this.notifications,
@@ -580,6 +573,26 @@ class ActivityCenterManager {
       config: this.config,
       offlineQueue: this.offlineQueue,
     };
+    return this.cachedSnapshot;
+  }
+
+  // Subscribe for state updates
+  public subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  private notify() {
+    this.updateCachedSnapshot();
+    this.listeners.forEach((fn) => fn());
+  }
+
+  // Getters for snapshot state
+  public getSnapshot = () => {
+    if (!this.cachedSnapshot) {
+      return this.updateCachedSnapshot();
+    }
+    return this.cachedSnapshot;
   };
 
   // Register new background activity
