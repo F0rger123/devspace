@@ -165,7 +165,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             ) : null}
 
             {unreadNotificationCount > 0 && (
-              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-blue-200 bg-blue-500/20 px-2 py-0.5 rounded-full border border-blue-400/30">
+              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-slate-200 bg-slate-800/80 px-2 py-0.5 rounded-full border border-white/20">
                 <Bell size={10} />
                 <span>{unreadNotificationCount}</span>
               </div>
@@ -181,10 +181,10 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -16, scale: 0.95 }}
             transition={springTransition}
-            className="w-[92vw] max-w-2xl bg-slate-900/80 via-slate-900/90 to-slate-950/95 border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-3xl rounded-3xl overflow-hidden font-sans flex flex-col max-h-[82vh]"
+            className="w-[92vw] max-w-2xl bg-slate-900/85 via-slate-900/90 to-slate-950/95 border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.65)] ring-1 ring-white/10 backdrop-blur-3xl rounded-3xl overflow-hidden font-sans flex flex-col max-h-[82vh]"
           >
             {/* Clean Header Bar */}
-            <div className="px-4 py-3 bg-gradient-to-r from-cyan-950/30 via-slate-900/90 to-blue-950/30 border-b border-white/15 flex flex-wrap items-center justify-between gap-3 shrink-0">
+            <div className="px-4 py-3 bg-slate-900/95 border-b border-white/15 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 <ProjectSwitcher
                   projects={projectList}

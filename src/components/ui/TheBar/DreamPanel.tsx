@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, PanInfo } from 'motion/react';
 import { Sparkles, ChevronLeft, ChevronRight, Check, Clock, ArrowRight, ArrowLeft } from 'lucide-react';
 import { ActivityItem } from '../../../lib/activityCenterService';
+import { aetherIntelligence } from '../../../lib/aetherIntelligenceService';
 import { useNavigate } from 'react-router-dom';
 
 interface DreamPanelProps {
@@ -24,12 +25,20 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
 
   if (dreamList.length === 0) {
     return (
-      <div className="p-8 text-center space-y-2 bg-slate-900/40 border border-white/10 rounded-2xl font-mono">
+      <div className="p-8 text-center space-y-3 bg-slate-900/40 border border-white/10 rounded-2xl font-mono">
         <Sparkles size={28} className="text-cyan-400 mx-auto" />
         <p className="text-xs text-slate-200 font-bold">No Active Dreams for {projectName}</p>
         <p className="text-[10.5px] text-slate-400 max-w-md mx-auto leading-relaxed">
           Autonomous background optimizations run automatically when idle logic detects code or architecture enhancement opportunities in this project.
         </p>
+        <button
+          onClick={() => {
+            aetherIntelligence.generateDream(projectName);
+          }}
+          className="mt-2 px-3 py-1.5 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-extrabold rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-md"
+        >
+          <Sparkles size={12} /> Trigger Neural Dream Now
+        </button>
       </div>
     );
   }

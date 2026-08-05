@@ -59,6 +59,45 @@ export class AetherIntelligenceService {
   constructor() {
     this.memory = this.loadMemory();
     this.timeline = this.loadTimeline();
+    this.seedInitialDreams();
+  }
+
+  private seedInitialDreams() {
+    setTimeout(() => {
+      const existing = activityCenter.getSnapshot().activities;
+      if (!existing.some((a) => a.category === 'dream')) {
+        activityCenter.registerActivity({
+          title: 'AST Type Audit & Modularization',
+          description: 'Analyzing TypeScript Abstract Syntax Tree for unreferenced type imports and interface modularity.',
+          category: 'dream',
+          status: 'active',
+          progress: 55,
+          estimatedTimeRemaining: '12s',
+          project: 'DevSpace Desktop',
+        });
+
+        activityCenter.registerActivity({
+          title: 'Liquid Glass Render Pass Optimization',
+          description: 'Optimizing CSS backdrop-filter render passes and GPU compositor layers for desktop overlay window.',
+          category: 'dream',
+          status: 'completed',
+          progress: 100,
+          estimatedTimeRemaining: '0s',
+          actionUrl: '/settings',
+          project: 'DevSpace Desktop',
+        });
+
+        activityCenter.registerActivity({
+          title: 'Database Index & SQLite Caching Pass',
+          description: 'Creating compound indexes for offline mutation buffer queries in Lifetime Suite.',
+          category: 'dream',
+          status: 'active',
+          progress: 72,
+          estimatedTimeRemaining: '8s',
+          project: 'Lifetime Suite',
+        });
+      }
+    }, 100);
   }
 
   private loadMemory(): PersonalMemory {

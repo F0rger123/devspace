@@ -17,6 +17,7 @@ export interface ActivityItem {
   canRetry?: boolean;
   actionUrl?: string;
   actionPayload?: any;
+  project?: string;
   onCancel?: () => void;
   onPause?: () => void;
   onResume?: () => void;

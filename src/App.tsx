@@ -26,11 +26,33 @@ export default function App() {
   const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
   const RouterComponent = isDesktop ? HashRouter : BrowserRouter;
 
+  const isOverlayWindow = typeof window !== 'undefined' && (
+    window.location.hash.includes('overlay') || 
+    window.location.pathname.includes('/overlay') ||
+    window.location.search.includes('overlay')
+  );
+
+  if (isOverlayWindow) {
+    return (
+      <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
+        <BarShell standalone />
+      </div>
+    );
+  }
+
   return (
     <RouterComponent>
       <Routes>
         <Route
           path="/overlay"
+          element={
+            <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
+              <BarShell standalone />
+            </div>
+          }
+        />
+        <Route
+          path="overlay"
           element={
             <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
               <BarShell standalone />

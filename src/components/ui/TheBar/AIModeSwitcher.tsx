@@ -2,6 +2,8 @@ import React from 'react';
 import { Sparkles, Mic, VolumeX, ShieldCheck, Code2, Moon, Activity, Power } from 'lucide-react';
 import { AIMode } from './types';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
+import { aetherIntelligence } from '../../../lib/aetherIntelligenceService';
+import { activityCenter } from '../../../lib/activityCenterService';
 
 interface AIModeSwitcherProps {
   currentMode: AIMode;
@@ -24,20 +26,83 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
 
   const handleModeChange = (mode: AIMode) => {
     onSelectMode(mode);
-    
-    // Propagate mode to activity center service to alter real behavior
-    if (mode === 'Muted' || mode === 'Silent') {
-      updateConfig({ soundEnabled: false, desktopNotifications: mode !== 'Silent' });
-    } else if (mode === 'Dream Mode') {
-      updateConfig({ dreamFrequency: 'aggressive', soundEnabled: true });
-    } else if (mode === 'Voice') {
-      updateConfig({ soundEnabled: true });
-      // Trigger voice modal event if available
-      window.dispatchEvent(new CustomEvent('devspace:voice-activate'));
-    } else if (mode === 'Off') {
-      updateConfig({ dreamFrequency: 'disabled', offlineSyncFrequency: 'manual' });
-    } else {
-      updateConfig({ soundEnabled: true, desktopNotifications: true, dreamFrequency: 'adaptive' });
+
+    switch (mode) {
+      case 'Dream Mode':
+        updateConfig({ dreamFrequency: 'aggressive' });
+        aetherIntelligence.generateDream('DevSpace Desktop');
+        activityCenter.addNotification({
+          title: 'Dream Mode Engaged',
+          message: 'Autonomous neural optimization runs initiated for active project.',
+          type: 'info',
+          category: 'dream',
+        });
+        break;
+
+      case 'Voice':
+        window.dispatchEvent(new CustomEvent('devspace:voice-activate'));
+        activityCenter.addNotification({
+          title: 'Voice Assistant Active',
+          message: 'Listening for voice commands and audio inputs.',
+          type: 'info',
+          category: 'voice',
+        });
+        break;
+
+      case 'Aether Intelligence':
+        aetherIntelligence.analyzeContext('DevSpace Desktop');
+        activityCenter.addNotification({
+          title: 'Aether Engine Active',
+          message: 'Deep workspace and native desktop awareness online.',
+          type: 'info',
+          category: 'ai',
+        });
+        break;
+
+      case 'Muted':
+        updateConfig({ soundEnabled: false, desktopNotifications: true });
+        activityCenter.addNotification({
+          title: 'Audio Output Muted',
+          message: 'Sound effects and audio voice feedback silenced.',
+          type: 'warning',
+        });
+        break;
+
+      case 'Silent':
+        updateConfig({ soundEnabled: false, desktopNotifications: false });
+        activityCenter.addNotification({
+          title: 'Silent Mode Active',
+          message: 'Desktop notifications and audio popups suspended.',
+          type: 'warning',
+        });
+        break;
+
+      case 'Developer':
+        updateConfig({ displayMode: 'developer' });
+        activityCenter.addNotification({
+          title: 'Developer Diagnostics On',
+          message: 'Showing verbose IPC telemetry and AST metrics.',
+          type: 'info',
+        });
+        break;
+
+      case 'Off':
+        updateConfig({ dreamFrequency: 'disabled', offlineSyncFrequency: 'manual' });
+        activityCenter.addNotification({
+          title: 'AI Services Suspended',
+          message: 'Background AI and neural dream sweeps paused.',
+          type: 'warning',
+        });
+        break;
+
+      default:
+        updateConfig({ soundEnabled: true, desktopNotifications: true, dreamFrequency: 'adaptive' });
+        activityCenter.addNotification({
+          title: 'Standard AI Assistant Active',
+          message: 'Gemini AI assistant operational.',
+          type: 'info',
+        });
+        break;
     }
   };
 

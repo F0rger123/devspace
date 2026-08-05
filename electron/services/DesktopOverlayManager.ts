@@ -39,10 +39,24 @@ export class DesktopOverlayManager {
     });
 
     if (process.env.NODE_ENV === 'development') {
-      this.overlayWindow.loadURL(`http://localhost:${serverPort}/#overlay`);
+      this.overlayWindow.loadURL(`http://localhost:${serverPort}/#/overlay`);
     } else {
-      this.overlayWindow.loadURL(`http://127.0.0.1:${serverPort}/#overlay`);
+      this.overlayWindow.loadURL(`http://127.0.0.1:${serverPort}/#/overlay`);
     }
+
+    try {
+      this.overlayWindow.setAlwaysOnTop(true, 'floating');
+      this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch (e) {
+      console.warn('[DesktopOverlayManager] Non-critical overlay flag warning:', e);
+    }
+
+    this.overlayWindow.on('close', (event) => {
+      if (!(app as any).isQuitting) {
+        event.preventDefault();
+        this.overlayWindow?.hide();
+      }
+    });
 
     this.overlayWindow.on('closed', () => {
       this.overlayWindow = null;

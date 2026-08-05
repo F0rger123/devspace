@@ -243,6 +243,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  (app as any).isQuitting = true;
   if (serverProcess) {
     console.log('[Electron Main] Terminating embedded Express server process...');
     serverProcess.kill();
