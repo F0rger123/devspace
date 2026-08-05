@@ -26,6 +26,12 @@ export interface ElectronAPI {
   getScreenSources?: () => Promise<{ success: boolean; sources?: Array<{ id: string; name: string; thumbnailUrl: string }>; error?: string }>;
   readClipboardText?: () => Promise<string>;
   writeClipboardText?: (text: string) => Promise<boolean>;
+
+  // Phase 4.1 Native Auto-Update IPC
+  checkForUpdates?: () => Promise<any>;
+  downloadUpdate?: (updateInfo: any) => Promise<any>;
+  verifyUpdateSignature?: (expectedSha256: string) => Promise<any>;
+  installUpdateAndRestart?: () => Promise<any>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -41,6 +47,10 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.removeListener('window:maximized-change', handler);
     };
   },
+  checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
+  downloadUpdate: (updateInfo: any) => ipcRenderer.invoke('app:downloadUpdate', updateInfo),
+  verifyUpdateSignature: (expectedSha256: string) => ipcRenderer.invoke('app:verifyUpdateSignature', expectedSha256),
+  installUpdateAndRestart: () => ipcRenderer.invoke('app:installUpdateAndRestart'),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

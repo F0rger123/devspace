@@ -282,4 +282,65 @@ function setupIpcHandlers() {
       serverPort: activeServerPort,
     };
   });
+
+  // Phase 4.1 Auto-Update Native IPC handlers
+  ipcMain.handle('app:checkForUpdates', async (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    const port = activeServerPort || 3000;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/desktop/check-updates?version=${app.getVersion()}`);
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, updateAvailable: false, currentVersion: app.getVersion(), error: err.message };
+    }
+  });
+
+  ipcMain.handle('app:downloadUpdate', async (event, updateInfo) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    const port = activeServerPort || 3000;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/desktop/download-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateInfo),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('app:verifyUpdateSignature', async (event, expectedSha256) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    const port = activeServerPort || 3000;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/desktop/verify-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedSha256 }),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, verified: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('app:installUpdateAndRestart', async (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    const port = activeServerPort || 3000;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/desktop/install-update`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimeout(() => {
+          app.quit();
+        }, 1500);
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
 }

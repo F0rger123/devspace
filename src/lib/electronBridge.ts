@@ -58,3 +58,35 @@ export async function safeWriteClipboard(text: string) {
   }
   return false;
 }
+
+export async function safeCheckForUpdates() {
+  const api = getElectronAPI();
+  if (api && api.checkForUpdates) {
+    return await api.checkForUpdates();
+  }
+  return null;
+}
+
+export async function safeDownloadUpdate(updateInfo: any) {
+  const api = getElectronAPI();
+  if (api && api.downloadUpdate) {
+    return await api.downloadUpdate(updateInfo);
+  }
+  return null;
+}
+
+export async function safeVerifyUpdateSignature(sha256: string) {
+  const api = getElectronAPI();
+  if (api && api.verifyUpdateSignature) {
+    return await api.verifyUpdateSignature(sha256);
+  }
+  return null;
+}
+
+export async function safeInstallUpdateAndRestart() {
+  const api = getElectronAPI();
+  if (api && api.installUpdateAndRestart) {
+    return await api.installUpdateAndRestart();
+  }
+  return null;
+}

@@ -10,6 +10,10 @@ import { LocalModelSettingsTab } from '../components/ui/LocalModelSettingsTab';
 import { KeyboardMapperTab } from '../components/ui/KeyboardMapperTab';
 import { AutonomousAppWatcher } from '../components/ui/AutonomousAppWatcher';
 import { HandGestureCenter } from '../components/ui/HandGestureCenter';
+import { RecoveryCenter } from '../components/RecoveryCenter';
+import { DesktopAutoUpdateCenter } from '../components/DesktopAutoUpdateCenter';
+import { BiometricSessionSecuritySettings } from '../components/BiometricSessionSecuritySettings';
+import { ActivityCenterSettingsTab } from '../components/ui/ActivityCenterSettingsTab';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 import { isElectron } from '../lib/electronBridge';
 
@@ -1551,7 +1555,7 @@ export function Settings() {
       <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         {/* Settings Navigation */}
         <div className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-x-visible shrink-0 pb-2 md:pb-0 w-full md:w-48 border-b md:border-b-0 md:border-r border-zinc-900 md:pr-4">
-          {['profile', 'aether', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
+          {['profile', 'activity-center', 'recovery', 'aether', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1561,7 +1565,7 @@ export function Settings() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'activity-center' ? 'Activity Center ✨' : tab === 'recovery' ? 'Recovery & Sync 🛡️' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
           <div className="hidden md:block my-2 border-t border-zinc-900" />
@@ -1578,6 +1582,16 @@ export function Settings() {
 
         {/* Settings Content */}
         <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl p-4 md:p-6 overflow-y-auto w-full min-w-0">
+          {activeTab === 'activity-center' && (
+            <div className="animate-fade-in">
+              <ActivityCenterSettingsTab />
+            </div>
+          )}
+          {activeTab === 'recovery' && (
+            <div className="animate-fade-in">
+              <RecoveryCenter />
+            </div>
+          )}
           {activeTab === 'aether' && (
             <div className="space-y-6 animate-fade-in text-zinc-300">
               <div>
@@ -2126,6 +2140,11 @@ export function Settings() {
                     <span>DevSpace Desktop Active</span>
                   </div>
                 )}
+              </div>
+
+              {/* Automatic Desktop Updates Engine */}
+              <div className="space-y-4">
+                <DesktopAutoUpdateCenter />
               </div>
 
               {/* Embedded Local Models & Hugging Face Hub */}
@@ -6005,8 +6024,11 @@ export function Settings() {
             <div className="space-y-6 animate-fade-in">
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100 mb-1">Security & Access Management</h3>
-                <p className="text-xs text-zinc-400">Control platform session parameters, configure SSH keys, and enforce sandboxing firewalls.</p>
+                <p className="text-xs text-zinc-400">Control platform session parameters, configure SSH keys, biometrics, and active session management.</p>
               </div>
+
+              {/* Biometric & Session Security Settings */}
+              <BiometricSessionSecuritySettings />
 
               {/* Connected Identities Section */}
               <div className="bg-[#09090b] border border-zinc-800 rounded-lg p-5 space-y-4">

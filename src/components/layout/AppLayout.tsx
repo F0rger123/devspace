@@ -11,6 +11,7 @@ import { KineticController } from '../ui/KineticController';
 import { KineticHUDOverlay } from '../ui/KineticHUDOverlay';
 import { CursorDrawContext } from '../ui/CursorDrawContext';
 import { GlobalHotkeyHandler } from '../ui/GlobalHotkeyHandler';
+import { ActivityCenterPill } from '../ui/ActivityCenterPill';
 import { motion, AnimatePresence } from 'motion/react';
 import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
@@ -503,6 +504,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {!isAssistantRoute && !isAssistantOpen && <RightSidebar />}
         </div>
         <CommandPalette />
+        <ActivityCenterPill />
         <VoiceMemoAssistant />
         <KineticController />
         <KineticHUDOverlay />

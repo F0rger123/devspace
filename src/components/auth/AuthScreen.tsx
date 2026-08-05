@@ -10,8 +10,9 @@ import {
 } from '../../lib/auth';
 import { useData } from '../../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, User, KeyRound, Eye, EyeOff, Loader2, ArrowLeft, Github, Copy, ExternalLink, Check, ShieldAlert } from 'lucide-react';
+import { Mail, Lock, User, KeyRound, Eye, EyeOff, Loader2, ArrowLeft, Github, Copy, ExternalLink, Check, ShieldAlert, Fingerprint } from 'lucide-react';
 import firebaseConfig from '../../../firebase-applet-config.json';
+import { isBiometricsSupported, getBiometricSettings, verifyBiometricAuth } from '../../lib/biometricAuth';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'resetPassword';
 
@@ -19,6 +20,15 @@ export function AuthScreen() {
   const { setGoogleUser, setGoogleToken, setGithubUser, setGithubProfile, setGithubToken } = useData();
   const [mode, setMode] = useState<AuthMode>('login');
   const [oobCode, setOobCode] = useState<string | null>(null);
+
+  const isDevOrDebug = typeof window !== 'undefined' && (
+    import.meta.env.DEV || 
+    new URLSearchParams(window.location.search).get('debug') === 'true' ||
+    localStorage.getItem('app_enable_dev_auth') === 'true'
+  );
+
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [lastUserId, setLastUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -33,6 +43,22 @@ export function AuthScreen() {
         setMode('resetPassword');
         setOobCode(cleanCode);
       }
+
+      // Check for saved session & biometric capabilities
+      try {
+        const storedUserRaw = localStorage.getItem('app_google_user');
+        if (storedUserRaw) {
+          const u = JSON.parse(storedUserRaw);
+          const uid = u?.uid || 'guest';
+          setLastUserId(uid);
+          const settings = getBiometricSettings(uid);
+          if (settings.enabled) {
+            isBiometricsSupported().then(supported => {
+              if (supported) setBiometricsAvailable(true);
+            });
+          }
+        }
+      } catch (e) {}
     }
   }, []);
   
@@ -57,6 +83,31 @@ export function AuthScreen() {
   const [pendingProviderName, setPendingProviderName] = useState('');
   const [consolidationPassword, setConsolidationPassword] = useState('');
   const [consolidationMode, setConsolidationMode] = useState<'options' | 'password'>('options');
+
+  const handleBiometricUnlock = async () => {
+    if (!lastUserId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await verifyBiometricAuth(lastUserId);
+      if (res.success) {
+        const stored = localStorage.getItem('app_google_user');
+        if (stored) {
+          const userObj = JSON.parse(stored);
+          setGoogleUser(userObj);
+          setSuccessMsg('✓ Authenticated via Biometric Passkey (Touch ID / Windows Hello)');
+        } else {
+          setError('Session token expired. Please log in with email/password once to refresh session.');
+        }
+      } else {
+        setError(res.message);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Biometric authentication failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -428,6 +479,32 @@ export function AuthScreen() {
               }`}
             >
               Sign Up
+            </button>
+          </div>
+        )}
+
+        {/* Biometric Quick Unlock Option */}
+        {mode === 'login' && biometricsAvailable && (
+          <div className="mb-5 p-3.5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-yellow-400 font-mono flex items-center gap-1.5">
+                <Fingerprint size={16} /> Biometric Passkey Ready
+              </span>
+              <span className="text-[9px] bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded font-mono font-bold">
+                INSTANT UNLOCK
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-300">
+              Unlock your session instantly using Windows Hello, macOS Touch ID / Face ID, or Android Biometrics.
+            </p>
+            <button
+              type="button"
+              onClick={handleBiometricUnlock}
+              disabled={loading}
+              className="w-full py-2 bg-yellow-500 hover:bg-yellow-450 text-black font-mono text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md active:scale-98"
+            >
+              <Fingerprint size={16} />
+              <span>{loading ? 'VERIFYING...' : 'UNLOCK WITH BIOMETRICS'}</span>
             </button>
           </div>
         )}
@@ -808,149 +885,151 @@ export function AuthScreen() {
                   </button>
                 </div>
 
-                {/* Collapsible Firebase Connection / Authorization Setup Guide */}
-                <div className="mt-6 pt-4 border-t border-zinc-850/60">
-                  <button
-                    type="button"
-                    onClick={() => setShowSetupGuide(!showSetupGuide)}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-[#121215] hover:bg-[#18181c] rounded-xl border border-zinc-800 text-[11px] text-zinc-400 hover:text-zinc-200 font-mono transition-colors cursor-pointer"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {authErrorType ? (
-                        <ShieldAlert size={14} className="text-red-400 animate-pulse shrink-0" />
-                      ) : (
-                        <span className="text-zinc-400 text-xs">🛠️</span>
-                      )}
-                      <span className={authErrorType ? "text-red-400 font-semibold" : ""}>
-                        {authErrorType ? "Domain / Provider Authorization Guide" : "Firebase Auth Connection Details"}
-                      </span>
-                    </span>
-                    <span className="text-[10px] text-zinc-500 font-bold bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
-                      {showSetupGuide || authErrorType ? 'Hide ▲' : 'Show Details ▼'}
-                    </span>
-                  </button>
-
-                  {(showSetupGuide || authErrorType) && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="mt-3 space-y-3 p-3 bg-[#0c0c0e] rounded-xl border border-zinc-850"
+                {/* Collapsible Firebase Connection / Authorization Setup Guide (Developer Mode Only) */}
+                {isDevOrDebug && (
+                  <div className="mt-6 pt-4 border-t border-zinc-850/60">
+                    <button
+                      type="button"
+                      onClick={() => setShowSetupGuide(!showSetupGuide)}
+                      className="w-full flex items-center justify-between py-2 px-3 bg-[#121215] hover:bg-[#18181c] rounded-xl border border-zinc-800 text-[11px] text-zinc-400 hover:text-zinc-200 font-mono transition-colors cursor-pointer"
                     >
-                      <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
-                        {authErrorType === 'unauthorized-domain' 
-                          ? 'To authorize this environment to sign in with GitHub or Google, please register your active domain as an Authorized Domain in your Firebase Console.' 
-                          : 'To enable OAuth sign-ins, configure the OAuth providers in your Firebase console and map their callback URIs appropriately.'}
-                      </p>
+                      <span className="flex items-center gap-1.5">
+                        {authErrorType ? (
+                          <ShieldAlert size={14} className="text-red-400 animate-pulse shrink-0" />
+                        ) : (
+                          <span className="text-zinc-400 text-xs">🛠️</span>
+                        )}
+                        <span className={authErrorType ? "text-red-400 font-semibold" : ""}>
+                          {authErrorType ? "Domain / Provider Authorization Guide" : "Firebase Auth Connection Details"}
+                        </span>
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-bold bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                        {showSetupGuide || authErrorType ? 'Hide ▲' : 'Show Details ▼'}
+                      </span>
+                    </button>
 
-                      <div className="space-y-2.5">
-                        {/* Section 1: Authorized Domains */}
-                        <div className="bg-[#121215] rounded-lg p-2.5 border border-zinc-800 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-zinc-300 font-mono">1. AUTHORIZE ACTIVE DOMAINS</span>
-                            <a 
-                              href={`https://console.firebase.google.com/project/${firebaseConfig.projectId || 'project-id'}/authentication/settings`} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-yellow-500 hover:underline flex items-center gap-1 font-mono"
-                            >
-                              Console <ExternalLink size={10} />
-                            </a>
+                    {(showSetupGuide || authErrorType) && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-3 space-y-3 p-3 bg-[#0c0c0e] rounded-xl border border-zinc-850"
+                      >
+                        <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+                          {authErrorType === 'unauthorized-domain' 
+                            ? 'To authorize this environment to sign in with GitHub or Google, please register your active domain as an Authorized Domain in your Firebase Console.' 
+                            : 'To enable OAuth sign-ins, configure the OAuth providers in your Firebase console and map their callback URIs appropriately.'}
+                        </p>
+
+                        <div className="space-y-2.5">
+                          {/* Section 1: Authorized Domains */}
+                          <div className="bg-[#121215] rounded-lg p-2.5 border border-zinc-800 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-zinc-300 font-mono">1. AUTHORIZE ACTIVE DOMAINS</span>
+                              <a 
+                                href={`https://console.firebase.google.com/project/${firebaseConfig.projectId || 'project-id'}/authentication/settings`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-yellow-500 hover:underline flex items-center gap-1 font-mono"
+                              >
+                                Console <ExternalLink size={10} />
+                              </a>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 font-sans">
+                              Add these domains under: <br />
+                              <strong>Authentication &rarr; Settings &rarr; Authorized domains &rarr; Add domain</strong>
+                            </p>
+                            
+                            <div className="space-y-1.5 pt-0.5">
+                              {/* Active Host */}
+                              <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
+                                <span className="text-zinc-400 truncate pr-2 text-[9px]">
+                                  {typeof window !== 'undefined' ? window.location.hostname : 'localhost'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(
+                                    typeof window !== 'undefined' ? window.location.hostname : 'localhost',
+                                    'domain-active'
+                                  )}
+                                  className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
+                                >
+                                  {copiedText === 'domain-active' ? (
+                                    <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
+                                  ) : (
+                                    <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
+                                  )}
+                                </button>
+                              </div>
+
+                              {/* Shared Host */}
+                              <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
+                                <span className="text-zinc-400 truncate pr-2 text-[9px]">
+                                  ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(
+                                    'ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app',
+                                    'domain-shared'
+                                  )}
+                                  className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
+                                >
+                                  {copiedText === 'domain-shared' ? (
+                                    <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
+                                  ) : (
+                                    <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <p className="text-[10px] text-zinc-500 font-sans">
-                            Add these domains under: <br />
-                            <strong>Authentication &rarr; Settings &rarr; Authorized domains &rarr; Add domain</strong>
-                          </p>
-                          
-                          <div className="space-y-1.5 pt-0.5">
-                            {/* Active Host */}
+
+                          {/* Section 2: GitHub Sign-in provider */}
+                          <div className="bg-[#121215] rounded-lg p-2.5 border border-zinc-800 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-zinc-300 font-mono">2. GITHUB OAUTH REDIRECT URI</span>
+                              <a 
+                                href="https://github.com/settings/developers" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-yellow-500 hover:underline flex items-center gap-1 font-mono"
+                              >
+                                GitHub Developer <ExternalLink size={10} />
+                              </a>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 font-sans">
+                              Paste as <strong>Authorization callback URL</strong> in GitHub Settings:
+                            </p>
+
                             <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
                               <span className="text-zinc-400 truncate pr-2 text-[9px]">
-                                {typeof window !== 'undefined' ? window.location.hostname : 'localhost'}
+                                {`https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleCopy(
-                                  typeof window !== 'undefined' ? window.location.hostname : 'localhost',
-                                  'domain-active'
+                                  `https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`,
+                                  'redirect-uri'
                                 )}
                                 className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
                               >
-                                {copiedText === 'domain-active' ? (
+                                {copiedText === 'redirect-uri' ? (
                                   <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
                                 ) : (
                                   <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
                                 )}
                               </button>
                             </div>
-
-                            {/* Shared Host */}
-                            <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
-                              <span className="text-zinc-400 truncate pr-2 text-[9px]">
-                                ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(
-                                  'ais-pre-3kik42vq3fw4lyryeckdeg-164818161298.us-west2.run.app',
-                                  'domain-shared'
-                                )}
-                                className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
-                              >
-                                {copiedText === 'domain-shared' ? (
-                                  <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
-                                ) : (
-                                  <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
-                                )}
-                              </button>
+                            <div className="text-[9px] text-zinc-500 flex flex-col gap-1 font-sans mt-1">
+                              <span>📌 <strong>Firebase Settings</strong>: Authentication &rarr; Sign-in method &rarr; Add <strong>GitHub</strong> / <strong>Google</strong>.</span>
                             </div>
                           </div>
                         </div>
-
-                        {/* Section 2: GitHub Sign-in provider */}
-                        <div className="bg-[#121215] rounded-lg p-2.5 border border-zinc-800 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-zinc-300 font-mono">2. GITHUB OAUTH REDIRECT URI</span>
-                            <a 
-                              href="https://github.com/settings/developers" 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-yellow-500 hover:underline flex items-center gap-1 font-mono"
-                            >
-                              GitHub Developer <ExternalLink size={10} />
-                            </a>
-                          </div>
-                          <p className="text-[10px] text-zinc-500 font-sans">
-                            Paste as <strong>Authorization callback URL</strong> in GitHub Settings:
-                          </p>
-
-                          <div className="flex items-center justify-between bg-[#0a0a0c] py-1 px-2 rounded border border-zinc-850 text-[10px] font-mono">
-                            <span className="text-zinc-400 truncate pr-2 text-[9px]">
-                              {`https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(
-                                `https://${firebaseConfig.projectId || 'project-id'}.firebaseapp.com/__/auth/handler`,
-                                'redirect-uri'
-                              )}
-                              className="text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 font-medium cursor-pointer"
-                            >
-                              {copiedText === 'redirect-uri' ? (
-                                <span className="text-emerald-400 text-[9px] font-bold flex items-center gap-0.5"><Check size={10} /> Copied</span>
-                              ) : (
-                                <span className="flex items-center gap-1">Copy <Copy size={9} /></span>
-                              )}
-                            </button>
-                          </div>
-                          <div className="text-[9px] text-zinc-500 flex flex-col gap-1 font-sans mt-1">
-                            <span>📌 <strong>Firebase Settings</strong>: Authentication &rarr; Sign-in method &rarr; Add <strong>GitHub</strong> / <strong>Google</strong>.</span>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </div>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </>

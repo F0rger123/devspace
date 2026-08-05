@@ -359,6 +359,61 @@ export type Project = {
   }[];
 };
 
+export type DeletedProject = Project & {
+  deletedAt: number;
+  expiresAt: number;
+  originalId: string;
+};
+
+export type WorkspaceBackup = {
+  id: string;
+  timestamp: number;
+  formattedDate: string;
+  triggerReason: string;
+  data: {
+    projects: Project[];
+    notes: Note[];
+    issues: Issue[];
+    cortexSynapses: CortexSynapse[];
+    settings: {
+      aiContextRules: string;
+      aetherPersonalityRules: string[];
+    };
+  };
+};
+
+export type ProjectVersion = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  versionNumber: number;
+  timestamp: number;
+  description: string;
+  data: Project;
+};
+
+export type SyncConflict = {
+  id: string;
+  timestamp: number;
+  collectionName: string;
+  cloudCount: number;
+  localCount: number;
+  cloudData: any[];
+  localData: any[];
+  reason: string;
+  resolved: boolean;
+};
+
+export type SyncLogEntry = {
+  id: string;
+  timestamp: number;
+  collection: string;
+  status: 'success' | 'warn' | 'blocked' | 'error';
+  action: string;
+  details: string;
+  projectsCount?: number;
+};
+
 export type Issue = {
   id: string;
   projectId: string;
@@ -686,6 +741,20 @@ type DataContextType = {
   reconcileUserAccounts?: (user: any, linkedUids: string[]) => Promise<void>;
   forceReconcileIdentities: () => Promise<void>;
   startupTimeline: StartupTaskRecord[];
+
+  // Phase 4.0 Data Integrity, Sync Protection & Recovery System
+  deletedProjects: DeletedProject[];
+  restoreDeletedProject: (id: string) => void;
+  permanentlyDeleteProject: (id: string) => void;
+  workspaceBackups: WorkspaceBackup[];
+  createWorkspaceBackup: (reason?: string) => void;
+  restoreWorkspaceBackup: (backupId: string) => void;
+  syncConflict: SyncConflict | null;
+  resolveSyncConflict: (resolution: 'keep_local' | 'keep_cloud' | 'merge') => void;
+  syncAuditLogs: SyncLogEntry[];
+  addSyncLog: (entry: Omit<SyncLogEntry, 'id' | 'timestamp'>) => void;
+  projectVersions: ProjectVersion[];
+  restoreProjectVersion: (versionId: string) => void;
 };
 
 export interface StartupTaskRecord {
@@ -1080,6 +1149,161 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [passcodePin, setPasscodePin] = useState<string>(() => {
     return getStored<string>('whatsapp_passcode_pin', '');
   });
+
+  // Phase 4.0 Data Integrity, Sync Protection & Recovery System States
+  const [deletedProjects, setDeletedProjects] = useState<DeletedProject[]>(() => getStored('app_deleted_projects', []));
+  const [workspaceBackups, setWorkspaceBackups] = useState<WorkspaceBackup[]>(() => getStored('app_workspace_backups', []));
+  const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(() => getStored('app_sync_conflict', null));
+  const [syncAuditLogs, setSyncAuditLogs] = useState<SyncLogEntry[]>(() => getStored('app_sync_audit_logs', []));
+  const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>(() => getStored('app_project_versions', []));
+
+  useEffect(() => { setStored('app_deleted_projects', deletedProjects); }, [deletedProjects]);
+  useEffect(() => { setStored('app_workspace_backups', workspaceBackups); }, [workspaceBackups]);
+  useEffect(() => { setStored('app_sync_conflict', syncConflict); }, [syncConflict]);
+  useEffect(() => { setStored('app_sync_audit_logs', syncAuditLogs); }, [syncAuditLogs]);
+  useEffect(() => { setStored('app_project_versions', projectVersions); }, [projectVersions]);
+
+  const addSyncLog = (entry: Omit<SyncLogEntry, 'id' | 'timestamp'>) => {
+    const newLog: SyncLogEntry = {
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      timestamp: Date.now(),
+      ...entry
+    };
+    setSyncAuditLogs(prev => [newLog, ...(prev || [])].slice(0, 100));
+  };
+
+  const createWorkspaceBackup = (reason: string = 'Manual Snapshot') => {
+    const newBackup: WorkspaceBackup = {
+      id: 'backup_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      timestamp: Date.now(),
+      formattedDate: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(),
+      triggerReason: reason,
+      data: {
+        projects: JSON.parse(JSON.stringify(projects || [])),
+        notes: JSON.parse(JSON.stringify(notes || [])),
+        issues: JSON.parse(JSON.stringify(issues || [])),
+        cortexSynapses: JSON.parse(JSON.stringify(cortexSynapses || [])),
+        settings: {
+          aiContextRules: aiContextRules || '',
+          aetherPersonalityRules: aetherPersonalityRules || []
+        }
+      }
+    };
+    setWorkspaceBackups(prev => [newBackup, ...(prev || [])].slice(0, 20));
+    addSyncLog({
+      collection: 'workspace',
+      status: 'success',
+      action: 'create_backup',
+      details: `Created workspace snapshot (${reason}) containing ${(projects || []).length} projects.`
+    });
+    showToast('✓ Workspace snapshot backup created.', 'success', 2500);
+  };
+
+  const restoreWorkspaceBackup = (backupId: string) => {
+    const backup = (workspaceBackups || []).find(b => b.id === backupId);
+    if (!backup) return;
+    if (Array.isArray(backup.data?.projects)) setProjects(backup.data.projects);
+    if (Array.isArray(backup.data?.notes)) setNotes(backup.data.notes);
+    if (Array.isArray(backup.data?.issues)) setIssues(backup.data.issues);
+    if (Array.isArray(backup.data?.cortexSynapses)) setCortexSynapses(backup.data.cortexSynapses);
+    if (typeof backup.data?.settings?.aiContextRules === 'string') setAiContextRules(backup.data.settings.aiContextRules);
+    if (Array.isArray(backup.data?.settings?.aetherPersonalityRules)) setAetherPersonalityRules(backup.data.settings.aetherPersonalityRules);
+
+    addSyncLog({
+      collection: 'workspace',
+      status: 'success',
+      action: 'restore_backup',
+      details: `Restored workspace snapshot from ${backup.formattedDate} (${backup.triggerReason}).`
+    });
+    showToast(`Restored workspace backup from ${backup.formattedDate}`, 'success', 3500);
+  };
+
+  const restoreDeletedProject = (id: string) => {
+    const delProj = (deletedProjects || []).find(dp => dp.id === id || dp.originalId === id);
+    if (!delProj) return;
+    const { deletedAt, expiresAt, originalId, ...projData } = delProj;
+
+    setProjects(prev => [...prev, projData as Project]);
+    setDeletedProjects(prev => prev.filter(dp => dp.id !== id && dp.originalId !== id));
+
+    setDocWithSanitize(doc(db, 'projects', projData.id), projData).catch(() => {});
+    deleteDocWithSanitize(doc(db, 'deletedProjects', id)).catch(() => {});
+
+    addSyncLog({
+      collection: 'projects',
+      status: 'success',
+      action: 'restore_soft_deleted',
+      details: `Restored project '${projData.name}' from Trash Bin.`
+    });
+    showToast(`✓ Project '${projData.name}' restored successfully!`, 'success', 3000);
+  };
+
+  const permanentlyDeleteProject = (id: string) => {
+    const delProj = (deletedProjects || []).find(dp => dp.id === id || dp.originalId === id);
+    setDeletedProjects(prev => prev.filter(dp => dp.id !== id && dp.originalId !== id));
+    deleteDocWithSanitize(doc(db, 'deletedProjects', id)).catch(() => {});
+    if (delProj) {
+      addSyncLog({
+        collection: 'projects',
+        status: 'warn',
+        action: 'permanent_delete',
+        details: `Permanently deleted project '${delProj.name}'.`
+      });
+      showToast(`Project '${delProj.name}' permanently deleted.`, 'info', 3000);
+    }
+  };
+
+  const resolveSyncConflict = (resolution: 'keep_local' | 'keep_cloud' | 'merge') => {
+    if (!syncConflict) return;
+    if (resolution === 'keep_local') {
+      enqueueBackgroundWrite('push_local_conflict_resolution', async () => {
+        for (const proj of projects) {
+          await setDocWithSanitize(doc(db, 'projects', proj.id), proj, { merge: true });
+        }
+      });
+      addSyncLog({
+        collection: 'projects',
+        status: 'success',
+        action: 'resolve_conflict_keep_local',
+        details: `User resolved sync conflict by preserving ${projects.length} local projects and syncing to Cloud.`
+      });
+      showToast('Preserved local projects and synchronized to Cloud.', 'success', 3000);
+    } else if (resolution === 'keep_cloud') {
+      if (syncConflict.cloudData && syncConflict.cloudData.length > 0) {
+        setProjects(syncConflict.cloudData);
+        showToast('Updated local projects with Cloud data.', 'info', 3000);
+      } else {
+        showToast('Cloud data was empty. Preserving local state.', 'info', 3000);
+      }
+    } else if (resolution === 'merge') {
+      const mergedMap = new Map<string, Project>();
+      projects.forEach(p => mergedMap.set(p.id, p));
+      (syncConflict.cloudData || []).forEach((cp: Project) => {
+        if (!mergedMap.has(cp.id)) {
+          mergedMap.set(cp.id, cp);
+        }
+      });
+      const mergedList = Array.from(mergedMap.values());
+      setProjects(mergedList);
+      showToast(`Merged ${mergedList.length} total projects from local & cloud.`, 'success', 3000);
+    }
+    setSyncConflict(null);
+    setStored('app_sync_conflict', null);
+  };
+
+  const restoreProjectVersion = (versionId: string) => {
+    const ver = (projectVersions || []).find(v => v.id === versionId);
+    if (!ver) return;
+    setProjects(prev => prev.map(p => p.id === ver.projectId ? ver.data : p));
+    setDocWithSanitize(doc(db, 'projects', ver.projectId), ver.data).catch(() => {});
+    addSyncLog({
+      collection: 'projects',
+      status: 'success',
+      action: 'restore_project_version',
+      details: `Rolled back project '${ver.projectName}' to Version ${ver.versionNumber}.`
+    });
+    showToast(`Rolled back '${ver.projectName}' to Version ${ver.versionNumber}`, 'success', 3000);
+  };
 
   const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
   const [startupTimeline, setStartupTimeline] = useState<StartupTaskRecord[]>([]);
@@ -4027,19 +4251,85 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     };
     setProjects(prev => [...prev, newProj]);
     setDocWithSanitize(doc(db, 'projects', id), newProj).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
+
+    // Log sync audit & create initial version snapshot
+    addSyncLog({
+      collection: 'projects',
+      status: 'success',
+      action: 'create_project',
+      details: `Created project '${newProj.name}' (ID: ${id}).`
+    });
+
+    const initialVersion: ProjectVersion = {
+      id: 'ver_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      projectId: id,
+      projectName: newProj.name,
+      versionNumber: 1,
+      timestamp: Date.now(),
+      description: 'Initial project creation snapshot',
+      data: JSON.parse(JSON.stringify(newProj))
+    };
+    setProjectVersions(prev => [initialVersion, ...(prev || [])]);
+
     return id;
   };
+
   const updateProject = (id: string, p: Partial<Project>) => {
     setProjects(prev => prev.map(proj => {
       if (proj.id === id) {
         const updated = { ...proj, ...p };
         setDocWithSanitize(doc(db, 'projects', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
+
+        // Version history snapshot on update
+        const newVersion: ProjectVersion = {
+          id: 'ver_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          projectId: id,
+          projectName: updated.name,
+          versionNumber: (projectVersions.filter(v => v.projectId === id).length || 0) + 1,
+          timestamp: Date.now(),
+          description: `Updated project properties (${Object.keys(p).join(', ')})`,
+          data: JSON.parse(JSON.stringify(updated))
+        };
+        setProjectVersions(prev => [newVersion, ...(prev || []).slice(0, 30)]);
+
         return updated;
       }
       return proj;
     }));
   };
   const deleteProject = (id: string) => {
+    const projToDelete = projects.find(p => p.id === id);
+    if (projToDelete) {
+      // Soft Delete: Move to Trash Bin (30-day retention)
+      const deletedRecord: DeletedProject = {
+        ...projToDelete,
+        originalId: id,
+        deletedAt: Date.now(),
+        expiresAt: Date.now() + 30 * 86400 * 1000
+      };
+      setDeletedProjects(prev => [deletedRecord, ...(prev || []).filter(dp => dp.id !== id)]);
+      setDocWithSanitize(doc(db, 'deletedProjects', id), deletedRecord).catch(() => {});
+
+      // Add project version history entry before deletion
+      const newVersion: ProjectVersion = {
+        id: 'ver_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        projectId: id,
+        projectName: projToDelete.name,
+        versionNumber: (projectVersions.filter(v => v.projectId === id).length || 0) + 1,
+        timestamp: Date.now(),
+        description: 'Snapshot recorded prior to project soft-deletion',
+        data: JSON.parse(JSON.stringify(projToDelete))
+      };
+      setProjectVersions(prev => [newVersion, ...(prev || [])]);
+
+      addSyncLog({
+        collection: 'projects',
+        status: 'warn',
+        action: 'soft_delete',
+        details: `Moved project '${projToDelete.name}' to Trash Bin (Soft-Delete retention).`
+      });
+    }
+
     // Clean up project issues in Firestore
     const associatedIssues = issues.filter(i => i.projectId === id);
     associatedIssues.forEach(i => {
@@ -5432,7 +5722,21 @@ Description of fix or enhancement recommendation
       setLinkedUids,
       reconcileUserAccounts,
       forceReconcileIdentities,
-      startupTimeline
+      startupTimeline,
+
+      // Phase 4.0 Recovery & Data Protection Properties
+      deletedProjects,
+      restoreDeletedProject,
+      permanentlyDeleteProject,
+      workspaceBackups,
+      createWorkspaceBackup,
+      restoreWorkspaceBackup,
+      syncConflict,
+      resolveSyncConflict,
+      syncAuditLogs,
+      addSyncLog,
+      projectVersions,
+      restoreProjectVersion
     }}>
       {children}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
