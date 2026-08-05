@@ -827,7 +827,7 @@ export function LocalModelSettingsTab() {
             >
               <option value="code">Code Generation & Debugging Only</option>
               <option value="chat">Aether Assistant Conversations</option>
-              <option value="context">Screen Context Mode Analysis</option>
+              <option value="context">Aether Intelligence Screen Analysis</option>
               <option value="all">Entire App (Full Local Offline Mode)</option>
             </select>
           </div>

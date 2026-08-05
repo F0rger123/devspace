@@ -58,7 +58,7 @@ export function GlobalHotkeyHandler() {
       switch (matched.id) {
         case 'TOGGLE_CONTEXT_MODE':
           setDrawingModeActive(!isDrawingModeActive);
-          showToast(!isDrawingModeActive ? "⭕ Aether Context Mode Active. Circle screen area with cursor!" : "Aether Context Mode deactivated", "info", 2500);
+          showToast(!isDrawingModeActive ? "⭕ Aether Intelligence Active. Circle screen area with cursor!" : "Aether Intelligence deactivated", "info", 2500);
           break;
 
         case 'EMERGENCY_STOP':

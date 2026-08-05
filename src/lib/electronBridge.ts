@@ -90,3 +90,51 @@ export async function safeInstallUpdateAndRestart() {
   }
   return null;
 }
+
+export async function safeToggleOverlay(visible?: boolean) {
+  const api = getElectronAPI();
+  if (api && api.toggleOverlay) {
+    return await api.toggleOverlay(visible);
+  }
+  return false;
+}
+
+export async function safeSetOverlayAlwaysOnTop(alwaysOnTop: boolean) {
+  const api = getElectronAPI();
+  if (api && api.setOverlayAlwaysOnTop) {
+    await api.setOverlayAlwaysOnTop(alwaysOnTop);
+  }
+}
+
+export async function safeGetDesktopAwareness() {
+  const api = getElectronAPI();
+  if (api && api.getDesktopAwareness) {
+    return await api.getDesktopAwareness();
+  }
+  return null;
+}
+
+export function safeSubscribeDesktopAwareness(callback: (state: any) => void) {
+  const api = getElectronAPI();
+  if (api && api.onDesktopAwarenessUpdate) {
+    return api.onDesktopAwarenessUpdate(callback);
+  }
+  return () => {};
+}
+
+export async function safeExecuteDesktopAction(actionName: string, payload?: any) {
+  const api = getElectronAPI();
+  if (api && api.executeDesktopAction) {
+    return await api.executeDesktopAction(actionName, payload);
+  }
+  return { success: false, error: 'Desktop automation engine requires DevSpace Desktop app.' };
+}
+
+export async function safeRecognizeOCR(imageSource?: string) {
+  const api = getElectronAPI();
+  if (api && api.recognizeOCR) {
+    return await api.recognizeOCR(imageSource);
+  }
+  return { success: false, error: 'OCR engine requires DevSpace Desktop app.' };
+}
+

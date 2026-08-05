@@ -1,11 +1,20 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 8/5/2026, 12:36:05 AM*
+*Last synchronized: 8/5/2026, 5:38:44 PM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
 ## 👤 User Profile & Preferences
 - **Email**: drummerforger@gmail.com
-- **Core Preferences & Directives**: Active, learning in background.
+- **Core Preferences & Directives**:
+  
+  
+  <!-- GITHUB_LEARNED_PREFERENCES_START -->
+  # Learned Preferences from GitHub Repos & Stars
+  - **Focus Summary:** This developer is deeply passionate about building modular AI assistants, multi-agent workflows (Jarvis-style), and automation systems using TypeScript, Python, and JavaScript. They actively leverage modern LLM ecosystems, particularly Claude and Model Context Protocol (MCP), alongside web applications and serverless automation tools like GitHub Actions.
+  - **Preference:** Prioritize TypeScript and Python for code examples, adhering to clean type safety and modular design patterns suitable for AI agent architectures.
+  - **Preference:** Incorporate Model Context Protocol (MCP) and Claude-specific integration techniques when designing tools or automation workflows.
+  - **Preference:** Focus on cost-effective, open-source, and lightweight automation strategies like GitHub Actions, PWAs, and free tier API configurations.
+  <!-- GITHUB_LEARNED_PREFERENCES_END -->
 
 ## 🎭 Aether Personality Rules & Dynamic Customizations
 *No custom personality traits registered yet. Tell Aether to "be more funny", "curse more", or "call me Sir from now on" to shape his persona!*
@@ -23,6 +32,12 @@ This is the physical workspace memory file of Aether (your central brain orchest
 - **Deep Thinking Capability**: `auto`
 
 ## 🧠 Learned Synaptic Rules (Cognitive Cortex)
-### 1. Authentication Protocol
+### 1. UI Termination Protocol
+- **Description**: Respect the 'Close Assistant' button in the top right as the hard-stop command for all active sessions; maintain unmuted state until this UI trigger is pressed.
+
+### 2. Authentication Protocol
 - **Description**: Secure Firestore database security rules require write verification check where auth is not null.
+
+### 3. UI Responsive Grid
+- **Description**: Enforce fluid spacing using Tailwind, keeping touch elements to minimum of 44px on mobile layers.
 

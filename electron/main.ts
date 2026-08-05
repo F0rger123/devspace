@@ -2,6 +2,10 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as net from 'net';
 import * as childProcess from 'child_process';
+import { desktopOverlayManager } from './services/DesktopOverlayManager';
+import { desktopAwarenessService } from './services/DesktopAwarenessService';
+import { desktopAutomationEngine } from './services/DesktopAutomationEngine';
+import { ocrService } from './services/OCRService';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: childProcess.ChildProcess | null = null;
@@ -342,5 +346,32 @@ function setupIpcHandlers() {
     } catch (err: any) {
       return { success: false, error: err.message };
     }
+  });
+
+  // Phase 5.0 Desktop Overlay Window & Operating System Architecture
+  ipcMain.handle('overlay:toggle', (event, visible?: boolean) => {
+    if (!isTrustedSender(event)) return false;
+    return desktopOverlayManager.toggleVisibility(visible);
+  });
+
+  ipcMain.handle('overlay:setAlwaysOnTop', (event, alwaysOnTop: boolean) => {
+    if (!isTrustedSender(event)) return;
+    desktopOverlayManager.setAlwaysOnTop(alwaysOnTop);
+  });
+
+  // Phase 5.0 Desktop Awareness & Desktop Action Engine
+  ipcMain.handle('desktop:getAwareness', (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return desktopAwarenessService.getAwarenessState();
+  });
+
+  ipcMain.handle('desktop:ocrRecognize', async (event, imageSource?: string) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return await ocrService.recognize(imageSource);
+  });
+
+  ipcMain.handle('desktop:executeAction', async (event, actionName: string, payload: any) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return await desktopAutomationEngine.executeAction(actionName, payload);
   });
 }

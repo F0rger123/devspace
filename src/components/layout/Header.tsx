@@ -175,7 +175,7 @@ export function Header() {
       mute = false;
       wakeWord = true;
       drawingMode = true;
-      toastMsg = "🎯 Aether AI: Open on Context Mode (Active & Drawing)";
+      toastMsg = "🎯 Aether Intelligence: Active Deep Reasoning & Drawing";
     }
 
     // Set and dispatch updated states

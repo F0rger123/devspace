@@ -32,6 +32,14 @@ export interface ElectronAPI {
   downloadUpdate?: (updateInfo: any) => Promise<any>;
   verifyUpdateSignature?: (expectedSha256: string) => Promise<any>;
   installUpdateAndRestart?: () => Promise<any>;
+
+  // Phase 5.0 Desktop Overlay & Awareness Architecture
+  toggleOverlay?: (visible?: boolean) => Promise<boolean>;
+  setOverlayAlwaysOnTop?: (alwaysOnTop: boolean) => Promise<void>;
+  getDesktopAwareness?: () => Promise<any>;
+  onDesktopAwarenessUpdate?: (callback: (state: any) => void) => () => void;
+  executeDesktopAction?: (actionName: string, payload?: any) => Promise<any>;
+  recognizeOCR?: (imageSource?: string) => Promise<any>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -51,6 +59,19 @@ const electronAPI: ElectronAPI = {
   downloadUpdate: (updateInfo: any) => ipcRenderer.invoke('app:downloadUpdate', updateInfo),
   verifyUpdateSignature: (expectedSha256: string) => ipcRenderer.invoke('app:verifyUpdateSignature', expectedSha256),
   installUpdateAndRestart: () => ipcRenderer.invoke('app:installUpdateAndRestart'),
+
+  toggleOverlay: (visible?: boolean) => ipcRenderer.invoke('overlay:toggle', visible),
+  setOverlayAlwaysOnTop: (alwaysOnTop: boolean) => ipcRenderer.invoke('overlay:setAlwaysOnTop', alwaysOnTop),
+  getDesktopAwareness: () => ipcRenderer.invoke('desktop:getAwareness'),
+  onDesktopAwarenessUpdate: (callback: (state: any) => void) => {
+    const handler = (_event: any, state: any) => callback(state);
+    ipcRenderer.on('desktop:awareness-update', handler);
+    return () => {
+      ipcRenderer.removeListener('desktop:awareness-update', handler);
+    };
+  },
+  executeDesktopAction: (actionName: string, payload?: any) => ipcRenderer.invoke('desktop:executeAction', actionName, payload),
+  recognizeOCR: (imageSource?: string) => ipcRenderer.invoke('desktop:ocrRecognize', imageSource),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

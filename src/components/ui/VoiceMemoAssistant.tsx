@@ -2826,12 +2826,12 @@ export function VoiceMemoAssistant() {
       cleanInput.includes("show context") || 
       cleanInput.includes("can you show context")
     ) {
-      const feedbackMsg = "Switched to Context Mode. You can now draw or circle areas with your mouse or hold Alt and drag to create selection regions.";
+      const feedbackMsg = "Switched to Aether Intelligence. You can now draw or circle areas with your mouse or hold Alt and drag to create selection regions.";
       setAetherFeedback({
         transcript: inputText,
         explanation: feedbackMsg,
         intent: 'settings_change',
-        triggeredAction: "🎯 Context Mode Activated"
+        triggeredAction: "🎯 Aether Intelligence Activated"
       });
       triggerBrowserSpeechSynthesis(feedbackMsg);
 
