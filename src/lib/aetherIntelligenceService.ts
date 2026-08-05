@@ -77,7 +77,7 @@ export class AetherIntelligenceService {
         });
 
         activityCenter.registerActivity({
-          title: 'Liquid Glass Render Pass Optimization',
+          title: 'Desktop Overlay Render Pass Optimization',
           description: 'Optimizing CSS backdrop-filter render passes and GPU compositor layers for desktop overlay window.',
           category: 'dream',
           status: 'completed',
@@ -186,7 +186,7 @@ export class AetherIntelligenceService {
     if (nativeState) {
       return {
         ...nativeState,
-        screenContext: 'Liquid Glass Desktop Overlay Active',
+        screenContext: 'Desktop Overlay Active',
         sessionStatus: 'Active Development Session',
       };
     }

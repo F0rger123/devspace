@@ -9,10 +9,16 @@ import {
   Compass,
   Minimize2,
   Zap,
+  EyeOff,
+  Layers,
+  ExternalLink,
+  Settings as SettingsIcon,
+  Power,
 } from 'lucide-react';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
 import { useData } from '../../../context/DataProvider';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, getElectronAPI } from '../../../lib/electronBridge';
 import { AIMode, TheBarTab } from './types';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AIModeSwitcher } from './AIModeSwitcher';
@@ -49,7 +55,20 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   const [aiMode, setAiMode] = useState<AIMode>('AI');
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [alwaysOnTop, setAlwaysOnTop] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenuPos(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+  };
 
   const projectList =
     projects && projects.length > 0
@@ -123,6 +142,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   return (
     <div
       ref={containerRef}
+      onContextMenu={handleContextMenu}
       className={`${
         standalone ? 'relative' : 'fixed top-3 left-1/2 -translate-x-1/2 z-[110]'
       } font-sans select-none pointer-events-auto`}
@@ -337,6 +357,72 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {contextMenuPos && (
+        <div
+          style={{ top: contextMenuPos.y, left: contextMenuPos.x }}
+          className="fixed z-[250] w-52 bg-zinc-900/95 border border-zinc-700/80 rounded-xl shadow-2xl backdrop-blur-xl py-1 text-xs font-sans text-zinc-200 animate-in fade-in zoom-in-95 duration-100 select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setContextMenuPos(null);
+              safeToggleOverlay(false);
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <EyeOff size={13} className="text-zinc-400" /> Hide Overlay
+          </button>
+          <button
+            onClick={() => {
+              setContextMenuPos(null);
+              const next = !alwaysOnTop;
+              setAlwaysOnTop(next);
+              safeSetOverlayAlwaysOnTop(next);
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center justify-between text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <Layers size={13} className="text-purple-400" /> Always On Top
+            </span>
+            {alwaysOnTop && <span className="text-purple-400 font-bold text-[10px]">✓</span>}
+          </button>
+          <div className="my-1 border-t border-zinc-800" />
+          <button
+            onClick={() => {
+              setContextMenuPos(null);
+              navigate('/dashboard');
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <ExternalLink size={13} className="text-cyan-400" /> Open DevSpace Main Window
+          </button>
+          <button
+            onClick={() => {
+              setContextMenuPos(null);
+              navigate('/settings?tab=desktop_overlay');
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <SettingsIcon size={13} className="text-indigo-400" /> Desktop Settings
+          </button>
+          <div className="my-1 border-t border-zinc-800" />
+          <button
+            onClick={() => {
+              setContextMenuPos(null);
+              const api = getElectronAPI();
+              if (api && api.closeWindow) {
+                api.closeWindow();
+              } else {
+                safeToggleOverlay(false);
+              }
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-red-950/40 hover:text-red-300 flex items-center gap-2 text-red-400 transition-colors cursor-pointer"
+          >
+            <Power size={13} /> Quit DevSpace
+          </button>
+        </div>
+      )}
     </div>
   );
 };

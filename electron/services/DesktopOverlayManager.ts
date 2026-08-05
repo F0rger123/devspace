@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, app } from 'electron';
+import { BrowserWindow, screen, app, Menu } from 'electron';
 import path from 'path';
 
 export class DesktopOverlayManager {
@@ -50,6 +50,61 @@ export class DesktopOverlayManager {
     } catch (e) {
       console.warn('[DesktopOverlayManager] Non-critical overlay flag warning:', e);
     }
+
+    // Native right-click context menu handler for overlay window
+    this.overlayWindow.webContents.on('context-menu', (_e) => {
+      const menu = Menu.buildFromTemplate([
+        {
+          label: 'Hide Overlay',
+          click: () => {
+            this.overlayWindow?.hide();
+          },
+        },
+        {
+          label: 'Always On Top',
+          type: 'checkbox',
+          checked: this.overlayWindow?.isAlwaysOnTop() ?? true,
+          click: (menuItem) => {
+            this.setAlwaysOnTop(menuItem.checked);
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Open DevSpace Main Window',
+          click: () => {
+            const allWins = BrowserWindow.getAllWindows();
+            const mainWin = allWins.find((w) => w !== this.overlayWindow);
+            if (mainWin && !mainWin.isDestroyed()) {
+              if (mainWin.isMinimized()) mainWin.restore();
+              mainWin.show();
+              mainWin.focus();
+            }
+          },
+        },
+        {
+          label: 'Desktop Settings',
+          click: () => {
+            const allWins = BrowserWindow.getAllWindows();
+            const mainWin = allWins.find((w) => w !== this.overlayWindow);
+            if (mainWin && !mainWin.isDestroyed()) {
+              if (mainWin.isMinimized()) mainWin.restore();
+              mainWin.show();
+              mainWin.focus();
+              mainWin.webContents.send('navigate-to', '/settings?tab=desktop_overlay');
+            }
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Quit DevSpace',
+          click: () => {
+            (app as any).isQuitting = true;
+            app.quit();
+          },
+        },
+      ]);
+      menu.popup();
+    });
 
     this.overlayWindow.on('close', (event) => {
       if (!(app as any).isQuitting) {

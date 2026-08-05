@@ -14,6 +14,7 @@ import { RecoveryCenter } from '../components/RecoveryCenter';
 import { DesktopAutoUpdateCenter } from '../components/DesktopAutoUpdateCenter';
 import { BiometricSessionSecuritySettings } from '../components/BiometricSessionSecuritySettings';
 import { ActivityCenterSettingsTab } from '../components/ui/ActivityCenterSettingsTab';
+import { DesktopOverlaySettingsTab } from '../components/DesktopOverlaySettingsTab';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 import { isElectron } from '../lib/electronBridge';
 
@@ -1555,7 +1556,7 @@ export function Settings() {
       <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         {/* Settings Navigation */}
         <div className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-x-visible shrink-0 pb-2 md:pb-0 w-full md:w-48 border-b md:border-b-0 md:border-r border-zinc-900 md:pr-4">
-          {['profile', 'activity-center', 'recovery', 'aether', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
+          {['profile', 'activity-center', 'recovery', 'aether', 'desktop_overlay', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1565,7 +1566,7 @@ export function Settings() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'activity-center' ? 'Activity Center ✨' : tab === 'recovery' ? 'Recovery & Sync 🛡️' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'activity-center' ? 'Activity Center ✨' : tab === 'recovery' ? 'Recovery & Sync 🛡️' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_overlay' ? 'Desktop Overlay 🖥️' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
           <div className="hidden md:block my-2 border-t border-zinc-900" />
@@ -1590,6 +1591,11 @@ export function Settings() {
           {activeTab === 'recovery' && (
             <div className="animate-fade-in">
               <RecoveryCenter />
+            </div>
+          )}
+          {activeTab === 'desktop_overlay' && (
+            <div className="animate-fade-in">
+              <DesktopOverlaySettingsTab />
             </div>
           )}
           {activeTab === 'aether' && (
