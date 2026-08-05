@@ -4,7 +4,7 @@ import { Sidebar } from './Sidebar';
 import { RightSidebar } from './RightSidebar';
 import { Header } from './Header';
 import { CustomTitleBar } from './CustomTitleBar';
-import { isElectron } from '../../lib/electronBridge';
+import { isElectron, getElectronAPI } from '../../lib/electronBridge';
 import { CommandPalette } from '../ui/CommandPalette';
 import { VoiceMemoAssistant } from '../ui/VoiceMemoAssistant';
 import { KineticController } from '../ui/KineticController';
@@ -306,6 +306,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
   const isWhatsAppRoute = location.pathname === '/whatsapp-companion';
+
+  useEffect(() => {
+    const api = getElectronAPI();
+    if (api && api.onNavigateTo) {
+      const unsub = api.onNavigateTo((route) => {
+        navigate(route);
+      });
+      return unsub;
+    }
+
+    const handleCustomNav = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        navigate(customEvent.detail);
+      }
+    };
+    window.addEventListener('devspace:navigate-main', handleCustomNav);
+    return () => window.removeEventListener('devspace:navigate-main', handleCustomNav);
+  }, [navigate]);
 
   useEffect(() => {
     // Force reset of main content scroll containers back to top on page route change

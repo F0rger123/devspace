@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
 import { useData } from '../../../context/DataProvider';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
 import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, getElectronAPI } from '../../../lib/electronBridge';
 import { AIMode, TheBarTab } from './types';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -47,8 +47,8 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   } = useActivityCenter();
 
   const { projects, activeProjectId, setActiveProjectId } = useData();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const navigate = useSafeOverlayNavigate();
+  const activePath = typeof window !== 'undefined' ? window.location.pathname : '/';
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<TheBarTab>('dreams');
@@ -313,7 +313,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
               {activeTab === 'aether' && (
                 <ContextPanel
                   projectName={currentProject.name}
-                  activePath={location.pathname}
+                  activePath={activePath}
                   activeDreamCount={dreamList.length}
                   activeWorkCount={visibleActivities.length}
                 />

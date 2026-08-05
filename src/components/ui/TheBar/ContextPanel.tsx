@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Compass, FileCode, GitBranch, Zap, AlertTriangle, Sparkles, Check, Send, Cpu, BrainCircuit, History } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
 import { aetherIntelligence, IntelligenceSummary, PersonalMemory } from '../../../lib/aetherIntelligenceService';
 
 interface ContextPanelProps {
@@ -16,7 +16,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
   activeDreamCount,
   activeWorkCount,
 }) => {
-  const navigate = useNavigate();
+  const navigate = useSafeOverlayNavigate();
   const [lastActionStatus, setLastActionStatus] = useState<string | null>(null);
   const [nlInput, setNlInput] = useState('');
   const [summary, setSummary] = useState<IntelligenceSummary | null>(null);

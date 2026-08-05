@@ -138,3 +138,10 @@ export async function safeRecognizeOCR(imageSource?: string) {
   return { success: false, error: 'OCR engine requires DevSpace Desktop app.' };
 }
 
+export async function safeNavigateMain(route: string) {
+  const api = getElectronAPI();
+  if (api && api.navigateToRoute) {
+    await api.navigateToRoute(route);
+  }
+}
+

@@ -3,7 +3,7 @@ import { motion, PanInfo } from 'motion/react';
 import { Sparkles, ChevronLeft, ChevronRight, Check, Clock, ArrowRight, ArrowLeft } from 'lucide-react';
 import { ActivityItem } from '../../../lib/activityCenterService';
 import { aetherIntelligence } from '../../../lib/aetherIntelligenceService';
-import { useNavigate } from 'react-router-dom';
+import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
 
 interface DreamPanelProps {
   dreamList: ActivityItem[];
@@ -21,7 +21,7 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
   onCancel,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const navigate = useNavigate();
+  const navigate = useSafeOverlayNavigate();
 
   if (dreamList.length === 0) {
     return (

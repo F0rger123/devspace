@@ -40,6 +40,10 @@ export interface ElectronAPI {
   onDesktopAwarenessUpdate?: (callback: (state: any) => void) => () => void;
   executeDesktopAction?: (actionName: string, payload?: any) => Promise<any>;
   recognizeOCR?: (imageSource?: string) => Promise<any>;
+
+  // Cross-Window Navigation IPC
+  navigateToRoute?: (route: string) => Promise<void>;
+  onNavigateTo?: (callback: (route: string) => void) => () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -72,6 +76,15 @@ const electronAPI: ElectronAPI = {
   },
   executeDesktopAction: (actionName: string, payload?: any) => ipcRenderer.invoke('desktop:executeAction', actionName, payload),
   recognizeOCR: (imageSource?: string) => ipcRenderer.invoke('desktop:ocrRecognize', imageSource),
+
+  navigateToRoute: (route: string) => ipcRenderer.invoke('window:navigateTo', route),
+  onNavigateTo: (callback: (route: string) => void) => {
+    const handler = (_event: any, route: string) => callback(route);
+    ipcRenderer.on('navigate-to', handler);
+    return () => {
+      ipcRenderer.removeListener('navigate-to', handler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -391,4 +391,14 @@ function setupIpcHandlers() {
     if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
     return await desktopAutomationEngine.executeAction(actionName, payload);
   });
+
+  ipcMain.handle('window:navigateTo', (event, route: string) => {
+    if (!isTrustedSender(event)) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('navigate-to', route);
+    }
+  });
 }
