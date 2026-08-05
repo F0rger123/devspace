@@ -3,6 +3,13 @@ import path from 'path';
 
 export class DesktopOverlayManager {
   private overlayWindow: BrowserWindow | null = null;
+  private initialized = false;
+
+  public initialize(): void {
+    if (this.initialized) return;
+    this.initialized = true;
+    console.log('[DesktopOverlayManager] Native overlay service initialized');
+  }
 
   public createOverlayWindow(preloadPath: string, serverPort: number): BrowserWindow {
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {

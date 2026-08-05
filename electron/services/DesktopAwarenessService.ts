@@ -13,17 +13,18 @@ export interface DesktopAwarenessState {
 
 export class DesktopAwarenessService {
   private currentState: DesktopAwarenessState;
+  private initialized = false;
 
   constructor() {
-    const primaryDisplay = screen.getPrimaryDisplay();
+    // Constructor MUST NOT call any Electron APIs (like screen) to remain side-effect free before app.whenReady()
     this.currentState = {
       foregroundApp: 'DevSpace Desktop',
       activeWindowTitle: 'DevSpace Aether Operating System',
       clipboardContent: '',
       mousePosition: { x: 0, y: 0 },
       focusedMonitor: {
-        id: primaryDisplay.id,
-        bounds: primaryDisplay.bounds,
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
       },
       systemIdleTimeSeconds: 0,
       runningApplicationsCount: 1,
@@ -31,26 +32,48 @@ export class DesktopAwarenessService {
     };
   }
 
-  public getAwarenessState(): DesktopAwarenessState {
-    const mousePoint = screen.getCursorScreenPoint();
-    const currentDisplay = screen.getDisplayNearestPoint(mousePoint);
-    let clipText = '';
+  public initialize(): void {
+    if (this.initialized) return;
     try {
-      clipText = clipboard.readText();
-    } catch {
-      clipText = '';
+      const primaryDisplay = screen.getPrimaryDisplay();
+      this.currentState.focusedMonitor = {
+        id: primaryDisplay.id,
+        bounds: primaryDisplay.bounds,
+      };
+      this.initialized = true;
+    } catch (e) {
+      console.warn('[DesktopAwarenessService] Could not initialize display awareness:', e);
+    }
+  }
+
+  public getAwarenessState(): DesktopAwarenessState {
+    if (!this.initialized) {
+      this.initialize();
     }
 
-    this.currentState = {
-      ...this.currentState,
-      clipboardContent: clipText,
-      mousePosition: { x: mousePoint.x, y: mousePoint.y },
-      focusedMonitor: {
-        id: currentDisplay.id,
-        bounds: currentDisplay.bounds,
-      },
-      lastUpdated: new Date().toISOString(),
-    };
+    try {
+      const mousePoint = screen.getCursorScreenPoint();
+      const currentDisplay = screen.getDisplayNearestPoint(mousePoint);
+      let clipText = '';
+      try {
+        clipText = clipboard.readText();
+      } catch {
+        clipText = '';
+      }
+
+      this.currentState = {
+        ...this.currentState,
+        clipboardContent: clipText,
+        mousePosition: { x: mousePoint.x, y: mousePoint.y },
+        focusedMonitor: {
+          id: currentDisplay.id,
+          bounds: currentDisplay.bounds,
+        },
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (e) {
+      console.warn('[DesktopAwarenessService] Error querying desktop state:', e);
+    }
 
     return this.currentState;
   }

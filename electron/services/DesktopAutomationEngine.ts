@@ -9,6 +9,14 @@ export interface DesktopActionResult {
 }
 
 export class DesktopAutomationEngine {
+  private initialized = false;
+
+  public initialize(): void {
+    if (this.initialized) return;
+    this.initialized = true;
+    console.log('[DesktopAutomationEngine] Native automation engine initialized');
+  }
+
   public async executeAction(actionName: string, payload: any): Promise<DesktopActionResult> {
     console.log(`[DesktopAutomationEngine] Processing native action "${actionName}"`, payload);
 

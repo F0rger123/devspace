@@ -7,6 +7,14 @@ export interface OCRResult {
 }
 
 export class OCRService {
+  private initialized = false;
+
+  public initialize(): void {
+    if (this.initialized) return;
+    this.initialized = true;
+    console.log('[OCRService] Native OCR service initialized');
+  }
+
   public async recognize(imageSource?: string): Promise<OCRResult> {
     // Production Native OCR Pipeline Hook
     return {

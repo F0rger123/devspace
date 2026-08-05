@@ -1,5 +1,5 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 8/5/2026, 5:38:44 PM*
+*Last synchronized: 8/5/2026, 7:09:32 PM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
@@ -10,10 +10,10 @@ This is the physical workspace memory file of Aether (your central brain orchest
   
   <!-- GITHUB_LEARNED_PREFERENCES_START -->
   # Learned Preferences from GitHub Repos & Stars
-  - **Focus Summary:** This developer is deeply passionate about building modular AI assistants, multi-agent workflows (Jarvis-style), and automation systems using TypeScript, Python, and JavaScript. They actively leverage modern LLM ecosystems, particularly Claude and Model Context Protocol (MCP), alongside web applications and serverless automation tools like GitHub Actions.
-  - **Preference:** Prioritize TypeScript and Python for code examples, adhering to clean type safety and modular design patterns suitable for AI agent architectures.
-  - **Preference:** Incorporate Model Context Protocol (MCP) and Claude-specific integration techniques when designing tools or automation workflows.
-  - **Preference:** Focus on cost-effective, open-source, and lightweight automation strategies like GitHub Actions, PWAs, and free tier API configurations.
+  - **Focus Summary:** This developer is deeply passionate about AI and LLM integrations, specializing in building agentic systems, modular assistants like Jarvis, and productivity tools using TypeScript, Python, and JavaScript. They enjoy leveraging cutting-edge AI frameworks like Model Context Protocol and Claude alongside automated workflows to craft full-stack applications and PWAs.
+  - **Preference:** Prioritize TypeScript and Python for robust, type-safe development and seamless AI/LLM integration.
+  - **Preference:** Design modular, agent-based architectures leveraging Model Context Protocol (MCP) and modern LLM APIs like Claude and OpenRouter.
+  - **Preference:** Focus on developer productivity, automation via GitHub Actions, and cross-platform accessibility using Progressive Web Apps.
   <!-- GITHUB_LEARNED_PREFERENCES_END -->
 
 ## 🎭 Aether Personality Rules & Dynamic Customizations

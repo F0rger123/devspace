@@ -210,8 +210,24 @@ function getTargetWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow | nu
 
 // App lifecycle
 app.whenReady().then(async () => {
+  console.log('[Electron Main] App ready event fired. Initializing native services...');
+
+  // 1. Initialize native services after app is ready
+  desktopAwarenessService.initialize();
+  desktopOverlayManager.initialize();
+  desktopAutomationEngine.initialize();
+  ocrService.initialize();
+
+  // 2. Setup IPC handlers
   setupIpcHandlers();
+
+  // 3. Create Main Window
   await createWindow();
+
+  // 4. Create Desktop Overlay Window
+  const preloadPath = path.join(__dirname, 'preload.cjs');
+  const port = activeServerPort || 3000;
+  desktopOverlayManager.createOverlayWindow(preloadPath, port);
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
