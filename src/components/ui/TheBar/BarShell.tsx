@@ -65,11 +65,6 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-  };
-
   const projectList =
     projects && projects.length > 0
       ? projects
@@ -82,9 +77,12 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
   const currentProject = projectList.find((p) => p.id === activeProjectId) || projectList[0];
 
-  // Hotkey Cmd/Ctrl + Shift + A to toggle
+  // Hotkey Cmd/Ctrl + Shift + A to toggle & Escape key to collapse
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isExpanded) {
+        setIsExpanded(false);
+      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         setIsExpanded((prev) => !prev);
@@ -92,7 +90,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isExpanded]);
 
   // Click outside to collapse
   useEffect(() => {
@@ -108,6 +106,15 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isExpanded]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const menuWidth = 220;
+    const menuHeight = 230;
+    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - menuWidth - 8));
+    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - menuHeight - 8));
+    setContextMenuPos({ x, y });
+  };
 
   const visibleActivities = activeActivities.filter((a) => !dismissedIds.has(a.id));
   const visibleNotifications = notifications.filter((n) => !dismissedIds.has(n.id));

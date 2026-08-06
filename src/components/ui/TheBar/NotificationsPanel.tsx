@@ -30,7 +30,7 @@ export const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
 
   const getNotificationIcon = (n: ActivityNotification) => {
     if (n.category === 'dream') return <Sparkles size={13} className="text-amber-400 shrink-0" />;
-    if (n.category === 'sync') return <RefreshCw size={13} className="text-blue-400 shrink-0" />;
+    if (n.category === 'sync') return <RefreshCw size={13} className="text-amber-400 shrink-0" />;
     if (n.type === 'error') return <AlertCircle size={13} className="text-rose-400 shrink-0" />;
     if (n.type === 'warning') return <AlertTriangle size={13} className="text-amber-400 shrink-0" />;
     return <Bell size={13} className="text-zinc-400 shrink-0" />;

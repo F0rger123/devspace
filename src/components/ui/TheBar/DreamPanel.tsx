@@ -73,7 +73,7 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
       case 'paused':
         return <span className="px-2 py-0.5 text-[9px] font-bold uppercase rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">Paused</span>;
       default:
-        return <span className="px-2 py-0.5 text-[9px] font-bold uppercase rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40">Queued</span>;
+        return <span className="px-2 py-0.5 text-[9px] font-bold uppercase rounded-full bg-zinc-800 text-amber-300 border border-amber-500/30">Queued</span>;
     }
   };
 

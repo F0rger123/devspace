@@ -35,10 +35,10 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1 font-mono text-xs font-bold text-slate-100 hover:text-cyan-300 transition-colors">
+      <div className="flex items-center gap-1 font-mono text-xs font-bold text-zinc-100 hover:text-amber-300 transition-colors">
         <button
           onClick={handlePrev}
-          className="p-0.5 hover:bg-white/10 rounded transition-colors text-slate-400 hover:text-white cursor-pointer"
+          className="p-0.5 hover:bg-white/10 rounded transition-colors text-zinc-400 hover:text-white cursor-pointer"
           title="Previous Project"
         >
           <ChevronLeft size={12} />
@@ -46,7 +46,7 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({
         <span className="truncate max-w-[120px] text-[11px] tracking-tight">{currentProject.name}</span>
         <button
           onClick={handleNext}
-          className="p-0.5 hover:bg-white/10 rounded transition-colors text-slate-400 hover:text-white cursor-pointer"
+          className="p-0.5 hover:bg-white/10 rounded transition-colors text-zinc-400 hover:text-white cursor-pointer"
           title="Next Project"
         >
           <ChevronRight size={12} />
@@ -56,19 +56,19 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({
   }
 
   return (
-    <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-slate-300 font-semibold">
-      <span className="text-slate-400">Project:</span>
+    <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-zinc-300 font-semibold">
+      <span className="text-zinc-400">Project:</span>
       <button
         onClick={handlePrev}
-        className="p-0.5 hover:bg-white/10 rounded transition-colors text-slate-400 hover:text-white cursor-pointer"
+        className="p-0.5 hover:bg-white/10 rounded transition-colors text-zinc-400 hover:text-white cursor-pointer"
         title="Previous Project"
       >
         <ChevronLeft size={11} />
       </button>
-      <span className="text-cyan-300 font-bold tracking-tight">{currentProject.name}</span>
+      <span className="text-amber-300 font-bold tracking-tight">{currentProject.name}</span>
       <button
         onClick={handleNext}
-        className="p-0.5 hover:bg-white/10 rounded transition-colors text-slate-400 hover:text-white cursor-pointer"
+        className="p-0.5 hover:bg-white/10 rounded transition-colors text-zinc-400 hover:text-white cursor-pointer"
         title="Next Project"
       >
         <ChevronRight size={11} />

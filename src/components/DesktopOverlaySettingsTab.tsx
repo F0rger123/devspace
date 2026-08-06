@@ -80,7 +80,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Enable Desktop Overlay',
       description: 'Display the floating desktop bar across your operating system workspace.',
       icon: Monitor,
-      color: 'text-indigo-400',
+      color: 'text-amber-400',
       checked: isEnabled,
       onChange: (val: boolean) => handleEnableOverlay(val),
     },
@@ -98,7 +98,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Always On Top',
       description: 'Keep the overlay pinned above all fullscreen apps, IDEs, and browser windows.',
       icon: Layers,
-      color: 'text-purple-400',
+      color: 'text-amber-300',
       checked: alwaysOnTop,
       onChange: (val: boolean) => handleAlwaysOnTop(val),
     },
@@ -116,7 +116,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Show Only During Activity',
       description: 'Only present the overlay when background tasks, dreams, or live voice sessions are active.',
       icon: Zap,
-      color: 'text-cyan-400',
+      color: 'text-amber-400',
       checked: showOnlyActivity,
       onChange: (val: boolean) => handleToggle(setShowOnlyActivity, 'desktopOverlay_showOnlyActivity', val),
     },
@@ -125,7 +125,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Restore When DevSpace Starts',
       description: 'Automatically restore previous overlay position and state when opening DevSpace.',
       icon: Play,
-      color: 'text-blue-400',
+      color: 'text-emerald-400',
       checked: restoreOnStart,
       onChange: (val: boolean) => handleToggle(setRestoreOnStart, 'desktopOverlay_restoreOnStart', val),
     },
@@ -134,7 +134,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Enable Overlay Animations',
       description: 'Render smooth fluid transitions and status indicators inside the overlay bar.',
       icon: Sliders,
-      color: 'text-pink-400',
+      color: 'text-amber-300',
       checked: animations,
       onChange: (val: boolean) => handleToggle(setAnimations, 'desktopOverlay_animations', val),
     },
@@ -143,7 +143,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Enable Notifications',
       description: 'Display system alerts, mode switch confirmations, and task updates inside the overlay.',
       icon: Bell,
-      color: 'text-yellow-400',
+      color: 'text-amber-400',
       checked: notifications,
       onChange: (val: boolean) => handleToggle(setNotifications, 'desktopOverlay_notifications', val),
     },
@@ -152,19 +152,19 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       title: 'Enable Aether Intelligence Suggestions',
       description: 'Receive proactive project look-aheads, automated dream summaries, and quick action prompts.',
       icon: Sparkles,
-      color: 'text-purple-400',
+      color: 'text-amber-400',
       checked: aetherSuggestions,
       onChange: (val: boolean) => handleToggle(setAetherSuggestions, 'desktopOverlay_aetherSuggestions', val),
     },
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in text-zinc-300">
+    <div className="space-y-6 animate-fade-in text-zinc-300 font-sans">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-zinc-800">
         <div>
           <h3 className="text-sm font-bold text-white mb-1 font-mono uppercase tracking-wider flex items-center gap-2">
-            <Monitor size={16} className="text-indigo-400" /> Desktop Overlay Controls & Customization
+            <Monitor size={16} className="text-amber-400" /> Desktop Overlay Controls & Customization
           </h3>
           <p className="text-xs text-zinc-400">
             Configure system overlay behavior, window layering, auto-hide rules, and Aether suggestions.
@@ -179,7 +179,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
           )}
           <button
             onClick={() => safeToggleOverlay()}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+            className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-zinc-950 font-mono text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
             <RefreshCw size={12} /> Toggle Overlay Now
           </button>
@@ -187,13 +187,13 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
       </div>
 
       {/* Status banner */}
-      <div className="p-4 rounded-xl border border-zinc-800 bg-[#09090b] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="p-4 rounded-2xl border border-white/10 bg-zinc-900/80 backdrop-blur-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shrink-0">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
             <ShieldCheck size={18} />
           </div>
           <div>
-            <h4 className="text-xs font-semibold text-zinc-200">
+            <h4 className="text-xs font-bold text-zinc-200 font-mono">
               {isElectron() ? 'Electron Native Subsystem Connected' : 'Browser Sandbox Mode Active'}
             </h4>
             <p className="text-[11px] text-zinc-400 leading-relaxed mt-0.5">
@@ -204,13 +204,13 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${isEnabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
+          <span className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold border ${isEnabled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
             {isEnabled ? 'OVERLAY ONLINE' : 'OVERLAY DISABLED'}
           </span>
         </div>
       </div>
 
-      {/* Grid of 9 Options */}
+      {/* Grid of Options */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {toggleOptions.map((opt) => {
           const IconComp = opt.icon;
@@ -221,15 +221,15 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
                 if (e.target instanceof HTMLElement && (e.target.tagName === 'INPUT' || e.target.closest('label'))) return;
                 opt.onChange(!opt.checked);
               }}
-              className={`p-4 border rounded-xl transition-all cursor-pointer hover:border-zinc-700 ${
+              className={`p-4 border rounded-2xl transition-all cursor-pointer hover:border-amber-400/40 ${
                 opt.checked 
-                  ? 'border-indigo-500/30 bg-[#0c0c0e] shadow-[0_0_15px_rgba(99,102,241,0.05)]' 
-                  : 'border-zinc-800/60 bg-zinc-950/40 opacity-75 hover:opacity-100'
+                  ? 'border-amber-500/30 bg-zinc-900/90 shadow-[0_4px_20px_rgba(0,0,0,0.3)]' 
+                  : 'border-white/10 bg-zinc-950/40 opacity-75 hover:opacity-100'
               }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5 select-none pr-2">
-                  <span className="text-xs font-bold text-zinc-200 flex items-center gap-2">
+                  <span className="text-xs font-bold text-zinc-200 flex items-center gap-2 font-mono">
                     <IconComp size={14} className={opt.color} />
                     {opt.title}
                   </span>
@@ -244,7 +244,7 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
                     onChange={(e) => opt.onChange(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-500 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500 peer-checked:after:bg-white"></div>
+                  <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-zinc-950 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-zinc-400 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-400 peer-checked:after:bg-zinc-950"></div>
                 </label>
               </div>
             </div>

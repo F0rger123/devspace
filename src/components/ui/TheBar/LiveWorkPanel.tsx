@@ -95,7 +95,7 @@ export const LiveWorkPanel: React.FC<LiveWorkPanelProps> = ({
                 <span>{provider}</span>
               </div>
               <div className="flex items-center gap-1.5 text-zinc-300">
-                <FileCode2 size={10} className="text-blue-400" />
+                <FileCode2 size={10} className="text-amber-400" />
                 <span>{item.project || 'DevSpace Desktop'} • Q#{index + 1}</span>
               </div>
               <div className="col-span-2 text-[9px] text-zinc-400">
