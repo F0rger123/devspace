@@ -194,6 +194,33 @@ export function DesktopAutoUpdateCenter() {
         </div>
       </div>
 
+      {/* Error Alert Box if Update or Download Failed */}
+      {(downloadProgress.status === 'failed' || updateInfo?.error) && (
+        <div className="p-4 bg-red-950/40 border border-red-500/40 rounded-2xl flex items-start justify-between gap-4 font-mono text-xs text-red-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-extrabold text-red-400 block text-xs">Update Error</span>
+              <p className="text-[11px] text-zinc-300 font-sans">
+                {downloadProgress.error || updateInfo?.error || downloadProgress.message || 'An error occurred during update check or download.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              if (updateInfo?.hasUpdate) {
+                handleStartBackgroundDownload();
+              } else {
+                handleCheckForUpdates(false);
+              }
+            }}
+            className="px-3 py-1.5 bg-red-900/60 hover:bg-red-800 border border-red-500/40 text-red-200 font-bold rounded-lg transition-all text-xs shrink-0 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Main Update Card / Download Progress / Restart Action */}
       {updateInfo?.hasUpdate ? (
         <div className="p-5 bg-[#0e0e14] border border-yellow-500/40 rounded-2xl space-y-4">

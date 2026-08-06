@@ -113,6 +113,20 @@ export async function checkForDesktopUpdates(installedVersion: string = '2.5.0')
     }
   } catch (err: any) {
     console.warn('[AutoUpdater] Failed to check for desktop updates:', err);
+    return {
+      hasUpdate: false,
+      currentVersion: installedVersion,
+      latestVersion: `v${installedVersion}`,
+      releaseName: `DevSpace Desktop v${installedVersion}`,
+      releaseNotes: 'Unable to connect to update server.',
+      downloadUrl: '',
+      sha256: '',
+      fileSizeMB: 0,
+      publishedAt: new Date().toISOString(),
+      fileName: '',
+      status: 'failed',
+      error: 'No internet connection or update server unreachable. Retry later.'
+    };
   }
 
   // Fallback check against release status
@@ -122,14 +136,14 @@ export async function checkForDesktopUpdates(installedVersion: string = '2.5.0')
   return {
     hasUpdate,
     currentVersion: installedVersion,
-    latestVersion: relStatus.version || 'v2.6.0',
+    latestVersion: relStatus.version || `v${installedVersion}`,
     releaseName: relStatus.releaseName || `DevSpace Desktop ${relStatus.version}`,
     releaseNotes: relStatus.releaseNotes || '• Bug fixes and performance improvements\n• Enhanced local SQLite caching\n• Improved signature verification',
     downloadUrl: relStatus.downloadUrl || '/api/desktop/download/windows',
-    sha256: relStatus.sha256 || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    sha256: relStatus.sha256 || '',
     fileSizeMB: relStatus.fileSizeMB || 85.4,
     publishedAt: relStatus.publishedAt || new Date().toISOString(),
-    fileName: relStatus.fileName || 'DevSpace-Aether-Desktop-Setup-2.6.0.exe',
+    fileName: relStatus.fileName || `DevSpace-Aether-Desktop-Setup-${installedVersion}.exe`,
     status: hasUpdate ? 'available' : 'idle'
   };
 }
@@ -141,11 +155,11 @@ export async function triggerBackgroundUpdateDownload(
   try {
     onProgress({
       status: 'downloading',
-      progressPercentage: 5,
-      downloadedBytes: 4 * 1024 * 1024,
+      progressPercentage: 0,
+      downloadedBytes: 0,
       totalBytes: Math.round((updateInfo.fileSizeMB || 85.4) * 1024 * 1024),
-      speedMBs: 12.5,
-      message: 'Initiating background update download...'
+      speedMBs: 0,
+      message: 'Connecting to update download server...'
     });
 
     const res = await fetch('/api/desktop/download-update', {
@@ -161,28 +175,37 @@ export async function triggerBackgroundUpdateDownload(
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Download failed: ${errText}`);
+      throw new Error(`Download request failed: ${errText}`);
     }
 
-    // Poll update progress
+    // Poll update progress until finished or failed
     let isDone = false;
     let attempts = 0;
-    while (!isDone && attempts < 30) {
+    const maxAttempts = 600; // Allow up to 5 minutes of active downloading
+    while (!isDone && attempts < maxAttempts) {
       attempts++;
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 500));
 
-      const progRes = await fetch('/api/desktop/update-status');
-      if (progRes.ok) {
-        const progData: UpdateProgress = await progRes.json();
-        onProgress(progData);
+      try {
+        const progRes = await fetch('/api/desktop/update-status');
+        if (progRes.ok) {
+          const progData: UpdateProgress = await progRes.json();
+          onProgress(progData);
 
-        if (progData.status === 'ready') {
-          isDone = true;
-          return { success: true };
-        } else if (progData.status === 'failed') {
-          return { success: false, error: progData.error || 'Update verification failed.' };
+          if (progData.status === 'ready') {
+            isDone = true;
+            return { success: true };
+          } else if (progData.status === 'failed') {
+            return { success: false, error: progData.error || 'Update payload download failed.' };
+          }
         }
+      } catch (pollErr: any) {
+        console.warn('[AutoUpdater] Error polling update status:', pollErr);
       }
+    }
+
+    if (!isDone) {
+      return { success: false, error: 'Update download timed out after 5 minutes.' };
     }
 
     return { success: true };

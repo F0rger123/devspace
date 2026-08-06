@@ -215,12 +215,17 @@ async function startServer() {
       if (releaseData && Array.isArray(releaseData.assets)) {
         const exeAsset = releaseData.assets.find((a: any) => a.name && a.name.toLowerCase().endsWith('.exe'));
         if (exeAsset && exeAsset.browser_download_url) {
+          const rawDigest = exeAsset.digest || '';
+          const sha256 = rawDigest ? rawDigest.replace(/^sha256:/i, '').trim() : '';
           return {
             downloadUrl: exeAsset.browser_download_url as string,
             fileName: exeAsset.name as string,
             fileSizeMB: Math.round(((exeAsset.size || 0) / (1024 * 1024)) * 10) / 10 || 85.4,
             publishedAt: releaseData.published_at || releaseData.created_at || new Date().toISOString(),
-            version: releaseData.tag_name || 'v2.5.0'
+            version: releaseData.tag_name || 'v2.5.0',
+            releaseName: releaseData.name || `DevSpace Aether Desktop ${releaseData.tag_name}`,
+            releaseNotes: releaseData.body || '• Production release update for DevSpace Desktop.',
+            sha256
           };
         }
       }
@@ -401,26 +406,36 @@ async function startServer() {
       const cleanVersion = (v: string) => v.replace(/^v/i, '').trim();
 
       const githubRepo = process.env.GITHUB_REPOSITORY || 'F0rger123/devspace';
+      console.log(`[AutoUpdater] Checking GitHub Releases for repo: ${githubRepo}, currentVersion: ${currentVersion}`);
+
       const ghAsset = await resolveGitHubReleaseAsset(githubRepo);
 
-      let latestVersion = 'v2.6.0';
-      let releaseNotes = `• Production-grade automatic desktop updates engine with SHA256 signature verification
-• Seamless background download with progress tracking and speed diagnostics
-• Zero data loss guarantee for %USERPROFILE%\\.devspace SQLite cache & workspace state
-• One-click restart & silent installer execution for Windows x64`;
-      let downloadUrl = '/api/desktop/download/windows';
-      let fileSizeMB = 85.4;
-      let sha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-      let publishedAt = new Date().toISOString();
-      let fileName = 'DevSpace-Aether-Desktop-Setup-2.6.0.exe';
-
-      if (ghAsset) {
-        latestVersion = ghAsset.version || 'v2.6.0';
-        downloadUrl = ghAsset.downloadUrl || downloadUrl;
-        fileSizeMB = ghAsset.fileSizeMB || fileSizeMB;
-        publishedAt = ghAsset.publishedAt || publishedAt;
-        fileName = ghAsset.fileName || fileName;
+      if (!ghAsset) {
+        console.log(`[AutoUpdater] No GitHub release asset found or GitHub API unavailable for ${githubRepo}`);
+        return res.json({
+          hasUpdate: false,
+          currentVersion,
+          latestVersion: `v${currentVersion}`,
+          releaseName: `DevSpace Aether Desktop v${currentVersion}`,
+          releaseNotes: 'No newer release found on GitHub.',
+          downloadUrl: '',
+          sha256: '',
+          fileSizeMB: 0,
+          publishedAt: new Date().toISOString(),
+          fileName: '',
+          status: 'idle',
+          error: 'No internet connection or no GitHub release asset found.'
+        });
       }
+
+      const latestVersion = ghAsset.version;
+      const downloadUrl = ghAsset.downloadUrl;
+      const fileSizeMB = ghAsset.fileSizeMB;
+      const publishedAt = ghAsset.publishedAt;
+      const fileName = ghAsset.fileName;
+      const releaseName = ghAsset.releaseName;
+      const releaseNotes = ghAsset.releaseNotes || '• Production release updates and security fixes.';
+      const sha256 = ghAsset.sha256 || '';
 
       const pCurrent = cleanVersion(currentVersion).split('.').map(n => parseInt(n, 10) || 0);
       const pLatest = cleanVersion(latestVersion).split('.').map(n => parseInt(n, 10) || 0);
@@ -438,11 +453,13 @@ async function startServer() {
         }
       }
 
+      console.log(`[AutoUpdater] Version comparison complete: current=${currentVersion}, latest=${latestVersion}, hasUpdate=${hasUpdate}`);
+
       res.json({
         hasUpdate,
         currentVersion,
         latestVersion,
-        releaseName: `DevSpace Aether Desktop ${latestVersion}`,
+        releaseName,
         releaseNotes,
         downloadUrl,
         sha256,
@@ -452,8 +469,11 @@ async function startServer() {
         status: hasUpdate ? 'available' : 'idle'
       });
     } catch (err: any) {
-      console.error('[CheckUpdates API] Error:', err);
-      res.status(500).json({ error: 'Failed to check updates' });
+      console.error('[AutoUpdater Check Error]:', err);
+      res.status(500).json({
+        hasUpdate: false,
+        error: err.message || 'Failed to check for updates (network or server error).'
+      });
     }
   });
 
@@ -466,8 +486,12 @@ async function startServer() {
   app.post('/api/desktop/download-update', async (req, res) => {
     try {
       const { downloadUrl, version, fileName, sha256 } = req.body || {};
-      const targetVersion = version || 'v2.6.0';
-      const expectedSha = sha256 || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      const targetVersion = version || 'v2.5.0';
+      const expectedSha = (sha256 || '').toLowerCase().trim();
+
+      if (!downloadUrl) {
+        return res.status(400).json({ error: 'downloadUrl parameter is required' });
+      }
 
       const updatesDir = path.join(process.cwd(), 'updates');
       if (!fs.existsSync(updatesDir)) {
@@ -478,11 +502,11 @@ async function startServer() {
 
       activeUpdateState = {
         status: 'downloading',
-        progressPercentage: 10,
-        downloadedBytes: 8954752,
-        totalBytes: 89547520,
-        speedMBs: 14.2,
-        message: 'Downloading update payload in background...',
+        progressPercentage: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        speedMBs: 0,
+        message: 'Connecting to update download channel...',
         downloadedFilePath: targetPath,
         expectedSha256: expectedSha,
         calculatedSha256: '',
@@ -491,44 +515,103 @@ async function startServer() {
         error: ''
       };
 
+      console.log(`[AutoUpdater] Initiating stream download from: ${downloadUrl}`);
       res.json({ success: true, message: 'Background update download initiated.' });
 
-      // Simulate step-by-step stream progress
-      setTimeout(() => {
-        activeUpdateState.progressPercentage = 45;
-        activeUpdateState.downloadedBytes = 40296384;
-        activeUpdateState.speedMBs = 18.5;
-        activeUpdateState.message = 'Downloading installer binary (45%)...';
-      }, 500);
+      // Execute streaming download asynchronously in background
+      (async () => {
+        try {
+          let fetchUrl = downloadUrl;
+          if (fetchUrl.startsWith('/')) {
+            const host = lastKnownRequestHost || 'http://localhost:3000';
+            fetchUrl = `${host}${fetchUrl}`;
+          }
 
-      setTimeout(() => {
-        activeUpdateState.progressPercentage = 85;
-        activeUpdateState.downloadedBytes = 76115392;
-        activeUpdateState.speedMBs = 21.0;
-        activeUpdateState.message = 'Finalizing download stream (85%)...';
-      }, 1000);
+          const response = await fetch(fetchUrl, {
+            headers: { 'User-Agent': 'DevSpace-Aether-Desktop-AutoUpdater' },
+            redirect: 'follow'
+          });
 
-      setTimeout(() => {
-        // Write mock executable placeholder to targetPath for verification
-        fs.writeFileSync(targetPath, Buffer.from(`DEVSPACE_UPDATE_PAYLOAD_${targetVersion}_${Date.now()}`));
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} ${response.statusText}`);
+          }
 
-        // Compute SHA256 of downloaded file
-        const fileBuffer = fs.readFileSync(targetPath);
-        const calcSha = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+          const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+          activeUpdateState.totalBytes = contentLength;
 
-        // Verify SHA256 or accept generated hash
-        activeUpdateState.progressPercentage = 100;
-        activeUpdateState.downloadedBytes = activeUpdateState.totalBytes;
-        activeUpdateState.calculatedSha256 = calcSha;
-        activeUpdateState.verified = true;
-        activeUpdateState.status = 'ready';
-        activeUpdateState.message = `Update payload verified! Ready to install ${targetVersion}. User data in %USERPROFILE%\\.devspace is preserved.`;
-      }, 1500);
+          const fileStream = fs.createWriteStream(targetPath);
+          const hash = crypto.createHash('sha256');
+
+          let downloadedBytes = 0;
+          const startTime = Date.now();
+
+          if (response.body) {
+            // @ts-ignore
+            const reader = response.body.getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) {
+                const buffer = Buffer.from(value);
+                fileStream.write(buffer);
+                hash.update(buffer);
+                downloadedBytes += buffer.length;
+
+                const elapsedSec = (Date.now() - startTime) / 1000;
+                const speedMBs = elapsedSec > 0 ? Math.round((downloadedBytes / (1024 * 1024) / elapsedSec) * 10) / 10 : 0;
+                const total = contentLength || downloadedBytes;
+                const progressPercentage = Math.min(99, Math.round((downloadedBytes / total) * 100));
+
+                activeUpdateState = {
+                  ...activeUpdateState,
+                  status: 'downloading',
+                  progressPercentage,
+                  downloadedBytes,
+                  totalBytes: total,
+                  speedMBs,
+                  message: `Downloading update payload (${progressPercentage}%)...`
+                };
+              }
+            }
+          }
+          fileStream.end();
+
+          const calcSha = hash.digest('hex').toLowerCase();
+          activeUpdateState.calculatedSha256 = calcSha;
+          activeUpdateState.progressPercentage = 100;
+          activeUpdateState.status = 'verifying';
+          activeUpdateState.message = 'Verifying SHA-256 payload integrity...';
+
+          console.log(`[AutoUpdater] Download finished (${downloadedBytes} bytes). Calculated SHA256: ${calcSha}`);
+
+          // Verify SHA256 signature if expected hash is provided and non-empty
+          if (expectedSha && expectedSha.length === 64) {
+            if (calcSha !== expectedSha) {
+              console.error(`[AutoUpdater] SHA256 Checksum mismatch! Expected ${expectedSha}, calculated ${calcSha}`);
+              activeUpdateState.status = 'failed';
+              activeUpdateState.error = `SHA-256 Checksum mismatch! Expected ${expectedSha.slice(0, 12)}..., calculated ${calcSha.slice(0, 12)}...`;
+              activeUpdateState.message = 'Verification failed due to SHA-256 hash mismatch.';
+              return;
+            }
+          }
+
+          activeUpdateState.status = 'ready';
+          activeUpdateState.verified = true;
+          activeUpdateState.message = `Update payload verified successfully! Ready to install ${targetVersion}. User data in %USERPROFILE%\\.devspace is preserved.`;
+          console.log(`[AutoUpdater] Update payload ready for installation.`);
+        } catch (downloadErr: any) {
+          console.error('[AutoUpdater Download Error]:', downloadErr);
+          activeUpdateState.status = 'failed';
+          activeUpdateState.error = downloadErr.message || 'Network error during update download.';
+          activeUpdateState.message = 'Download error occurred. Please check internet connection.';
+        }
+      })();
 
     } catch (err: any) {
+      console.error('[AutoUpdater] Failed to initiate download:', err);
       activeUpdateState.status = 'failed';
       activeUpdateState.error = err.message || 'Background download failed.';
-      activeUpdateState.message = 'Download error occurred. Click Retry or download manually.';
+      activeUpdateState.message = 'Failed to initiate download.';
       res.status(500).json({ error: err.message });
     }
   });
@@ -537,18 +620,28 @@ async function startServer() {
   app.post('/api/desktop/verify-update', (req, res) => {
     try {
       const { expectedSha256 } = req.body || {};
-      const expected = expectedSha256 || activeUpdateState.expectedSha256;
+      const expected = (expectedSha256 || activeUpdateState.expectedSha256 || '').toLowerCase().trim();
 
       if (!activeUpdateState.downloadedFilePath || !fs.existsSync(activeUpdateState.downloadedFilePath)) {
-        return res.json({ verified: true, message: 'Signature verified (SHA256 match confirmed).' });
+        return res.json({ verified: false, error: 'Downloaded update payload file does not exist on disk.' });
       }
 
       const fileBuffer = fs.readFileSync(activeUpdateState.downloadedFilePath);
-      const actualSha = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      const actualSha = crypto.createHash('sha256').update(fileBuffer).digest('hex').toLowerCase();
 
       activeUpdateState.calculatedSha256 = actualSha;
-      activeUpdateState.verified = true;
 
+      if (expected && expected.length === 64 && expected !== actualSha) {
+        activeUpdateState.verified = false;
+        return res.json({
+          verified: false,
+          calculatedSha256: actualSha,
+          expectedSha256: expected,
+          error: 'SHA256 signature verification failed.'
+        });
+      }
+
+      activeUpdateState.verified = true;
       res.json({
         verified: true,
         calculatedSha256: actualSha,
@@ -567,6 +660,7 @@ async function startServer() {
       activeUpdateState.message = 'Launching Windows NSIS Silent Installer... User data in %USERPROFILE%\\.devspace is safe.';
 
       const installerPath = activeUpdateState.downloadedFilePath;
+      console.log(`[AutoUpdater] Executing installer restart at path: ${installerPath}`);
 
       if (installerPath && fs.existsSync(installerPath) && process.platform === 'win32') {
         // Execute installer in background with silent /S flag
@@ -575,7 +669,7 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: `Successfully launched Windows installer for ${activeUpdateState.version || 'v2.6.0'}. Application will restart automatically while preserving all user data in %USERPROFILE%\\.devspace.`
+        message: `Successfully launched Windows installer for ${activeUpdateState.version || 'v2.5.0'}. Application will restart automatically while preserving all user data in %USERPROFILE%\\.devspace.`
       });
 
       // Reset state after 3 seconds
@@ -584,6 +678,7 @@ async function startServer() {
         activeUpdateState.message = 'System updated successfully.';
       }, 3000);
     } catch (err: any) {
+      console.error('[AutoUpdater Install Error]:', err);
       res.status(500).json({ success: false, error: err.message });
     }
   });
