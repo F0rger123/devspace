@@ -65,6 +65,7 @@ export interface ActivityNotification {
   timestamp: number;
   read: boolean;
   category?: string;
+  actionUrl?: string;
 }
 
 export interface ActivityModuleConfig {

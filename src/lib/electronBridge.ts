@@ -99,6 +99,13 @@ export async function safeToggleOverlay(visible?: boolean) {
   return false;
 }
 
+export async function safeSetOverlayExpanded(expanded: boolean) {
+  const api = getElectronAPI();
+  if (api && api.setOverlayExpanded) {
+    await api.setOverlayExpanded(expanded);
+  }
+}
+
 export async function safeSetOverlayAlwaysOnTop(alwaysOnTop: boolean) {
   const api = getElectronAPI();
   if (api && api.setOverlayAlwaysOnTop) {
@@ -138,10 +145,98 @@ export async function safeRecognizeOCR(imageSource?: string) {
   return { success: false, error: 'OCR engine requires DevSpace Desktop app.' };
 }
 
+export async function safeCaptureScreen() {
+  const api = getElectronAPI();
+  if (api && api.captureScreen) {
+    return await api.captureScreen();
+  }
+  return null;
+}
+
+export async function safeCaptureRegion(bounds: any) {
+  const api = getElectronAPI();
+  if (api && api.captureRegion) {
+    return await api.captureRegion(bounds);
+  }
+  return null;
+}
+
+export async function safeOCRClipboard() {
+  const api = getElectronAPI();
+  if (api && api.ocrClipboardImage) {
+    return await api.ocrClipboardImage();
+  }
+  return { success: false, error: 'Clipboard OCR requires DevSpace Desktop app.' };
+}
+
 export async function safeNavigateMain(route: string) {
   const api = getElectronAPI();
   if (api && api.navigateToRoute) {
     await api.navigateToRoute(route);
   }
+}
+
+export async function safeGetOpenAtLogin() {
+  const api = getElectronAPI();
+  if (api && api.getOpenAtLogin) {
+    return await api.getOpenAtLogin();
+  }
+  return false;
+}
+
+export async function safeSetOpenAtLogin(openAtLogin: boolean) {
+  const api = getElectronAPI();
+  if (api && api.setOpenAtLogin) {
+    return await api.setOpenAtLogin(openAtLogin);
+  }
+  return false;
+}
+
+export async function safeGetShortcut() {
+  const api = getElectronAPI();
+  if (api && api.getShortcut) {
+    return await api.getShortcut();
+  }
+  return 'CommandOrControl+Shift+Space';
+}
+
+export async function safeRegisterShortcut(shortcutKey: string) {
+  const api = getElectronAPI();
+  if (api && api.registerShortcut) {
+    return await api.registerShortcut(shortcutKey);
+  }
+  return false;
+}
+
+export async function safeGetOverlaySettings() {
+  const api = getElectronAPI();
+  if (api && api.getOverlaySettings) {
+    return await api.getOverlaySettings();
+  }
+  return null;
+}
+
+export async function safeUpdateOverlaySettings(settings: any) {
+  const api = getElectronAPI();
+  if (api && api.updateOverlaySettings) {
+    return await api.updateOverlaySettings(settings);
+  }
+  return null;
+}
+
+export async function safeGetNativeTheme() {
+  const api = getElectronAPI();
+  if (api && api.getNativeTheme) {
+    return await api.getNativeTheme();
+  }
+  return { shouldUseDarkColors: true, prefersReducedMotion: false };
+}
+
+export function safeSubscribeNativeTheme(callback: (theme: any) => void) {
+  const api = getElectronAPI();
+  if (api && api.onNativeThemeUpdate) {
+    return api.onNativeThemeUpdate(callback);
+  }
+  return () => {};
 }
 

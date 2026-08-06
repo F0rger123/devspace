@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, globalShortcut, nativeTheme } from 'electron';
 import * as path from 'path';
 import * as net from 'net';
 import * as childProcess from 'child_process';
@@ -10,6 +10,34 @@ import { ocrService } from './services/OCRService';
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: childProcess.ChildProcess | null = null;
 let activeServerPort: number | null = null;
+let registeredShortcut = 'CommandOrControl+Shift+Space';
+
+function registerGlobalShortcut(shortcutKey: string = 'CommandOrControl+Shift+Space'): boolean {
+  try {
+    globalShortcut.unregisterAll();
+    const success = globalShortcut.register(shortcutKey, () => {
+      console.log(`[Electron Main] Global shortcut triggered (${shortcutKey}). Toggling overlay.`);
+      desktopOverlayManager.toggleVisibility(undefined, true);
+    });
+
+    if (success) {
+      registeredShortcut = shortcutKey;
+      console.log(`[Electron Main] Global shortcut registered successfully: ${shortcutKey}`);
+      return true;
+    } else {
+      console.warn(`[Electron Main] Failed to register primary shortcut ${shortcutKey}. Trying fallback...`);
+      const fallback = 'Ctrl+Shift+Space';
+      const fallbackSuccess = globalShortcut.register(fallback, () => {
+        desktopOverlayManager.toggleVisibility(undefined, true);
+      });
+      if (fallbackSuccess) registeredShortcut = fallback;
+      return fallbackSuccess;
+    }
+  } catch (err) {
+    console.warn('[Electron Main] Global shortcut registration error:', err);
+    return false;
+  }
+}
 
 /**
  * Finds an available TCP port on localhost starting with defaultPort.
@@ -150,6 +178,25 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    // Initially hide overlay while DevSpace main window is active/focused
+    desktopOverlayManager.toggleVisibility(false);
+  });
+
+  // Focus-aware Desktop Overlay management: hide overlay when DevSpace is active/focused, show when minimized or blurred
+  mainWindow.on('focus', () => {
+    desktopOverlayManager.toggleVisibility(false);
+  });
+
+  mainWindow.on('blur', () => {
+    desktopOverlayManager.toggleVisibility(true);
+  });
+
+  mainWindow.on('minimize', () => {
+    desktopOverlayManager.toggleVisibility(true);
+  });
+
+  mainWindow.on('restore', () => {
+    desktopOverlayManager.toggleVisibility(false);
   });
 
   mainWindow.on('closed', () => {
@@ -218,13 +265,29 @@ app.whenReady().then(async () => {
   desktopAutomationEngine.initialize();
   ocrService.initialize();
 
-  // 2. Setup IPC handlers
+  // 2. Register global hotkey
+  registerGlobalShortcut('CommandOrControl+Shift+Space');
+
+  // 3. Listen to OS Theme Updates
+  nativeTheme.on('updated', () => {
+    const isDark = nativeTheme.shouldUseDarkColors;
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('system:theme-updated', {
+          shouldUseDarkColors: isDark,
+          prefersReducedMotion: Boolean((nativeTheme as any).prefersReducedMotion),
+        });
+      }
+    });
+  });
+
+  // 4. Setup IPC handlers
   setupIpcHandlers();
 
-  // 3. Create Main Window
+  // 5. Create Main Window
   await createWindow();
 
-  // 4. Create Desktop Overlay Window
+  // 6. Create Desktop Overlay Window
   const preloadPath = path.join(__dirname, 'preload.cjs');
   const port = activeServerPort || 3000;
   desktopOverlayManager.createOverlayWindow(preloadPath, port);
@@ -236,6 +299,10 @@ app.whenReady().then(async () => {
   });
 });
 
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -244,6 +311,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   (app as any).isQuitting = true;
+  globalShortcut.unregisterAll();
   if (serverProcess) {
     console.log('[Electron Main] Terminating embedded Express server process...');
     serverProcess.kill();
@@ -371,6 +439,11 @@ function setupIpcHandlers() {
     return desktopOverlayManager.toggleVisibility(visible);
   });
 
+  ipcMain.handle('overlay:setExpanded', (event, expanded: boolean) => {
+    if (!isTrustedSender(event)) return;
+    desktopOverlayManager.setOverlaySize(expanded);
+  });
+
   ipcMain.handle('overlay:setAlwaysOnTop', (event, alwaysOnTop: boolean) => {
     if (!isTrustedSender(event)) return;
     desktopOverlayManager.setAlwaysOnTop(alwaysOnTop);
@@ -387,9 +460,69 @@ function setupIpcHandlers() {
     return await ocrService.recognize(imageSource);
   });
 
+  ipcMain.handle('desktop:captureScreen', async (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return await ocrService.captureScreen();
+  });
+
+  ipcMain.handle('desktop:captureRegion', async (event, bounds: any) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return await ocrService.captureRegion(bounds);
+  });
+
+  ipcMain.handle('desktop:ocrClipboard', async (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return await ocrService.ocrClipboardImage();
+  });
+
   ipcMain.handle('desktop:executeAction', async (event, actionName: string, payload: any) => {
     if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
     return await desktopAutomationEngine.executeAction(actionName, payload);
+  });
+
+  // Phase 6.2 Native OS Integration IPC Handlers
+  ipcMain.handle('app:getOpenAtLogin', (event) => {
+    if (!isTrustedSender(event)) return false;
+    return app.getLoginItemSettings().openAtLogin;
+  });
+
+  ipcMain.handle('app:setOpenAtLogin', (event, openAtLogin: boolean) => {
+    if (!isTrustedSender(event)) return false;
+    app.setLoginItemSettings({ openAtLogin });
+    desktopOverlayManager.updateSettings({ openAtLogin });
+    return app.getLoginItemSettings().openAtLogin;
+  });
+
+  ipcMain.handle('shortcut:get', (event) => {
+    if (!isTrustedSender(event)) return registeredShortcut;
+    return registeredShortcut;
+  });
+
+  ipcMain.handle('shortcut:register', (event, shortcutKey: string) => {
+    if (!isTrustedSender(event)) return false;
+    const success = registerGlobalShortcut(shortcutKey);
+    if (success) {
+      desktopOverlayManager.updateSettings({ globalShortcut: shortcutKey });
+    }
+    return success;
+  });
+
+  ipcMain.handle('overlay:getSettings', (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return desktopOverlayManager.getSettings();
+  });
+
+  ipcMain.handle('overlay:updateSettings', (event, settings: any) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return desktopOverlayManager.updateSettings(settings);
+  });
+
+  ipcMain.handle('system:getNativeTheme', (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return {
+      shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
+      prefersReducedMotion: Boolean((nativeTheme as any).prefersReducedMotion),
+    };
   });
 
   ipcMain.handle('window:navigateTo', (event, route: string) => {

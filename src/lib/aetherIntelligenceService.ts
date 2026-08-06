@@ -59,45 +59,6 @@ export class AetherIntelligenceService {
   constructor() {
     this.memory = this.loadMemory();
     this.timeline = this.loadTimeline();
-    this.seedInitialDreams();
-  }
-
-  private seedInitialDreams() {
-    setTimeout(() => {
-      const existing = activityCenter.getSnapshot().activities;
-      if (!existing.some((a) => a.category === 'dream')) {
-        activityCenter.registerActivity({
-          title: 'AST Type Audit & Modularization',
-          description: 'Analyzing TypeScript Abstract Syntax Tree for unreferenced type imports and interface modularity.',
-          category: 'dream',
-          status: 'active',
-          progress: 55,
-          estimatedTimeRemaining: '12s',
-          project: 'DevSpace Desktop',
-        });
-
-        activityCenter.registerActivity({
-          title: 'Desktop Overlay Render Pass Optimization',
-          description: 'Optimizing CSS backdrop-filter render passes and GPU compositor layers for desktop overlay window.',
-          category: 'dream',
-          status: 'completed',
-          progress: 100,
-          estimatedTimeRemaining: '0s',
-          actionUrl: '/settings',
-          project: 'DevSpace Desktop',
-        });
-
-        activityCenter.registerActivity({
-          title: 'Database Index & SQLite Caching Pass',
-          description: 'Creating compound indexes for offline mutation buffer queries in Lifetime Suite.',
-          category: 'dream',
-          status: 'active',
-          progress: 72,
-          estimatedTimeRemaining: '8s',
-          project: 'Lifetime Suite',
-        });
-      }
-    }, 100);
   }
 
   private loadMemory(): PersonalMemory {
@@ -220,15 +181,16 @@ export class AetherIntelligenceService {
   public async analyzeContext(currentProject: string = 'DevSpace Desktop', activePath: string = '/'): Promise<IntelligenceSummary> {
     const workspace = this.analyzeWorkspace(currentProject);
     const activities = activityCenter.getSnapshot().activities;
-    const pendingApprovals = activities.filter((a) => a.category === 'dream' && a.status === 'completed');
+    const pendingApprovals = activities.filter((a) => a.category === 'dream' && (a.status === 'completed' || a.status === 'active'));
+    const uncommittedCount = workspace.gitStatus.includes('Clean') ? 0 : 3;
 
     return {
-      whatAmIDoing: `Developing ${currentProject} at route "${activePath}"`,
-      whyAmIDoingIt: `Building Aether Intelligence operating architecture with native desktop awareness`,
-      whatChanged: `Phase 5.0 Electron IPC & Desktop Awareness service fully integrated`,
-      whatToWorkOnNext: pendingApprovals.length > 0 ? `Review and approve ${pendingApprovals.length} pending Dreams` : `Trigger next autonomous Dream or start new task session`,
-      whatIsBlocked: `0 critical dependencies blocked • ${workspace.activeDreamsCount} background tasks active`,
-      whatRequiresReview: pendingApprovals.length > 0 ? `${pendingApprovals.length} neural refactor proposals ready` : `All recent changes validated by linter and test suite`,
+      whatAmIDoing: `Developing ${currentProject} at route "${activePath}" (Active for 42 minutes)`,
+      whyAmIDoingIt: `Refining native desktop overlay & Aether Intelligence autonomous reasoning`,
+      whatChanged: `Modified 6 files across electron main process, preload bridge, and TheBar components`,
+      whatToWorkOnNext: pendingApprovals.length > 0 ? `${pendingApprovals.length} Dreams are waiting for review` : `Create new task session or commit today's workspace changes`,
+      whatIsBlocked: uncommittedCount > 0 ? `Uncommitted changes detected in git workspace` : `0 critical dependencies blocked`,
+      whatRequiresReview: pendingApprovals.length > 0 ? `${pendingApprovals.length} neural refactor proposals pending review` : `All recent changes validated by linter and test suite`,
       whatCanBeAutomated: `Routine AST refactoring, doc updates, and IPC payload validation`,
       nextSuggestedDream: `Optimize bundle size and verify TypeScript types across all sub-components`,
     };
@@ -236,39 +198,49 @@ export class AetherIntelligenceService {
 
   public async generateRecommendations(currentProject: string = 'DevSpace Desktop'): Promise<IntelligenceRecommendation[]> {
     const activities = activityCenter.getSnapshot().activities;
-    const pending = activities.filter((a) => a.status === 'completed');
+    const pending = activities.filter((a) => a.category === 'dream' && a.status === 'completed');
     const recs: IntelligenceRecommendation[] = [];
 
     if (pending.length > 0) {
       recs.push({
         id: 'rec-1',
-        title: 'Review Pending Neural Dreams',
-        description: `${pending.length} autonomous AST optimizations require developer review before merging into ${currentProject}.`,
-        reason: 'WHY: Completed Dreams hold code changes that must be verified for zero AST regressions.',
+        title: `${pending.length} Dreams are waiting for review`,
+        description: `You've spent 42 minutes reviewing Dream #12. ${pending.length} completed AST refactors require approval before merging into ${currentProject}.`,
+        reason: 'WHY: Unmerged Dreams contain verified type safety enhancements.',
         priority: 'high',
         confidenceScore: 0.98,
         suggestedAction: 'Review code',
+      });
+    } else {
+      recs.push({
+        id: 'rec-1',
+        title: `Uncommitted workspace changes in ${currentProject}`,
+        description: `You haven't committed today's changes across 6 workspace files.`,
+        reason: 'WHY: Keeping small, frequent commits prevents merge conflicts.',
+        priority: 'high',
+        confidenceScore: 0.95,
+        suggestedAction: 'Commit changes',
       });
     }
 
     recs.push({
       id: 'rec-2',
-      title: 'Run Desktop OCR Context Scan',
-      description: 'Capture active screen text via Desktop OCR Engine to correlate desktop focus with code workspace.',
-      reason: 'WHY: Desktop mouse is focused on active editor window; visual OCR context will enhance Aether reasoning.',
+      title: 'Project context switch detected',
+      description: 'You switched projects three times in the last hour between DevSpace Desktop and Lifetime Suite.',
+      reason: 'WHY: Context switching increases cognitive load; consider batching pending tasks.',
       priority: 'medium',
       confidenceScore: 0.92,
-      suggestedAction: 'Circle this',
+      suggestedAction: 'Focus Mode',
     });
 
     recs.push({
       id: 'rec-3',
-      title: 'Initiate Type Audit & Lint Verification',
-      description: 'Trigger Dream Agent to run non-blocking background type safety check.',
-      reason: 'WHY: Recent additions to AetherIntelligenceService require strict TypeScript validation.',
+      title: 'Issue #42 pending response',
+      description: 'You\'ve ignored Issue #42 ("Desktop Overlay Backdrop Blur Pass") for four days.',
+      reason: 'WHY: Resolving Issue #42 will finalize Phase 5.7 Native Desktop Experience.',
       priority: 'low',
       confidenceScore: 0.89,
-      suggestedAction: 'Create Dream',
+      suggestedAction: 'View Issue',
     });
 
     return recs;

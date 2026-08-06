@@ -4068,7 +4068,11 @@ export function WhatsAppCompanion() {
                         type="button"
                         onClick={async () => {
                           if (confirm("Reset current conversation logs and discard temporary notes?")) {
-                            await fetch('/api/whatsapp/clear-session', { method: 'POST' });
+                            try {
+                              await fetch('/api/whatsapp/clear-session', { method: 'POST' });
+                            } catch (e) {
+                              console.warn("Could not clear session on backend:", e);
+                            }
                             setSessionNotesCount(0);
                             setSessionNotes([]);
                             setPendingNote(null);

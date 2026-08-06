@@ -18,7 +18,7 @@ import {
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
 import { useData } from '../../../context/DataProvider';
 import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
-import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, getElectronAPI } from '../../../lib/electronBridge';
+import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, safeSetOverlayExpanded, getElectronAPI } from '../../../lib/electronBridge';
 import { AIMode, TheBarTab } from './types';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AIModeSwitcher } from './AIModeSwitcher';
@@ -136,8 +136,12 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     setDismissedIds((prev) => new Set(prev).add(id));
   };
 
-  // Ultra-responsive spring physics matching expansion and collapse timing
-  const springTransition = { type: 'spring' as const, stiffness: 500, damping: 32, mass: 0.8 };
+  useEffect(() => {
+    safeSetOverlayExpanded(isExpanded);
+  }, [isExpanded]);
+
+  // Fast 120-150ms fluid morphing transition matching Apple Liquid Glass guidelines
+  const morphTransition = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] };
 
   return (
     <div
@@ -149,15 +153,15 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     >
       <AnimatePresence mode="wait">
         {!isExpanded ? (
-          /* COLLAPSED BAR - PREMIUM LIQUID GLASS CAPSULE */
+          /* COLLAPSED BAR - LIQUID GLASS CAPSULE */
           <motion.div
             key="bar-collapsed"
-            initial={{ opacity: 0, y: -16, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -14, scale: 0.95 }}
-            transition={springTransition}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={morphTransition}
             onClick={() => setIsExpanded(true)}
-            className="group relative flex items-center gap-3 px-4 h-10 bg-slate-900/75 via-slate-900/80 to-slate-950/85 border border-white/20 shadow-[0_12px_32px_rgba(0,0,0,0.45)] ring-1 ring-white/10 backdrop-blur-2xl rounded-full cursor-pointer hover:border-cyan-400/50 hover:shadow-[0_0_24px_rgba(34,211,238,0.2)] transition-all duration-200"
+            className="group relative flex items-center gap-3 px-4 h-10 bg-zinc-900/90 via-zinc-900/95 to-zinc-950/95 border border-white/20 shadow-[0_12px_36px_rgba(0,0,0,0.55)] ring-1 ring-white/10 backdrop-blur-2xl rounded-full cursor-pointer hover:border-amber-400/50 hover:shadow-[0_0_20px_rgba(251,191,36,0.15)] transition-all duration-150"
           >
             <ProjectSwitcher
               projects={projectList}
@@ -168,13 +172,13 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
             <div className="h-3.5 w-[1px] bg-white/15" />
 
-            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 text-[10px] font-mono font-bold text-cyan-300">
-              <Sparkles size={10} className="text-cyan-400 animate-pulse" />
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-[10px] font-mono font-bold text-amber-300">
+              <Sparkles size={10} className="text-amber-400 animate-pulse" />
               <span>{aiMode}</span>
             </div>
 
             {activeDreamCount > 0 ? (
-              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-cyan-200 bg-cyan-500/20 px-2.5 py-0.5 rounded-full border border-cyan-400/35 animate-pulse">
+              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-400/35 animate-pulse">
                 <span>{activeDreamCount} Dreaming</span>
               </div>
             ) : visibleActivities.length > 0 ? (
@@ -185,26 +189,26 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             ) : null}
 
             {unreadNotificationCount > 0 && (
-              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-slate-200 bg-slate-800/80 px-2 py-0.5 rounded-full border border-white/20">
+              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-zinc-200 bg-zinc-800/80 px-2 py-0.5 rounded-full border border-white/20">
                 <Bell size={10} />
                 <span>{unreadNotificationCount}</span>
               </div>
             )}
 
-            <ChevronDown size={13} className="text-slate-400 group-hover:text-white transition-transform group-hover:translate-y-0.5" />
+            <ChevronDown size={13} className="text-zinc-400 group-hover:text-white transition-transform group-hover:translate-y-0.5" />
           </motion.div>
         ) : (
           /* EXPANDED BAR - SOFT FROSTED LIQUID GLASS SURFACE */
           <motion.div
             key="bar-expanded"
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -16, scale: 0.95 }}
-            transition={springTransition}
-            className="w-[92vw] max-w-2xl bg-slate-900/85 via-slate-900/90 to-slate-950/95 border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.65)] ring-1 ring-white/10 backdrop-blur-3xl rounded-3xl overflow-hidden font-sans flex flex-col max-h-[82vh]"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={morphTransition}
+            className="w-[92vw] max-w-2xl bg-zinc-900/95 via-zinc-900/95 to-zinc-950/98 border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.7)] ring-1 ring-white/10 backdrop-blur-3xl rounded-3xl overflow-hidden font-sans flex flex-col max-h-[82vh]"
           >
             {/* Clean Header Bar */}
-            <div className="px-4 py-3 bg-slate-900/95 border-b border-white/15 flex flex-wrap items-center justify-between gap-3 shrink-0">
+            <div className="px-4 py-3 bg-zinc-950/90 border-b border-white/15 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 <ProjectSwitcher
                   projects={projectList}
@@ -217,7 +221,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
               <button
                 onClick={() => setIsExpanded(false)}
-                className="p-1.5 hover:bg-white/10 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer shrink-0"
+                className="p-1.5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-xl transition-colors cursor-pointer shrink-0"
                 title="Collapse Bar"
               >
                 <Minimize2 size={14} />
@@ -225,16 +229,16 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             </div>
 
             {/* Navigation Tabs Bar */}
-            <div className="flex items-center gap-1.5 p-1.5 bg-slate-950/60 border-b border-white/10 font-mono text-[11px] shrink-0 overflow-x-auto custom-scrollbar">
+            <div className="flex items-center gap-1.5 p-1.5 bg-zinc-950/70 border-b border-white/10 font-mono text-[11px] shrink-0 overflow-x-auto custom-scrollbar">
               <button
                 onClick={() => setActiveTab('dreams')}
                 className={`flex-1 py-1.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'dreams'
-                    ? 'bg-white/15 text-white border border-white/25 shadow-xs font-semibold backdrop-blur-md'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                    ? 'bg-amber-500/20 text-amber-200 border border-amber-500/35 shadow-xs font-semibold backdrop-blur-md'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/10'
                 }`}
               >
-                <Sparkles size={12} className={activeDreamCount > 0 ? 'animate-spin text-cyan-300' : ''} />
+                <Sparkles size={12} className={activeDreamCount > 0 ? 'animate-spin text-amber-300' : ''} />
                 <span>Dreams ({dreamList.length})</span>
               </button>
 
@@ -243,7 +247,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                 className={`flex-1 py-1.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'live'
                     ? 'bg-white/15 text-white border border-white/25 shadow-xs font-semibold backdrop-blur-md'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/10'
                 }`}
               >
                 <Activity size={12} />
@@ -255,7 +259,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                 className={`flex-1 py-1.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'aether'
                     ? 'bg-white/15 text-white border border-white/25 shadow-xs font-semibold backdrop-blur-md'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/10'
                 }`}
               >
                 <Compass size={12} />
@@ -267,12 +271,12 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                 className={`flex-1 py-1.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap relative ${
                   activeTab === 'sync'
                     ? 'bg-white/15 text-white border border-white/25 shadow-xs font-semibold backdrop-blur-md'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/10'
                 }`}
               >
                 <Cloud size={12} />
                 <span>Sync ({pendingOfflineCount})</span>
-                {hasSyncConflict && <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping absolute top-1 right-1" />}
+                {hasSyncConflict && <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute top-1 right-1" />}
               </button>
 
               <button
@@ -280,7 +284,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                 className={`flex-1 py-1.5 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'notifications'
                     ? 'bg-white/15 text-white border border-white/25 shadow-xs font-semibold backdrop-blur-md'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-white/10'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/10'
                 }`}
               >
                 <Bell size={12} />
@@ -339,9 +343,9 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             </div>
 
             {/* Clean Operating Experience Footer */}
-            <div className="px-4 py-2.5 bg-slate-950/80 border-t border-white/10 flex items-center justify-between text-[10px] font-mono shrink-0">
-              <span className="text-slate-400 flex items-center gap-1.5 font-medium">
-                <Zap size={11} className="text-cyan-400" /> DevSpace Intelligence Active
+            <div className="px-4 py-2.5 bg-zinc-950/80 border-t border-white/10 flex items-center justify-between text-[10px] font-mono shrink-0">
+              <span className="text-zinc-400 flex items-center gap-1.5 font-medium">
+                <Zap size={11} className="text-amber-400" /> DevSpace Aether Engine Active
               </span>
 
               <button
@@ -349,7 +353,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                   navigate('/settings?tab=activity-center');
                   setIsExpanded(false);
                 }}
-                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-lg border border-white/10 transition-all cursor-pointer font-medium"
+                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white rounded-lg border border-white/10 transition-all cursor-pointer font-medium"
               >
                 Preferences
               </button>
@@ -383,9 +387,9 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center justify-between text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
             <span className="flex items-center gap-2">
-              <Layers size={13} className="text-purple-400" /> Always On Top
+              <Layers size={13} className="text-amber-400" /> Always On Top
             </span>
-            {alwaysOnTop && <span className="text-purple-400 font-bold text-[10px]">✓</span>}
+            {alwaysOnTop && <span className="text-amber-400 font-bold text-[10px]">✓</span>}
           </button>
           <div className="my-1 border-t border-zinc-800" />
           <button
@@ -395,7 +399,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             }}
             className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
-            <ExternalLink size={13} className="text-cyan-400" /> Open DevSpace Main Window
+            <ExternalLink size={13} className="text-amber-400" /> Open DevSpace Main Window
           </button>
           <button
             onClick={() => {
@@ -404,7 +408,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             }}
             className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
-            <SettingsIcon size={13} className="text-indigo-400" /> Desktop Settings
+            <SettingsIcon size={13} className="text-zinc-400" /> Desktop Settings
           </button>
           <div className="my-1 border-t border-zinc-800" />
           <button
@@ -417,7 +421,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                 safeToggleOverlay(false);
               }
             }}
-            className="w-full px-3 py-2 text-left hover:bg-red-950/40 hover:text-red-300 flex items-center gap-2 text-red-400 transition-colors cursor-pointer"
+            className="w-full px-3 py-2 text-left hover:bg-rose-950/40 hover:text-rose-300 flex items-center gap-2 text-rose-400 transition-colors cursor-pointer"
           >
             <Power size={13} /> Quit DevSpace
           </button>

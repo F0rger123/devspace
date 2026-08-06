@@ -35,11 +35,25 @@ export interface ElectronAPI {
 
   // Phase 5.0 Desktop Overlay & Awareness Architecture
   toggleOverlay?: (visible?: boolean) => Promise<boolean>;
+  setOverlayExpanded?: (expanded: boolean) => Promise<void>;
   setOverlayAlwaysOnTop?: (alwaysOnTop: boolean) => Promise<void>;
   getDesktopAwareness?: () => Promise<any>;
   onDesktopAwarenessUpdate?: (callback: (state: any) => void) => () => void;
   executeDesktopAction?: (actionName: string, payload?: any) => Promise<any>;
   recognizeOCR?: (imageSource?: string) => Promise<any>;
+  captureScreen?: () => Promise<string | null>;
+  captureRegion?: (bounds: any) => Promise<string | null>;
+  ocrClipboardImage?: () => Promise<any>;
+
+  // Phase 6.2 Native OS Integration IPC
+  getOpenAtLogin?: () => Promise<boolean>;
+  setOpenAtLogin?: (openAtLogin: boolean) => Promise<boolean>;
+  getShortcut?: () => Promise<string>;
+  registerShortcut?: (shortcutKey: string) => Promise<boolean>;
+  getOverlaySettings?: () => Promise<any>;
+  updateOverlaySettings?: (settings: any) => Promise<any>;
+  getNativeTheme?: () => Promise<{ shouldUseDarkColors: boolean; prefersReducedMotion: boolean }>;
+  onNativeThemeUpdate?: (callback: (theme: { shouldUseDarkColors: boolean; prefersReducedMotion: boolean }) => void) => () => void;
 
   // Cross-Window Navigation IPC
   navigateToRoute?: (route: string) => Promise<void>;
@@ -65,6 +79,7 @@ const electronAPI: ElectronAPI = {
   installUpdateAndRestart: () => ipcRenderer.invoke('app:installUpdateAndRestart'),
 
   toggleOverlay: (visible?: boolean) => ipcRenderer.invoke('overlay:toggle', visible),
+  setOverlayExpanded: (expanded: boolean) => ipcRenderer.invoke('overlay:setExpanded', expanded),
   setOverlayAlwaysOnTop: (alwaysOnTop: boolean) => ipcRenderer.invoke('overlay:setAlwaysOnTop', alwaysOnTop),
   getDesktopAwareness: () => ipcRenderer.invoke('desktop:getAwareness'),
   onDesktopAwarenessUpdate: (callback: (state: any) => void) => {
@@ -76,6 +91,24 @@ const electronAPI: ElectronAPI = {
   },
   executeDesktopAction: (actionName: string, payload?: any) => ipcRenderer.invoke('desktop:executeAction', actionName, payload),
   recognizeOCR: (imageSource?: string) => ipcRenderer.invoke('desktop:ocrRecognize', imageSource),
+  captureScreen: () => ipcRenderer.invoke('desktop:captureScreen'),
+  captureRegion: (bounds: any) => ipcRenderer.invoke('desktop:captureRegion', bounds),
+  ocrClipboardImage: () => ipcRenderer.invoke('desktop:ocrClipboard'),
+
+  getOpenAtLogin: () => ipcRenderer.invoke('app:getOpenAtLogin'),
+  setOpenAtLogin: (openAtLogin: boolean) => ipcRenderer.invoke('app:setOpenAtLogin', openAtLogin),
+  getShortcut: () => ipcRenderer.invoke('shortcut:get'),
+  registerShortcut: (shortcutKey: string) => ipcRenderer.invoke('shortcut:register', shortcutKey),
+  getOverlaySettings: () => ipcRenderer.invoke('overlay:getSettings'),
+  updateOverlaySettings: (settings: any) => ipcRenderer.invoke('overlay:updateSettings', settings),
+  getNativeTheme: () => ipcRenderer.invoke('system:getNativeTheme'),
+  onNativeThemeUpdate: (callback: (theme: any) => void) => {
+    const handler = (_event: any, theme: any) => callback(theme);
+    ipcRenderer.on('system:theme-updated', handler);
+    return () => {
+      ipcRenderer.removeListener('system:theme-updated', handler);
+    };
+  },
 
   navigateToRoute: (route: string) => ipcRenderer.invoke('window:navigateTo', route),
   onNavigateTo: (callback: (route: string) => void) => {

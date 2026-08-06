@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
 import { isElectron } from './lib/electronBridge';
 import { AppLayout } from './components/layout/AppLayout';
@@ -31,6 +32,16 @@ export default function App() {
     window.location.pathname.includes('/overlay') ||
     window.location.search.includes('overlay')
   );
+
+  useEffect(() => {
+    if (isOverlayWindow) {
+      document.documentElement.classList.add('overlay-mode');
+      document.body.classList.add('overlay-mode');
+      document.documentElement.style.backgroundColor = 'transparent';
+      document.body.style.backgroundColor = 'transparent';
+      document.body.style.overflow = 'hidden';
+    }
+  }, [isOverlayWindow]);
 
   if (isOverlayWindow) {
     return (

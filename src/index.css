@@ -28,6 +28,12 @@
 }
 
 @layer base {
+  html.overlay-mode, body.overlay-mode, body.overlay-mode #root {
+    background-color: transparent !important;
+    background: transparent !important;
+    overflow: hidden !important;
+  }
+
   :root {
     --background: 240 10% 4%;
     --foreground: 0 0% 98%;

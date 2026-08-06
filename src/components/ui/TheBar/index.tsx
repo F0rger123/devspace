@@ -3,13 +3,9 @@ import { isElectron } from '../../../lib/electronBridge';
 import { BarShell } from './BarShell';
 
 export function ActivityCenterPill() {
-  // CRITICAL REQUIREMENT: The website should NEVER display The Bar.
-  // Floating Bar exists ONLY inside the desktop application (Electron).
-  if (!isElectron()) {
-    return null;
-  }
-
-  return <BarShell />;
+  // CRITICAL REQUIREMENT: Floating overlay exists strictly as a separate desktop window.
+  // Never render floating overlay pill inside the main DevSpace window.
+  return null;
 }
 
 export default ActivityCenterPill;

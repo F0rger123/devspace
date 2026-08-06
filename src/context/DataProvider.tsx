@@ -1488,11 +1488,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // 13. Ollama detection
       await executeStartupTask('task-ollama-detection', 'Ollama detection', async () => {
         try {
-          const controller = new AbortController();
-          const tid = setTimeout(() => controller.abort(), 1000);
-          const res = await fetch('http://localhost:11434/api/version', { signal: controller.signal });
-          clearTimeout(tid);
-          return { available: res.ok };
+          const res = await fetch('/api/ollama/status');
+          if (res.ok) {
+            const data = await res.json();
+            return { available: Boolean(data.online), models: data.models || [] };
+          }
+          return { available: false, offline: true };
         } catch (e) {
           return { available: false, offline: true };
         }

@@ -74,16 +74,16 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
   return (
     <div className="space-y-3 font-mono">
       {/* Aether Intelligence Primary Header */}
-      <div className="p-3.5 bg-slate-900/60 border border-white/15 rounded-2xl space-y-1.5 shadow-lg backdrop-blur-xl">
+      <div className="p-3.5 bg-zinc-900/80 border border-white/15 rounded-2xl space-y-1.5 shadow-lg backdrop-blur-xl">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold text-slate-100 flex items-center gap-1.5">
-            <BrainCircuit size={15} className="text-cyan-400 animate-pulse" /> Aether Intelligence Engine
+          <span className="text-xs font-extrabold text-zinc-100 flex items-center gap-1.5">
+            <BrainCircuit size={15} className="text-amber-400 animate-pulse" /> Aether Intelligence Engine
           </span>
-          <span className="text-[9px] text-cyan-300 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-400/30 font-bold">
+          <span className="text-[9px] text-amber-300 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/30 font-bold">
             Workspace & Desktop Reasoning
           </span>
         </div>
-        <p className="text-[10.5px] text-slate-300 leading-snug">
+        <p className="text-[10.5px] text-zinc-300 leading-snug">
           Central intelligence layer unifying workspace graph, desktop awareness, personal workflow memory, and multi-agent reasoning.
         </p>
       </div>
@@ -102,11 +102,11 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
           value={nlInput}
           onChange={(e) => setNlInput(e.target.value)}
           placeholder='Ask Aether: "Circle this", "Turn into Dream", "Summarize progress"...'
-          className="flex-1 bg-slate-950/60 border border-white/15 hover:border-cyan-400/50 focus:border-cyan-400 text-xs text-slate-100 placeholder-slate-400 px-3 py-2 rounded-xl focus:outline-none transition-colors"
+          className="flex-1 bg-zinc-950/80 border border-white/15 hover:border-amber-400/50 focus:border-amber-400 text-xs text-zinc-100 placeholder-zinc-400 px-3 py-2 rounded-xl focus:outline-none transition-colors"
         />
         <button
           type="submit"
-          className="px-3 py-2 bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-extrabold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
+          className="px-3 py-2 bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
         >
           <Send size={11} /> Ask
         </button>
