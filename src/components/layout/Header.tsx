@@ -326,36 +326,36 @@ export function Header() {
           </span>
         </button>
         <div className="h-4 w-[1px] bg-zinc-800 ml-1 hidden sm:block"></div>
-        <div className="relative hidden sm:block">
+        <div className="relative hidden sm:block shrink-0">
           <button 
             onClick={() => { haptic.light(); setShowSyncDetails(!showSyncDetails); }}
-            className="flex items-center gap-2 ml-2 px-2.5 py-1 bg-black rounded border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-950 transition-colors cursor-pointer select-none"
+            className="flex items-center justify-center gap-2 ml-2 w-[115px] sm:w-[125px] px-2 py-1 bg-black rounded border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-950 transition-colors cursor-pointer select-none shrink-0 overflow-hidden"
             title="View Firestore Sync Status"
           >
             {!isOnline ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,1)]"></span>
-                <span className="text-[9.5px] font-mono text-amber-500 font-bold tracking-wider">OFFLINE MODE</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,1)] shrink-0"></span>
+                <span className="text-[9.5px] font-mono text-amber-500 font-bold tracking-wider truncate">OFFLINE</span>
               </>
             ) : isQuotaExceeded ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,1)]"></span>
-                <span className="text-[9.5px] font-mono text-cyan-400 font-bold tracking-wider">LOCAL CACHE 🔒</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,1)] shrink-0"></span>
+                <span className="text-[9.5px] font-mono text-cyan-400 font-bold tracking-wider truncate">CACHE 🔒</span>
               </>
             ) : syncStatus === 'saving' ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)]"></span>
-                <span className="text-[9.5px] font-mono text-yellow-500 font-bold tracking-wider">SYNCING...</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shadow-[0_0_8px_rgba(234,179,8,1)] shrink-0"></span>
+                <span className="text-[9.5px] font-mono text-yellow-500 font-bold tracking-wider truncate">SYNCING...</span>
               </>
             ) : syncStatus === 'error' ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></span>
-                <span className="text-[9.5px] font-mono text-red-500 font-bold tracking-wider">SYNC ERROR</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)] shrink-0"></span>
+                <span className="text-[9.5px] font-mono text-red-500 font-bold tracking-wider truncate">ERROR</span>
               </>
             ) : (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(234,179,8,1)] animate-pulse"></span>
-                <span className="text-[9.5px] font-mono text-yellow-400 font-bold tracking-wider">SYNCED</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(234,179,8,1)] animate-pulse shrink-0"></span>
+                <span className="text-[9.5px] font-mono text-yellow-400 font-bold tracking-wider truncate">SYNCED</span>
               </>
             )}
           </button>
@@ -371,10 +371,11 @@ export function Header() {
             {showSyncDetails && (
               <motion.div 
                 key="sync-popover"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="absolute left-2 top-0 z-50"
+                initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                transition={{ duration: 0.12 }}
+                className="absolute left-2 top-full mt-2.5 z-50"
               >
                 <SyncPopover onClose={() => setShowSyncDetails(false)} />
               </motion.div>

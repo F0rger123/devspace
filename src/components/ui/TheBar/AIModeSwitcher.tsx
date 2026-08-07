@@ -1,8 +1,7 @@
 import React from 'react';
-import { Sparkles, Mic, VolumeX, ShieldCheck, Code2, Moon, Activity, Power } from 'lucide-react';
+import { Power, VolumeX, Radio, Target, Mic, Sparkles } from 'lucide-react';
 import { AIMode } from './types';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
-import { aetherIntelligence } from '../../../lib/aetherIntelligenceService';
 import { activityCenter } from '../../../lib/activityCenterService';
 
 interface AIModeSwitcherProps {
@@ -11,14 +10,12 @@ interface AIModeSwitcherProps {
 }
 
 const MODES: { mode: AIMode; label: string; icon: React.ReactNode; description: string }[] = [
-  { mode: 'AI', label: 'AI', icon: <Sparkles size={11} />, description: 'Full AI companion assistance' },
-  { mode: 'Dream Mode', label: 'Dream Mode', icon: <Activity size={11} />, description: 'Autonomous background refactoring' },
-  { mode: 'Voice', label: 'Voice', icon: <Mic size={11} />, description: 'Voice memo listening & synthesis' },
-  { mode: 'Aether Intelligence', label: 'Aether', icon: <ShieldCheck size={11} />, description: 'Deep workspace & desktop reasoning engine' },
-  { mode: 'Muted', label: 'Muted', icon: <VolumeX size={11} />, description: 'Audio output silenced' },
-  { mode: 'Silent', label: 'Silent', icon: <Moon size={11} />, description: 'No notifications or popups' },
-  { mode: 'Developer', label: 'Developer', icon: <Code2 size={11} />, description: 'Verbose AST & runtime diagnostics' },
-  { mode: 'Off', label: 'Off', icon: <Power size={11} />, description: 'Background AI suspended' },
+  { mode: 'Off', label: 'Off', icon: <Power size={11} />, description: 'AI background suspended' },
+  { mode: 'Muted', label: 'Muted', icon: <VolumeX size={11} />, description: 'Audio & notifications silenced' },
+  { mode: 'Waiting for Keyword', label: 'Waiting for Keyword', icon: <Radio size={11} />, description: 'Listening for wake word trigger' },
+  { mode: 'Context Mode', label: 'Context Mode', icon: <Target size={11} />, description: 'Screen & drawing context active' },
+  { mode: 'Open / Always Listening', label: 'Open / Always Listening', icon: <Mic size={11} />, description: 'Continuous open mic input' },
+  { mode: 'Full Aether', label: 'Full Aether', icon: <Sparkles size={11} />, description: 'Unrestricted neural intelligence' },
 ];
 
 export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onSelectMode }) => {
@@ -27,34 +24,18 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
   const handleModeChange = (mode: AIMode) => {
     onSelectMode(mode);
 
+    // Persist mode choice
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('devspace_active_aether_mode', mode);
+    }
+
     switch (mode) {
-      case 'Dream Mode':
-        updateConfig({ dreamFrequency: 'aggressive' });
-        aetherIntelligence.generateDream('DevSpace Desktop');
+      case 'Off':
+        updateConfig({ dreamFrequency: 'disabled', offlineSyncFrequency: 'manual' });
         activityCenter.addNotification({
-          title: 'Dream Mode Engaged',
-          message: 'Autonomous neural optimization runs initiated for active project.',
-          type: 'info',
-          category: 'dream',
-        });
-        break;
-
-      case 'Voice':
-        window.dispatchEvent(new CustomEvent('devspace:voice-activate'));
-        activityCenter.addNotification({
-          title: 'Voice Assistant Active',
-          message: 'Listening for voice commands and audio inputs.',
-          type: 'info',
-          category: 'voice',
-        });
-        break;
-
-      case 'Aether Intelligence':
-        aetherIntelligence.analyzeContext('DevSpace Desktop');
-        activityCenter.addNotification({
-          title: 'Aether Engine Active',
-          message: 'Deep workspace and native desktop awareness online.',
-          type: 'info',
+          title: 'Aether Engine Off',
+          message: 'All background AI intelligence suspended.',
+          type: 'warning',
           category: 'ai',
         });
         break;
@@ -62,45 +43,48 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
       case 'Muted':
         updateConfig({ soundEnabled: false, desktopNotifications: true });
         activityCenter.addNotification({
-          title: 'Audio Output Muted',
-          message: 'Sound effects and audio voice feedback silenced.',
+          title: 'Aether Muted',
+          message: 'Audio playback & chime feedback silenced.',
           type: 'warning',
+          category: 'ai',
         });
         break;
 
-      case 'Silent':
-        updateConfig({ soundEnabled: false, desktopNotifications: false });
+      case 'Waiting for Keyword':
         activityCenter.addNotification({
-          title: 'Silent Mode Active',
-          message: 'Desktop notifications and audio popups suspended.',
-          type: 'warning',
-        });
-        break;
-
-      case 'Developer':
-        updateConfig({ displayMode: 'developer' });
-        activityCenter.addNotification({
-          title: 'Developer Diagnostics On',
-          message: 'Showing verbose IPC telemetry and AST metrics.',
+          title: 'Waiting for Keyword',
+          message: 'Wake-word detection armed in background.',
           type: 'info',
+          category: 'voice',
         });
         break;
 
-      case 'Off':
-        updateConfig({ dreamFrequency: 'disabled', offlineSyncFrequency: 'manual' });
+      case 'Context Mode':
         activityCenter.addNotification({
-          title: 'AI Services Suspended',
-          message: 'Background AI and neural dream sweeps paused.',
-          type: 'warning',
-        });
-        break;
-
-      default:
-        updateConfig({ soundEnabled: true, desktopNotifications: true, dreamFrequency: 'adaptive' });
-        activityCenter.addNotification({
-          title: 'Standard AI Assistant Active',
-          message: 'Gemini AI assistant operational.',
+          title: 'Context Mode Active',
+          message: 'Active window and spatial drawing context attached.',
           type: 'info',
+          category: 'ai',
+        });
+        break;
+
+      case 'Open / Always Listening':
+        window.dispatchEvent(new CustomEvent('devspace:voice-activate'));
+        activityCenter.addNotification({
+          title: 'Open Mic Active',
+          message: 'Continuous voice stream online.',
+          type: 'info',
+          category: 'voice',
+        });
+        break;
+
+      case 'Full Aether':
+        updateConfig({ dreamFrequency: 'aggressive' });
+        activityCenter.addNotification({
+          title: 'Full Aether Intelligence Active',
+          message: 'Full-spectrum neural reasoning and workspace awareness online.',
+          type: 'info',
+          category: 'ai',
         });
         break;
     }
@@ -114,14 +98,15 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
           <button
             key={mode}
             onClick={() => handleModeChange(mode)}
-            className={`px-2 py-1 rounded-lg text-[9.5px] font-mono font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
               isActive
-                ? 'bg-amber-400 text-zinc-950 shadow-xs font-extrabold border border-amber-300'
-                : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
+                ? 'bg-amber-400 text-zinc-950 shadow-sm font-extrabold border border-amber-300 ring-1 ring-amber-400/50'
+                : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10 hover:border-white/20'
             }`}
           >
-            {icon}
-            {label}
+            <span className={isActive ? 'text-zinc-950' : 'text-amber-400'}>{icon}</span>
+            <span>{label}</span>
+            {isActive && <span className="w-1.5 h-1.5 rounded-full bg-zinc-950 animate-ping" />}
           </button>
         );
       })}

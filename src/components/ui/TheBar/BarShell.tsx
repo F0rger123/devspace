@@ -14,11 +14,12 @@ import {
   ExternalLink,
   Settings as SettingsIcon,
   Power,
+  GitPullRequest,
 } from 'lucide-react';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
 import { useData } from '../../../context/DataProvider';
 import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
-import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, safeSetOverlayExpanded, getElectronAPI } from '../../../lib/electronBridge';
+import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, safeSetOverlayExpanded, getElectronAPI, isElectron } from '../../../lib/electronBridge';
 import { AIMode, TheBarTab } from './types';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AIModeSwitcher } from './AIModeSwitcher';
@@ -27,6 +28,7 @@ import { ContextPanel } from './ContextPanel';
 import { LiveWorkPanel } from './LiveWorkPanel';
 import { SyncPanel } from './SyncPanel';
 import { NotificationsPanel } from './NotificationsPanel';
+import { pushQueue } from '../../../lib/pushQueueService';
 
 interface BarShellProps {
   standalone?: boolean;
@@ -52,7 +54,13 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<TheBarTab>('dreams');
-  const [aiMode, setAiMode] = useState<AIMode>('AI');
+  const [aiMode, setAiMode] = useState<AIMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('devspace_active_aether_mode');
+      if (saved) return saved as AIMode;
+    }
+    return 'Full Aether';
+  });
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -92,7 +100,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isExpanded]);
 
-  // Click outside to collapse
+  // Click outside to collapse automatically
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -107,32 +115,84 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isExpanded]);
 
+  // Handle overlay resize with smooth timing delay during collapse (120-150ms morph)
+  useEffect(() => {
+    if (isExpanded) {
+      safeSetOverlayExpanded(true);
+    } else {
+      const timer = setTimeout(() => {
+        safeSetOverlayExpanded(false);
+      }, 140);
+      return () => clearTimeout(timer);
+    }
+  }, [isExpanded]);
+
   const handleContextMenu = (e: React.MouseEvent) => {
+    if (isElectron()) {
+      // Allow native Electron context menu if registered
+      return;
+    }
     e.preventDefault();
     const menuWidth = 220;
-    const menuHeight = 230;
-    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - menuWidth - 8));
-    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - menuHeight - 8));
+    const menuHeight = 210;
+    let x = Math.max(8, Math.min(e.clientX, window.innerWidth - menuWidth - 8));
+    let y = Math.max(8, Math.min(e.clientY, window.innerHeight - menuHeight - 8));
     setContextMenuPos({ x, y });
   };
 
   const visibleActivities = activeActivities.filter((a) => !dismissedIds.has(a.id));
   const visibleNotifications = notifications.filter((n) => !dismissedIds.has(n.id));
   
-  // Filter Dreams specifically for the active project
-  const dreamList = activities.filter(
+  // Real Dreams for current active project from projects context + runtime activities
+  const activeProjObj = projects.find((p) => p.id === currentProject.id || p.name === currentProject.name);
+  const storedRecs = activeProjObj?.dreamRecommendations || [];
+
+  // Convert stored dreamRecommendations to ActivityItem format if present
+  const projectStoredDreams = storedRecs.map((rec) => ({
+    id: rec.id,
+    title: rec.title,
+    description: rec.description,
+    category: 'dream' as const,
+    status: (rec.status === 'approved'
+      ? 'completed'
+      : rec.status === 'dismissed'
+      ? 'failed'
+      : 'completed') as any,
+    progress: 100,
+    startTime: rec.createdAt || Date.now(),
+    project: currentProject.name,
+    actionUrl: `/projects`,
+  }));
+
+  const runtimeDreams = activities.filter(
     (a) =>
       a.category === 'dream' &&
       !dismissedIds.has(a.id) &&
       (!a.project || a.project === currentProject.name || a.project === currentProject.id)
   );
 
-  const activeDreamCount = visibleActivities.filter((a) => a.category === 'dream').length;
+  // Combine runtime dreams with stored project dreams (deduped by ID)
+  const existingDreamIds = new Set(runtimeDreams.map((d) => d.id));
+  const combinedDreams = [
+    ...runtimeDreams,
+    ...projectStoredDreams.filter((d) => !existingDreamIds.has(d.id)),
+  ];
+
+  const activeDreamCount = combinedDreams.filter((a) => a.status === 'active' || a.status === 'completed').length;
   const pendingOfflineCount = offlineQueue.filter((i) => i.status === 'pending' || i.status === 'conflict').length;
   const hasSyncConflict = offlineQueue.some((i) => i.status === 'conflict');
 
   const handleApprove = (id: string, actionUrl?: string) => {
     setApprovedIds((prev) => new Set(prev).add(id));
+    const targetDream = combinedDreams.find((d) => d.id === id);
+    if (targetDream) {
+      pushQueue.addToQueue({
+        id: targetDream.id,
+        title: targetDream.title,
+        description: targetDream.description,
+        projectName: currentProject.name,
+      });
+    }
     if (actionUrl) {
       navigate(actionUrl);
       setIsExpanded(false);
@@ -143,10 +203,6 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     setDismissedIds((prev) => new Set(prev).add(id));
   };
 
-  useEffect(() => {
-    safeSetOverlayExpanded(isExpanded);
-  }, [isExpanded]);
-
   // Fast 120-150ms fluid morphing transition matching Apple Liquid Glass guidelines
   const morphTransition = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] };
 
@@ -155,7 +211,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
       ref={containerRef}
       onContextMenu={handleContextMenu}
       className={`${
-        standalone ? 'relative' : 'fixed top-3 left-1/2 -translate-x-1/2 z-[110]'
+        standalone ? 'relative' : 'fixed top-2 left-1/2 -translate-x-1/2 z-[110]'
       } font-sans select-none pointer-events-auto`}
     >
       <AnimatePresence mode="wait">
@@ -180,13 +236,13 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             <div className="h-3.5 w-[1px] bg-white/15" />
 
             <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-[10px] font-mono font-bold text-amber-300">
-              <Sparkles size={10} className="text-amber-400 animate-pulse" />
+              <Sparkles size={10} className="text-amber-400" />
               <span>{aiMode}</span>
             </div>
 
             {activeDreamCount > 0 ? (
-              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-400/35 animate-pulse">
-                <span>{activeDreamCount} Dreaming</span>
+              <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-400/35">
+                <span>{activeDreamCount} Dreams</span>
               </div>
             ) : visibleActivities.length > 0 ? (
               <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
@@ -245,8 +301,8 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/10'
                 }`}
               >
-                <Sparkles size={12} className={activeDreamCount > 0 ? 'animate-spin text-amber-300' : ''} />
-                <span>Dreams ({dreamList.length})</span>
+                <Sparkles size={12} className={activeDreamCount > 0 ? 'text-amber-300' : ''} />
+                <span>Dreams ({combinedDreams.length})</span>
               </button>
 
               <button
@@ -303,7 +359,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
             <div className="p-4 overflow-y-auto space-y-3 flex-1 custom-scrollbar min-h-[260px] max-h-[420px]">
               {activeTab === 'dreams' && (
                 <DreamPanel
-                  dreamList={dreamList}
+                  dreamList={combinedDreams}
                   projectName={currentProject.name}
                   onApprove={handleApprove}
                   onReject={handleDismiss}
@@ -325,7 +381,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
                 <ContextPanel
                   projectName={currentProject.name}
                   activePath={activePath}
-                  activeDreamCount={dreamList.length}
+                  activeDreamCount={combinedDreams.length}
                   activeWorkCount={visibleActivities.length}
                 />
               )}
@@ -437,4 +493,3 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     </div>
   );
 };
-

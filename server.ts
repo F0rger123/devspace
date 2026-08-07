@@ -5,9 +5,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
-const currentDir = typeof __dirname !== 'undefined'
-  ? __dirname
-  : path.dirname(fileURLToPath(import.meta.url));
+const currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import nodemailer from 'nodemailer';
 import * as cheerio from 'cheerio';
@@ -60,7 +58,7 @@ function getAllFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
