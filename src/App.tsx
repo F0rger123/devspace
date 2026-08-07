@@ -18,6 +18,8 @@ import { IdeaExpansion } from './pages/IdeaExpansion';
 import { AgenticOS } from './pages/AgenticOS';
 import { WhatsAppCompanion } from './pages/WhatsAppCompanion';
 import { Automations } from './pages/Automations';
+import { AetherIntelligenceReport } from './pages/AetherIntelligenceReport';
+import { AetherHub } from './pages/AetherHub';
 import { Community } from './pages/Community';
 import { SandboxLoop } from './pages/SandboxLoop';
 import { Create } from './pages/Create';
@@ -94,6 +96,8 @@ export default function App() {
                 <Route path="/community" element={<Community />} />
                 <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
                 <Route path="/automations" element={<Automations />} />
+                <Route path="/aether-report" element={<AetherIntelligenceReport />} />
+                <Route path="/aether-hub" element={<AetherHub />} />
                 {/* Fallback for undefined routes */}
                 <Route
                   path="*"

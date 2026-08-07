@@ -59,7 +59,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
       const saved = localStorage.getItem('devspace_active_aether_mode');
       if (saved) return saved as AIMode;
     }
-    return 'Full Aether';
+    return 'ALWAYS ON';
   });
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());

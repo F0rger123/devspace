@@ -23,6 +23,8 @@ const navItems = [
   { icon: Map, label: 'Roadmap', path: '/roadmap' },
   { icon: Bot, label: 'Project Brain', path: '/brain' },
   { icon: TerminalSquare, label: 'Agentic OS', path: '/agents' },
+  { icon: BrainCircuit, label: 'Aether Hub', path: '/aether-hub' },
+  { icon: Sparkles, label: 'Aether Report', path: '/aether-report' },
   { icon: Zap, label: 'Automations', path: '/automations' },
   { icon: Github, label: 'GitHub Int.', path: '/github' },
   { icon: FileText, label: 'Workspace Docs', path: '/docs' },

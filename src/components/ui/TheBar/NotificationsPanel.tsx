@@ -88,6 +88,19 @@ export const NotificationsPanel: React.FC<NotificationsPanelProps> = ({
               </div>
             </div>
             <p className="text-[10.5px] text-zinc-300 pl-5 leading-snug">{n.message}</p>
+            {n.reason && (
+              <p className="text-[9.5px] text-amber-300/90 pl-5 italic font-sans">{n.reason}</p>
+            )}
+            {n.impact && (
+              <div className="pl-5 pt-0.5 flex items-center gap-2 text-[9px] text-emerald-300 font-mono">
+                <span>Impact: {n.impact.metric} ({n.impact.value})</span>
+              </div>
+            )}
+            {n.suggestedAction && (
+              <div className="pl-5 pt-0.5 text-[9px] text-cyan-300 font-mono">
+                <span>Action: {n.suggestedAction}</span>
+              </div>
+            )}
           </div>
         ))
       )}

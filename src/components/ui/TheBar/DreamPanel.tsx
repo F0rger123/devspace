@@ -49,12 +49,12 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
 
   const queueItems = useSyncExternalStore(
     pushQueue.subscribe,
-    pushQueue.getItems,
-    pushQueue.getItems
+    pushQueue.getSnapshot,
+    pushQueue.getSnapshot
   );
 
-  const projectQueueItems = queueItems.filter(
-    (i) => i.projectName.toLowerCase() === projectName.toLowerCase()
+  const projectQueueItems = (queueItems || []).filter(
+    (i) => i && i.projectName && i.projectName.toLowerCase() === (projectName || '').toLowerCase()
   );
 
   const currentDream = dreamList[selectedIndex] || dreamList[0];

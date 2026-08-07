@@ -17,6 +17,9 @@ import { useData } from '../../context/DataProvider';
 import { useStore } from '../../store';
 import { AuthScreen } from '../auth/AuthScreen';
 import { SetupWizard } from '../auth/SetupWizard';
+import { DreamReviewStudio } from '../DreamReviewStudio';
+import { DailyAetherBriefModal } from '../DailyAetherBriefModal';
+import { CursorInspectionModal } from '../CursorInspectionModal';
 import { Users } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/auth';
@@ -241,8 +244,44 @@ export function CursorAmbers() {
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const { isSidebarOpen, toggleSidebar, setSidebarOpen, isRightSidebarOpen, toggleRightSidebar, isKineticEnabled } = useStore();
   const { isAssistantOpen, isAssistantMinimized, setIsAssistantMinimized, googleUser, acceptInvitation, declineInvitation, userProfile } = useData();
+
+  const [dreamStudioOpen, setDreamStudioOpen] = useState(false);
+  const [dailyBriefOpen, setDailyBriefOpen] = useState(false);
+  const [cursorInspectionOpen, setCursorInspectionOpen] = useState(false);
+  const [activeDreamRecord, setActiveDreamRecord] = useState<any>(null);
+
+  useEffect(() => {
+    const handleOpenDreamReview = (e: any) => {
+      if (e?.detail?.record) setActiveDreamRecord(e.detail.record);
+      setDreamStudioOpen(true);
+    };
+    const handleOpenDailyBrief = () => setDailyBriefOpen(true);
+    const handleOpenCursorInspection = () => setCursorInspectionOpen(true);
+
+    window.addEventListener('devspace:open-dream-review', handleOpenDreamReview as any);
+    window.addEventListener('devspace:open-daily-brief', handleOpenDailyBrief);
+    window.addEventListener('devspace:open-cursor-inspection', handleOpenCursorInspection);
+
+    // Auto-trigger daily briefing once per session day
+    const todayStr = new Date().toISOString().split('T')[0];
+    const lastSeen = localStorage.getItem('devspace_last_brief_date');
+    if (lastSeen !== todayStr) {
+      localStorage.setItem('devspace_last_brief_date', todayStr);
+      const timer = setTimeout(() => {
+        setDailyBriefOpen(true);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+
+    return () => {
+      window.removeEventListener('devspace:open-dream-review', handleOpenDreamReview as any);
+      window.removeEventListener('devspace:open-daily-brief', handleOpenDailyBrief);
+      window.removeEventListener('devspace:open-cursor-inspection', handleOpenCursorInspection);
+    };
+  }, []);
 
   useEffect(() => {
     if (isKineticEnabled && isAssistantOpen && !isAssistantMinimized) {
@@ -303,7 +342,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     };
   }, [setSidebarOpen]);
   const location = useLocation();
-  const navigate = useNavigate();
   const isAssistantRoute = location.pathname === '/assistant';
   const isWhatsAppRoute = location.pathname === '/whatsapp-companion';
 
@@ -648,6 +686,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </motion.div>
         </div>
       )}
+      {/* Desktop Aether Intelligence Modals */}
+      <DreamReviewStudio
+        isOpen={dreamStudioOpen}
+        dreamRecord={activeDreamRecord}
+        onClose={() => setDreamStudioOpen(false)}
+      />
+      <DailyAetherBriefModal
+        isOpen={dailyBriefOpen}
+        onClose={() => setDailyBriefOpen(false)}
+        onResumeWorking={() => setDailyBriefOpen(false)}
+        onOpenReport={() => {
+          setDailyBriefOpen(false);
+          navigate('/aether-report');
+        }}
+      />
+      <CursorInspectionModal
+        isOpen={cursorInspectionOpen}
+        onClose={() => setCursorInspectionOpen(false)}
+      />
     </div>
   );
 }

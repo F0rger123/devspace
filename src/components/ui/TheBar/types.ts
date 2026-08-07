@@ -1,12 +1,12 @@
 import React from 'react';
 
 export type AIMode =
-  | 'Off'
-  | 'Muted'
-  | 'Waiting for Keyword'
-  | 'Context Mode'
-  | 'Open / Always Listening'
-  | 'Full Aether';
+  | 'OFF'
+  | 'WAITING FOR KEYWORD'
+  | 'CONTEXT'
+  | 'LISTENING'
+  | 'ALWAYS ON'
+  | 'FOCUS';
 
 export type TheBarTab = 'dreams' | 'live' | 'aether' | 'sync' | 'notifications';
 

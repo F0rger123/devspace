@@ -1,5 +1,5 @@
 import React from 'react';
-import { Power, VolumeX, Radio, Target, Mic, Sparkles } from 'lucide-react';
+import { Power, Radio, Target, Mic, Monitor, ShieldAlert } from 'lucide-react';
 import { AIMode } from './types';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
 import { activityCenter } from '../../../lib/activityCenterService';
@@ -10,12 +10,12 @@ interface AIModeSwitcherProps {
 }
 
 const MODES: { mode: AIMode; label: string; icon: React.ReactNode; description: string }[] = [
-  { mode: 'Off', label: 'Off', icon: <Power size={11} />, description: 'AI background suspended' },
-  { mode: 'Muted', label: 'Muted', icon: <VolumeX size={11} />, description: 'Audio & notifications silenced' },
-  { mode: 'Waiting for Keyword', label: 'Waiting for Keyword', icon: <Radio size={11} />, description: 'Listening for wake word trigger' },
-  { mode: 'Context Mode', label: 'Context Mode', icon: <Target size={11} />, description: 'Screen & drawing context active' },
-  { mode: 'Open / Always Listening', label: 'Open / Always Listening', icon: <Mic size={11} />, description: 'Continuous open mic input' },
-  { mode: 'Full Aether', label: 'Full Aether', icon: <Sparkles size={11} />, description: 'Unrestricted neural intelligence' },
+  { mode: 'OFF', label: 'OFF', icon: <Power size={11} />, description: 'Nothing running' },
+  { mode: 'WAITING FOR KEYWORD', label: 'WAITING FOR KEYWORD', icon: <Radio size={11} />, description: 'Listens only for "Hey Aether"' },
+  { mode: 'CONTEXT', label: 'CONTEXT', icon: <Target size={11} />, description: 'Reads workspace & answers questions' },
+  { mode: 'LISTENING', label: 'LISTENING', icon: <Mic size={11} />, description: 'Continuous open mic conversation' },
+  { mode: 'ALWAYS ON', label: 'ALWAYS ON', icon: <Monitor size={11} />, description: 'Works across desktop overlay' },
+  { mode: 'FOCUS', label: 'FOCUS', icon: <ShieldAlert size={11} />, description: 'Only interrupts for important events' },
 ];
 
 export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onSelectMode }) => {
@@ -24,67 +24,80 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
   const handleModeChange = (mode: AIMode) => {
     onSelectMode(mode);
 
-    // Persist mode choice
     if (typeof window !== 'undefined') {
       localStorage.setItem('devspace_active_aether_mode', mode);
+      window.dispatchEvent(new CustomEvent('devspace:aether-voice-mode-changed', { detail: { mode } }));
     }
 
     switch (mode) {
-      case 'Off':
-        updateConfig({ dreamFrequency: 'disabled', offlineSyncFrequency: 'manual' });
+      case 'OFF':
+        updateConfig({ dreamFrequency: 'disabled', soundEnabled: false });
         activityCenter.addNotification({
-          title: 'Aether Engine Off',
-          message: 'All background AI intelligence suspended.',
+          title: 'Aether Engine OFF',
+          message: 'All background voice & AI tasks completely suspended.',
           type: 'warning',
           category: 'ai',
+          summary: 'Aether Disables',
+          reason: 'WHY: Developer toggled OFF mode.',
         });
         break;
 
-      case 'Muted':
-        updateConfig({ soundEnabled: false, desktopNotifications: true });
+      case 'WAITING FOR KEYWORD':
+        updateConfig({ soundEnabled: true });
         activityCenter.addNotification({
-          title: 'Aether Muted',
-          message: 'Audio playback & chime feedback silenced.',
-          type: 'warning',
-          category: 'ai',
-        });
-        break;
-
-      case 'Waiting for Keyword':
-        activityCenter.addNotification({
-          title: 'Waiting for Keyword',
-          message: 'Wake-word detection armed in background.',
+          title: 'Wake-Word Mode Active',
+          message: 'Listening specifically for "Hey Aether"...',
           type: 'info',
           category: 'voice',
+          summary: 'Wake-Word Listening',
+          reason: 'WHY: Armed keyword listener.',
+          suggestedAction: 'Say "Hey Aether" to issue voice commands.',
         });
         break;
 
-      case 'Context Mode':
+      case 'CONTEXT':
         activityCenter.addNotification({
           title: 'Context Mode Active',
-          message: 'Active window and spatial drawing context attached.',
+          message: 'Reading active workspace context to answer questions without proactive speech.',
           type: 'info',
           category: 'ai',
+          summary: 'Workspace Context Active',
+          reason: 'WHY: Silent context reader ready.',
         });
         break;
 
-      case 'Open / Always Listening':
+      case 'LISTENING':
         window.dispatchEvent(new CustomEvent('devspace:voice-activate'));
         activityCenter.addNotification({
-          title: 'Open Mic Active',
-          message: 'Continuous voice stream online.',
+          title: 'Continuous Voice Stream Active',
+          message: 'Open conversation microphone running while DevSpace is open.',
           type: 'info',
           category: 'voice',
+          summary: 'Open Mic Active',
+          reason: 'WHY: Developer enabled continuous conversation.',
         });
         break;
 
-      case 'Full Aether':
-        updateConfig({ dreamFrequency: 'aggressive' });
+      case 'ALWAYS ON':
         activityCenter.addNotification({
-          title: 'Full Aether Intelligence Active',
-          message: 'Full-spectrum neural reasoning and workspace awareness online.',
+          title: 'Always On Desktop Mode',
+          message: 'Aether operating across all desktop monitors & active windows.',
           type: 'info',
           category: 'ai',
+          summary: 'Desktop Companion Online',
+          reason: 'WHY: Multi-monitor IPC awareness enabled.',
+        });
+        break;
+
+      case 'FOCUS':
+        updateConfig({ soundEnabled: false });
+        activityCenter.addNotification({
+          title: 'Focus Quiet Mode Active',
+          message: 'Non-critical alerts silenced. Only high-priority events will interrupt.',
+          type: 'warning',
+          category: 'ai',
+          summary: 'Focus Quiet Mode',
+          reason: 'WHY: Minimizing developer cognitive interrupts.',
         });
         break;
     }
@@ -92,21 +105,21 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
 
   return (
     <div className="flex items-center gap-1 overflow-x-auto custom-scrollbar max-w-full py-0.5">
-      {MODES.map(({ mode, label, icon }) => {
+      {MODES.map(({ mode, label, icon, description }) => {
         const isActive = currentMode === mode;
         return (
           <button
             key={mode}
+            title={description}
             onClick={() => handleModeChange(mode)}
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[10px] whitespace-nowrap transition border ${
               isActive
-                ? 'bg-amber-400 text-zinc-950 shadow-sm font-extrabold border border-amber-300 ring-1 ring-amber-400/50'
-                : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10 hover:border-white/20'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold shadow-sm'
+                : 'bg-zinc-900/60 text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:bg-zinc-800'
             }`}
           >
-            <span className={isActive ? 'text-zinc-950' : 'text-amber-400'}>{icon}</span>
+            {icon}
             <span>{label}</span>
-            {isActive && <span className="w-1.5 h-1.5 rounded-full bg-zinc-950 animate-ping" />}
           </button>
         );
       })}

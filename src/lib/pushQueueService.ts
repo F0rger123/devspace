@@ -25,53 +25,65 @@ class PushQueueManager {
   }
 
   private loadFromStorage() {
+    this.queue = [];
     if (typeof window === 'undefined') return;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        this.queue = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          this.queue = parsed;
+        }
       }
     } catch (e) {
       console.warn('Failed to load push queue:', e);
+      this.queue = [];
     }
   }
 
   private saveToStorage() {
     if (typeof window === 'undefined') return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.queue));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.queue || []));
     } catch (e) {
       console.warn('Failed to save push queue:', e);
     }
   }
+
+  private notify = () => {
+    this.saveToStorage();
+    this.listeners.forEach((fn) => fn());
+  };
 
   public subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
 
-  private notify() {
-    this.saveToStorage();
-    this.listeners.forEach((fn) => fn());
-  }
+  public getSnapshot = (): PushQueueItem[] => {
+    return this.queue || [];
+  };
 
-  public getItems(): PushQueueItem[] {
-    return [...this.queue];
-  }
+  public getItems = (): PushQueueItem[] => {
+    return this.queue || [];
+  };
 
-  public getItemsForProject(projectName: string): PushQueueItem[] {
+  public getItemsForProject = (projectName: string): PushQueueItem[] => {
+    if (!this.queue || !projectName) return [];
     return this.queue.filter(
-      (item) => item.projectName.toLowerCase() === projectName.toLowerCase()
+      (item) => item.projectName && item.projectName.toLowerCase() === projectName.toLowerCase()
     );
-  }
+  };
 
-  public addToQueue(dream: {
+  public addToQueue = (dream: {
     id: string;
     title: string;
     description?: string;
     projectName: string;
     targetBranch?: string;
-  }): PushQueueItem {
+  }): PushQueueItem => {
+    if (!this.queue) this.queue = [];
+
     // Avoid duplicate queueing for same dream
     const existing = this.queue.find((i) => i.dreamId === dream.id);
     if (existing) {
@@ -90,7 +102,7 @@ class PushQueueManager {
       selected: true,
     };
 
-    this.queue.unshift(newItem);
+    this.queue = [newItem, ...this.queue];
     this.notify();
 
     // Trigger explicit lifecycle notification
@@ -102,38 +114,43 @@ class PushQueueManager {
     });
 
     return newItem;
-  }
+  };
 
-  public toggleSelection(id: string) {
+  public toggleSelection = (id: string) => {
+    if (!this.queue) return;
     this.queue = this.queue.map((item) =>
       item.id === id ? { ...item, selected: !item.selected } : item
     );
     this.notify();
-  }
+  };
 
-  public updateTargetBranch(id: string, newBranch: string) {
+  public updateTargetBranch = (id: string, newBranch: string) => {
+    if (!this.queue) return;
     this.queue = this.queue.map((item) =>
       item.id === id ? { ...item, targetBranch: newBranch } : item
     );
     this.notify();
-  }
+  };
 
-  public removeFromQueue(id: string) {
+  public removeFromQueue = (id: string) => {
+    if (!this.queue) return;
     this.queue = this.queue.filter((item) => item.id !== id);
     this.notify();
-  }
+  };
 
-  public clearPushed() {
+  public clearPushed = () => {
+    if (!this.queue) return;
     this.queue = this.queue.filter((item) => item.status !== 'pushed');
     this.notify();
-  }
+  };
 
-  public async executePushBatch(options: {
+  public executePushBatch = async (options: {
     projectName: string;
     squash?: boolean;
     customBranch?: string;
     itemIds?: string[];
-  }): Promise<{ success: boolean; pushedCount: number; message: string }> {
+  }): Promise<{ success: boolean; pushedCount: number; message: string }> => {
+    if (!this.queue) this.queue = [];
     const selectedItems = this.queue.filter((item) => {
       if (item.status === 'pushed') return false;
       if (options.itemIds && options.itemIds.length > 0) {
@@ -141,6 +158,7 @@ class PushQueueManager {
       }
       return (
         item.selected &&
+        item.projectName &&
         item.projectName.toLowerCase() === options.projectName.toLowerCase()
       );
     });

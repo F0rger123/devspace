@@ -66,6 +66,15 @@ export interface ActivityNotification {
   read: boolean;
   category?: string;
   actionUrl?: string;
+  summary?: string;
+  reason?: string;
+  suggestedAction?: string;
+  impact?: { metric: string; value: string };
+  confidence?: number;
+  relatedDreams?: string[];
+  relatedIssues?: string[];
+  relatedCommits?: string[];
+  relatedFiles?: string[];
 }
 
 export interface ActivityModuleConfig {

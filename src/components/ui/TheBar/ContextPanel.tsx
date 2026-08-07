@@ -179,14 +179,15 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
 
         <div className="flex flex-wrap gap-1.5 text-[10px]">
           {[
+            { label: 'Review screen', action: 'Review what I am looking at' },
+            { label: 'Why this Dream?', action: 'Explain why this Dream exists' },
+            { label: 'Summarize today', action: 'Summarize today\'s work' },
+            { label: 'What next?', action: 'What should I do next?' },
+            { label: 'What changed?', action: 'What changed since yesterday?' },
+            { label: 'Find similar', action: 'Find similar Dreams' },
+            { label: 'Related files', action: 'Why are these files related?' },
             { label: 'Create Dream', action: 'Create Dream' },
-            { label: 'Summarize', action: 'Summarize' },
             { label: 'Review code', action: 'Review code' },
-            { label: 'Turn into tasks', action: 'Turn into tasks' },
-            { label: 'Paste here', action: 'Paste here' },
-            { label: 'Circle this', action: 'Circle this' },
-            { label: 'What changed?', action: 'What changed?' },
-            { label: 'What next?', action: 'What next?' },
           ].map(({ label, action }) => (
             <button
               key={label}

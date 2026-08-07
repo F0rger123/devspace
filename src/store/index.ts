@@ -124,34 +124,14 @@ const initialRightSidebarOpen = localStorage.getItem('isRightSidebarOpen') !== n
   : !isMobile;
 
 export const DEFAULT_GESTURES: KineticGesture[] = [
-  { id: 'swipe-left', name: 'Swipe Left', action: 'toggle-sidebar', direction: 'left' },
-  { id: 'swipe-right', name: 'Swipe Right', action: 'toggle-sidebar', direction: 'right' },
+  { id: 'thumbs-up', name: 'Thumbs Up', action: 'approve-dream' as any, direction: 'thumbs-up' },
+  { id: 'thumbs-down', name: 'Thumbs Down', action: 'reject-dream' as any, direction: 'thumbs-down' },
+  { id: 'swipe-left', name: 'Swipe Left', action: 'prev-dream' as any, direction: 'left' },
+  { id: 'swipe-right', name: 'Swipe Right', action: 'next-dream' as any, direction: 'right' },
+  { id: 'open-hand', name: 'Open Hand', action: 'dismiss-notification' as any, direction: 'pose-5' },
+  { id: 'pinch', name: 'Pinch Gesture', action: 'toggle-overlay' as any, direction: 'pinch' },
+  { id: 'peace-sign', name: 'Peace Sign', action: 'open-dream-review' as any, direction: 'pose-2' },
   { id: 'swipe-up', name: 'Swipe Up', action: 'toggle-command-palette', direction: 'up' },
-  { id: 'wave', name: 'Wave Gesture', action: 'toggle-right-sidebar', direction: 'wave' },
-  { id: 'peace-sign', name: 'Peace Sign (2 Fingers)', action: 'custom-alert', direction: 'pose-2', customText: '✌️ Zen State Enabled! Kinetic peace sign posture active.' },
-  { id: 'three-fingers', name: 'Three-Finger Capture', action: 'custom-alert', direction: 'pose-3', customText: '📝 Logged hands-free snap event via Three-Finger Pose!' },
-  { 
-    id: 'toggle-macro', 
-    name: 'Sidebar Duo Macro', 
-    action: 'macro', 
-    direction: 'pose-4', 
-    macroActions: ['toggle-sidebar', 'toggle-right-sidebar'], 
-    macroDelay: 450 
-  },
-  { 
-    id: 'hud-macro', 
-    name: 'Command Portal Macro', 
-    action: 'macro', 
-    direction: 'pose-5', 
-    macroActions: ['toggle-command-palette', 'toggle-right-sidebar'], 
-    macroDelay: 500 
-  },
-  // Double Hand Gestures
-  { id: 'double-peace', name: 'Double Peace Signs (2+2 Fingers)', action: 'zen-mode', direction: 'double-pose-2-2' },
-  { id: 'double-highfive', name: 'Double High Five (5+5 Fingers)', action: 'macro', direction: 'double-pose-5-5', macroActions: ['create-quick-note', 'trigger-sync'] as any, macroDelay: 400 },
-  { id: 'one-peace-one-highfive', name: 'Peace + High Five (2+5 Combo)', action: 'ai-summary-capture', direction: 'double-pose-2-5' },
-  { id: 'double-pointers', name: 'Double Pointers (1+1 Fingers)', action: 'macro', direction: 'double-pose-1-1', macroActions: ['toggle-command-palette', 'toggle-right-sidebar'] as any, macroDelay: 350 },
-  { id: 'pointer-highfive', name: 'Pointer + High Five (1+5 Combo)', action: 'copy-active-note', direction: 'double-pose-1-5' }
 ];
 
 export const useStore = create<StoreState>((set) => {
