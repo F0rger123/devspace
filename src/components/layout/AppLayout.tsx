@@ -534,11 +534,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
             )}
           </AnimatePresence>
 
-          <main className={`flex-grow flex flex-col min-w-0 ${isAssistantRoute ? 'h-full overflow-hidden' : 'md:overflow-hidden overflow-y-auto'} bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          <main className={`flex-grow flex flex-col min-w-0 ${isAssistantRoute ? 'h-full overflow-hidden' : 'h-full overflow-y-auto custom-scrollbar'} bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isAssistantOpen && isAssistantMinimized ? 'md:mr-[440px]' : ''
           }`}>
-            <div className={`flex-grow ${isAssistantRoute ? 'p-0 h-full overflow-hidden' : 'md:overflow-hidden overflow-y-auto p-3 md:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
-              <div className={`w-full flex flex-col ${isAssistantRoute ? 'h-full overflow-hidden' : 'h-auto md:h-full md:overflow-hidden'}`}>
+            <div className={`flex-grow ${isAssistantRoute ? 'p-0 h-full overflow-hidden' : 'p-3 md:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
+              <div className={`w-full flex flex-col ${isAssistantRoute ? 'h-full overflow-hidden' : 'min-h-full'}`}>
                 {children}
               </div>
             </div>

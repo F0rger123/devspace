@@ -549,25 +549,28 @@ export function Header() {
       </div>
 
       {/* Global Undo / Redo Actions Toolbar */}
-      <div className="hidden lg:flex items-center gap-1 bg-zinc-950 border border-zinc-850 rounded-lg p-0.5 shrink-0">
+      <div className="hidden lg:flex items-center gap-1.5 bg-zinc-950/80 backdrop-blur-md border border-zinc-850 rounded-lg p-1 shrink-0">
         <button
           onClick={async () => {
             haptic.light();
             await undoRedoManager.undo();
           }}
           disabled={!canUndo}
-          className={`px-2 py-1 rounded text-xs transition-all duration-150 flex items-center gap-1 cursor-pointer select-none ${
+          className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono transition-all duration-200 cursor-pointer select-none active:scale-95 ${
             canUndo
-              ? 'text-yellow-300 hover:text-yellow-100 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 active:bg-amber-500/30 active:border-amber-500/60 active:scale-95 shadow-[0_0_8px_rgba(234,179,8,0.1)]'
-              : 'text-zinc-600 opacity-40 cursor-not-allowed'
+              ? 'bg-yellow-500/10 hover:bg-yellow-500/25 border-yellow-500/40 text-yellow-300 hover:text-yellow-100 shadow-[0_0_12px_rgba(245,158,11,0.2)] hover:shadow-[0_0_18px_rgba(245,158,11,0.45)]'
+              : 'bg-zinc-900/40 border-zinc-850 text-zinc-600 opacity-40 cursor-not-allowed'
           }`}
-          title="Global Undo (Ctrl+Z / Cmd+Z)"
+          title="Global Undo (⌘Z / Ctrl+Z)"
         >
-          <Undo2 size={13} className={canUndo ? 'text-yellow-400' : ''} />
-          <span className="text-[10px] font-mono font-bold uppercase hidden xl:inline">Undo</span>
+          <Undo2 size={13} className={`transition-transform duration-200 ${canUndo ? 'text-yellow-400 group-hover:-translate-x-0.5 group-hover:scale-110' : ''}`} />
+          <span className="text-[10px] font-bold uppercase hidden xl:inline">Undo</span>
+          <kbd className="hidden xl:inline-block px-1 py-0.2 rounded text-[8px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold ml-0.5">
+            ⌘Z
+          </kbd>
         </button>
 
-        <div className="w-[1px] h-3 bg-zinc-850" />
+        <div className="w-[1px] h-3.5 bg-zinc-800" />
 
         <button
           onClick={async () => {
@@ -575,15 +578,18 @@ export function Header() {
             await undoRedoManager.redo();
           }}
           disabled={!canRedo}
-          className={`px-2 py-1 rounded text-xs transition-all duration-150 flex items-center gap-1 cursor-pointer select-none ${
+          className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono transition-all duration-200 cursor-pointer select-none active:scale-95 ${
             canRedo
-              ? 'text-yellow-300 hover:text-yellow-100 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 active:bg-amber-500/30 active:border-amber-500/60 active:scale-95 shadow-[0_0_8px_rgba(234,179,8,0.1)]'
-              : 'text-zinc-600 opacity-40 cursor-not-allowed'
+              ? 'bg-yellow-500/10 hover:bg-yellow-500/25 border-yellow-500/40 text-yellow-300 hover:text-yellow-100 shadow-[0_0_12px_rgba(245,158,11,0.2)] hover:shadow-[0_0_18px_rgba(245,158,11,0.45)]'
+              : 'bg-zinc-900/40 border-zinc-850 text-zinc-600 opacity-40 cursor-not-allowed'
           }`}
-          title="Global Redo (Ctrl+Shift+Z / Cmd+Shift+Z)"
+          title="Global Redo (⌘⇧Z / Ctrl+Shift+Z)"
         >
-          <Redo2 size={13} className={canRedo ? 'text-yellow-400' : ''} />
-          <span className="text-[10px] font-mono font-bold uppercase hidden xl:inline">Redo</span>
+          <Redo2 size={13} className={`transition-transform duration-200 ${canRedo ? 'text-yellow-400 group-hover:translate-x-0.5 group-hover:scale-110' : ''}`} />
+          <span className="text-[10px] font-bold uppercase hidden xl:inline">Redo</span>
+          <kbd className="hidden xl:inline-block px-1 py-0.2 rounded text-[8px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold ml-0.5">
+            ⌘⇧Z
+          </kbd>
         </button>
       </div>
       <div className="flex items-center gap-2.5 sm:gap-4.5">

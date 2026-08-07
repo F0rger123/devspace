@@ -699,7 +699,16 @@ export function Design() {
       // Replace lucide-react imports
       .replace(/import\s+\{([\s\S]*?)\}\s*from\s*['"]lucide-react['"];?/g, (m, p1) => {
         const cleanProps = p1.replace(/[\{\}]/g, '').replace(/\s+/g, ' ').trim().replace(/\b([A-Za-z0-9_$]+)\s+as\s+([A-Za-z0-9_$]+)\b/g, '$1: $2');
-        return `const { ${cleanProps} } = window.LucideReact || window.lucide || {};`;
+        return `const _iconsSource = window.LucideReact || window.lucideReact || window.lucide || {};
+const _safeIcons = new Proxy(_iconsSource, {
+  get: (target, prop) => {
+    if (prop in target && target[prop]) return target[prop];
+    return function FallbackIcon(props) {
+      return React.createElement('span', { className: props?.className || 'inline-block text-amber-400' }, '✦');
+    };
+  }
+});
+const { ${cleanProps} } = _safeIcons;`;
       })
       // Replace recharts imports
       .replace(/import\s+\{([\s\S]*?)\}\s*from\s*['"]recharts['"];?/g, (m, p1) => {

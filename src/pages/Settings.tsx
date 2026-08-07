@@ -15,6 +15,7 @@ import { DesktopAutoUpdateCenter } from '../components/DesktopAutoUpdateCenter';
 import { BiometricSessionSecuritySettings } from '../components/BiometricSessionSecuritySettings';
 import { ActivityCenterSettingsTab } from '../components/ui/ActivityCenterSettingsTab';
 import { DesktopOverlaySettingsTab } from '../components/DesktopOverlaySettingsTab';
+import { IntegrationsCenter } from '../components/IntegrationsCenter';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 import { isElectron } from '../lib/electronBridge';
 
@@ -2182,48 +2183,7 @@ export function Settings() {
           )}
 
           {activeTab === 'integrations' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-100 mb-1">Connected Services</h3>
-                <p className="text-xs text-zinc-400">Link external platforms to enrich project context and agent capabilities.</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {integrations.map((integration, idx) => (
-                  <motion.div
-                    key={integration.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="border border-zinc-800 bg-[#09090b] rounded-lg p-4 flex flex-col hover:border-zinc-700 transition-colors"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className={`p-2 rounded-md bg-[#18181b] border border-zinc-800 ${integration.color}`}>
-                        <integration.icon size={16} />
-                      </div>
-                      {integration.connected ? (
-                        <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                          <CheckCircle2 size={10} /> Connected
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-medium text-zinc-500 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">
-                          Not Connected
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-zinc-200 mb-1">{integration.name}</h4>
-                      <p className="text-xs text-zinc-500 leading-relaxed">{integration.description}</p>
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-zinc-800/50 flex justify-end">
-                      <button className={`text-xs font-medium transition-colors ${integration.connected ? 'text-zinc-500 hover:text-zinc-300' : 'text-blue-400 hover:text-blue-300'}`}>
-                        {integration.connected ? 'Manage' : 'Connect'}
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
+            <IntegrationsCenter />
           )}
 
           {activeTab === 'voice-triggers' && (
