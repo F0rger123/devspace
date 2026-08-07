@@ -1,4 +1,4 @@
-import { Bell, HelpCircle, Search, Menu, PanelRight, Copy, Check, ExternalLink, Users, Hand, Zap, Move, CameraOff, Mic, MicOff, Sparkles, Target, LayoutDashboard, FolderGit2, Bot, CheckSquare, Map, Github, FileText, Terminal, X, Send, ArrowRight, Download, Laptop, Monitor } from 'lucide-react';
+import { Bell, HelpCircle, Search, Menu, PanelRight, Copy, Check, ExternalLink, Users, Hand, Zap, Move, CameraOff, Mic, MicOff, Sparkles, Target, LayoutDashboard, FolderGit2, Bot, CheckSquare, Map, Github, FileText, Terminal, X, Send, ArrowRight, Download, Laptop, Monitor, Undo2, Redo2 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SyncPopover } from '../ui/SyncPopover';
 import { DownloadDesktopModal } from '../ui/DownloadDesktopModal';
 import { haptic } from '../../utils/haptics';
+import { undoRedoManager } from '../../lib/aetherActionEngine';
 
 import { isElectron } from '../../lib/electronBridge';
 
@@ -50,8 +51,33 @@ export function Header() {
   const [executing, setExecuting] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const [canUndo, setCanUndo] = useState(() => undoRedoManager.canUndo());
+  const [canRedo, setCanRedo] = useState(() => undoRedoManager.canRedo());
+
   useEffect(() => {
+    const syncUndoState = () => {
+      setCanUndo(undoRedoManager.canUndo());
+      setCanRedo(undoRedoManager.canRedo());
+    };
+    window.addEventListener('aether-undo-state-changed', syncUndoState);
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Command/Ctrl + Shift + Z or Command/Ctrl + Y for Redo
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && e.shiftKey) {
+        e.preventDefault();
+        undoRedoManager.redo();
+        syncUndoState();
+        return;
+      }
+      // Command/Ctrl + Z for Undo
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+        // Only trigger if not typing inside an input/textarea
+        if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+        e.preventDefault();
+        undoRedoManager.undo();
+        syncUndoState();
+        return;
+      }
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         if (searchInputRef.current) {
@@ -65,6 +91,7 @@ export function Header() {
     window.addEventListener('devspace-open-download-modal', handleOpenDownloadModal);
     window.addEventListener('devspace-open-desktop-download', handleOpenDownloadModal);
     return () => {
+      window.removeEventListener('aether-undo-state-changed', syncUndoState);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('devspace-open-download-modal', handleOpenDownloadModal);
       window.removeEventListener('devspace-open-desktop-download', handleOpenDownloadModal);
@@ -383,7 +410,7 @@ export function Header() {
           </AnimatePresence>
         </div>
       </div>
-      <div className="flex-grow max-w-md mx-2 sm:mx-8 relative hidden sm:block">
+      <div className="flex-grow max-w-xs sm:max-w-[260px] mx-2 sm:mx-4 relative hidden sm:block">
         <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none z-10">
           <span className="text-zinc-600 text-xs mr-2">
             {searchQuery.startsWith('>') ? (
@@ -519,6 +546,45 @@ export function Header() {
             </>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Global Undo / Redo Actions Toolbar */}
+      <div className="hidden lg:flex items-center gap-1 bg-zinc-950 border border-zinc-850 rounded-lg p-0.5 shrink-0">
+        <button
+          onClick={async () => {
+            haptic.light();
+            await undoRedoManager.undo();
+          }}
+          disabled={!canUndo}
+          className={`px-2 py-1 rounded text-xs transition-all duration-150 flex items-center gap-1 cursor-pointer select-none ${
+            canUndo
+              ? 'text-yellow-300 hover:text-yellow-100 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 active:bg-amber-500/30 active:border-amber-500/60 active:scale-95 shadow-[0_0_8px_rgba(234,179,8,0.1)]'
+              : 'text-zinc-600 opacity-40 cursor-not-allowed'
+          }`}
+          title="Global Undo (Ctrl+Z / Cmd+Z)"
+        >
+          <Undo2 size={13} className={canUndo ? 'text-yellow-400' : ''} />
+          <span className="text-[10px] font-mono font-bold uppercase hidden xl:inline">Undo</span>
+        </button>
+
+        <div className="w-[1px] h-3 bg-zinc-850" />
+
+        <button
+          onClick={async () => {
+            haptic.light();
+            await undoRedoManager.redo();
+          }}
+          disabled={!canRedo}
+          className={`px-2 py-1 rounded text-xs transition-all duration-150 flex items-center gap-1 cursor-pointer select-none ${
+            canRedo
+              ? 'text-yellow-300 hover:text-yellow-100 hover:bg-yellow-500/20 border border-yellow-500/30 hover:border-yellow-500/50 active:bg-amber-500/30 active:border-amber-500/60 active:scale-95 shadow-[0_0_8px_rgba(234,179,8,0.1)]'
+              : 'text-zinc-600 opacity-40 cursor-not-allowed'
+          }`}
+          title="Global Redo (Ctrl+Shift+Z / Cmd+Shift+Z)"
+        >
+          <Redo2 size={13} className={canRedo ? 'text-yellow-400' : ''} />
+          <span className="text-[10px] font-mono font-bold uppercase hidden xl:inline">Redo</span>
+        </button>
       </div>
       <div className="flex items-center gap-2.5 sm:gap-4.5">
         <div className="flex items-center gap-2.5 sm:gap-4">

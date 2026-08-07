@@ -59,6 +59,9 @@ import { getAllAvailableModels } from '../../lib/localModelEngine';
 import { useStore } from '../../store';
 import { db } from '../../lib/auth';
 import { collection, getDocs, setDoc, doc, deleteDoc } from 'firebase/firestore';
+import { aetherConversationalEngine } from '../../lib/aetherConversationalEngine';
+import { masterIdeaLibrary } from '../../lib/masterIdeaLibraryService';
+import { aetherSpotify } from '../../lib/aetherSpotifyEngine';
 
 type Message = {
   id: string;
@@ -1048,6 +1051,119 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
     let targetPath = '';
     let descName = '';
+
+    // Phase 9.0 Conversational Intelligence & Reference Resolution
+    const resRef = aetherConversationalEngine.resolveReferences(textToSend, projects);
+
+    // 1. EXPLAIN MODE HANDLER
+    if (lower.startsWith('explain ') || lower.includes('explain code') || lower.includes('explain dream') || lower.includes('explain issue') || lower.includes('explain architecture')) {
+      const depth = lower.includes('beginner') ? 'beginner' : lower.includes('expert') ? 'expert' : 'intermediate';
+      const target = textToSend.replace(/explain\s+/i, '').replace(/in\s+(beginner|intermediate|expert)\s+terms/i, '').trim() || 'Active Architecture';
+      const explanation = aetherConversationalEngine.getExplainExplanation(target, depth);
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: explanation };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(explanation);
+      return;
+    }
+
+    // 2. BRAINSTORM MODE HANDLER
+    if (lower.includes('brainstorm') || lower.match(/generate\s+\d+\s+ideas/) || lower.includes('ideas for')) {
+      const countMatch = lower.match(/(\d+)\s+ideas/);
+      const count = countMatch ? Math.min(100, Math.max(1, parseInt(countMatch[1], 10))) : 5;
+      const topic = textToSend.replace(/brainstorm|generate|\d+|ideas|for/gi, '').trim() || 'Project Enhancements';
+      const generated = aetherConversationalEngine.generateBrainstormIdeas({
+        topic,
+        count,
+        projectId: activeProjectId || projects[0]?.id
+      });
+      setInputValue('');
+
+      const responseText = `### Brainstorming Mode (${generated.length} Ideas for "${topic}")\n\n` +
+        generated.map(g => `**#${g.number}. ${g.title}**\n- ${g.details}`).join('\n\n') +
+        `\n\n*You can say "Save #1", "Star #2", "Discard #3", "Export Canvas", or "Convert #1 to Goal".*`;
+
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: responseText };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(`Generated ${generated.length} brainstorm ideas for ${topic}. They are saved in your Working Memory and Master Idea Library.`);
+      return;
+    }
+
+    // 3. WORKING MEMORY CANVAS COMMANDS
+    if (lower === 'save this' || lower === 'save idea' || lower.startsWith('save #') || lower.startsWith('save idea #')) {
+      const targetItem = resRef.matchedItem || aetherConversationalEngine.getState().workingMemory.slice(-1)[0];
+      if (targetItem) {
+        masterIdeaLibrary.addIdea({
+          title: targetItem.title,
+          description: targetItem.details || 'Saved from conversation working memory',
+          conversationOrigin: `Working Memory: ${aetherConversationalEngine.getState().currentTopic}`,
+          projectId: activeProjectId,
+          projectName: projects.find(p => p.id === activeProjectId)?.name,
+          priority: 'High',
+          status: 'starred',
+          tags: ['WorkingMemory', targetItem.type],
+          relationships: []
+        });
+        setInputValue('');
+        const feedback = `✅ Saved **"${targetItem.title}"** to your Master Idea Library and active project!`;
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedback };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(feedback);
+        return;
+      }
+    }
+
+    if (lower === 'discard that' || lower === 'discard idea' || lower.startsWith('discard #')) {
+      const targetItem = resRef.matchedItem || aetherConversationalEngine.getState().workingMemory.slice(-1)[0];
+      if (targetItem) {
+        aetherConversationalEngine.discardWorkingMemoryItem(targetItem.id);
+        setInputValue('');
+        const feedback = `🗑️ Discarded **"${targetItem.title}"** from Working Memory.`;
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedback };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(feedback);
+        return;
+      }
+    }
+
+    if (lower === 'star this' || lower === 'star idea' || lower.startsWith('star #')) {
+      const targetItem = resRef.matchedItem || aetherConversationalEngine.getState().workingMemory.slice(-1)[0];
+      if (targetItem) {
+        aetherConversationalEngine.starWorkingMemoryItem(targetItem.id);
+        setInputValue('');
+        const feedback = `⭐ Starred **"${targetItem.title}"** in Working Memory!`;
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: feedback };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(feedback);
+        return;
+      }
+    }
+
+    if (lower.includes('export working memory') || lower.includes('export canvas')) {
+      const exportMd = aetherConversationalEngine.exportWorkingMemory();
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: exportMd };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply("Exported live Working Memory Canvas to Markdown format.");
+      return;
+    }
+
+    // 4. SPOTIFY INTELLIGENCE NATURAL LANGUAGE HANDLER
+    const spotifyRes = aetherSpotify.handleNaturalLanguageCommand(textToSend);
+    if (spotifyRes.handled) {
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: `🎵 ${spotifyRes.message}` };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(spotifyRes.message);
+      return;
+    }
 
     if (lower.includes("minimize sidebar") || lower.includes("collapse sidebar") || lower.includes("shrink sidebar") || lower.includes("minimize the sidebar") || lower.includes("collapse the sidebar")) {
       useStore.getState().setSidebarMinimized(true);

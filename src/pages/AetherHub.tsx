@@ -60,10 +60,11 @@ import { AetherFocusCoachTab } from '../components/AetherFocusCoachTab';
 import { AetherPrivacyDashboard } from '../components/AetherPrivacyDashboard';
 import { AetherRelationshipHub } from '../components/AetherRelationshipHub';
 import { AetherDailyOperatingHub } from '../components/AetherDailyOperatingHub';
+import { AetherRemindersGoalsTab } from '../components/AetherRemindersGoalsTab';
 
 export function AetherHub() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'daily_operating' | 'focus_coach' | 'relationship' | 'health_diagnostics' | 'workflow_replay' | 'agents' | 'agent_observability' | 'universal_action' | 'cross_reasoning' | 'skills' | 'marketplace' | 'security' | 'memory' | 'learning' | 'permissions' | 'planner' | 'privacy'
+    'overview' | 'daily_operating' | 'reminders_goals' | 'focus_coach' | 'relationship' | 'health_diagnostics' | 'workflow_replay' | 'agents' | 'agent_observability' | 'universal_action' | 'cross_reasoning' | 'skills' | 'marketplace' | 'security' | 'memory' | 'learning' | 'permissions' | 'planner' | 'privacy'
   >('overview');
 
   // Health Engine & Diagnostics State
@@ -414,6 +415,7 @@ export function AetherHub() {
         {[
           { id: 'overview', label: 'Core & Proactive', icon: Sparkles },
           { id: 'daily_operating', label: 'Daily Operating Intelligence', icon: Sun },
+          { id: 'reminders_goals', label: 'Reminders & Goals', icon: Bell },
           { id: 'focus_coach', label: 'Focus & Presence Coach', icon: Zap },
           { id: 'relationship', label: 'Relationship & Growth', icon: HeartHandshake },
           { id: 'health_diagnostics', label: 'Health & Diagnostics', icon: HeartPulse },
@@ -626,6 +628,9 @@ export function AetherHub() {
           </div>
         </div>
       )}
+
+      {/* REMINDERS & GOALS TAB */}
+      {activeTab === 'reminders_goals' && <AetherRemindersGoalsTab />}
 
       {/* HEALTH & DIAGNOSTICS TAB */}
       {activeTab === 'health_diagnostics' && (

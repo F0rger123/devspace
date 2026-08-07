@@ -357,6 +357,12 @@ export type Project = {
     priority?: 'low' | 'medium' | 'high';
     createdAt: number;
   }[];
+  tasks?: {
+    id: string;
+    title: string;
+    completed: boolean;
+    createdAt: number;
+  }[];
 };
 
 export type DeletedProject = Project & {
@@ -3340,7 +3346,8 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         }
       });
 
-      const mergedProjectList = Array.from(projectsMap.values());
+      const deletedIds = new Set((getStored<DeletedProject[]>('app_deleted_projects', []) || []).map(dp => dp.id || dp.originalId));
+      const mergedProjectList = Array.from(projectsMap.values()).filter(p => !deletedIds.has(p.id));
 
       if (mergedProjectList.length > 0) {
         setProjects(mergedProjectList);
@@ -4339,6 +4346,7 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
 
     setProjects(prev => {
       const remaining = prev.filter(proj => proj.id !== id);
+      setStored('app_projects', remaining);
       if (activeProjectId === id) {
         setActiveProjectId(remaining.length > 0 ? remaining[0].id : null);
       }

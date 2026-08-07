@@ -104,11 +104,11 @@ export function AetherDailyOperatingHub() {
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-3.5 py-2 rounded-xl border flex items-center gap-2 whitespace-nowrap transition font-bold ${
                 isActive
-                  ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/40'
+                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/40'
                   : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              <IconComp size={14} className={isActive ? 'text-cyan-400' : 'text-zinc-500'} />
+              <IconComp size={14} className={isActive ? 'text-amber-400' : 'text-zinc-500'} />
               <span>{tab.label}</span>
             </button>
           );

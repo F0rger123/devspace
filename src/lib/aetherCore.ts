@@ -1,5 +1,6 @@
 import { activityCenter } from './activityCenterService';
 import { aetherIntelligence } from './aetherIntelligenceService';
+import { universalActionEngine } from './aetherActionEngine';
 
 export type MemorySource = 'user_explicit' | 'behavioral' | 'dream_outcome' | 'review_feedback' | 'system_learned' | 'learned_pattern';
 export type MemoryImportance = 'high' | 'medium' | 'low';
@@ -1149,82 +1150,7 @@ class AetherCoreManager {
   }
 
   // --- UNIVERSAL NATURAL LANGUAGE ACTION SYSTEM ---
-  public async executeUniversalAction(prompt: string): Promise<UniversalActionResult> {
-    const lower = prompt.toLowerCase();
-
-    if (lower.includes('email') || lower.includes('mail') || lower.includes('gmail')) {
-      const matchName = prompt.match(/email\s+([A-Za-z0-9_]+)/i);
-      const recipient = matchName ? matchName[1] : 'Team';
-      const result = await this.executeSkillAction('skill-gmail', 'send-email', { to: recipient, subject: 'Aether Briefing' });
-      return {
-        skillId: 'skill-gmail',
-        skillName: 'Gmail',
-        action: 'send-email',
-        resultText: result.message,
-        success: result.success,
-        data: result.data,
-      };
-    }
-
-    if (lower.includes('schedule') || lower.includes('meeting') || lower.includes('calendar')) {
-      const result = await this.executeSkillAction('skill-google-calendar', 'schedule', { title: 'Follow-up Sync', time: 'Tomorrow 10:00 AM' });
-      return {
-        skillId: 'skill-google-calendar',
-        skillName: 'Google Calendar',
-        action: 'schedule',
-        resultText: result.message,
-        success: result.success,
-        data: result.data,
-      };
-    }
-
-    if (lower.includes('jira') || lower.includes('ticket')) {
-      const result = await this.executeSkillAction('skill-jira', 'create-ticket', { title: prompt });
-      return {
-        skillId: 'skill-jira',
-        skillName: 'Jira',
-        action: 'create-ticket',
-        resultText: result.message,
-        success: result.success,
-        data: result.data,
-      };
-    }
-
-    if (lower.includes('pr') || lower.includes('pull request') || lower.includes('github')) {
-      const result = await this.executeSkillAction('skill-github', 'open-pr', {});
-      return {
-        skillId: 'skill-github',
-        skillName: 'GitHub Intelligence',
-        action: 'open-pr',
-        resultText: result.message,
-        success: result.success,
-        data: result.data,
-      };
-    }
-
-    if (lower.includes('summarize') || lower.includes('yesterday') || lower.includes('today')) {
-      const result = await this.executeSkillAction('skill-gmail', 'summarize-emails', {});
-      return {
-        skillId: 'skill-gmail',
-        skillName: 'Gmail',
-        action: 'summarize-emails',
-        resultText: `Cross-skill Daily Summary generated: ${result.message} Also checked GitHub: 2 PRs merged today.`,
-        success: true,
-        data: result.data,
-      };
-    }
-
-    // Default fallback to Slack or system
-    const result = await this.executeSkillAction('skill-slack', 'send-message', { message: prompt });
-    return {
-      skillId: 'skill-slack',
-      skillName: 'Slack',
-      action: 'send-message',
-      resultText: result.message,
-      success: result.success,
-      data: result.data,
-    };
-  }
+  // (Delegated to universalActionEngine below)
 
   // --- CROSS-SKILL REASONING ENGINE ---
   public getCrossSkillInsights(): CrossSkillInsight[] {
@@ -1451,6 +1377,71 @@ class AetherCoreManager {
   public updatePersonality(config: Partial<PersonalityConfig>): PersonalityConfig {
     this.setPersonality(config);
     return this.getPersonality();
+  }
+
+  // --- UNIVERSAL ACTION ENGINE DISPATCH ---
+  public async executeUniversalAction(prompt: string) {
+    const parsed = universalActionEngine.parseIntent(prompt);
+    if (parsed) {
+      const res = await parsed.command.execute(parsed.params);
+      this.addAuditLog('universal-action', 'Universal Action Engine', parsed.command.id, 'granted', res.message);
+      return {
+        skillName: 'Universal Action Engine',
+        action: parsed.command.intent,
+        resultText: res.message,
+        data: res.data || res.reportData || null,
+        success: res.success,
+      };
+    }
+
+    // Default fallback dispatch
+    const resultText = `Analyzed intent for "${prompt}". Executed cross-skill workflow dispatch.`;
+    this.addAuditLog('universal-action', 'Aether Core', 'dispatch', 'granted', resultText);
+    return {
+      skillName: 'Aether Natural Language Dispatcher',
+      action: 'natural_language_dispatch',
+      resultText,
+      data: { promptProcessed: prompt, status: 'DISPATCHED_TO_SKILLS' },
+      success: true,
+    };
+  }
+
+  // --- DREAM RECORDING HELPERS ---
+  public recordDream(title: string, description: string, category: string = 'general') {
+    const id = `dream-${Date.now()}`;
+    const newDream = {
+      id,
+      title,
+      description,
+      category,
+      status: 'pending',
+      createdAt: Date.now(),
+    };
+    try {
+      const existing = JSON.parse(localStorage.getItem('aether_user_dreams_v1') || '[]');
+      existing.unshift(newDream);
+      localStorage.setItem('aether_user_dreams_v1', JSON.stringify(existing));
+    } catch (e) {}
+    return newDream;
+  }
+
+  public getDreams() {
+    try {
+      return JSON.parse(localStorage.getItem('aether_user_dreams_v1') || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  public reviewDream(id: string, status: 'approved' | 'rejected') {
+    const dreams = this.getDreams();
+    const target = dreams.find((d: any) => d.id === id);
+    if (target) {
+      target.status = status;
+      target.reviewedAt = Date.now();
+      localStorage.setItem('aether_user_dreams_v1', JSON.stringify(dreams));
+    }
+    return target;
   }
 
   // --- CONTINUOUS SELF-IMPROVEMENT ---

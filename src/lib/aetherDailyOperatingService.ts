@@ -1,6 +1,8 @@
 import { aetherIntelligence } from './aetherIntelligenceService';
 import { aetherRelationshipService } from './aetherRelationshipService';
 import { aetherCore } from './aetherCore';
+import { aetherReminders } from './aetherRemindersService';
+import { aetherGoals } from './aetherGoalsService';
 
 export interface MorningBriefingData {
   date: string;
@@ -183,7 +185,13 @@ class AetherDailyOperatingServiceManager {
   // --- 1. MORNING BRIEFING ---
   public getMorningBriefing(projectName: string = 'DevSpace Workspace'): MorningBriefingData {
     const brief = aetherIntelligence.getDailyBrief(projectName);
-    const goals = aetherRelationshipService.getGoals();
+    const liveGoals = aetherGoals.getActiveGoals();
+    const pendingReminders = aetherReminders.getPendingReminders();
+
+    const goalTitles = liveGoals.map(g => g.title);
+    const reminderSummary = pendingReminders.length > 0
+      ? ` You have ${pendingReminders.length} reminder(s) scheduled for today (e.g. "${pendingReminders[0].title}").`
+      : '';
 
     return {
       date: brief.date,
@@ -192,7 +200,7 @@ class AetherDailyOperatingServiceManager {
         { time: '10:00 AM', title: 'Architecture Sync & Sprint Review', attendees: ['Engineering Team'] },
         { time: '02:30 PM', title: 'Aether v3.0 Release Verification', attendees: ['Release Manager'] },
       ],
-      currentFocusGoals: goals.map((g) => g.title),
+      currentFocusGoals: goalTitles.length > 0 ? goalTitles : ['Ship DevSpace 3.0 Production Release'],
       dreamsWaitingReviewCount: brief.today.dreamsNeedingReviewCount,
       openIssuesCount: 3,
       pendingPRsCount: brief.today.pendingPushesCount,
@@ -200,7 +208,7 @@ class AetherDailyOperatingServiceManager {
       workspaceHealthStatus: 'Optimal (100% Tests Passing)',
       suggestedFirstTask: brief.today.recommendedNextAction,
       estimatedWorkloadHours: brief.today.estimatedWorkDurationHours,
-      naturalNarrative: `Good morning! Today in ${projectName}, your primary goal is to ${brief.today.recommendedNextAction}. You have ${brief.today.dreamsNeedingReviewCount} Dream(s) pending review and 0 release blockers. Your workspace health is optimal with all 13 runtime verification tests passing cleanly.`,
+      naturalNarrative: `Good morning! Today in ${projectName}, your primary focus is to ${brief.today.recommendedNextAction}. You have ${brief.today.dreamsNeedingReviewCount} Dream(s) pending review and ${liveGoals.length} active long-term goal(s).${reminderSummary} Workspace health is optimal.`,
     };
   }
 

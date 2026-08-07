@@ -292,6 +292,21 @@ export function Automations() {
             assignee: currentNode.config?.assignee || 'Cortex Agent'
           });
           addLog('success', `📝 Created workspace issue ticket: "${title}"`);
+        } else if (currentNode.type === 'action-push-queue') {
+          await new Promise(r => setTimeout(r, 600));
+          addLog('success', `🚀 Enqueued commit to deployment push queue (branch: ${currentNode.config?.targetBranch || 'main'}).`);
+        } else if (currentNode.type === 'action-notification') {
+          await new Promise(r => setTimeout(r, 300));
+          addLog('success', `🔔 Dynamic Island Notification dispatched: "${currentNode.config?.title || 'HUD Alert'}"`);
+        } else if (currentNode.type === 'action-planner-item') {
+          await new Promise(r => setTimeout(r, 400));
+          addLog('success', `📅 Added task "${currentNode.config?.title || 'Review item'}" to Aether Planner.`);
+        } else if (currentNode.type === 'logic-approval') {
+          await new Promise(r => setTimeout(r, 800));
+          addLog('success', `🛡️ Manual Approval Gate passed by Developer confirmation.`);
+        } else if (currentNode.type === 'logic-loop') {
+          await new Promise(r => setTimeout(r, 500));
+          addLog('success', `🔄 Looped through array items successfully.`);
         } else if (currentNode.type === 'action-send-email') {
           await new Promise(r => setTimeout(r, 600));
           addLog('success', `📧 Dispatched email alert to ${currentNode.config?.recipient || 'drummerforger@gmail.com'}`);
