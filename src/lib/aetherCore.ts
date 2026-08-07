@@ -1,7 +1,7 @@
 import { activityCenter } from './activityCenterService';
 import { aetherIntelligence } from './aetherIntelligenceService';
 
-export type MemorySource = 'user_explicit' | 'behavioral' | 'dream_outcome' | 'review_feedback' | 'system_learned';
+export type MemorySource = 'user_explicit' | 'behavioral' | 'dream_outcome' | 'review_feedback' | 'system_learned' | 'learned_pattern';
 export type MemoryImportance = 'high' | 'medium' | 'low';
 
 export interface PersonalMemoryItem {
@@ -120,7 +120,7 @@ export interface ProactiveSuggestion {
 }
 
 export interface PersonalityConfig {
-  persona: 'Professional' | 'Minimal' | 'Friendly' | 'Technical' | 'Teacher' | 'Architect' | 'Researcher' | 'Reviewer' | 'Planner';
+  persona: 'Professional' | 'Minimal' | 'Friendly' | 'Technical' | 'Teacher' | 'Architect' | 'Researcher' | 'Reviewer' | 'Planner' | 'Coach';
   verbosity: 'Concise' | 'Balanced' | 'Detailed';
   humor: 'None' | 'Subtle' | 'Moderate';
   notificationFrequency: 'Low' | 'Normal' | 'Realtime';
@@ -966,6 +966,18 @@ class AetherCoreManager {
     return Array.from(this.behavioralPatterns.values());
   }
 
+  public resetBehavioralPatterns(): void {
+    this.behavioralPatterns.clear();
+    this.saveToStorage();
+    activityCenter.addNotification({
+      title: 'Behavioral Adaptations Reset',
+      message: 'Aether learned behavioral patterns have been reset to baseline.',
+      type: 'info',
+      summary: 'Patterns Reset',
+      reason: 'WHY: Developer initiated behavioral reset in Privacy Dashboard.',
+    });
+  }
+
   public recordBehavioralEvent(actionType: string, description: string, impactOnDreams: string, impactOnRecommendations: string) {
     const id = `pat-${Date.now()}`;
     const pattern: BehavioralPatternItem = {
@@ -1390,6 +1402,10 @@ class AetherCoreManager {
     return this.permissionAudits;
   }
 
+  public getPermissionAuditLogs(): PermissionAuditEntry[] {
+    return this.getAuditHistory();
+  }
+
   // --- AETHER PLANNER ---
   public getPlannerItems(): AetherPlannerItem[] {
     return Array.from(this.plannerItems.values());
@@ -1430,6 +1446,11 @@ class AetherCoreManager {
       summary: 'Persona Changed',
       reason: 'WHY: Developer updated personality preferences in Aether Core.',
     });
+  }
+
+  public updatePersonality(config: Partial<PersonalityConfig>): PersonalityConfig {
+    this.setPersonality(config);
+    return this.getPersonality();
   }
 
   // --- CONTINUOUS SELF-IMPROVEMENT ---
