@@ -2396,7 +2396,7 @@ export function AgenticOS() {
                             onClick={() => setSelectedOfficeProjectId('all')}
                             className={`px-3 py-1 text-[11px] font-semibold font-mono rounded-lg border transition-all cursor-pointer ${selectedOfficeProjectId === 'all' ? 'bg-[#3b82f6]/20 border-[#3b82f6]/50 text-blue-400 font-bold' : 'bg-zinc-900 border-zinc-850 text-zinc-400 hover:text-zinc-200'}`}
                          >
-                            🌍 Wholesale OS (All)
+                            🌍 All Active Projects
                          </button>
                          {projects.map(p => {
                             const assignedAgentsCount = agents.filter(a => a.projectId === p.id).length;

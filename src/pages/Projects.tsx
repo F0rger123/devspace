@@ -15,12 +15,14 @@ import {
   Calendar,
   Shield,
   Check,
+  CheckCircle,
   Copy,
   Info,
   ChevronLeft,
   ChevronRight,
   Server,
   Link,
+  Edit,
   Edit2,
   Play,
   Terminal,
@@ -102,6 +104,7 @@ export function Projects() {
     addIssue,
     issues,
     updateIssue,
+    deleteIssue,
     aiContextRules,
     setAiContextRules,
     cortexSynapses,
@@ -213,6 +216,31 @@ export function Projects() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
+
+  // PROJECT ISSUE & IDEA CREATION STATES
+  const [showNewIssueModal, setShowNewIssueModal] = useState(false);
+  const [newIssueForm, setNewIssueForm] = useState({
+    title: '',
+    description: '',
+    type: 'Task' as 'Task' | 'Bug' | 'Feature',
+    priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Critical',
+    status: 'Todo' as 'Todo' | 'In Progress' | 'Done',
+  });
+
+  const [showNewIdeaModal, setShowNewIdeaModal] = useState(false);
+  const [newIdeaForm, setNewIdeaForm] = useState({
+    text: '',
+    details: '',
+    status: 'pending' as 'pending' | 'approved' | 'rejected',
+    priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Critical',
+  });
+  const [editingIdea, setEditingIdea] = useState<{
+    id: string;
+    text: string;
+    details: string;
+    status: 'pending' | 'approved' | 'rejected';
+    priority: 'Low' | 'Medium' | 'High' | 'Critical';
+  } | null>(null);
 
   // INLINE REPOSITORY SPECIFICS STATES (WORKSPACE MODE)
   const [inlineGitTab, setInlineGitTab] = useState<'link' | 'create' | 'direct'>('link');
@@ -1755,6 +1783,100 @@ Description of fix or enhancement recommendation
             </div>
           )}
 
+          {/* TAB: PROJECT ISSUES */}
+          {workspaceTab === "issues" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-400" />
+                    {project.name} Issues & Bug Tracker
+                  </h2>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    {issues.filter(i => i.projectId === project.id && i.status !== 'Done').length} open issues, {issues.filter(i => i.projectId === project.id && i.status === 'Done').length} resolved.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowNewIssueModal(true)}
+                    className="flex items-center gap-1.5 bg-yellow-500 hover:bg-yellow-400 text-black px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
+                  >
+                    <Plus size={14} /> New Issue
+                  </button>
+                  <button
+                    onClick={() => navigate(`/issues?projectId=${project.id}`)}
+                    className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-zinc-700 cursor-pointer"
+                  >
+                    <ExternalLink size={13} /> Full Issues Board
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 space-y-3">
+                {issues.filter(i => i.projectId === project.id).length === 0 ? (
+                  <div className="text-center py-10 border border-dashed border-zinc-800 rounded-xl bg-zinc-950/40">
+                    <CheckCircle size={32} className="mx-auto text-emerald-500/50 mb-3" />
+                    <h3 className="text-xs font-bold text-zinc-300">No issues found for {project.name}</h3>
+                    <p className="text-[11px] text-zinc-500 mt-1 mb-4">Create your first task, bug report, or feature request.</p>
+                    <button
+                      onClick={() => setShowNewIssueModal(true)}
+                      className="inline-flex items-center gap-1.5 bg-yellow-500 hover:bg-yellow-400 text-black px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg cursor-pointer"
+                    >
+                      <Plus size={14} /> Create Issue
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {issues.filter(i => i.projectId === project.id).map(issue => (
+                      <div key={issue.id} className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-zinc-700 transition-all">
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase border ${
+                              issue.type === 'Bug' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                              issue.type === 'Feature' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                              'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            }`}>
+                              {issue.type || 'Task'}
+                            </span>
+                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase ${
+                              issue.priority === 'Critical' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                              issue.priority === 'High' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                              'bg-zinc-800 text-zinc-400 border-zinc-700'
+                            }`}>
+                              {issue.priority || 'Medium'}
+                            </span>
+                            <span className="text-xs font-semibold text-zinc-200 truncate">{issue.title}</span>
+                          </div>
+                          {issue.description && (
+                            <p className="text-[11px] text-zinc-400 line-clamp-1">{issue.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <select
+                            value={issue.status || 'Todo'}
+                            onChange={(e) => updateIssue(issue.id, { status: e.target.value as any })}
+                            className="bg-zinc-950 border border-zinc-800 text-xs text-zinc-300 rounded px-2 py-1 outline-none focus:border-yellow-500"
+                          >
+                            <option value="Todo">Todo</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                          </select>
+                          <button
+                            onClick={() => deleteIssue(issue.id)}
+                            className="text-zinc-500 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800 transition-colors"
+                            title="Delete Issue"
+                          >
+                            <Trash size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: GOALS BOARD & TARGET TRACKER */}
           {workspaceTab === "goals" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-200">
@@ -2254,10 +2376,17 @@ Description of fix or enhancement recommendation
           {workspaceTab === "brainstorm" && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
-                <h2 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-2">
-                  <Lightbulb size={16} className="text-cyan-400" /> AI-Fueled
-                  Idea Sandbox
-                </h2>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2">
+                  <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+                    <Lightbulb size={16} className="text-cyan-400" /> AI-Fueled Idea Sandbox
+                  </h2>
+                  <button
+                    onClick={() => setShowNewIdeaModal(true)}
+                    className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
+                  >
+                    <Plus size={14} /> New Custom Idea
+                  </button>
+                </div>
                 <p className="text-xs text-zinc-400 mb-4 max-w-2xl">
                   Type or dictate voice notes below. Choose how many unique
                   custom ideas you require, and raw concepts will trigger
@@ -2415,10 +2544,17 @@ Description of fix or enhancement recommendation
 
               {/* ACTIVE BRAINSTORMS LIST */}
               <div className="glass-card rounded-xl p-5">
-                <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest mb-4 flex items-center gap-1.5">
-                  <Brain size={14} className="text-zinc-500" /> Active
-                  Brainstorm Project Pool
-                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest flex items-center gap-1.5">
+                    <Brain size={14} className="text-zinc-500" /> Project Ideas ({project.brainstormIdeas?.length || 0})
+                  </h3>
+                  <button
+                    onClick={() => setShowNewIdeaModal(true)}
+                    className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
+                  >
+                    <Plus size={14} /> + New Idea
+                  </button>
+                </div>
 
                 {project.brainstormIdeas &&
                 project.brainstormIdeas.length > 0 ? (
@@ -2536,15 +2672,61 @@ Description of fix or enhancement recommendation
                             className="glass-card bg-zinc-900/30 p-4 rounded-xl flex flex-col justify-between group relative overflow-hidden transition-all duration-300 hover:border-cyan-500/30"
                           >
                             <div>
-                              <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono">
-                                BRAINSTORM Sandbox CONCEPT
+                              <div className="flex items-center justify-between gap-1 mb-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
+                                    idea.status === 'approved' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/20' :
+                                    idea.status === 'rejected' ? 'bg-rose-950/60 text-rose-400 border border-rose-500/20' :
+                                    'bg-amber-950/60 text-amber-400 border border-amber-500/20'
+                                  }`}>
+                                    {idea.status || 'pending'}
+                                  </span>
+                                  <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
+                                    idea.priority === 'Critical' ? 'bg-rose-900/40 text-rose-300' :
+                                    idea.priority === 'High' ? 'bg-amber-900/40 text-amber-300' :
+                                    idea.priority === 'Low' ? 'bg-zinc-800 text-zinc-400' :
+                                    'bg-cyan-900/40 text-cyan-300'
+                                  }`}>
+                                    {idea.priority || 'Medium'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setEditingIdea({
+                                      id: idea.id,
+                                      text: idea.text,
+                                      details: idea.details || '',
+                                      status: idea.status || 'pending',
+                                      priority: idea.priority || 'Medium',
+                                    })}
+                                    className="p-1 text-zinc-500 hover:text-cyan-400 hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                                    title="Edit Idea"
+                                  >
+                                    <Edit size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const remainder = project.brainstormIdeas.filter((bi: any) => bi.id !== idea.id);
+                                      updateProject(project.id, { brainstormIdeas: remainder });
+                                      showToast('Idea deleted', 'info');
+                                    }}
+                                    className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                                    title="Delete Idea"
+                                  >
+                                    <Trash size={12} />
+                                  </button>
+                                </div>
                               </div>
-                              <h4 className="text-xs font-bold text-zinc-200 mt-1 mb-1.5">
+                              <h4 className="text-xs font-bold text-zinc-100 mt-1 mb-1.5">
                                 {idea.text}
                               </h4>
                               <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-3">
-                                {idea.details}
+                                {idea.details || "No details provided."}
                               </p>
+                              <div className="text-[9px] text-zinc-500 font-mono mt-2">
+                                Created: {new Date(idea.createdAt || Date.now()).toLocaleDateString()}
+                                {idea.updatedAt && idea.updatedAt !== idea.createdAt ? ` • Updated: ${new Date(idea.updatedAt).toLocaleDateString()}` : ''}
+                              </div>
                             </div>
 
                             <div className="mt-4 pt-3 border-t border-zinc-850/60 flex flex-col gap-2">
@@ -2659,9 +2841,15 @@ Description of fix or enhancement recommendation
                       })}
                   </div>
                 ) : (
-                  <div className="p-6 text-center text-zinc-500 italic border border-dashed border-zinc-850 rounded-xl bg-[#18181b]/30">
-                    No sandbox idea records confirmed in brainstorm lounge yet.
-                    Ask Gemini thinker above to seed custom proposals.
+                  <div className="p-8 text-center border border-dashed border-zinc-800 rounded-xl bg-[#18181b]/30 flex flex-col items-center justify-center gap-3">
+                    <Brain size={28} className="text-zinc-600" />
+                    <p className="text-xs text-zinc-400">No idea records confirmed in brainstorm pool yet.</p>
+                    <button
+                      onClick={() => setShowNewIdeaModal(true)}
+                      className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
+                    >
+                      <Plus size={14} /> + New Idea
+                    </button>
                   </div>
                 )}
               </div>
@@ -5983,6 +6171,331 @@ Description of fix or enhancement recommendation
           }}
           showToast={showToast}
         />
+      )}
+
+      {/* Create Issue Modal */}
+      {showNewIssueModal && (() => {
+        const modalProject = projects.find(p => p.id === viewingWorkspaceId || p.id === activeProjectId) || projects[0];
+        return (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowNewIssueModal(false)} />
+            <div className="relative bg-[#121214] border border-zinc-800 rounded-xl p-6 max-w-lg w-full shadow-2xl z-[120] space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-400" /> Create Issue {modalProject ? `for ${modalProject.name}` : ''}
+                </h3>
+                <button onClick={() => setShowNewIssueModal(false)} className="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Issue Title *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Fix date picker offset on mobile"
+                    value={newIssueForm.title}
+                    onChange={(e) => setNewIssueForm({ ...newIssueForm, title: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-yellow-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Description</label>
+                  <textarea
+                    placeholder="Detailed description of the bug, feature, or task..."
+                    value={newIssueForm.description}
+                    onChange={(e) => setNewIssueForm({ ...newIssueForm, description: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 h-20 outline-none focus:border-yellow-500"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-zinc-400 font-semibold mb-1">Type</label>
+                    <select
+                      value={newIssueForm.type}
+                      onChange={(e) => setNewIssueForm({ ...newIssueForm, type: e.target.value as any })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-yellow-500"
+                    >
+                      <option value="Task">Task</option>
+                      <option value="Bug">Bug</option>
+                      <option value="Feature">Feature</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-zinc-400 font-semibold mb-1">Priority</label>
+                    <select
+                      value={newIssueForm.priority}
+                      onChange={(e) => setNewIssueForm({ ...newIssueForm, priority: e.target.value as any })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-yellow-500"
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Critical">Critical</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-zinc-400 font-semibold mb-1">Status</label>
+                    <select
+                      value={newIssueForm.status}
+                      onChange={(e) => setNewIssueForm({ ...newIssueForm, status: e.target.value as any })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-yellow-500"
+                    >
+                      <option value="Todo">Todo</option>
+                      <option value="In Progress">In Progress</option>
+                      <option value="Done">Done</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
+                <button
+                  onClick={() => setShowNewIssueModal(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!newIssueForm.title.trim() || !modalProject) return;
+                    addIssue({
+                      projectId: modalProject.id,
+                      title: newIssueForm.title.trim(),
+                      description: newIssueForm.description.trim(),
+                      type: newIssueForm.type,
+                      priority: newIssueForm.priority,
+                      status: newIssueForm.status,
+                    });
+                    setNewIssueForm({ title: '', description: '', type: 'Task', priority: 'Medium', status: 'Todo' });
+                    setShowNewIssueModal(false);
+                    showToast('Issue created successfully', 'success');
+                  }}
+                  disabled={!newIssueForm.title.trim() || !modalProject}
+                  className="px-4 py-1.5 rounded-lg bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Create Issue
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Create Idea Modal */}
+      {showNewIdeaModal && (() => {
+        const modalProject = projects.find(p => p.id === viewingWorkspaceId || p.id === activeProjectId) || projects[0];
+        return (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowNewIdeaModal(false)} />
+            <div className="relative bg-[#121214] border border-zinc-800 rounded-xl p-6 max-w-lg w-full shadow-2xl z-[120] space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+                  <Lightbulb size={16} className="text-cyan-400" /> New Idea {modalProject ? `for ${modalProject.name}` : ''}
+                </h3>
+                <button onClick={() => setShowNewIdeaModal(false)} className="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Idea Title *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Automated PDF Export for Monthly Metrics"
+                    value={newIdeaForm.text}
+                    onChange={(e) => setNewIdeaForm({ ...newIdeaForm, text: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Details & Rationale</label>
+                  <textarea
+                    placeholder="Why should this be built? Key user value..."
+                    value={newIdeaForm.details}
+                    onChange={(e) => setNewIdeaForm({ ...newIdeaForm, details: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 h-20 outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-zinc-400 font-semibold mb-1">Initial Status</label>
+                    <select
+                      value={newIdeaForm.status}
+                      onChange={(e) => setNewIdeaForm({ ...newIdeaForm, status: e.target.value as any })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-cyan-500"
+                    >
+                      <option value="pending">Pending Review</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected / Deferred</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-zinc-400 font-semibold mb-1">Priority</label>
+                    <select
+                      value={newIdeaForm.priority}
+                      onChange={(e) => setNewIdeaForm({ ...newIdeaForm, priority: e.target.value as any })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-cyan-500"
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Critical">Critical</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
+                <button
+                  onClick={() => setShowNewIdeaModal(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!newIdeaForm.text.trim() || !modalProject) return;
+                    const now = Date.now();
+                    const newIdea = {
+                      id: `idea-${now}`,
+                      text: newIdeaForm.text.trim(),
+                      details: newIdeaForm.details.trim(),
+                      status: newIdeaForm.status,
+                      priority: newIdeaForm.priority,
+                      createdAt: now,
+                      updatedAt: now,
+                    };
+                    const updatedIdeas = [newIdea, ...(modalProject.brainstormIdeas || [])];
+                    updateProject(modalProject.id, { brainstormIdeas: updatedIdeas });
+                    setNewIdeaForm({ text: '', details: '', status: 'pending', priority: 'Medium' });
+                    setShowNewIdeaModal(false);
+                    showToast('Idea added successfully', 'success');
+                  }}
+                  disabled={!newIdeaForm.text.trim() || !modalProject}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Add Idea
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* EDIT IDEA MODAL */}
+      {editingIdea && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#121215] border border-zinc-800 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <h3 className="font-bold text-zinc-100 flex items-center gap-2">
+                <Lightbulb size={16} className="text-cyan-400" />
+                Edit Project Idea
+              </h3>
+              <button
+                onClick={() => setEditingIdea(null)}
+                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-zinc-400 font-semibold mb-1">Title *</label>
+                <input
+                  type="text"
+                  value={editingIdea.text}
+                  onChange={(e) => setEditingIdea({ ...editingIdea, text: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="block text-zinc-400 font-semibold mb-1">Description / Rationale</label>
+                <textarea
+                  value={editingIdea.details}
+                  onChange={(e) => setEditingIdea({ ...editingIdea, details: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-200 h-20 outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Status</label>
+                  <select
+                    value={editingIdea.status}
+                    onChange={(e) => setEditingIdea({ ...editingIdea, status: e.target.value as any })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-cyan-500"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-zinc-400 font-semibold mb-1">Priority</label>
+                  <select
+                    value={editingIdea.priority}
+                    onChange={(e) => setEditingIdea({ ...editingIdea, priority: e.target.value as any })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-cyan-500"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-zinc-800">
+              <button
+                onClick={() => {
+                  const targetProject = projects.find(p => p.brainstormIdeas?.some((i: any) => i.id === editingIdea.id));
+                  if (targetProject) {
+                    const updated = (targetProject.brainstormIdeas || []).filter((i: any) => i.id !== editingIdea.id);
+                    updateProject(targetProject.id, { brainstormIdeas: updated });
+                    showToast('Idea deleted', 'info');
+                  }
+                  setEditingIdea(null);
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 flex items-center gap-1 cursor-pointer"
+              >
+                <Trash size={12} /> Delete
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditingIdea(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (!editingIdea.text.trim()) return;
+                    const targetProject = projects.find(p => p.brainstormIdeas?.some((i: any) => i.id === editingIdea.id));
+                    if (targetProject) {
+                      const updated = (targetProject.brainstormIdeas || []).map((i: any) => {
+                        if (i.id === editingIdea.id) {
+                          return {
+                            ...i,
+                            text: editingIdea.text.trim(),
+                            details: editingIdea.details.trim(),
+                            status: editingIdea.status,
+                            priority: editingIdea.priority,
+                            updatedAt: Date.now(),
+                          };
+                        }
+                        return i;
+                      });
+                      updateProject(targetProject.id, { brainstormIdeas: updated });
+                      showToast('Idea updated', 'success');
+                    }
+                    setEditingIdea(null);
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

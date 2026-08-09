@@ -2085,7 +2085,7 @@ ${filesContext}`;
   <!-- Lucide React CDN -->
   <script src="https://unpkg.com/lucide-react@0.400.0/dist/umd/lucide-react.js"></script>
   <!-- Recharts UMD CDN -->
-  <script src="https://unpkg.com/recharts@2.12.0/dist/Recharts.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.0/umd/Recharts.min.js"></script>
   <!-- Framer Motion UMD CDN -->
   <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
   <!-- D3 CDN -->
@@ -3894,13 +3894,17 @@ Evaluating active workspace files and objectives now...`;
 
         {/* Central Dialog Workspace */}
         <AnimatePresence mode="popLayout" initial={false}>
-          {showBrainstormChat && (
+          {showBrainstormChat && !isSandboxFullscreen && (
             <motion.section 
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className={`flex-1 flex-col bg-[#040406] min-w-0 ${activeMobileView === 'chat' ? 'flex' : 'hidden lg:flex'} ${isBrainstormMode ? 'blueprint-grid' : ''}`} 
+              style={{
+                width: activeTab === 'preview' ? (window.innerWidth < 1280 ? '320px' : '380px') : 'auto',
+                flex: activeTab === 'preview' ? 'none' : '1 1 0%'
+              }}
+              className={`flex-col bg-[#040406] min-w-0 ${activeMobileView === 'chat' ? 'flex' : 'hidden lg:flex'} ${isBrainstormMode ? 'blueprint-grid' : ''}`} 
               id="create-chat-panel"
             >
             
@@ -4245,8 +4249,8 @@ Evaluating active workspace files and objectives now...`;
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               style={{ 
-                width: (!showBrainstormChat || isSandboxFullscreen) ? '100%' : (window.innerWidth < 1024 ? '100%' : `${sandboxWidth}px`),
-                flex: !showBrainstormChat ? '1 1 0%' : 'none'
+                width: (!showBrainstormChat || isSandboxFullscreen || activeTab === 'preview') ? '100%' : (window.innerWidth < 1024 ? '100%' : `${sandboxWidth}px`),
+                flex: (!showBrainstormChat || isSandboxFullscreen || activeTab === 'preview') ? '1 1 0%' : 'none'
               }}
               className={`shrink-0 flex-col bg-[#030305] ${isResizingRight ? '' : 'transition-all duration-300'} w-full lg:w-auto ${activeMobileView === 'workspace' ? 'flex' : 'hidden lg:flex'}`} 
               id="create-sandbox-panel"

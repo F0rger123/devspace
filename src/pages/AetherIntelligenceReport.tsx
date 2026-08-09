@@ -39,10 +39,11 @@ import {
 import { useData } from '../context/DataProvider';
 import { activityCenter } from '../lib/activityCenterService';
 import { pushQueue } from '../lib/pushQueueService';
+import { AetherDailyOperatingHub } from '../components/AetherDailyOperatingHub';
 
 export function AetherIntelligenceReport() {
   const { projects, issues } = useData();
-  const [activeTab, setActiveTab] = useState<'overview' | 'release' | 'coach' | 'dreams' | 'predictive' | 'graph' | 'recommendations' | 'learning' | 'health'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'hub' | 'release' | 'coach' | 'dreams' | 'predictive' | 'graph' | 'recommendations' | 'learning' | 'health'>('overview');
   
   const [recommendations, setRecommendations] = useState<IntelligenceRecommendation[]>([]);
   
@@ -180,6 +181,7 @@ export function AetherIntelligenceReport() {
       <div className="flex items-center gap-2 overflow-x-auto border-b border-zinc-800/80 pb-2 custom-scrollbar">
         {[
           { id: 'overview', label: 'Overview', icon: BarChart3 },
+          { id: 'hub', label: 'Daily Operating Hub', icon: Activity },
           { id: 'release', label: 'Release Readiness', icon: Rocket },
           { id: 'coach', label: 'Aether Coach', icon: Compass },
           { id: 'dreams', label: 'Dream Quality', icon: Sparkles },
@@ -210,6 +212,13 @@ export function AetherIntelligenceReport() {
 
       {/* Main Tab Content */}
       <div className="space-y-6">
+        {/* DAILY OPERATING HUB TAB */}
+        {activeTab === 'hub' && (
+          <div className="space-y-6">
+            <AetherDailyOperatingHub />
+          </div>
+        )}
+
         {/* OVERVIEW TAB */}
         {activeTab === 'overview' && (
           <div className="space-y-6">

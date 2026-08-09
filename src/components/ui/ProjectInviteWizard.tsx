@@ -49,7 +49,7 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Load all registered users on component load for fast client-side fuzzy matching
+  // Load registered users on component load from Firestore directory
   useEffect(() => {
     async function fetchUsersAndFriends() {
       setLoadingUsers(true);
@@ -73,7 +73,6 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
           }
         });
 
-        // Filter out current logged-in user from allUsers
         const finalFiltered = usersList.filter(u => u.email.toLowerCase() !== googleUser?.email?.toLowerCase());
         setAllUsers(finalFiltered);
 
@@ -81,32 +80,28 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
           // Query accepted friends
           const q1 = query(collection(db, 'friend_requests'), where('senderId', '==', googleUser.uid), where('status', '==', 'accepted'));
           const q2 = query(collection(db, 'friend_requests'), where('receiverId', '==', googleUser.uid), where('status', '==', 'accepted'));
-          const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+          const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]).catch(() => [null, null]);
           
           const friendUids = new Set<string>();
-          snap1.forEach(d => {
-            const rId = d.data().receiverId;
-            if (rId) friendUids.add(rId);
-          });
-          snap2.forEach(d => {
-            const sId = d.data().senderId;
-            if (sId) friendUids.add(sId);
-          });
+          if (snap1) snap1.forEach(d => { const rId = d.data().receiverId; if (rId) friendUids.add(rId); });
+          if (snap2) snap2.forEach(d => { const sId = d.data().senderId; if (sId) friendUids.add(sId); });
 
           const friendsList = finalFiltered.filter(u => friendUids.has(u.uid));
           setFriends(friendsList);
+        } else {
+          setFriends(finalFiltered);
         }
       } catch (err) {
-        console.warn('Failed to load registered users or friends for autocomplete:', err);
+        console.warn('Failed to load registered users or friends:', err);
+        setAllUsers([]);
+        setFriends([]);
       } finally {
         setLoadingUsers(false);
         setLoadingFriends(false);
       }
     }
 
-    if (googleUser) {
-      fetchUsersAndFriends();
-    }
+    fetchUsersAndFriends();
   }, [googleUser]);
 
   // Client-side fuzzy search on username, email, and display name

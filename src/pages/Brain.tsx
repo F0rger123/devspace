@@ -48,7 +48,7 @@ const FileTreeItem = ({ item, level = 0, onNodeClick, activePath }: { item: any;
 };
 
 export function Brain() {
-  const { projects, issues, phases, aiContextRules, setAiContextRules, githubRepo, githubToken, activeProjectId, cortexSynapses, setCortexSynapses, startProjectDreaming, addIssue, updateProject } = useData();
+  const { projects, issues, phases, aiContextRules, setAiContextRules, githubRepo, githubToken, activeProjectId, setActiveProjectId, cortexSynapses, setCortexSynapses, startProjectDreaming, addIssue, updateProject } = useData();
   const location = useLocation();
   const [nodes, setNodes] = useState<any[]>([]);
   const [links, setLinks] = useState<any[]>([]);
@@ -198,29 +198,46 @@ export function Brain() {
   }, [activeProjectId, githubRepo, projects]);
 
   const handleNodeClick = async (node: any) => {
-     if (graphType === 'project') return; // Do not fetch file content for project graph nodes yet
+     if (!node || !node.id) return;
+     if (node.type === 'dir' || node.type === 'project' || node.type === 'phase') return;
+
      setLoadingFile(true);
-     setSelectedFile({ name: node.name, content: '', path: node.id }); // Show loading panel
+     setSelectedFile({ name: node.name || node.id, content: '', path: node.id });
      try {
+        const resFs = await fetch('/api/workspace-fs/read-file', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ filePath: node.id })
+        });
+        if (resFs.ok) {
+           const dataFs = await resFs.json();
+           if (dataFs.content !== undefined) {
+              setSelectedFile({ name: node.name || node.id.split('/').pop(), content: dataFs.content, path: node.id });
+              setLoadingFile(false);
+              return;
+           }
+        }
+
         const res = await fetch('/api/github/file', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({ repo, path: node.id, token: githubToken })
         });
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-           const data = await res.json();
-           if (data.name) {
-              setSelectedFile({ name: data.name, content: data.content, path: node.id });
-           } else {
-              setSelectedFile(null);
+        if (res.ok) {
+           const contentType = res.headers.get("content-type");
+           if (contentType && contentType.includes("application/json")) {
+              const data = await res.json();
+              if (data.name && data.content !== undefined) {
+                 setSelectedFile({ name: data.name, content: data.content, path: node.id });
+                 setLoadingFile(false);
+                 return;
+              }
            }
-        } else {
-           setSelectedFile(null);
         }
-     } catch (e) {
-        console.error(e);
-        setSelectedFile(null);
+        setSelectedFile({ name: node.name || node.id, content: `// File non-textual or not accessible: ${node.id}`, path: node.id });
+     } catch (e: any) {
+        console.error("Failed to read file in Project Brain:", e);
+        setSelectedFile({ name: node.name || node.id, content: `// Error loading file: ${e.message || e}`, path: node.id });
      }
      setLoadingFile(false);
   };
@@ -231,43 +248,112 @@ export function Brain() {
     setLinks([]);
     setFileTree([]);
 
+    const activeProj = projects.find(p => p.id === activeProjectId) || projects[0];
+
     if (graphType === 'project') {
-      const newNodes: any[] = [];
-      const newLinks: any[] = [];
-      
-      newNodes.push({ id: 'root', name: 'Workspaces', type: 'dir' });
-      
-      projects.forEach(p => {
-        newNodes.push({ id: `proj-${p.id}`, name: p.name, type: 'project' });
-        newLinks.push({ source: 'root', target: `proj-${p.id}` });
-        
-        const firstRepo = p.githubRepos && p.githubRepos[0];
-        if (firstRepo) {
-           newNodes.push({ id: `repo-${p.id}`, name: firstRepo.split('/').pop() || firstRepo, type: 'repo' });
-           newLinks.push({ source: `proj-${p.id}`, target: `repo-${p.id}` });
+      try {
+        const res = await fetch('/api/workspace-fs/list-files');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.files) {
+            const filesList: string[] = data.files;
+            
+            const treeRoot = { 
+              name: activeProj ? activeProj.name : 'Local Landscape', 
+              type: 'dir', 
+              path: 'root', 
+              children: [] as any[] 
+            };
+            
+            const foldersMap = new Map<string, any>();
+            foldersMap.set('root', treeRoot);
+            
+            const newNodes: any[] = [{ id: 'root', name: activeProj ? activeProj.name : 'Local Landscape', type: 'dir' }];
+            const newLinks: any[] = [];
+            const pathMap = new Set(['root']);
+
+            filesList.forEach((filePath: string) => {
+              const parts = filePath.split('/');
+              let currentPath = '';
+              for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                const isLast = i === parts.length - 1;
+                const pathSoFar = currentPath ? `${currentPath}/${part}` : part;
+                
+                if (!pathMap.has(pathSoFar)) {
+                  pathMap.add(pathSoFar);
+                  
+                  const isDir = !isLast;
+                  newNodes.push({
+                    id: pathSoFar,
+                    name: part,
+                    type: isDir ? 'dir' : 'file'
+                  });
+
+                  const parentPath = currentPath || 'root';
+                  newLinks.push({ source: parentPath, target: pathSoFar });
+
+                  const treeNode = {
+                    name: part,
+                    type: isDir ? 'dir' : 'file',
+                    path: pathSoFar,
+                    children: isDir ? [] : undefined
+                  };
+
+                  if (isDir) {
+                    foldersMap.set(pathSoFar, treeNode);
+                  }
+
+                  const parentNode = foldersMap.get(parentPath);
+                  if (parentNode) {
+                    if (!parentNode.children.some((c: any) => c.path === pathSoFar)) {
+                      parentNode.children.push(treeNode);
+                    }
+                  }
+                }
+                currentPath = pathSoFar;
+              }
+            });
+
+            if (activeProj) {
+              const projPhases = phases.filter(ph => ph.projectId === activeProj.id);
+              projPhases.forEach(ph => {
+                newNodes.push({ id: `phase-${ph.id}`, name: `Phase: ${ph.name}`, type: 'phase' });
+                newLinks.push({ source: 'root', target: `phase-${ph.id}` });
+              });
+
+              const projIssues = issues.filter(i => i.projectId === activeProj.id);
+              projIssues.forEach(i => {
+                newNodes.push({ id: `issue-${i.id}`, name: `Task: ${i.title}`, type: 'issue' });
+                if (i.phaseId) {
+                  newLinks.push({ source: `phase-${i.phaseId}`, target: `issue-${i.id}` });
+                } else {
+                  newLinks.push({ source: 'root', target: `issue-${i.id}` });
+                }
+              });
+            }
+
+            const sortTree = (node: any) => {
+              if (node.children) {
+                node.children.sort((a: any, b: any) => {
+                  if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+                  return a.name.localeCompare(b.name);
+                });
+                node.children.forEach(sortTree);
+              }
+            };
+            sortTree(treeRoot);
+
+            setNodes(newNodes);
+            setLinks(newLinks);
+            setFileTree([treeRoot]);
+            setLoading(false);
+            return;
+          }
         }
-        
-        const projPhases = phases.filter(ph => ph.projectId === p.id);
-        projPhases.forEach(ph => {
-           newNodes.push({ id: `phase-${ph.id}`, name: ph.name, type: 'phase' });
-           newLinks.push({ source: `proj-${p.id}`, target: `phase-${ph.id}` });
-        });
-        
-        const projIssues = issues.filter(i => i.projectId === p.id);
-        projIssues.forEach(i => {
-           newNodes.push({ id: `issue-${i.id}`, name: i.title, type: 'issue' });
-           if (i.phaseId) {
-             newLinks.push({ source: `phase-${i.phaseId}`, target: `issue-${i.id}` });
-           } else {
-             newLinks.push({ source: `proj-${p.id}`, target: `issue-${i.id}` });
-           }
-        });
-      });
-      
-      setNodes(newNodes);
-      setLinks(newLinks);
-      setLoading(false);
-      return;
+      } catch (err) {
+        console.error('Failed to fetch workspace files for project brain:', err);
+      }
     }
 
     try {
@@ -281,80 +367,76 @@ export function Brain() {
         const data = await res.json();
         if (data && data.tree) {
           const newNodes: any[] = [];
-        const newLinks: any[] = [];
-        const treeRoot = { name: repo, type: 'dir', path: 'root', children: [] as any[] };
-        const foldersMap = new Map<string, any>();
-        foldersMap.set('root', treeRoot);
-        
-        // Root node
-        newNodes.push({ id: 'root', name: repo, type: 'dir' });
-        
-        const pathMap = new Set(['root']);
-
-        data.tree.forEach((item: any) => {
-          const parts = item.path.split('/');
-          const name = parts[parts.length - 1];
-          const isDir = item.type === 'tree';
+          const newLinks: any[] = [];
+          const treeRoot = { name: repo, type: 'dir', path: 'root', children: [] as any[] };
+          const foldersMap = new Map<string, any>();
+          foldersMap.set('root', treeRoot);
           
-          newNodes.push({
-            id: item.path,
-            name: name,
-            type: isDir ? 'dir' : 'file',
-            size: item.size
+          newNodes.push({ id: 'root', name: repo, type: 'dir' });
+          
+          const pathMap = new Set(['root']);
+
+          data.tree.forEach((item: any) => {
+            const parts = item.path.split('/');
+            const name = parts[parts.length - 1];
+            const isDir = item.type === 'tree';
+            
+            newNodes.push({
+              id: item.path,
+              name: name,
+              type: isDir ? 'dir' : 'file',
+              size: item.size
+            });
+            pathMap.add(item.path);
+
+            const treeNode = {
+               name,
+               type: isDir ? 'dir' : 'file',
+               path: item.path,
+               children: isDir ? [] : undefined
+            };
+
+            if (isDir) {
+               foldersMap.set(item.path, treeNode);
+            }
+
+            if (parts.length === 1) {
+               newLinks.push({ source: 'root', target: item.path });
+               treeRoot.children.push(treeNode);
+            } else {
+               const parentPath = parts.slice(0, -1).join('/');
+               
+               if (pathMap.has(parentPath)) {
+                  newLinks.push({ source: parentPath, target: item.path });
+               } else {
+                  newLinks.push({ source: 'root', target: item.path });
+               }
+
+               const parentNode = foldersMap.get(parentPath);
+               if (parentNode) {
+                  parentNode.children.push(treeNode);
+               } else {
+                  treeRoot.children.push(treeNode);
+               }
+            }
           });
-          pathMap.add(item.path);
-
-          const treeNode = {
-             name,
-             type: isDir ? 'dir' : 'file',
-             path: item.path,
-             children: isDir ? [] : undefined
+          
+          const sortTree = (node: any) => {
+             if (node.children) {
+                node.children.sort((a: any, b: any) => {
+                   if (a.type !== b.type) {
+                      return a.type === 'dir' ? -1 : 1;
+                   }
+                   return a.name.localeCompare(b.name);
+                });
+                node.children.forEach(sortTree);
+             }
           };
+          sortTree(treeRoot);
 
-          if (isDir) {
-             foldersMap.set(item.path, treeNode);
-          }
-
-          if (parts.length === 1) {
-             newLinks.push({ source: 'root', target: item.path });
-             treeRoot.children.push(treeNode);
-          } else {
-             const parentPath = parts.slice(0, -1).join('/');
-             
-             // Graph links
-             if (pathMap.has(parentPath)) {
-                newLinks.push({ source: parentPath, target: item.path });
-             } else {
-                newLinks.push({ source: 'root', target: item.path });
-             }
-
-             // Hierarchical tree links
-             const parentNode = foldersMap.get(parentPath);
-             if (parentNode) {
-                parentNode.children.push(treeNode);
-             } else {
-                treeRoot.children.push(treeNode);
-             }
-          }
-        });
-        
-        // sort children for explorer: dirs first, then files
-        const sortTree = (node: any) => {
-           if (node.children) {
-              node.children.sort((a: any, b: any) => {
-                 if (a.type !== b.type) {
-                    return a.type === 'dir' ? -1 : 1;
-                 }
-                 return a.name.localeCompare(b.name);
-              });
-              node.children.forEach(sortTree);
-           }
-        };
-        sortTree(treeRoot);
-
-        setNodes(newNodes);
-        setLinks(newLinks);
-        setFileTree([treeRoot]);
+          setNodes(newNodes);
+          setLinks(newLinks);
+          setFileTree([treeRoot]);
         }
       }
     } catch (e: any) {
@@ -369,7 +451,7 @@ export function Brain() {
 
   useEffect(() => {
     fetchTree();
-  }, [graphType]);
+  }, [graphType, activeProjectId, projects, repo]);
 
   return (
     <div className="flex flex-col h-full overflow-y-auto lg:overflow-hidden pb-4">
@@ -383,6 +465,20 @@ export function Brain() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {graphType === 'project' && projects.length > 0 && (
+            <div className="flex items-center bg-[#121214] border border-zinc-800 rounded-md py-1 px-2.5">
+              <span className="text-[11px] text-zinc-500 font-medium mr-2">Project:</span>
+              <select
+                value={activeProjectId || projects[0]?.id || ''}
+                onChange={(e) => setActiveProjectId(e.target.value)}
+                className="bg-transparent border-none text-xs text-yellow-400 font-semibold focus:ring-0 outline-none cursor-pointer"
+              >
+                {projects.map(p => (
+                  <option key={p.id} value={p.id} className="bg-[#121214] text-zinc-200">{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex flex-wrap bg-[#121214] rounded-md p-1 border border-zinc-800 gap-1">
              <button 
                 onClick={() => setGraphType('project')}

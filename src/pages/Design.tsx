@@ -594,31 +594,72 @@ export function Design() {
     }
   };
 
-  const deployToCreateEngine = async () => {
-    const chosenOption = options.find(o => o.id === selectedOptionId);
-    if (!chosenOption) return;
+  // Modal & Notification states for explicit Project Creation vs Saving Design
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [projectNameInput, setProjectNameInput] = useState('');
+  const [projectDescInput, setProjectDescInput] = useState('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  const handleSaveDesign = () => {
+    const selectedOption = options.find(o => o.id === selectedOptionId);
+    if (!selectedOption) return;
+    try {
+      const savedList = JSON.parse(localStorage.getItem('stitch_saved_designs') || '[]');
+      const newDesign = {
+        id: `design-${Date.now()}`,
+        title: selectedOption.name,
+        description: selectedOption.description,
+        techStack: selectedOption.techStack,
+        prompt: appIdea,
+        files: selectedOption.files,
+        savedAt: new Date().toISOString()
+      };
+      savedList.unshift(newDesign);
+      localStorage.setItem('stitch_saved_designs', JSON.stringify(savedList));
+      setToastMsg('✓ Design layout saved to Design Studio library!');
+      setTimeout(() => setToastMsg(null), 3500);
+    } catch (e) {
+      console.error('Failed to save design layout:', e);
+    }
+  };
+
+  const handleOpenCreateProjectModal = () => {
+    const selectedOption = options.find(o => o.id === selectedOptionId);
+    if (selectedOption) {
+      setProjectNameInput(selectedOption.name);
+      setProjectDescInput(selectedOption.description);
+    } else {
+      setProjectNameInput('My New Project');
+      setProjectDescInput('');
+    }
+    setIsCreateModalOpen(true);
+  };
+
+  const handleConfirmCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const chosenOption = options.find(o => o.id === selectedOptionId);
+    if (!chosenOption || !projectNameInput.trim()) return;
+
+    setIsCreateModalOpen(false);
     setIsDeploying(true);
     setDeploymentLogs([]);
 
     const logs = [
-      'Initializing project deployment thread...',
-      'Bundling design files (App.tsx, index.css)...',
-      'Injecting responsive layout & component tree...',
-      'Provisioning development sandbox container...',
-      'Registering project blueprint in workspace...',
-      'Redirecting to active workspace...'
+      'Creating new project entry from design...',
+      'Bundling design code (App.tsx, index.css)...',
+      'Registering project context in workspace...',
+      'Navigating to active project space...'
     ];
 
     for (let i = 0; i < logs.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 450));
+      await new Promise(resolve => setTimeout(resolve, 350));
       setDeploymentLogs(prev => [...prev, logs[i]]);
     }
 
     try {
       const newProjectId = addProject({
-        name: chosenOption.name,
-        description: chosenOption.description,
+        name: projectNameInput.trim(),
+        description: projectDescInput.trim() || chosenOption.description,
         frameworks: ['React', 'Vite', 'Tailwind CSS'],
         customStack: chosenOption.techStack,
         status: 'Planning',
@@ -626,43 +667,19 @@ export function Design() {
         temperature: 0.7,
         topP: 0.9,
         maxOutputTokens: 2048,
-        backendSettings: {
-          type: 'none'
-        },
+        backendSettings: { type: 'none' },
         goals: [
           'Review generated App.tsx file and test interactive UI triggers.',
-          'Connect endpoints to realistic cloud persistence tables.',
-          'Optimize Tailwind styling classes for widescreen display.'
+          'Connect endpoints to realistic cloud persistence tables.'
         ]
       } as any);
 
       if (newProjectId) {
-        const projData = {
-          id: newProjectId,
-          name: chosenOption.name,
-          description: chosenOption.description,
-          frameworks: ['React', 'Vite', 'Tailwind CSS'],
-          customStack: chosenOption.techStack,
-          status: 'Planning',
-          virtualFiles: chosenOption.files,
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 2048,
-          goals: [
-            'Review generated App.tsx file and test interactive UI triggers.',
-            'Connect endpoints to realistic cloud persistence tables.',
-            'Optimize Tailwind styling classes for widescreen display.'
-          ],
-          subAgentsActive: true
-        };
-
-        localStorage.setItem(`project_temp_inject_${newProjectId}`, JSON.stringify(projData));
         setActiveProjectId(newProjectId);
-
         setTimeout(() => {
           setIsDeploying(false);
           navigate(`/create?projectId=${newProjectId}`);
-        }, 800);
+        }, 500);
       }
     } catch (err) {
       console.error(err);
@@ -670,7 +687,7 @@ export function Design() {
     }
   };
 
-  const selectedOption = options.find(o => o.id === selectedOptionId);
+  const selectedOption = options.find(o => o.id === selectedOptionId) || options[0] || null;
 
   const getPreviewSourceDoc = (option: any) => {
     if (!option) return '<html><body style="background:#09090b;color:#a1a1aa;padding:24px;font-family:sans-serif;"><h3>No layout selected</h3></body></html>';
@@ -761,7 +778,7 @@ const { ${cleanProps} } = _safeIcons;`;
   <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.400.0/dist/umd/lucide-react.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.0/dist/Recharts.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.0/umd/Recharts.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/framer-motion@10.16.4/dist/framer-motion.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"></script>
@@ -796,7 +813,7 @@ const { ${cleanProps} } = _safeIcons;`;
       console.error("Sandbox Runtime Notice:", msg, error);
       var rootDiv = document.getElementById('root');
       if (rootDiv && (!rootDiv.children || rootDiv.children.length === 0)) {
-        rootDiv.innerHTML = '<div style="padding:24px;background:#18181b;color:#f87171;border:1px solid #27272a;border-radius:12px;margin:16px;font-family:sans-serif;"><h4 style="margin:0 0 8px 0;color:#facc15;font-size:14px;">Interactive Preview Exception</h4><p style="margin:0;font-size:12px;color:#a1a1aa;">' + String(msg || 'Component execution notice.') + '</p></div>';
+        rootDiv.innerHTML = '<div style="padding:24px;background:#18181b;color:#f87171;border:1px solid #27272a;border-radius:12px;margin:16px;font-family:sans-serif;"><h4 style="margin:0 0 8px 0;color:#facc15;font-size:14px;">Interactive Preview Notice</h4><p style="margin:0;font-size:12px;color:#a1a1aa;">' + String(msg || 'Component execution notice.') + '</p></div>';
       }
       return false;
     };
@@ -869,84 +886,100 @@ const { ${cleanProps} } = _safeIcons;`;
       });
     };
 
-    window.LucideReact = getIconProxy(window.LucideReact || window.lucideReact || window.lucide);
-    window.lucide = window.LucideReact;
+    function startSandboxEngine() {
+      if (typeof Babel === 'undefined' || typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+        setTimeout(startSandboxEngine, 40);
+        return;
+      }
 
-    window.AnimatePresence = ({ children }) => React.createElement(React.Fragment, null, children);
-    window.motion = new Proxy({
-      AnimatePresence: window.AnimatePresence
-    }, {
-      get: (target, prop) => {
-        if (prop === 'motion') return window.motion;
-        if (prop === 'AnimatePresence') return window.AnimatePresence;
-        if (prop in target) return target[prop];
-        return React.forwardRef((props, ref) => {
-          const { children, whileHover, whileTap, transition, animate, initial, exit, variants, layout, layoutId, ...rest } = props;
-          const tag = (typeof prop === 'string' && /^[a-z][a-z0-9]*$/.test(prop)) ? prop : 'div';
-          return React.createElement(tag, { ...rest, ref }, children);
+      window.LucideReact = getIconProxy(window.LucideReact || window.lucideReact || window.lucide);
+      window.lucide = window.LucideReact;
+
+      window.AnimatePresence = ({ children }) => React.createElement(React.Fragment, null, children);
+      window.motion = new Proxy({
+        AnimatePresence: window.AnimatePresence
+      }, {
+        get: (target, prop) => {
+          if (prop === 'motion') return window.motion;
+          if (prop === 'AnimatePresence') return window.AnimatePresence;
+          if (prop in target) return target[prop];
+          return React.forwardRef((props, ref) => {
+            const { children, whileHover, whileTap, transition, animate, initial, exit, variants, layout, layoutId, ...rest } = props;
+            const tag = (typeof prop === 'string' && /^[a-z][a-z0-9]*$/.test(prop)) ? prop : 'div';
+            return React.createElement(tag, { ...rest, ref }, children);
+          });
+        }
+      });
+
+      if (typeof window.d3 === 'undefined') {
+        window.d3 = new Proxy({}, {
+          get: () => () => ({
+            attr: function() { return this; },
+            style: function() { return this; },
+            text: function() { return this; },
+            append: function() { return this; },
+            data: function() { return this; },
+            enter: function() { return this; }
+          })
         });
       }
-    });
 
-    if (typeof window.d3 === 'undefined') {
-      window.d3 = new Proxy({}, {
-        get: () => () => ({
-          attr: function() { return this; },
-          style: function() { return this; },
-          text: function() { return this; },
-          append: function() { return this; },
-          data: function() { return this; },
-          enter: function() { return this; }
-        })
-      });
-    }
-
-    if (typeof window.Recharts === 'undefined') {
-      window.Recharts = new Proxy({}, {
-        get: (target, prop) => (props) => React.createElement('div', {
-          style: {
-            padding: '12px',
-            border: '1px solid #27272a',
-            borderRadius: '8px',
-            color: '#a1a1aa',
-            fontSize: '11px',
-            background: '#18181b',
-            textAlign: 'center'
-          }
-        }, '[Chart Component: ' + String(prop) + ']')
-      });
-    }
-
-    try {
-      const rawCode = decodeURIComponent('${encodedAppCode}');
-      let compiled = '';
-      try {
-        compiled = Babel.transform(rawCode, {
-          presets: [
-            ['react', { runtime: 'classic' }],
-            'typescript'
-          ],
-          filename: 'App.tsx'
-        }).code;
-      } catch (bErr) {
-        console.warn("Babel transform first pass notice, applying fallback:", bErr);
-        const sanitized = rawCode.replace(/(['"])([^'"\n]*)$/gm, '$1$2$1');
-        compiled = Babel.transform(sanitized, {
-          presets: [
-            ['react', { runtime: 'classic' }],
-            'typescript'
-          ],
-          filename: 'App.tsx'
-        }).code;
+      if (typeof window.Recharts === 'undefined') {
+        window.Recharts = new Proxy({}, {
+          get: (target, prop) => (props) => React.createElement('div', {
+            style: {
+              padding: '12px',
+              border: '1px solid #27272a',
+              borderRadius: '8px',
+              color: '#a1a1aa',
+              fontSize: '11px',
+              background: '#18181b',
+              textAlign: 'center'
+            }
+          }, '[Chart Component: ' + String(prop) + ']')
+        });
       }
 
-      const script = document.createElement('script');
-      script.type = 'text/javascript';
-      script.text = compiled;
-      document.body.appendChild(script);
-    } catch (err) {
-      console.error('Sandbox Render Fallback Error:', err);
-      document.getElementById('root').innerHTML = '<div class="p-6 bg-zinc-900 border border-zinc-800 rounded-2xl m-4 text-center"><h3 class="text-yellow-400 font-bold text-sm">Interactive Sandbox Compiled</h3><p class="text-xs text-zinc-400 mt-1">Render complete for workspace deployment. Error: ' + (err.message || 'Syntax parse fallback') + '</p></div>';
+      try {
+        const rawCode = decodeURIComponent('${encodedAppCode}');
+        let compiled = '';
+        try {
+          compiled = Babel.transform(rawCode, {
+            presets: [
+              ['react', { runtime: 'classic' }],
+              'typescript'
+            ],
+            filename: 'App.tsx'
+          }).code;
+        } catch (bErr) {
+          console.warn("Babel transform first pass notice, applying fallback:", bErr);
+          const sanitized = rawCode.replace(/(['"])([^'"\n]*)$/gm, '$1$2$1');
+          compiled = Babel.transform(sanitized, {
+            presets: [
+              ['react', { runtime: 'classic' }],
+              'typescript'
+            ],
+            filename: 'App.tsx'
+          }).code;
+        }
+
+        const script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.text = compiled;
+        document.body.appendChild(script);
+      } catch (err) {
+        console.error('Sandbox Render Fallback Error:', err);
+        var rootDiv = document.getElementById('root');
+        if (rootDiv) {
+          rootDiv.innerHTML = '<div class="p-6 bg-zinc-900 border border-zinc-800 rounded-2xl m-4 text-center"><h3 class="text-yellow-400 font-bold text-sm">Interactive Sandbox Compiled</h3><p class="text-xs text-zinc-400 mt-1">Render complete for workspace deployment. Notice: ' + (err.message || 'Syntax parse fallback') + '</p></div>';
+        }
+      }
+    }
+
+    if (document.readyState === 'complete') {
+      startSandboxEngine();
+    } else {
+      window.addEventListener('load', startSandboxEngine);
     }
   </script>
 </body>
@@ -1341,7 +1374,7 @@ const { ${cleanProps} } = _safeIcons;`;
                             title="Archetype Live Sandbox Preview"
                             srcDoc={getPreviewSourceDoc(selectedOption)}
                             className="w-full h-full border-none bg-[#09090b]"
-                            sandbox="allow-scripts allow-modals allow-same-origin"
+                            sandbox="allow-scripts allow-modals"
                           />
                         </div>
                       </div>
@@ -1620,7 +1653,7 @@ const { ${cleanProps} } = _safeIcons;`;
                                       title={`Side Test ${opt.name}`}
                                       srcDoc={getPreviewSourceDoc(opt)}
                                       className="w-full h-full min-h-[360px] border-none bg-[#09090b]"
-                                      sandbox="allow-scripts allow-modals allow-same-origin"
+                                      sandbox="allow-scripts allow-modals"
                                     />
                                   </div>
                                 </div>
@@ -1646,7 +1679,7 @@ const { ${cleanProps} } = _safeIcons;`;
                                 title="Design Sandbox Preview"
                                 srcDoc={getPreviewSourceDoc(selectedOption)}
                                 className="w-full h-full min-h-[400px] border-none bg-[#09090b]"
-                                sandbox="allow-scripts allow-modals allow-same-origin"
+                                sandbox="allow-scripts allow-modals"
                               />
                             </div>
                           </div>
@@ -1737,18 +1770,29 @@ const { ${cleanProps} } = _safeIcons;`;
 
                   </div>
 
-                  {/* Deploy Action Bar */}
-                  <div className="bg-[#08080a] border-t border-zinc-800 p-4 flex justify-between items-center shrink-0">
+                  {/* Design Action Bar */}
+                  <div className="bg-[#08080a] border-t border-zinc-800 p-4 flex flex-wrap justify-between items-center gap-3 shrink-0">
                     <span className="text-xs text-zinc-400 font-mono">
-                      Selected: <strong className="text-white">{selectedOption.name}</strong>
+                      Selected Layout: <strong className="text-white">{selectedOption.name}</strong>
                     </span>
 
-                    <button
-                      onClick={deployToCreateEngine}
-                      className="px-5 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-md shadow-yellow-500/20"
-                    >
-                      <Sparkles size={14} /> Deploy Design to Workspace
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveDesign}
+                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white font-medium text-xs rounded-xl border border-zinc-700 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <BookmarkCheck size={14} className="text-yellow-400" /> Save Design
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleOpenCreateProjectModal}
+                        className="px-5 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-md shadow-yellow-500/20"
+                      >
+                        <Sparkles size={14} /> Create Project from Design
+                      </button>
+                    </div>
                   </div>
 
                 </div>
@@ -1960,7 +2004,7 @@ const { ${cleanProps} } = _safeIcons;`;
                   title="Design Fullscreen Sandbox"
                   srcDoc={getPreviewSourceDoc(selectedOption)}
                   className="w-full h-full border-none bg-[#09090b]"
-                  sandbox="allow-scripts allow-modals allow-same-origin"
+                  sandbox="allow-scripts allow-modals"
                 />
               </div>
             </div>
@@ -1983,17 +2027,119 @@ const { ${cleanProps} } = _safeIcons;`;
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFullscreenPreview(false);
-                  deployToCreateEngine();
-                }}
-                className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-md"
-              >
-                <Sparkles size={13} /> Deploy Design to Workspace
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveDesign}
+                  className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium border border-zinc-700 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <BookmarkCheck size={13} className="text-yellow-400" /> Save Design
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFullscreenPreview(false);
+                    handleOpenCreateProjectModal();
+                  }}
+                  className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <Sparkles size={13} /> Create Project from Design
+                </button>
+              </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Explicit Create Project from Design Modal */}
+      <AnimatePresence>
+        {isCreateModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-sans select-none"
+          >
+            <div className="max-w-md w-full bg-[#0c0c0f] border border-zinc-800 p-6 rounded-2xl space-y-4 text-left shadow-2xl relative">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                  <Sparkles size={16} className="text-yellow-400" />
+                  <span>Create Project from Design</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="text-zinc-500 hover:text-white p-1 rounded hover:bg-zinc-900 transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Provide a project name and description to convert this design layout into an active workspace project in <strong className="text-zinc-200">My Projects</strong>.
+              </p>
+
+              <form onSubmit={handleConfirmCreateProject} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-300 block uppercase tracking-wider text-[10px]">
+                    Project Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. FitPulse Tracker App"
+                    value={projectNameInput}
+                    onChange={(e) => setProjectNameInput(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500 font-sans"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-300 block uppercase tracking-wider text-[10px]">
+                    Project Description (Optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Brief description of the workspace goals..."
+                    value={projectDescInput}
+                    onChange={(e) => setProjectDescInput(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500 resize-none font-sans"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 font-medium text-xs rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-yellow-500/20"
+                  >
+                    <Sparkles size={13} /> Confirm & Create Project
+                  </button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Save Toast Banner */}
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 right-6 z-[100] bg-yellow-500 text-black font-bold text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-yellow-400"
+          >
+            <CheckCircle2 size={16} />
+            <span>{toastMsg}</span>
           </motion.div>
         )}
       </AnimatePresence>

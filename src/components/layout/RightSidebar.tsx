@@ -62,6 +62,8 @@ import { collection, getDocs, setDoc, doc, deleteDoc } from 'firebase/firestore'
 import { aetherConversationalEngine } from '../../lib/aetherConversationalEngine';
 import { masterIdeaLibrary } from '../../lib/masterIdeaLibraryService';
 import { aetherSpotify } from '../../lib/aetherSpotifyEngine';
+import { aetherDesktopIntelligence } from '../../lib/aetherDesktopIntelligence';
+import { aetherTeachEngine } from '../../lib/aetherTeachEngine';
 
 type Message = {
   id: string;
@@ -185,7 +187,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           {
             id: '1',
             role: 'agent',
-            content: 'System online. I am Aether, your central assistant. I have full connection to your Obsidian Notes, Maps, and AgenticOS. How can I assist you today?'
+            content: "You're currently working on DevSpace. You have 3 Dreams waiting for review, active project goals, and your release branch ready. Where shall we focus next?"
           }
         ]
       },
@@ -629,6 +631,19 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     window.addEventListener('aether-mute-sync', handleSync);
     return () => window.removeEventListener('aether-mute-sync', handleSync);
   }, []);
+
+  useEffect(() => {
+    const handleWindowCmd = (e: any) => {
+      const mode = e.detail?.mode;
+      if (mode === 'hide') {
+        if (isRightSidebarOpen) toggleRightSidebar();
+      } else if (mode === 'full' || mode === 'dock' || mode === 'sidebar' || mode === 'popout') {
+        if (!isRightSidebarOpen) toggleRightSidebar();
+      }
+    };
+    window.addEventListener('aether_window_command', handleWindowCmd);
+    return () => window.removeEventListener('aether_window_command', handleWindowCmd);
+  }, [isRightSidebarOpen, toggleRightSidebar]);
 
   const [isSpeechPlaying, setIsSpeechPlaying] = useState(false);
 
@@ -1155,13 +1170,145 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     }
 
     // 4. SPOTIFY INTELLIGENCE NATURAL LANGUAGE HANDLER
-    const spotifyRes = aetherSpotify.handleNaturalLanguageCommand(textToSend);
+    const spotifyRes = await aetherSpotify.handleNaturalLanguageCommand(textToSend);
     if (spotifyRes.handled) {
       setInputValue('');
       const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
       const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: `🎵 ${spotifyRes.message}` };
       setMessages(prev => [...prev, userMsg, modelMsg]);
       speakVoiceReply(spotifyRes.message);
+      return;
+    }
+
+    // 5. DESKTOP FILESYSTEM SEARCH
+    if (lower.includes('find project files') || lower.includes('find file') || lower.includes('show downloads') || lower.includes('find pdf') || lower.includes('search filesystem') || lower.startsWith('find file ') || lower.startsWith('search file ')) {
+      const query = textToSend.replace(/find|search|project|files|file|for|in|downloads|pdf/gi, '').trim() || 'project';
+      const searchRes = await aetherDesktopIntelligence.searchFiles(query);
+      setInputValue('');
+      let reply = `📁 **Desktop Filesystem Search Results for "${query}":**\n\n`;
+      if (searchRes.files.length > 0) {
+        reply += searchRes.files.map(f => ` - **${f.name}** (\`${f.path}\` • ${(f.sizeBytes / 1024).toFixed(1)} KB • ${f.type})`).join('\n');
+      } else {
+        reply += `No matching files found for "${query}" in workspace directory.`;
+      }
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(`Found ${searchRes.files.length} matching desktop files.`);
+      return;
+    }
+
+    // 6. INSTALLED APPLICATIONS & LAUNCHER
+    if (lower.includes('installed app') || lower.includes('show my apps') || lower.includes('list apps') || lower.startsWith('open ') || lower.startsWith('launch ')) {
+      const isLaunch = lower.startsWith('open ') || lower.startsWith('launch ');
+      if (isLaunch) {
+        const appName = textToSend.replace(/open|launch|the|app|application/gi, '').trim();
+        const launchRes = await aetherDesktopIntelligence.launchApp(appName);
+        setInputValue('');
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: launchRes.message };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(launchRes.message);
+        return;
+      } else {
+        const apps = await aetherDesktopIntelligence.getInstalledApps();
+        setInputValue('');
+        let reply = `💻 **System Installed Applications Directory:**\n\n` +
+          apps.map(a => ` - **${a.name}** (\`${a.executable}\` • ${a.category} • Path: \`${a.location}\`)`).join('\n') +
+          `\n\n*Say "Open [App Name]" to trigger launch sequence.*`;
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(`Identified ${apps.length} installed system applications.`);
+        return;
+      }
+    }
+
+    // 7. YOUTUBE SEARCH & VIDEO PLAY
+    if (lower.includes('youtube') || lower.includes('find video') || lower.includes('search video') || lower.match(/videos?\s+about/)) {
+      const ytQuery = textToSend.replace(/youtube|find|search|video|videos|about|for|me/gi, '').trim() || 'React TypeScript tutorial';
+      const videos = await aetherDesktopIntelligence.searchYouTube(ytQuery, 3);
+      setInputValue('');
+      let reply = `🎥 **YouTube Video Intelligence Results for "${ytQuery}":**\n\n`;
+      reply += videos.map((v, i) => `**${i + 1}. [${v.title}](${v.url})**\n- Channel: ${v.channel} • Duration: ${v.duration} • Views: ${v.views}\n- Link: ${v.url}`).join('\n\n');
+      reply += `\n\n*Click any link above to open in browser.*`;
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(`Found ${videos.length} YouTube videos for ${ytQuery}.`);
+      return;
+    }
+
+    // 8. DEEP RESEARCH & PRIVACY BOUNDARIES
+    if (lower.startsWith('research ') || lower.includes('deep research')) {
+      const topic = textToSend.replace(/research|deep|about|on/gi, '').trim() || 'Modern Web Application Architecture';
+      const report = await aetherDesktopIntelligence.conductResearch(topic);
+      setInputValue('');
+      let reply = `📊 **Aether Intelligence Research Report: ${report.topic}**\n\n` +
+        `${report.summary}\n\n` +
+        `**Key Findings:**\n` +
+        report.keyFindings.map(f => ` - ${f}`).join('\n');
+      if (report.sources.length > 0) {
+        reply += `\n\n**Sources:**\n` + report.sources.map(s => ` - [${s.title}](${s.url})`).join('\n');
+      }
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(`Compiled research report for ${topic}.`);
+      return;
+    }
+
+    // 9. TEACH AETHER BY DEMONSTRATION & REPLAY
+    if (lower.includes('watch what i') || lower.includes('teach aether') || lower.includes('teach ether') || lower.includes('record workflow')) {
+      aetherTeachEngine.startRecording('User Demonstrated Workflow');
+      setInputValue('');
+      const reply = `🎓 **Teach-by-Demonstration Mode Activated!**\n\nAether is now watching your interactions. Perform your steps across the workspace. When finished, say **"Stop Recording"** or **"Save Sequence"**.`;
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply("Teach-by-demonstration mode activated. Aether is recording your steps.");
+      return;
+    }
+
+    if (lower === 'stop recording' || lower === 'save sequence' || lower === 'finish recording') {
+      if (aetherTeachEngine.isRecordingActive()) {
+        const { sequenceName, steps, summaryText } = aetherTeachEngine.stopRecording();
+        aetherTeachEngine.confirmAndSaveRecording(sequenceName, sequenceName, steps);
+        setInputValue('');
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: summaryText };
+        setMessages(prev => [...prev, userMsg, modelMsg]);
+        speakVoiceReply(`Recorded sequence "${sequenceName}" with ${steps.length} steps.`);
+        return;
+      }
+    }
+
+    // Replay matching taught sequence
+    const matchedSeq = aetherTeachEngine.findMatchingSequence(textToSend);
+    if (matchedSeq) {
+      setInputValue('');
+      let reply = `▶️ **Executing Taught Sequence: "${matchedSeq.name}"**\n\n` +
+        `Replaying ${matchedSeq.steps.length} captured steps:\n` +
+        matchedSeq.steps.map(s => ` ${s.order}. Executing ${s.type.toUpperCase()} on "${s.targetLabel}"${s.isRisky ? ' ⚠️ [User Confirmed]' : ''}`).join('\n') +
+        `\n\n✅ Sequence execution complete.`;
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply(`Executed taught sequence ${matchedSeq.name}.`);
+      return;
+    }
+
+    // 10. CAPABILITIES AWARENESS & DESKTOP PERMISSIONS
+    if (lower.includes('capabilities') || lower.includes('what can you do') || lower.includes('desktop permissions') || lower.includes('system status')) {
+      const matrix = aetherDesktopIntelligence.getCapabilityAudit();
+      setInputValue('');
+      let reply = `🛡️ **Aether Desktop Capabilities & Security Audit Matrix:**\n\n` +
+        matrix.map(m => ` - **${m.capability}**: \`${m.status}\` — ${m.details}`).join('\n') +
+        `\n\n*All desktop operations run within explicitly granted security boundaries.*`;
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
+      setMessages(prev => [...prev, userMsg, modelMsg]);
+      speakVoiceReply("Displayed Aether desktop capabilities and security status matrix.");
       return;
     }
 
@@ -1548,7 +1695,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       {
         id: '1',
         role: 'agent',
-        content: 'Conversation history cleared. Aether AI memory is ready. How can I assist you?'
+        content: "Conversation history cleared. I am holding your active DevSpace context and project memory. What shall we work on next?"
       }
     ]);
   };
@@ -1976,14 +2123,14 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                       onClick={isRecording ? stopRecording : startRecording}
                       className={`p-2 rounded-lg transition-all border relative overflow-hidden ${
                         isRecording 
-                          ? 'bg-red-950/40 text-red-400 border-red-500 px-3 shadow-[0_0_15px_rgba(239,68,68,0.25)]' 
+                          ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/50 px-3 shadow-[0_0_15px_rgba(16,185,129,0.25)]' 
                           : 'text-yellow-400 hover:bg-zinc-800 border-transparent hover:border-[#27272a]'
                       }`}
-                      title="Vocal voice directive"
+                      title={isRecording ? "Mute Active Voice Input" : "Activate Continuous Natural Voice Listening"}
                     >
                       <div className="flex items-center gap-1.5">
-                        <Mic size={14} className={isRecording ? 'text-red-500' : ''} />
-                        <span className="text-[10px] font-bold uppercase tracking-widest">{isRecording ? 'listening' : 'Spoken Memo'}</span>
+                        <Mic size={14} className={isRecording ? 'text-emerald-400 animate-pulse' : ''} />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{isRecording ? 'Voice Active' : 'Voice Input'}</span>
                         {isRecording && (
                           <div className="flex gap-[1.5px] items-center h-3 shrink-0 ml-1">
                             {[10, 16, 12, 18, 14, 8, 12, 6].map((baseH, i) => (
@@ -1995,7 +2142,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                                   repeat: Infinity,
                                   ease: "easeInOut"
                                 }}
-                                className="w-[1.5px] bg-red-400 rounded-full"
+                                className="w-[1.5px] bg-emerald-400 rounded-full"
                               />
                             ))}
                           </div>

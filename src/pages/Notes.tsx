@@ -7,7 +7,13 @@ import { analyzeAndCategorizeNote, CategorizationResult } from '../lib/categoriz
 import { NoteAnalysisPanel } from '../components/ui/NoteAnalysisPanel';
 
 export function Notes() {
-  const { notes, addNote, updateNote, deleteNote, activeProjectId, projects, addIssue } = useData();
+  const { notes, addNote, updateNote, deleteNote, activeProjectId, setActiveProjectId, projects, addIssue } = useData();
+
+  useEffect(() => {
+    if (!activeProjectId && projects.length > 0) {
+      setActiveProjectId(projects[0].id);
+    }
+  }, [activeProjectId, projects, setActiveProjectId]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => localStorage.getItem('notes_selected_note_id'));
   const [isEditing, setIsEditing] = useState(() => localStorage.getItem('notes_is_editing') === 'true');
   const [aiLoading, setAiLoading] = useState(false);

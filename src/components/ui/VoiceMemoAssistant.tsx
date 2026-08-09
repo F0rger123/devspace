@@ -33,6 +33,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
+import { aetherConversationalEngine } from '../../lib/aetherConversationalEngine';
+import { aetherVoiceRegistry } from '../../lib/aetherVoiceRegistry';
+import { aetherDesktopIntelligence } from '../../lib/aetherDesktopIntelligence';
 import { haptic } from '../../utils/haptics';
 import { WakeCanvasVisualizer } from './WakeCanvasVisualizer';
 
@@ -1192,16 +1195,13 @@ export function VoiceMemoAssistant() {
           setHudTab('speak');
           setIsConversing(true);
 
-          const chosenGreeting = getGreeting();
+          const activeProjName = projects.find(p => p.id === activeProjectId)?.name;
+          const greeting = aetherConversationalEngine.getGreeting(activeProjName);
 
-          setConvoHistory([
-            { role: 'model', text: chosenGreeting }
-          ]);
           setAetherFeedback({
-            explanation: chosenGreeting
+            explanation: greeting
           });
-
-          triggerBrowserSpeechSynthesis(chosenGreeting);
+          triggerBrowserSpeechSynthesis(greeting);
         }
       };
 
@@ -2141,17 +2141,10 @@ export function VoiceMemoAssistant() {
     
     setHudTab('speak');
     setIsConversing(true);
-    const chosenGreeting = getGreeting();
-    setConvoHistory([
-      { role: 'model', text: chosenGreeting }
-    ]);
     setAetherFeedback({
-      explanation: chosenGreeting
+      explanation: "Ready & listening..."
     });
     setIsMicPermissionBlocked(false);
-    setTimeout(() => {
-      triggerBrowserSpeechSynthesis(chosenGreeting);
-    }, 120);
   };
 
   const handleCloseAssistant = () => {
@@ -2485,17 +2478,14 @@ export function VoiceMemoAssistant() {
         setHudTab('speak');
         setIsConversing(true);
 
-        const chosenGreeting = getGreeting();
-        setConvoHistory([
-          { role: 'model', text: chosenGreeting }
-        ]);
+        const activeProjName = projects.find(p => p.id === activeProjectId)?.name;
+        const greeting = aetherConversationalEngine.getGreeting(activeProjName);
+
         setAetherFeedback({
-          explanation: chosenGreeting
+          explanation: greeting
         });
+        triggerBrowserSpeechSynthesis(greeting);
         setIsMicPermissionBlocked(false);
-        setTimeout(() => {
-          triggerBrowserSpeechSynthesis(chosenGreeting);
-        }, 120);
       }
     };
 
@@ -2746,6 +2736,59 @@ export function VoiceMemoAssistant() {
     if (!inputText) return false;
     const cleanInput = inputText.toLowerCase().trim().replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
     
+    // -----------------------------------------------------------------
+    // AETHER IDENTITY & CONVERSATIONAL INTELLIGENCE INTERCEPTOR
+    // -----------------------------------------------------------------
+    if (
+      cleanInput.includes("call me") ||
+      cleanInput.includes("my name is") ||
+      cleanInput.includes("what should you call me") ||
+      cleanInput.includes("what is my name") ||
+      cleanInput.includes("what can you do") ||
+      cleanInput.includes("capabilities") ||
+      cleanInput.includes("take me to") ||
+      cleanInput.includes("call") ||
+      cleanInput.includes("remember this") ||
+      cleanInput.includes("when i say") ||
+      cleanInput.includes("whenever i say") ||
+      cleanInput.startsWith("open") ||
+      cleanInput.startsWith("go to") ||
+      cleanInput.startsWith("switch to") ||
+      cleanInput.startsWith("create") ||
+      cleanInput.includes("show me the issues") ||
+      cleanInput.includes("make it high priority") ||
+      cleanInput.includes("search") ||
+      cleanInput.includes("youtube") ||
+      cleanInput.includes("video") ||
+      cleanInput.includes("tutorial") ||
+      cleanInput.includes("look up") ||
+      cleanInput.includes("about it") ||
+      cleanInput.includes("explaining") ||
+      cleanInput.includes("explanation") ||
+      cleanInput.includes("open the second") ||
+      cleanInput.includes("open the first") ||
+      cleanInput.includes("pull that website up") ||
+      cleanInput.includes("what does this mean") ||
+      cleanInput.includes("stop") ||
+      cleanInput.includes("cancel")
+    ) {
+      const processed = aetherConversationalEngine.processUserMessage(inputText, projects, activeProjectId);
+      if (processed && processed.responseText) {
+        setAetherFeedback({
+          transcript: inputText,
+          explanation: processed.responseText,
+          intent: 'conversational_action',
+          triggeredAction: `🗣️ Aether Intelligence: ${processed.responseText.slice(0, 50)}...`
+        });
+        triggerBrowserSpeechSynthesis(processed.responseText);
+
+        if (processed.actionToExecute) {
+          executeProposedAction(processed.actionToExecute);
+        }
+        return true;
+      }
+    }
+
     // -----------------------------------------------------------------
     // SPECIAL CORE VOICE COMMANDS FOR ETHER (AETHER AI) STATE CHANGING
     // -----------------------------------------------------------------
@@ -4558,19 +4601,88 @@ export function VoiceMemoAssistant() {
       case 'navigate_to': {
         const path = parsedData.path || '/';
         const projName = parsedData.projectNameMentioned || '';
-        if (projName && projects.length > 0) {
-          const matchedProj = projects.find(p => {
+        let matchedProj = null;
+
+        if (parsedData.projectId) {
+          matchedProj = projects.find(p => p.id === parsedData.projectId);
+        }
+        if (!matchedProj && projName && projects.length > 0) {
+          matchedProj = projects.find(p => {
             const pName = p.name.toLowerCase().trim();
             return pName === projName.toLowerCase().trim() || pName.includes(projName.toLowerCase().trim()) || projName.toLowerCase().trim().includes(pName);
           });
-          if (matchedProj) {
-            setActiveProjectId(matchedProj.id);
+        }
+
+        if (matchedProj) {
+          setActiveProjectId(matchedProj.id);
+          localStorage.setItem('app_active_project', matchedProj.id);
+          localStorage.setItem('active_project_id', matchedProj.id);
+          window.dispatchEvent(new CustomEvent('active_project_changed', { detail: matchedProj.id }));
+          actionTriggeredDisplay = `🧭 Navigated to project "${matchedProj.name}" workspace.`;
+          navigate('/projects');
+        } else {
+          actionTriggeredDisplay = `🧭 Navigated to workspace section: ${path}`;
+          if (!isDrawingModeActiveRef.current) {
+            navigate(path);
           }
         }
-        actionTriggeredDisplay = `🧭 Navigated to workspace section: ${path}`;
-        if (!isDrawingModeActiveRef.current) {
-          navigate(path);
+        break;
+      }
+
+      case 'search_web': {
+        const query = parsedData.query || 'latest developer news';
+        actionTriggeredDisplay = `🌐 Searching online for "${query}"...`;
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+        break;
+      }
+
+      case 'search_youtube': {
+        const query = parsedData.query || 'devspace aether';
+        actionTriggeredDisplay = `📺 Found YouTube video tutorials for "${query}". Opening YouTube results...`;
+        window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
+        break;
+      }
+
+      case 'launch_desktop_app': {
+        const appName = parsedData.appName || 'browser';
+        actionTriggeredDisplay = `🚀 Launched system application "${appName}".`;
+        aetherDesktopIntelligence.launchApp(appName);
+        break;
+      }
+
+      case 'create_issue': {
+        const title = parsedData.title || 'New Backlog Item';
+        const priority = parsedData.priority || 'Medium';
+        const pId = parsedData.projectId || activeProjectId || (projects[0]?.id || 'p-1');
+        
+        const newIssue = {
+          id: `issue-${Date.now()}`,
+          title,
+          description: 'Created via Aether voice directive.',
+          status: 'Backlog' as const,
+          priority: priority as any,
+          type: 'Task' as const,
+          projectId: pId,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        addIssue(newIssue);
+        actionTriggeredDisplay = `📋 Created issue "${title}" with priority ${priority}.`;
+        navigate('/issues');
+        break;
+      }
+
+      case 'update_issue_status': {
+        const priority = parsedData.priority || 'High';
+        const pId = parsedData.projectId || activeProjectId;
+        if (issues && issues.length > 0) {
+          const target = issues.find(i => !pId || i.projectId === pId) || issues[0];
+          if (target) {
+            updateIssue(target.id, { priority: priority as any });
+          }
         }
+        actionTriggeredDisplay = `⚡ Updated top issue priority to ${priority}.`;
+        navigate('/issues');
         break;
       }
 
@@ -5691,72 +5803,74 @@ export function VoiceMemoAssistant() {
                         className="flex-grow flex flex-col min-h-0 space-y-3"
                       >
                       {/* Interactive Mouse Selection & Context Dashboard */}
-                      <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-900/85 text-left shrink-0">
-                        <div className="flex items-center justify-between mb-2 select-none">
-                          <div className="flex items-center gap-1.5">
-                            <Target size={12} className="text-yellow-400 animate-pulse" />
-                            <span className="text-[10px] uppercase font-black tracking-widest text-yellow-400 font-mono">Spatial Screen Context</span>
+                      {((circledContexts && circledContexts.length > 0) || isDrawingModeActive) && (
+                        <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-900/85 text-left shrink-0">
+                          <div className="flex items-center justify-between mb-2 select-none">
+                            <div className="flex items-center gap-1.5">
+                              <Target size={12} className="text-yellow-400 animate-pulse" />
+                              <span className="text-[10px] uppercase font-black tracking-widest text-yellow-400 font-mono">Spatial Screen Context</span>
+                            </div>
+                            
+                            <button
+                              onClick={() => {
+                                setDrawingModeActive(!isDrawingModeActive);
+                                showToast(
+                                  !isDrawingModeActive ? "🎯 Activated screen region draw mode" : "🚫 Deactivated screen region draw mode",
+                                  "info",
+                                  2000
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                                isDrawingModeActive
+                                  ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 animate-pulse'
+                                  : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700'
+                              }`}
+                            >
+                              <MousePointerClick size={10} />
+                              <span>{isDrawingModeActive ? "Drawing Active" : "Circle Regions"}</span>
+                            </button>
                           </div>
-                          
-                          <button
-                            onClick={() => {
-                              setDrawingModeActive(!isDrawingModeActive);
-                              showToast(
-                                !isDrawingModeActive ? "🎯 Activated screen region draw mode" : "🚫 Deactivated screen region draw mode",
-                                "info",
-                                2000
-                              );
-                            }}
-                            className={`px-2.5 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition-all flex items-center gap-1 cursor-pointer ${
-                              isDrawingModeActive
-                                ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 animate-pulse'
-                                : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700'
-                            }`}
-                          >
-                            <MousePointerClick size={10} />
-                            <span>{isDrawingModeActive ? "Drawing Active" : "Circle Regions"}</span>
-                          </button>
-                        </div>
 
-                        {/* List of active circled areas */}
-                        {circledContexts && circledContexts.length > 0 ? (
-                          <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[8px] text-zinc-500 font-mono font-bold uppercase">Active Captured Areas ({circledContexts.length})</span>
-                              <button
-                                onClick={() => {
-                                  clearCircledContexts();
-                                  showToast("🧹 Cleared all screen context areas", "info", 1500);
-                                }}
-                                className="text-[8px] text-red-400 hover:text-red-300 font-mono font-bold uppercase cursor-pointer"
-                              >
-                                Clear All
-                              </button>
+                          {/* List of active circled areas */}
+                          {circledContexts && circledContexts.length > 0 ? (
+                            <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[8px] text-zinc-500 font-mono font-bold uppercase">Active Captured Areas ({circledContexts.length})</span>
+                                <button
+                                  onClick={() => {
+                                    clearCircledContexts();
+                                    showToast("🧹 Cleared all screen context areas", "info", 1500);
+                                  }}
+                                  className="text-[8px] text-red-400 hover:text-red-300 font-mono font-bold uppercase cursor-pointer"
+                                >
+                                  Clear All
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                {circledContexts.map((ctx, idx) => (
+                                  <div key={ctx.id} className="flex items-center justify-between gap-1.5 bg-zinc-900/80 border border-zinc-850 px-2 py-1 rounded-lg text-[9.5px]">
+                                    <span className="text-zinc-300 truncate max-w-[120px] font-mono">{ctx.label || `Area #${idx + 1}`}</span>
+                                    <button
+                                      onClick={() => {
+                                        useStore.setState(state => ({
+                                          circledContexts: state.circledContexts.filter(c => c.id !== ctx.id)
+                                        }));
+                                      }}
+                                      className="text-zinc-500 hover:text-red-400 cursor-pointer"
+                                    >
+                                      <X size={10} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                              {circledContexts.map((ctx, idx) => (
-                                <div key={ctx.id} className="flex items-center justify-between gap-1.5 bg-zinc-900/80 border border-zinc-850 px-2 py-1 rounded-lg text-[9.5px]">
-                                  <span className="text-zinc-300 truncate max-w-[120px] font-mono">{ctx.label || `Area #${idx + 1}`}</span>
-                                  <button
-                                    onClick={() => {
-                                      useStore.setState(state => ({
-                                        circledContexts: state.circledContexts.filter(c => c.id !== ctx.id)
-                                      }));
-                                    }}
-                                    className="text-zinc-500 hover:text-red-400 cursor-pointer"
-                                  >
-                                    <X size={10} />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-[9px] text-zinc-500 font-mono leading-normal">
-                            No visual context selected. Circle any item on your screen using your cursor, or hold <kbd className="bg-zinc-900 border border-zinc-800 text-zinc-300 px-1 py-0.5 rounded text-[8px] font-sans font-bold">Alt</kbd> + drag to recruit instant UI content context.
-                          </p>
-                        )}
-                      </div>
+                          ) : (
+                            <p className="text-[9px] text-zinc-500 font-mono leading-normal">
+                              Context mode active. Circle any area on screen using cursor or Alt + drag.
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       {/* Real-time Dynamic Acoustic Synaptic feedback tracker */}
                       <div className="flex items-center justify-between px-3.5 py-2.5 bg-zinc-900/40 rounded-xl border border-zinc-850/60 font-sans select-none shrink-0 text-left">

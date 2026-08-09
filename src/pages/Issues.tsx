@@ -505,12 +505,19 @@ Example:
     const priority = searchParams.get("priority");
     const phaseId = searchParams.get("phaseId");
     const issueId = searchParams.get("issueId");
+    const projectIdParam = searchParams.get("projectId");
+
+    if (projectIdParam) {
+      setActiveProjectId(projectIdParam);
+    } else if (!activeProjectId && projects.length > 0) {
+      setActiveProjectId(projects[0].id);
+    }
 
     if (search !== null) setSearchQuery(search);
     if (priority !== null) setFilterPriority(priority);
     if (phaseId !== null) setFilterPhase(phaseId);
     if (issueId !== null) setActiveIssueId(issueId);
-  }, [searchParams]);
+  }, [searchParams, projects, activeProjectId, setActiveProjectId]);
 
   const activeSprints = useMemo(() => {
     return projects.find((p) => p.id === activeProjectId)?.sprints || [];
@@ -687,7 +694,7 @@ Example:
     });
   };
 
-  const columns = ["Todo", "In Progress", "Done"];
+  const columns = ["Backlog", "Todo", "In Progress", "Review", "Done"];
 
   return (
     <div className="flex flex-col h-full overflow-hidden pb-4 relative">
@@ -1043,8 +1050,10 @@ Example:
             className="bg-[#09090b] border border-zinc-800 text-zinc-300 text-xs rounded outline-none py-1.5 px-2 focus:border-blue-500/50 w-28"
           >
             <option value="All">All Status</option>
+            <option value="Backlog">Backlog</option>
             <option value="Todo">Todo</option>
             <option value="In Progress">In Progress</option>
+            <option value="Review">Review</option>
             <option value="Done">Done</option>
           </select>
         </div>
@@ -1776,8 +1785,10 @@ Example:
                       }
                       className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500 transition-colors"
                     >
+                      <option value="Backlog">Backlog</option>
                       <option value="Todo">Todo</option>
                       <option value="In Progress">In Progress</option>
+                      <option value="Review">Review</option>
                       <option value="Done">Done</option>
                     </select>
                   </div>
@@ -1958,8 +1969,10 @@ Example:
                     }
                     className="flex-1 bg-transparent border-none text-zinc-200 outline-none py-1 px-0 hover:bg-zinc-800/50 cursor-pointer rounded"
                   >
+                    <option value="Backlog">Backlog</option>
                     <option value="Todo">Todo</option>
                     <option value="In Progress">In Progress</option>
+                    <option value="Review">Review</option>
                     <option value="Done">Done</option>
                   </select>
                 </div>

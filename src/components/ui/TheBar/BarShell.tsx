@@ -15,8 +15,10 @@ import {
   Settings as SettingsIcon,
   Power,
   GitPullRequest,
+  Music,
 } from 'lucide-react';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
+import { useSpotifyState } from '../../../lib/aetherSpotifyEngine';
 import { useData } from '../../../context/DataProvider';
 import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
 import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, safeSetOverlayExpanded, getElectronAPI, isElectron } from '../../../lib/electronBridge';
@@ -49,6 +51,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   } = useActivityCenter();
 
   const { projects, activeProjectId, setActiveProjectId } = useData();
+  const spotifyState = useSpotifyState();
   const navigate = useSafeOverlayNavigate();
   const activePath = typeof window !== 'undefined' ? window.location.pathname : '/';
 
@@ -239,6 +242,13 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
               <Sparkles size={10} className="text-amber-400" />
               <span>{aiMode}</span>
             </div>
+
+            {spotifyState?.isAuthenticated && spotifyState?.isPlaying && spotifyState?.currentTrack && (
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300">
+                <Music size={10} className="text-emerald-400 animate-pulse" />
+                <span className="truncate max-w-[100px]">{spotifyState.currentTrack.title}</span>
+              </div>
+            )}
 
             {activeDreamCount > 0 ? (
               <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-400/35">

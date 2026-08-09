@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { haptic } from '../../utils/haptics';
-import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass, Cpu, Plus, PencilRuler } from 'lucide-react';
+import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass, Cpu, Plus, PencilRuler, Sliders } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
 import { useData } from '../../context/DataProvider';
+import { useDevSpaceInstance } from '../../context/DevSpaceInstanceContext';
 import { logout } from '../../lib/auth';
+import { isElectron } from '../../lib/electronBridge';
 import { motion } from 'motion/react';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: Sliders, label: 'Edit DevSpace', path: '/editable-devspace' },
   { icon: PencilRuler, label: 'Design', path: '/design' },
   { icon: Plus, label: 'Create', path: '/create' },
   { icon: Sparkles, label: 'AI Assistant', path: '/assistant' },
@@ -23,7 +26,6 @@ const navItems = [
   { icon: Map, label: 'Roadmap', path: '/roadmap' },
   { icon: Bot, label: 'Project Brain', path: '/brain' },
   { icon: TerminalSquare, label: 'Agentic OS', path: '/agents' },
-  { icon: BrainCircuit, label: 'Aether Hub', path: '/aether-hub' },
   { icon: Sparkles, label: 'Aether Report', path: '/aether-report' },
   { icon: Zap, label: 'Automations', path: '/automations' },
   { icon: Github, label: 'GitHub Int.', path: '/github' },
@@ -35,6 +37,7 @@ export function Sidebar() {
   const toggleCommandPalette = useStore(state => state.toggleCommandPalette);
   const { isSidebarOpen, isSidebarMinimized, toggleSidebarMinimized, setSidebarOpen } = useStore();
   const { projects, activeProjectId, setActiveProjectId, userProfile, googleUser } = useData();
+  const { activeProfile, getLabel, isSafeMode } = useDevSpaceInstance();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -88,54 +91,61 @@ export function Sidebar() {
         <section className="w-full">
           {!isSidebarMinimized && <div className="text-[10px] font-display font-light text-zinc-400 uppercase tracking-[0.22em] mb-3 pl-2 opacity-95">Menu</div>}
           <div className="space-y-1">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className="relative block"
-                title={isSidebarMinimized ? item.label : undefined}
-                onClick={() => {
-                  haptic.light();
-                  handleLinkClick();
-                }}
-              >
-                {({ isActive }) => (
-                  <motion.div
-                    whileHover={{ x: isSidebarMinimized ? 0 : 4 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: "spring", stiffness: 380, damping: 25 }}
-                    className={cn(
-                      "relative flex items-center gap-2.5 rounded-md cursor-pointer group border border-transparent transition-colors duration-200",
-                      isSidebarMinimized ? "justify-center p-2" : "px-3 py-1.5",
-                      isActive 
-                        ? "text-yellow-400 font-bold" 
-                        : "text-zinc-100 hover:text-white hover:bg-zinc-800/40 font-medium"
-                    )}
-                  >
-                    {/* Sliding active background indicator using Framer Motion layoutId */}
-                    {isActive && (
-                      <motion.div
-                        layoutId="active-nav-bg"
-                        className="absolute inset-0 bg-yellow-500/10 border border-yellow-500/20 rounded-md -z-10 shadow-[0_2px_15px_rgba(234,179,8,0.08)]"
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
+            {navItems
+              .filter((item) => {
+                if (item.path === '/editable-devspace' && !isElectron()) return false;
+                if (isSafeMode) return true;
+                const hidden = activeProfile.layoutOverrides?.hiddenSections || [];
+                return !hidden.includes(item.label);
+              })
+              .map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className="relative block"
+                  title={isSidebarMinimized ? getLabel(item.label) : undefined}
+                  onClick={() => {
+                    haptic.light();
+                    handleLinkClick();
+                  }}
+                >
+                  {({ isActive }) => (
                     <motion.div
-                      animate={isActive ? { scale: 1.15 } : { scale: 1 }}
-                      whileHover={{ scale: 1.25, rotate: [0, -5, 5, 0] }}
-                      transition={{
-                        scale: { type: "spring", stiffness: 400, damping: 17 },
-                        rotate: { type: "keyframes", duration: 0.3, ease: "easeInOut" }
-                      }}
-                      className="shrink-0"
+                      whileHover={{ x: isSidebarMinimized ? 0 : 4 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ type: "spring", stiffness: 380, damping: 25 }}
+                      className={cn(
+                        "relative flex items-center gap-2.5 rounded-md cursor-pointer group border border-transparent transition-colors duration-200",
+                        isSidebarMinimized ? "justify-center p-2" : "px-3 py-1.5",
+                        isActive 
+                          ? "text-yellow-400 font-bold" 
+                          : "text-zinc-100 hover:text-white hover:bg-zinc-800/40 font-medium"
+                      )}
                     >
-                      <item.icon size={14} className={cn(isActive ? "text-yellow-400 drop-shadow-[0_0_6px_rgba(234,179,8,0.5)]" : "text-zinc-300 group-hover:text-white")} />
+                      {/* Sliding active background indicator using Framer Motion layoutId */}
+                      {isActive && (
+                        <motion.div
+                          layoutId="active-nav-bg"
+                          className="absolute inset-0 bg-yellow-500/10 border border-yellow-500/20 rounded-md -z-10 shadow-[0_2px_15px_rgba(234,179,8,0.08)]"
+                          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                      <motion.div
+                        animate={isActive ? { scale: 1.15 } : { scale: 1 }}
+                        whileHover={{ scale: 1.25, rotate: [0, -5, 5, 0] }}
+                        transition={{
+                          scale: { type: "spring", stiffness: 400, damping: 17 },
+                          rotate: { type: "keyframes", duration: 0.3, ease: "easeInOut" }
+                        }}
+                        className="shrink-0"
+                      >
+                        <item.icon size={14} className={cn(isActive ? "text-yellow-400 drop-shadow-[0_0_6px_rgba(234,179,8,0.5)]" : "text-zinc-300 group-hover:text-white")} />
+                      </motion.div>
+                      {!isSidebarMinimized && <span className="text-xs">{getLabel(item.label)}</span>}
                     </motion.div>
-                    {!isSidebarMinimized && <span className="text-xs">{item.label}</span>}
-                  </motion.div>
-                )}
-              </NavLink>
-            ))}
+                  )}
+                </NavLink>
+              ))}
           </div>
         </section>
 

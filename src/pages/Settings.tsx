@@ -16,8 +16,10 @@ import { BiometricSessionSecuritySettings } from '../components/BiometricSession
 import { ActivityCenterSettingsTab } from '../components/ui/ActivityCenterSettingsTab';
 import { DesktopOverlaySettingsTab } from '../components/DesktopOverlaySettingsTab';
 import { IntegrationsCenter } from '../components/IntegrationsCenter';
+import { AetherActionsSection } from '../components/AetherActionsSection';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 import { isElectron } from '../lib/electronBridge';
+import { aetherVoiceRegistry } from '../lib/aetherVoiceRegistry';
 
 function KineticSandboxVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -467,6 +469,8 @@ export function Settings() {
   } = useData();
   const isGoogleConnected = auth?.currentUser?.providerData.some(p => p.providerId === 'google.com') || !!userProfile?.googleLinked;
   const isGithubConnected = auth?.currentUser?.providerData.some(p => p.providerId === 'github.com') || !!userProfile?.githubLinked || !!userProfile?.githubUser || !!userProfile?.githubToken;
+
+  const [preferredName, setPreferredNameState] = useState(() => aetherVoiceRegistry.getPreferredName());
 
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('settings_active_tab') || 'profile'); // Default to profile to showcase first-class user profiles
   const [googleLinkError, setGoogleLinkError] = useState(false);
@@ -2118,6 +2122,9 @@ export function Settings() {
                   </div>
                 </div>
               </div>
+
+              {/* Aether Actions, Aliases & Shortcuts Registry */}
+              <AetherActionsSection />
             </div>
           )}
 
@@ -2255,15 +2262,36 @@ export function Settings() {
                 )}
               </div>
 
-              {/* Vocal Synthesis & Acoustic Profile Customizer */}
+              {/* User Identity & Vocal Synthesis Customizer */}
               <div className="border border-zinc-800 bg-[#09090b] rounded-lg p-5 space-y-4">
                 <div className="space-y-1">
-                  <span className="text-[9px] font-mono font-bold tracking-widest text-yellow-500 uppercase flex items-center gap-1">Acoustic Audio Portrait Subsystem</span>
+                  <span className="text-[9px] font-mono font-bold tracking-widest text-yellow-500 uppercase flex items-center gap-1">Assistant Identity & Vocal Portrait</span>
                   <h4 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
-                    <Volume2 size={14} className="text-yellow-400" /> Aether Synthesizer & Voice Customization
+                    <Volume2 size={14} className="text-yellow-400" /> Aether Identity & Voice Customization
                   </h4>
                   <p className="text-[10px] text-zinc-400 leading-normal">
-                    Finetune Aether's speech characteristics to avoid robotic-sounding fallbacks. Pick from standard premium OS voices, customize frequency pitches, adjust reading speeds, and run immediate on-the-fly tests.
+                    Set your preferred name for Aether, customize voice engines (Default: UK English Male), fine-tune speech tempo, and test latency.
+                  </p>
+                </div>
+
+                {/* What should Aether call you? */}
+                <div className="p-3 bg-[#121214] border border-zinc-800 rounded-lg space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase font-mono font-bold text-yellow-400">What should Aether call you?</label>
+                    <span className="text-[9px] text-zinc-500 font-mono">Persistent User Identity</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={preferredName}
+                    onChange={(e) => {
+                      setPreferredNameState(e.target.value);
+                      aetherVoiceRegistry.setPreferredName(e.target.value);
+                    }}
+                    placeholder="e.g. Developer, Captain, Boss, Alex..."
+                    className="w-full bg-[#0a0a0c] border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-yellow-500 font-mono"
+                  />
+                  <p className="text-[9px] text-zinc-500">
+                    Aether addresses you by this name across voice conversations, text hubs, and action summaries.
                   </p>
                 </div>
 
@@ -2276,7 +2304,7 @@ export function Settings() {
                       onChange={(e) => setSelectedVoiceName(e.target.value)}
                       className="w-full bg-[#121214] border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-yellow-500 font-sans cursor-pointer"
                     >
-                      <option value="">-- System Auto-Select (Default) --</option>
+                      <option value="">🇬🇧 UK English Male (Default Aether Voice)</option>
                       {availableVoices
                         .filter(v => v.lang.startsWith('en'))
                         .map((voice) => (
@@ -2287,7 +2315,7 @@ export function Settings() {
                       }
                     </select>
                     <p className="text-[9px] text-zinc-500 leading-relaxed">
-                      Pick high-fidelity natural English voices (Google US English, Samantha, Microsoft Direct, or Apple Natural) for optimal warmth.
+                      Default: High-fidelity UK English Male. You can also select US/UK Female, Deep Natural, or local OS engines.
                     </p>
                   </div>
 
@@ -2343,21 +2371,17 @@ export function Settings() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (typeof window === 'undefined' || !window.speechSynthesis) return;
-                      window.speechSynthesis.cancel();
-                      const utt = new SpeechSynthesisUtterance("Vocal synapses aligned! I am speaking using your newly customized vocal pitch, speed, and synthesiser profiles.");
-                      utt.rate = speechRate;
-                      utt.pitch = speechPitch;
-                      if (selectedVoiceName) {
-                        const matched = window.speechSynthesis.getVoices().find(v => v.name === selectedVoiceName);
-                        if (matched) utt.voice = matched;
-                      }
-                      window.speechSynthesis.speak(utt);
-                      addVocalDiagnostic(`TEST SIGNAL: Calibrated preview test (Pitch: ${speechPitch}x, Speed: ${speechRate}x, Voice: ${selectedVoiceName || 'Default'}).`);
+                      aetherVoiceRegistry.testVoice(
+                        selectedVoiceName,
+                        `Greetings ${preferredName}! Aether UK English male default voice is operational. Latency is optimal.`,
+                        speechRate,
+                        speechPitch
+                      );
+                      addVocalDiagnostic(`TEST SIGNAL: Calibrated preview test for ${preferredName} (Pitch: ${speechPitch}x, Speed: ${speechRate}x, Voice: ${selectedVoiceName || 'UK Male Default'}).`);
                     }}
                     className="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-md flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors"
                   >
-                    <Volume2 size={13} className="text-yellow-440" /> Test Audio Profile
+                    <Volume2 size={13} className="text-yellow-400" /> Test Audio Profile
                   </button>
                 </div>
               </div>

@@ -310,7 +310,9 @@ export type Project = {
     text: string;
     details?: string;
     status: 'pending' | 'approved' | 'rejected';
+    priority?: 'Low' | 'Medium' | 'High' | 'Critical';
     createdAt: number;
+    updatedAt?: number;
   }[];
   goals?: {
     id: string;
@@ -427,7 +429,7 @@ export type Issue = {
   title: string;
   description?: string;
   type: 'Task' | 'Bug' | 'Feature';
-  status: 'Todo' | 'In Progress' | 'Done';
+  status: 'Backlog' | 'Todo' | 'In Progress' | 'Review' | 'Done';
   phaseId?: string; // High-level Phase mapping
   sprintId?: string; // Sprint mapping
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
@@ -816,8 +818,10 @@ const setStored = <T,>(key: string, val: T) => {
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(() => {
+    const hasSeeded = getStored<boolean>('app_has_seeded_v1', false);
     const list = getStored<Project[]>('app_projects', []);
-    if (list.length === 0) {
+    if (!hasSeeded && list.length === 0) {
+      setStored('app_has_seeded_v1', true);
       const defaultProjects: Project[] = [
         {
           id: 'spacestation-sync',
@@ -881,13 +885,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ]
         }
       ];
+      setStored('app_projects', defaultProjects);
       return defaultProjects;
     }
     return list;
   });
   const [issues, setIssues] = useState<Issue[]>(() => {
+    const hasSeeded = getStored<boolean>('app_has_seeded_v1', false);
     const list = getStored<Issue[]>('app_issues', []);
-    if (list.length === 0) {
+    if (!hasSeeded && list.length === 0) {
+      setStored('app_has_seeded_v1', true);
       const defaultIssues: Issue[] = [
         {
           id: 'issue-vite-perf',
@@ -940,6 +947,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           createdAt: Date.now() - 2 * 24 * 3600 * 1000
         }
       ];
+      setStored('app_issues', defaultIssues);
       return defaultIssues;
     }
     return list;

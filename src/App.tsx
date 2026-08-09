@@ -24,6 +24,7 @@ import { Community } from './pages/Community';
 import { SandboxLoop } from './pages/SandboxLoop';
 import { Create } from './pages/Create';
 import { Design } from './pages/Design';
+import { EditableDevSpace } from './pages/EditableDevSpace';
 
 export default function App() {
   const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
@@ -97,7 +98,8 @@ export default function App() {
                 <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
                 <Route path="/automations" element={<Automations />} />
                 <Route path="/aether-report" element={<AetherIntelligenceReport />} />
-                <Route path="/aether-hub" element={<AetherHub />} />
+                <Route path="/aether-hub" element={<AetherIntelligenceReport />} />
+                <Route path="/editable-devspace" element={<EditableDevSpace />} />
                 {/* Fallback for undefined routes */}
                 <Route
                   path="*"

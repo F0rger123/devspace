@@ -1,5 +1,5 @@
 import { Calendar, ChevronLeft, ChevronRight, Loader2, Target, Plus, X, ListTodo, Presentation, Rocket, Focus, AlertCircle, ExternalLink, Sparkles, LayoutList, Check, Mic, Send, CheckCircle } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
@@ -19,6 +19,12 @@ const getHexForPhaseColor = (colorClass: string) => {
 export function Roadmap() {
   const { projects, issues, phases, addPhase, updatePhase, deletePhase, addIssue, updateIssue, activeProjectId, setActiveProjectId } = useData();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!activeProjectId && projects.length > 0) {
+      setActiveProjectId(projects[0].id);
+    }
+  }, [projects, activeProjectId, setActiveProjectId]);
   const [showModal, setShowModal] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({ 

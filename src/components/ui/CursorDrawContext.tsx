@@ -298,7 +298,16 @@ export function CursorDrawContext() {
         // Discard very tiny clicks
         if (width > 20 && height > 20) {
           const index = circledContexts.length + 1;
-          const label = `Captured Screen Region #${index}`;
+          const currentPath = window.location.pathname;
+          let plainEnglishLabel = "DevSpace Screen Component";
+          if (currentPath === '/') plainEnglishLabel = "Project Operating Center";
+          else if (currentPath.includes('planner')) plainEnglishLabel = "Sprint Planner & Backlog";
+          else if (currentPath.includes('issues')) plainEnglishLabel = "Issue Tracker & Dev Backlog";
+          else if (currentPath.includes('settings')) plainEnglishLabel = "System Integrations & Settings";
+          else if (currentPath.includes('create')) plainEnglishLabel = "Project Creation Lab";
+          else plainEnglishLabel = `Workspace Area (${currentPath})`;
+
+          const label = `${plainEnglishLabel} #${index}`;
           
           addCircledContext({
             id: `circle-${crypto.randomUUID()}`,
@@ -309,7 +318,7 @@ export function CursorDrawContext() {
             timestamp: Date.now()
           });
 
-          showToast(`🎯 Captured Screen Context Area: "${label}"`, 'success', 2000);
+          showToast(`🎯 Captured Context: "${label}"`, 'success', 2000);
         }
       }
 
@@ -351,9 +360,9 @@ export function CursorDrawContext() {
 
   // 1. Copy Context to Clipboard
   const handleCopyContext = (ctx: any) => {
-    const textToCopy = `[Ether Context Capture] ${ctx.label}\nCoordinates: Bounds (${Math.round(ctx.bounds?.width || 0)}x${Math.round(ctx.bounds?.height || 0)}px at X:${Math.round(ctx.bounds?.x || 0)}, Y:${Math.round(ctx.bounds?.y || 0)})\nCaptured at: ${new Date(ctx.timestamp).toLocaleString()}`;
+    const textToCopy = `[DevSpace Spatial Context] ${ctx.label}\nCaptured: ${new Date(ctx.timestamp).toLocaleString()}\nContext: Active user interface component selection in workspace.`;
     navigator.clipboard.writeText(textToCopy);
-    showToast("📋 Copied captured context region to clipboard!", "success", 2500);
+    showToast("📋 Copied captured context to clipboard!", "success", 2500);
   };
 
   // 2. Save Context as Cortex Memory Synapse
@@ -361,8 +370,8 @@ export function CursorDrawContext() {
     const newSynapse = {
       id: `synapse-${Date.now()}`,
       name: ctx.label || 'Captured Screen Context',
-      desc: `Extracted from desktop Ether Context Mode selection. Bounds: ${Math.round(ctx.bounds?.width)}x${Math.round(ctx.bounds?.height)}px`,
-      snippet: `// Ether Context Anchor\nconst contextBounds = ${JSON.stringify(ctx.bounds)};\nconst capturedAt = "${new Date(ctx.timestamp).toISOString()}";`,
+      desc: `Extracted from DevSpace Context Mode selection: ${ctx.label}`,
+      snippet: `// DevSpace Context Selection\n// Target: ${ctx.label}\nconst capturedAt = "${new Date(ctx.timestamp).toISOString()}";`,
       type: 'custom_synapse' as const,
       projectName: projects[0]?.name || 'DevSpace Global',
       createdAt: Date.now()
@@ -377,11 +386,11 @@ export function CursorDrawContext() {
     const issueId = addIssue({
       projectId: projId,
       title: `Context Issue: ${ctx.label}`,
-      description: `Automatically created from Ether AI Desktop Screen Selection.\nRegion: Width ${Math.round(ctx.bounds?.width)}px, Height ${Math.round(ctx.bounds?.height)}px at X:${Math.round(ctx.bounds?.x)}, Y:${Math.round(ctx.bounds?.y)}.`,
+      description: `Automatically created from DevSpace Desktop Selection.\nSelected Region: ${ctx.label}`,
       type: 'Bug',
       status: 'Todo',
       priority: 'High',
-      labels: ['EtherContext', 'DesktopCapture'],
+      labels: ['AetherContext', 'DesktopCapture'],
       bugEnvironment: 'DevSpace Desktop Context Mode'
     });
     showToast(`🐛 Created new Issue "${ctx.label}" in Project Tasks!`, "success", 3500);
@@ -433,7 +442,7 @@ export function CursorDrawContext() {
         `Generate automated unit tests and validation schema`,
         `Deploy updates directly to DevSpace Cloud & local desktop storage`
       ],
-      aiRecommendation: `Ether AI recommends converting this captured area into a modular React component with full local-first state caching and cloud sync fallback.`
+      aiRecommendation: `Aether AI recommends converting this captured area into a modular React component with full local-first state caching and cloud sync fallback.`
     });
   };
 
@@ -837,7 +846,7 @@ export function CursorDrawContext() {
                   </div>
                   <div>
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                      Gemini Ether Goal Strategy
+                      Gemini Aether Goal Strategy
                     </h3>
                     <p className="text-[10px] text-zinc-400 font-mono">
                       Context Target: "{activeStrategyContext.title}"

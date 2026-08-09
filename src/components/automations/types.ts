@@ -24,6 +24,15 @@ export interface AutomationEdge {
   label?: string;
 }
 
+export interface AutomationExecutionRecord {
+  id: string;
+  runAt: string;
+  status: 'success' | 'failed';
+  duration: string;
+  output: string;
+  error?: string;
+}
+
 export interface N8nWorkflow {
   id: string;
   name: string;
@@ -31,6 +40,11 @@ export interface N8nWorkflow {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  lastRun?: string | null;
+  nextRun?: string | null;
+  lastResult?: string | null;
+  error?: string | null;
+  history?: AutomationExecutionRecord[];
   nodes: AutomationNode[];
   edges: AutomationEdge[];
 }

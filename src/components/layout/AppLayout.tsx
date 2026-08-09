@@ -20,6 +20,8 @@ import { SetupWizard } from '../auth/SetupWizard';
 import { DreamReviewStudio } from '../DreamReviewStudio';
 import { DailyAetherBriefModal } from '../DailyAetherBriefModal';
 import { CursorInspectionModal } from '../CursorInspectionModal';
+import { SpotifyMiniPlayer } from '../ui/SpotifyMiniPlayer';
+import { DesktopUpdateModal } from '../ui/DesktopUpdateModal';
 import { Users } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/auth';
@@ -534,11 +536,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
             )}
           </AnimatePresence>
 
-          <main className={`flex-grow flex flex-col min-w-0 ${isAssistantRoute ? 'h-full overflow-hidden' : 'h-full overflow-y-auto custom-scrollbar'} bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          <main className={`flex-grow flex flex-col min-w-0 h-full overflow-hidden bg-transparent transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isAssistantOpen && isAssistantMinimized ? 'md:mr-[440px]' : ''
           }`}>
-            <div className={`flex-grow ${isAssistantRoute ? 'p-0 h-full overflow-hidden' : 'p-3 md:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)]`}>
-              <div className={`w-full flex flex-col ${isAssistantRoute ? 'h-full overflow-hidden' : 'min-h-full'}`}>
+            <div className={`flex-1 flex flex-col min-h-0 ${isAssistantRoute ? 'p-0' : 'p-3 md:p-6'} shadow-[inset_0_4px_32px_rgba(0,0,0,0.85)] overflow-y-auto custom-scrollbar`}>
+              <div className={`w-full flex-1 flex flex-col min-h-0`}>
                 {children}
               </div>
             </div>
@@ -705,6 +707,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         isOpen={cursorInspectionOpen}
         onClose={() => setCursorInspectionOpen(false)}
       />
+      <SpotifyMiniPlayer />
+      <DesktopUpdateModal />
     </div>
   );
 }

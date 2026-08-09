@@ -478,5 +478,93 @@ export const PRESET_WORKFLOW_TEMPLATES: N8nWorkflow[] = [
       { id: 'e1-2', source: 'n1', target: 'n2' },
       { id: 'e2-3', source: 'n2', target: 'n3' }
     ]
+  },
+  {
+    id: 'tmpl_evening_summary',
+    name: 'Daily Evening Work Summary & Activity Logger',
+    description: 'Every evening at 6:00 PM, compiles today\'s completed tasks, commits, and notes into an activity note.',
+    active: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    nodes: [
+      {
+        id: 'n1',
+        type: 'trigger-cron',
+        category: 'trigger',
+        label: 'Daily 6 PM Schedule',
+        description: 'Fires every day at 18:00',
+        position: { x: 80, y: 180 },
+        status: 'idle',
+        config: { cron: '0 18 * * *' }
+      },
+      {
+        id: 'n2',
+        type: 'ai-gemini-prompt',
+        category: 'ai',
+        label: 'Workday Activity Synthesizer',
+        description: 'Summarizes completed work',
+        position: { x: 380, y: 180 },
+        status: 'idle',
+        config: { prompt: 'Compile daily summary of all issues resolved and notes created today.' }
+      },
+      {
+        id: 'n3',
+        type: 'action-planner-item',
+        category: 'action',
+        label: 'Record Activity Log',
+        description: 'Appends summary item to planner',
+        position: { x: 680, y: 180 },
+        status: 'idle',
+        config: { title: 'Daily Evening Summary Log' }
+      }
+    ],
+    edges: [
+      { id: 'e1-2', source: 'n1', target: 'n2' },
+      { id: 'e2-3', source: 'n2', target: 'n3' }
+    ]
+  },
+  {
+    id: 'tmpl_pr_monitor',
+    name: 'GitHub Pull Request & Issue Monitor',
+    description: 'Monitors repository for open PRs and unassigned high priority bugs every morning.',
+    active: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    nodes: [
+      {
+        id: 'n1',
+        type: 'trigger-cron',
+        category: 'trigger',
+        label: 'Daily 9 AM Schedule',
+        description: 'Fires every morning at 09:00 AM',
+        position: { x: 80, y: 180 },
+        status: 'idle',
+        config: { cron: '0 9 * * *' }
+      },
+      {
+        id: 'n2',
+        type: 'integration-github',
+        category: 'integration',
+        label: 'GitHub PR Check',
+        description: 'Fetches open PRs and issues',
+        position: { x: 380, y: 180 },
+        status: 'idle',
+        config: { branch: 'main' }
+      },
+      {
+        id: 'n3',
+        type: 'action-notification',
+        category: 'action',
+        label: 'Dispatch HUD Alert',
+        description: 'Shows desktop notification',
+        position: { x: 680, y: 180 },
+        status: 'idle',
+        config: { title: 'GitHub PR & Issue Status Check Completed' }
+      }
+    ],
+    edges: [
+      { id: 'e1-2', source: 'n1', target: 'n2' },
+      { id: 'e2-3', source: 'n2', target: 'n3' }
+    ]
   }
 ];

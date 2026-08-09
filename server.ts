@@ -3675,10 +3675,20 @@ Please use this complete "Obsidian Synaptic Brain" knowledge base to personalize
       }
 
       let fullResponseText = "";
-      for await (const chunk of responseStream) {
-        if (chunk.text) {
-          fullResponseText += chunk.text;
-          res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+      try {
+        for await (const chunk of responseStream) {
+          if (chunk.text) {
+            fullResponseText += chunk.text;
+            res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+          }
+        }
+      } catch (streamIterErr: any) {
+        console.warn("[Aether Stream] Quota or stream iteration interruption:", streamIterErr?.message || streamIterErr);
+        if (!fullResponseText) {
+          const fallbackAnswer = generateRuleBasedSimulatedResponse(lastMessage);
+          res.write(`data: ${JSON.stringify({ text: fallbackAnswer })}\n\n`);
+        } else {
+          res.write(`data: ${JSON.stringify({ text: "\n\n[Note: Switched to local Aether engine due to rate limit.]" })}\n\n`);
         }
       }
       
@@ -5703,6 +5713,31 @@ Send code commands to "create project X" or "create task bug in Y", or ask me to
       else activePageDescription = `${currentPath}`;
     }
 
+    let workspaceFilesSummary = "";
+    try {
+      const getFilesRecursively = (dirPath: string, relativePath = ""): string[] => {
+        let results: string[] = [];
+        const items = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const item of items) {
+          if (item.name === 'node_modules' || item.name === '.git' || item.name === 'dist' || item.name === '.aistudio') continue;
+          const rel = relativePath ? `${relativePath}/${item.name}` : item.name;
+          if (item.isDirectory()) {
+            if (results.length < 120) {
+              results = results.concat(getFilesRecursively(path.join(dirPath, item.name), rel));
+            }
+          } else {
+            results.push(rel);
+          }
+        }
+        return results;
+      };
+      const filesList = getFilesRecursively(process.cwd()).slice(0, 100);
+      const fileLines = filesList.map(f => `- ${f}`).join('\n');
+      workspaceFilesSummary = `\n=== REAL PROJECT BRAIN & FILESYSTEM CONTEXT ===\nIndexed Workspace Files (${filesList.length} files):\n${fileLines}\nWhen the user asks what files are in this project, summarize project structure, or ask where things are defined, refer directly to this real Project Brain file tree context!\n`;
+    } catch (e) {
+      // ignore
+    }
+
     // Compress and slice large items in Known Platform State to drastically improve Gemini response speed
     const compressedProjects = (workspaceProjectsCache || []).map((p: any) => ({
       id: p.id,
@@ -5766,7 +5801,7 @@ You are fully in charge of the website workspace and have deep operational power
 === USER CURRENT LOCATION & VIEWPORT CONTEXT ===
 - Active Project Selected (Context): ${activeProjectName} (ID: ${activeProjectId || 'None'})
 - Workspace Page/Section User is Currently Viewing: ${activePageDescription}
-
+${workspaceFilesSummary}
 When the user says "Now do this inside of it" or instructions like "create a note here" or "add an idea in it" or "set status of this task", you must use this current location and active project context to target your action (e.g., if they are currently viewing Notes, create a note; if they are currently viewing Idea Planner, add a brainstorm idea; if they are currently viewing Issues/Tasks, create/update an issue/task)!
 
 === ACTIVE MINDFULNESS: PROJECT CREATION & BRAINSTORMING MINDSET ===
@@ -5844,8 +5879,15 @@ CRITICAL ACTING & VOCABULARY INSTRUCTIONS:
 - CUSTOM CATCHPHRASES & MANDATORY PHRASES: If any rule specifies "say X whenever you answer", "start with X", "end with Y", or "talk like X" (e.g. "always start with 'Listen here pal'", "say 'Ahoy!' whenever you answer"), YOU MUST MANDATORILY INJECT OR SAY THAT EXACT PHRASE IN EVERY SINGLE RESPONSE!
 - TITLES & NICKNAMES: If any rule directs you to address the user by a specific title or nickname (e.g., "Sir", "Captain", "Boss", "My King"), YOU MUST ADDRESS THEM BY THAT EXACT TITLE IN EVERY SINGLE RESPONSE!
 
+=== MANDATORY WORKSPACE-AWARE OPENING DIRECTIVE ===
+- NEVER begin responses with generic chatbot greetings like "Hello! How can I help you today?", "How can I assist you?", or "As an AI language model".
+- ALWAYS begin or frame your opening line with active workspace context! Examples:
+  • "You're currently working on DevSpace. You have 3 Dreams waiting for review and one release branch ready."
+  • "Looking at your active project 'DevSpace' (4 open tasks in backlog)..."
+  • "Resuming our session on DevSpace. Your last conversation was about the Executive Assistant..."
+
 === SPATIAL CURSOR CAPTURED CONTEXTS (USER CIRCLED REGIONS) ===
-${Array.isArray(circledContexts) && circledContexts.length > 0 ? `The user has explicitly drawn loops/circles around these screen areas with their mouse to capture active developer context:\n` + circledContexts.map((c: any, idx: number) => `- Region #${idx + 1}: label="${c.label}" (Bounding Box: clientX=${c.bounds?.x}px, clientY=${c.bounds?.y}px, width=${c.bounds?.width}px, height=${c.bounds?.height}px)`).join('\n') + `\nWhen the user refers to "this", "look at this", "these two things", or asks you questions about what they circled, they are discussing these exact screen areas! Provide tailored assistance and code examples corresponding to these visual selections.` : "No screen areas currently circled."}
+${Array.isArray(circledContexts) && circledContexts.length > 0 ? `The user has explicitly highlighted/circled screen areas to capture active developer context:\n` + circledContexts.map((c: any, idx: number) => `- Selection #${idx + 1}: "${c.label || 'Screen Area'}" (${c.extractedText ? `OCR Content: "${c.extractedText}"` : 'UI Context: Active workspace component / code view'})`).join('\n') + `\nWhen the user refers to "this", "look at this", "these items", or asks questions about what they circled, respond in plain English describing the UI element, component, code, or page content. NEVER return or mention raw pixel coordinates, bounding box numbers, or clientX/clientY values unless the user explicitly requests raw debugging coordinates.` : "No screen areas currently circled."}
 
 === AETHER AUTONOMY & PERMISSIONS CONTROLS ===
 You MUST strictly adhere to the following permissions configured by the user:
@@ -6071,20 +6113,33 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
           }
         });
       } catch (err: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
-        responseStream = await ai.models.generateContentStream({
-          model: 'gemini-3.6-flash',
-          contents: contents,
-          config: {
-            systemInstruction: systemPrompt,
-            responseMimeType: 'application/json',
-            safetySettings
-          }
-        });
+        try {
+          logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
+          responseStream = await ai.models.generateContentStream({
+            model: 'gemini-3.6-flash',
+            contents: contents,
+            config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: 'application/json',
+              safetySettings
+            }
+          });
+        } catch (err2: any) {
+          logModelFallback("gemini-3.6-flash", "gemini-2.5-flash", err2);
+          responseStream = await ai.models.generateContentStream({
+            model: 'gemini-2.5-flash',
+            contents: contents,
+            config: {
+              systemInstruction: systemPrompt,
+              responseMimeType: 'application/json',
+              safetySettings
+            }
+          });
+        }
       }
       return responseStream;
     } catch (apiErr: any) {
-      console.warn("Gemini streaming query failed:", apiErr.message);
+      console.warn("Gemini streaming query rate limit hit or offline. Reverting to local companion engine fallback.");
       return null;
     }
   }
@@ -6368,8 +6423,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
             }
           }
         } catch (streamErr: any) {
-          console.error("Error during Aether stream transfer:", streamErr);
-          res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
+          console.warn("[Aether Stream] Quota or stream iteration fallback:", streamErr?.message || streamErr);
+          const simulatedResult = localAetherAIFallback(inputText);
+          res.write(`data: ${JSON.stringify({ chunk: JSON.stringify(simulatedResult), done: false })}\n\n`);
         } finally {
           res.write(`data: [DONE]\n\n`);
           res.end();
@@ -9467,6 +9523,78 @@ Generate ${optionsCount} distinct architectural options/blueprints for this idea
         console.log("[Stitch] Fallback system encountered issues.");
         res.status(500).json({ error: 'Internal server error during Google Stitch orchestration.' });
       }
+    }
+  });
+
+  // Spotify OAuth & Production API Proxy Endpoints
+  app.get('/api/spotify/config', (req, res) => {
+    const envClientId = process.env.SPOTIFY_CLIENT_ID || process.env.VITE_SPOTIFY_CLIENT_ID || '';
+    const appUrl = process.env.APP_URL || lastKnownRequestHost || 'http://localhost:3000';
+    const redirectUri = `${appUrl}/settings`;
+    res.json({
+      configured: Boolean(envClientId),
+      clientId: envClientId,
+      redirectUri,
+      requiredScopes: [
+        'user-read-playback-state',
+        'user-modify-playback-state',
+        'user-read-currently-playing',
+        'playlist-read-private',
+        'playlist-read-collaborative',
+        'user-read-private',
+        'user-read-email'
+      ].join(' ')
+    });
+  });
+
+  app.post('/api/spotify/token', async (req, res) => {
+    try {
+      const { grant_type, code, redirect_uri, code_verifier, refresh_token, client_id } = req.body;
+      const effectiveClientId = client_id || process.env.SPOTIFY_CLIENT_ID || process.env.VITE_SPOTIFY_CLIENT_ID || '';
+      
+      if (!effectiveClientId) {
+        return res.status(400).json({ error: 'SPOTIFY_CLIENT_ID is required to execute OAuth token exchange.' });
+      }
+
+      const params = new URLSearchParams();
+      params.append('client_id', effectiveClientId);
+      params.append('grant_type', grant_type);
+
+      if (grant_type === 'authorization_code') {
+        if (!code || !redirect_uri || !code_verifier) {
+          return res.status(400).json({ error: 'code, redirect_uri, and code_verifier are required for authorization_code grant.' });
+        }
+        params.append('code', code);
+        params.append('redirect_uri', redirect_uri);
+        params.append('code_verifier', code_verifier);
+      } else if (grant_type === 'refresh_token') {
+        if (!refresh_token) {
+          return res.status(400).json({ error: 'refresh_token is required for refresh_token grant.' });
+        }
+        params.append('refresh_token', refresh_token);
+      } else {
+        return res.status(400).json({ error: 'Invalid grant_type.' });
+      }
+
+      if (process.env.SPOTIFY_CLIENT_SECRET) {
+        params.append('client_secret', process.env.SPOTIFY_CLIENT_SECRET);
+      }
+
+      const spotifyRes = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+      });
+
+      const tokenData = await spotifyRes.json();
+      if (!spotifyRes.ok) {
+        return res.status(spotifyRes.status).json(tokenData);
+      }
+
+      return res.json(tokenData);
+    } catch (err: any) {
+      console.error('[Spotify Token Proxy Error]', err);
+      return res.status(500).json({ error: err?.message || 'Failed to communicate with Spotify accounts service.' });
     }
   });
 

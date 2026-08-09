@@ -371,6 +371,33 @@ export function Automations() {
 
     setActiveExecutingNodeId(null);
     setIsSimulating(false);
+    
+    const runTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const runRecord = {
+      id: `run_${Date.now()}`,
+      runAt: new Date().toISOString(),
+      status: 'success' as const,
+      duration: `${(nodeQueue.length * 0.4).toFixed(1)}s`,
+      output: `Executed ${nodeQueue.length} nodes successfully.`
+    };
+
+    setWorkflows(prev =>
+      prev.map(w => {
+        if (w.id === activeWorkflow.id) {
+          return {
+            ...w,
+            lastRun: runTime,
+            nextRun: 'Tomorrow at 08:00 AM',
+            lastResult: `Success (${nodeQueue.length} nodes executed)`,
+            error: null,
+            history: [runRecord, ...(w.history || [])].slice(0, 20),
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return w;
+      })
+    );
+
     addLog('success', `🎉 Workflow execution completed successfully! All ${nodeQueue.length} nodes processed.`);
   };
 
@@ -412,7 +439,7 @@ export function Automations() {
   const selectedNode = activeWorkflow.nodes.find(n => n.id === selectedNodeId) || null;
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#050507] text-white overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0 bg-[#050507] text-white overflow-hidden">
       {/* N8N TOP CONTROLS NAVBAR */}
       <header className="h-14 px-5 border-b border-zinc-850 bg-[#09090d] flex items-center justify-between shrink-0 z-30">
         {/* Left: Workflow Selector & Meta */}
@@ -576,6 +603,19 @@ export function Automations() {
                             }`}
                           />
                         </button>
+                      </div>
+
+                      <div className="flex flex-col gap-1 text-[10px] text-zinc-500 font-mono">
+                        <div className="flex items-center justify-between">
+                          <span>Last Run:</span>
+                          <span className="text-zinc-300 font-semibold">{wf.lastRun || 'Never'}</span>
+                        </div>
+                        {wf.lastResult && (
+                          <div className="flex items-center justify-between">
+                            <span>Last Status:</span>
+                            <span className="text-emerald-400 font-medium truncate max-w-[120px]">{wf.lastResult}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-between pt-1 border-t border-zinc-850/60 text-[10px] text-zinc-500 font-mono">
