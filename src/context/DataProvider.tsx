@@ -820,7 +820,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(() => {
     const hasSeeded = getStored<boolean>('app_has_seeded_v1', false);
     const list = getStored<Project[]>('app_projects', []);
-    if (!hasSeeded && list.length === 0) {
+    const deletedIds = getStored<string[]>('app_deleted_project_ids', []);
+    const filteredList = list.filter(p => !deletedIds.includes(p.id));
+    if (!hasSeeded && filteredList.length === 0) {
       setStored('app_has_seeded_v1', true);
       const defaultProjects: Project[] = [
         {
@@ -838,22 +840,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           daysUntilAddition: 30,
           customStack: ['React', 'TypeScript', 'Tailwind', 'Recharts'],
           brainstormIdeas: [
-            { id: '1', text: 'Integrate live solar flare warnings', details: 'Triggers mobile alerts when magnetic activity rises above baseline.', status: 'approved', createdAt: Date.now() },
-            { id: '2', text: 'Dynamic telemetry charting', details: 'Use D3 to draw real-time interactive orbital vectors.', status: 'pending', createdAt: Date.now() }
+            { id: '1', text: 'Integrate live solar flare warnings', details: 'Triggers mobile alerts when magnetic activity rises above baseline.', status: 'approved' as const, createdAt: Date.now() },
+            { id: '2', text: 'Dynamic telemetry charting', details: 'Use D3 to draw real-time interactive orbital vectors.', status: 'pending' as const, createdAt: Date.now() }
           ],
           seenRecommendedIdeas: [],
           dreamRecommendations: [
             {
               id: 'dream-telemetry-webgl',
               title: 'Optimize Telemetry Coordinate Pipeline via Canvas/D3',
-              description: 'Convert SVG coordinate rendering to canvas-backed D3 paths. This resolves browser lag when streaming dense  lunar coordinate batches.',
-              snippet: `import * as d3 from 'd3';\n\nexport function useRenderCoordinates(canvasRef: React.RefObject<HTMLCanvasElement>, data: any[]) {\n  React.useEffect(() => {\n    const canvas = canvasRef.current;\n    if (!canvas) return;\n    const ctx = canvas.getContext('2d');\n    if (!ctx) return;\n    ctx.clearRect(0, 0, canvas.width, canvas.height);\n    const scaleX = d3.scaleLinear().domain([0, 100]).range([0, canvas.width]);\n    const scaleY = d3.scaleLinear().domain([0, 100]).range([canvas.height, 0]);\n    ctx.strokeStyle = '#3b82f6';\n    ctx.lineWidth = 1.5;\n    ctx.beginPath();\n    data.forEach((d, idx) => {\n      if (idx === 0) ctx.moveTo(scaleX(d.x), scaleY(d.y));\n      else ctx.lineTo(scaleX(d.x), scaleY(d.y));\n    });\n    ctx.stroke();\n  }, [data, canvasRef]);\n}`
+              description: 'Convert SVG coordinate rendering to canvas-backed D3 paths. This resolves browser lag when streaming dense lunar coordinate batches.',
+              snippet: `import * as d3 from 'd3';\n\nexport function useRenderCoordinates(canvasRef: React.RefObject<HTMLCanvasElement>, data: any[]) {\n React.useEffect(() => {\n const canvas = canvasRef.current;\n if (!canvas) return;\n const ctx = canvas.getContext('2d');\n if (!ctx) return;\n ctx.clearRect(0, 0, canvas.width, canvas.height);\n const scaleX = d3.scaleLinear().domain([0, 100]).range([0, canvas.width]);\n const scaleY = d3.scaleLinear().domain([0, 100]).range([canvas.height, 0]);\n ctx.strokeStyle = '#3b82f6';\n ctx.lineWidth = 1.5;\n ctx.beginPath();\n data.forEach((d, idx) => {\n if (idx === 0) ctx.moveTo(scaleX(d.x), scaleY(d.y));\n else ctx.lineTo(scaleX(d.x), scaleY(d.y));\n });\n ctx.stroke();\n }, [data, canvasRef]);\n}`
             },
             {
               id: 'dream-security-header-check',
               title: 'Express Security Headers Guard System',
               description: 'Inject helmet security directives and custom rate limit buffers to server.ts to secure sensitive telemetry endpoints from credential scraping.',
-              snippet: `import helmet from 'helmet';\nimport rateLimit from 'express-rate-limit';\n\nexport function applySecurityShields(app: any) {\n  app.use(helmet());\n  const apiLimiter = rateLimit({\n    windowMs: 15 * 60 * 1000,\n    max: 100,\n    message: { error: 'Too many queries. Directives hold.' }\n  });\n  app.use('/api/', apiLimiter);\n}`
+              snippet: `import helmet from 'helmet';\nimport rateLimit from 'express-rate-limit';\n\nexport function applySecurityShields(app: any) {\n app.use(helmet());\n const apiLimiter = rateLimit({\n windowMs: 15 * 60 * 1000,\n max: 100,\n message: { error: 'Too many queries. Directives hold.' }\n });\n app.use('/api/', apiLimiter);\n}`
             }
           ]
         },
@@ -871,8 +873,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           daysUntilAddition: 10,
           customStack: ['Gemini LLM', 'Voice Dictation'],
           brainstormIdeas: [
-            { id: 'idea-1', text: 'Infinite Writer Co-pilot', details: 'Text-editor that triggers mild haptics or red glows when you pause typing for 30 seconds.', status: 'approved', createdAt: Date.now() },
-            { id: 'idea-2', text: 'SaaS Billing Tracker for Indie Hackers', details: 'A visual terminal dashboard showing micro-MRI subscriptions.', status: 'pending', createdAt: Date.now() }
+            { id: 'idea-1', text: 'Infinite Writer Co-pilot', details: 'Text-editor that triggers mild haptics or red glows when you pause typing for 30 seconds.', status: 'approved' as const, createdAt: Date.now() },
+            { id: 'idea-2', text: 'SaaS Billing Tracker for Indie Hackers', details: 'A visual terminal dashboard showing micro-MRI subscriptions.', status: 'pending' as const, createdAt: Date.now() }
           ],
           seenRecommendedIdeas: [],
           dreamRecommendations: [
@@ -880,15 +882,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
               id: 'dream-recursive-analysis',
               title: 'Self-Optimizing Gemini Prompt Evaluator',
               description: 'Implement a double-layer prompt check verifying code cleanliness constraints (WCAG, ES Module files) before rendering response stream chunks.',
-              snippet: `import { GoogleGenAI } from '@google/genai';\n\nconst ai = new GoogleGenAI();\nexport async function evaluateConstraintAudit(prompt: string) {\n  const res = await ai.models.generateContent({\n    model: 'gemini-3.5-flash',\n    contents: 'Perform a prompt compliance audit on: ' + prompt,\n    config: { responseMimeType: 'application/json' }\n  });\n  return JSON.parse(res.text);\n}`
+              snippet: `import { GoogleGenAI } from '@google/genai';\n\nconst ai = new GoogleGenAI();\nexport async function evaluateConstraintAudit(prompt: string) {\n const res = await ai.models.generateContent({\n model: 'gemini-3.5-flash',\n contents: 'Perform a prompt compliance audit on: ' + prompt,\n config: { responseMimeType: 'application/json' }\n });\n return JSON.parse(res.text);\n}`
             }
           ]
         }
-      ];
-      setStored('app_projects', defaultProjects);
-      return defaultProjects;
+      ] as Project[];
+      const filteredDefaults = defaultProjects.filter(p => !deletedIds.includes(p.id));
+      setStored('app_projects', filteredDefaults);
+      return filteredDefaults;
     }
-    return list;
+    return filteredList;
   });
   const [issues, setIssues] = useState<Issue[]>(() => {
     const hasSeeded = getStored<boolean>('app_has_seeded_v1', false);
@@ -2153,7 +2156,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const uidsToQuery = Array.from(new Set([googleUser.uid, ...(linkedUids || [])]));
 
     const updateProjectsFromRealtime = () => {
-      const mergedList = Object.values(projectsMap);
+      const deletedIds = getStored<string[]>('app_deleted_project_ids', []);
+      const mergedList = Object.values(projectsMap).filter(p => !deletedIds.includes(p.id));
       mergedList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
       // Update the reference of remote projects so auto-sync loop prevention is maintained
@@ -2165,9 +2169,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       const ownedQuery = query(collection(db, 'projects'), where('ownerId', 'in', uidsToQuery));
       unsubOwned = onSnapshot(ownedQuery, (snapshot) => {
+        const deletedIds = getStored<string[]>('app_deleted_project_ids', []);
         snapshot.docChanges().forEach((change) => {
           const docData = change.doc.data() as Project;
-          if (change.type === 'removed') {
+          if (change.type === 'removed' || deletedIds.includes(change.doc.id)) {
             delete projectsMap[change.doc.id];
           } else {
             projectsMap[change.doc.id] = docData;
@@ -2176,7 +2181,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         
         // Also ensure all current query docs are in map
         snapshot.forEach((docSnap) => {
-          projectsMap[docSnap.id] = docSnap.data() as Project;
+          if (!deletedIds.includes(docSnap.id)) {
+            projectsMap[docSnap.id] = docSnap.data() as Project;
+          } else {
+            delete projectsMap[docSnap.id];
+          }
         });
 
         updateProjectsFromRealtime();
@@ -2193,10 +2202,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         const collabQuery = query(collection(db, 'projects'), where('collaborators', 'array-contains', email));
         unsubCollab = onSnapshot(collabQuery, (snapshot) => {
+          const deletedIds = getStored<string[]>('app_deleted_project_ids', []);
           snapshot.docChanges().forEach((change) => {
             const docData = change.doc.data() as Project;
-            if (change.type === 'removed') {
-              if (!uidsToQuery.includes(docData.ownerId)) {
+            if (change.type === 'removed' || deletedIds.includes(change.doc.id)) {
+              if (!uidsToQuery.includes(docData.ownerId) || deletedIds.includes(change.doc.id)) {
                 delete projectsMap[change.doc.id];
               }
             } else {
@@ -2206,7 +2216,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
           // Also ensure all current query docs are in map
           snapshot.forEach((docSnap) => {
-            projectsMap[docSnap.id] = docSnap.data() as Project;
+            if (!deletedIds.includes(docSnap.id)) {
+              projectsMap[docSnap.id] = docSnap.data() as Project;
+            } else {
+              delete projectsMap[docSnap.id];
+            }
           });
 
           updateProjectsFromRealtime();
@@ -4314,6 +4328,15 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     }));
   };
   const deleteProject = (id: string) => {
+    // Record deleted ID in persistent array to prevent re-hydration from local storage or Firestore
+    try {
+      const deletedIds = getStored<string[]>('app_deleted_project_ids', []);
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+        setStored('app_deleted_project_ids', deletedIds);
+      }
+    } catch (e) {}
+
     const projToDelete = projects.find(p => p.id === id);
     if (projToDelete) {
       // Soft Delete: Move to Trash Bin (30-day retention)
