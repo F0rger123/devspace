@@ -36,6 +36,7 @@ import {
   CustomAgentDef,
   DEFAULT_THEME_OVERRIDES,
   DEFAULT_LAYOUT_OVERRIDES,
+  aetherInstanceEngine,
 } from '../lib/aetherInstanceEngine';
 
 export function EditableDevSpace() {
@@ -430,7 +431,7 @@ export function EditableDevSpace() {
                   onChange={(e) => setPromptInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && promptInput.trim()) {
-                      const proposal = engine.generateProposalFromPrompt(promptInput, activeProfile, selectedContextTag || undefined);
+                      const proposal = aetherInstanceEngine.generateProposalFromPrompt(promptInput, activeProfile, selectedContextTag || undefined);
                       setProposal(proposal);
                       showToast(`Generated UI proposal: "${proposal.title}"`);
                       setPromptInput('');
@@ -442,7 +443,7 @@ export function EditableDevSpace() {
                 <button
                   onClick={() => {
                     if (promptInput.trim()) {
-                      const proposal = engine.generateProposalFromPrompt(promptInput, activeProfile, selectedContextTag || undefined);
+                      const proposal = aetherInstanceEngine.generateProposalFromPrompt(promptInput, activeProfile, selectedContextTag || undefined);
                       setProposal(proposal);
                       showToast(`Generated UI proposal: "${proposal.title}"`);
                       setPromptInput('');
@@ -492,7 +493,7 @@ export function EditableDevSpace() {
                     <button
                       key={preset.label}
                       onClick={() => {
-                        const proposal = engine.generateProposalFromPrompt(preset.prompt, activeProfile, selectedContextTag || undefined);
+                        const proposal = aetherInstanceEngine.generateProposalFromPrompt(preset.prompt, activeProfile, selectedContextTag || undefined);
                         setProposal(proposal);
                         showToast(`Generated UI proposal: "${proposal.title}"`);
                       }}
