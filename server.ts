@@ -5995,7 +5995,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       let response;
       try {
         response = await ai.models.generateContent({
-          model: 'gemini-3.5-flash',
+          model: 'gemini-3.6-flash',
           contents: contents,
           config: {
             systemInstruction: systemPrompt,
@@ -6004,9 +6004,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
           }
         });
       } catch (err: any) {
-        logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
+        logModelFallback("gemini-3.6-flash", "gemini-3.1-pro-preview", err);
         response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: 'gemini-3.1-pro-preview',
           contents: contents,
           config: {
             systemInstruction: systemPrompt,
@@ -6104,7 +6104,7 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
       let responseStream;
       try {
         responseStream = await ai.models.generateContentStream({
-          model: 'gemini-3.5-flash',
+          model: 'gemini-3.6-flash',
           contents: contents,
           config: {
             systemInstruction: systemPrompt,
@@ -6114,9 +6114,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
         });
       } catch (err: any) {
         try {
-          logModelFallback("gemini-3.5-flash", "gemini-3.6-flash", err);
+          logModelFallback("gemini-3.6-flash", "gemini-3.1-pro-preview", err);
           responseStream = await ai.models.generateContentStream({
-            model: 'gemini-3.6-flash',
+            model: 'gemini-3.1-pro-preview',
             contents: contents,
             config: {
               systemInstruction: systemPrompt,
@@ -6125,9 +6125,9 @@ Omit optional properties from parsedData if they cannot be inferred. Keep your r
             }
           });
         } catch (err2: any) {
-          logModelFallback("gemini-3.6-flash", "gemini-2.5-flash", err2);
+          logModelFallback("gemini-3.1-pro-preview", "gemini-1.5-flash", err2);
           responseStream = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-1.5-flash',
             contents: contents,
             config: {
               systemInstruction: systemPrompt,

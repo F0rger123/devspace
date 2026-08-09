@@ -886,8 +886,17 @@ const { ${cleanProps} } = _safeIcons;`;
       });
     };
 
+    var loadRetries = 0;
     function startSandboxEngine() {
       if (typeof Babel === 'undefined' || typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+        loadRetries++;
+        if (loadRetries > 100) {
+          var rootDiv = document.getElementById('root');
+          if (rootDiv) {
+            rootDiv.innerHTML = '<div style="padding:24px;background:#18181b;color:#f87171;border:1px solid #dc2626;border-radius:12px;margin:16px;font-family:sans-serif;"><h3 style="color:#ef4444;font-size:14px;font-weight:bold;margin:0 0 8px 0;">Preview Runtime Dependencies Timeout</h3><p style="font-size:12px;color:#a1a1aa;margin:0;">React/Babel CDN dependencies did not load in time. Please reload preview or check connectivity.</p></div>';
+          }
+          return;
+        }
         setTimeout(startSandboxEngine, 40);
         return;
       }
@@ -945,20 +954,14 @@ const { ${cleanProps} } = _safeIcons;`;
         let compiled = '';
         try {
           compiled = Babel.transform(rawCode, {
-            presets: [
-              ['react', { runtime: 'classic' }],
-              'typescript'
-            ],
+            presets: ['react', 'typescript'],
             filename: 'App.tsx'
           }).code;
         } catch (bErr) {
           console.warn("Babel transform first pass notice, applying fallback:", bErr);
           const sanitized = rawCode.replace(/(['"])([^'"\n]*)$/gm, '$1$2$1');
           compiled = Babel.transform(sanitized, {
-            presets: [
-              ['react', { runtime: 'classic' }],
-              'typescript'
-            ],
+            presets: ['react', 'typescript'],
             filename: 'App.tsx'
           }).code;
         }
@@ -971,7 +974,7 @@ const { ${cleanProps} } = _safeIcons;`;
         console.error('Sandbox Render Fallback Error:', err);
         var rootDiv = document.getElementById('root');
         if (rootDiv) {
-          rootDiv.innerHTML = '<div class="p-6 bg-zinc-900 border border-zinc-800 rounded-2xl m-4 text-center"><h3 class="text-yellow-400 font-bold text-sm">Interactive Sandbox Compiled</h3><p class="text-xs text-zinc-400 mt-1">Render complete for workspace deployment. Notice: ' + (err.message || 'Syntax parse fallback') + '</p></div>';
+          rootDiv.innerHTML = '<div style="padding:24px;background:#18181b;color:#f87171;border:1px solid #dc2626;border-radius:12px;margin:16px;font-family:sans-serif;"><h3 style="color:#ef4444;font-size:14px;font-weight:bold;margin:0 0 8px 0;">Design Studio Render Error</h3><p style="font-size:12px;color:#fca5a5;margin:0 0 8px 0;font-family:monospace;">' + (err.message || String(err)) + '</p><p style="font-size:11px;color:#9ca3af;margin:0;">Inspect component code in Design Studio code editor to correct syntax.</p></div>';
         }
       }
     }
@@ -1374,7 +1377,7 @@ const { ${cleanProps} } = _safeIcons;`;
                             title="Archetype Live Sandbox Preview"
                             srcDoc={getPreviewSourceDoc(selectedOption)}
                             className="w-full h-full border-none bg-[#09090b]"
-                            sandbox="allow-scripts allow-modals"
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                           />
                         </div>
                       </div>
@@ -1653,7 +1656,7 @@ const { ${cleanProps} } = _safeIcons;`;
                                       title={`Side Test ${opt.name}`}
                                       srcDoc={getPreviewSourceDoc(opt)}
                                       className="w-full h-full min-h-[360px] border-none bg-[#09090b]"
-                                      sandbox="allow-scripts allow-modals"
+                                      sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                                     />
                                   </div>
                                 </div>
@@ -1679,7 +1682,7 @@ const { ${cleanProps} } = _safeIcons;`;
                                 title="Design Sandbox Preview"
                                 srcDoc={getPreviewSourceDoc(selectedOption)}
                                 className="w-full h-full min-h-[400px] border-none bg-[#09090b]"
-                                sandbox="allow-scripts allow-modals"
+                                sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                               />
                             </div>
                           </div>
@@ -2004,7 +2007,7 @@ const { ${cleanProps} } = _safeIcons;`;
                   title="Design Fullscreen Sandbox"
                   srcDoc={getPreviewSourceDoc(selectedOption)}
                   className="w-full h-full border-none bg-[#09090b]"
-                  sandbox="allow-scripts allow-modals"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
                 />
               </div>
             </div>
