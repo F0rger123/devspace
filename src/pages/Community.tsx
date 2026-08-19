@@ -1125,13 +1125,13 @@ export function Community() {
     .filter(p => {
       const ps = (projectSearch || "").trim().toLowerCase();
       const matchesSearch = !ps ||
-        (p.name || "").toLowerCase().includes(ps) ||
-        (p.description || "").toLowerCase().includes(ps) ||
-        p.tags?.some(t => (t || "").toLowerCase().includes(ps)) ||
-        p.ownerName?.toLowerCase().includes(ps);
+        (p?.name || "").toLowerCase().includes(ps) ||
+        (p?.description || "").toLowerCase().includes(ps) ||
+        p?.tags?.some(t => (t || "").toLowerCase().includes(ps)) ||
+        (p?.ownerName || "").toLowerCase().includes(ps);
       
-      const matchesTag = selectedTag === 'All' || p.tags?.some(t => (t || "").toLowerCase() === selectedTag.toLowerCase());
-      const matchesStatus = selectedStatus === 'All' || (p.status || "").toLowerCase() === selectedStatus.toLowerCase();
+      const matchesTag = selectedTag === 'All' || p?.tags?.some(t => (t || "").toLowerCase() === (selectedTag || '').toLowerCase());
+      const matchesStatus = selectedStatus === 'All' || (p?.status || "").toLowerCase() === (selectedStatus || '').toLowerCase();
 
       return matchesSearch && matchesTag && matchesStatus;
     })
@@ -1139,15 +1139,17 @@ export function Community() {
       if (projectSort === 'trending') {
         return (b.starsCount || 0) - (a.starsCount || 0);
       }
-      return b.createdAt - a.createdAt;
+      return (b.createdAt || 0) - (a.createdAt || 0);
     });
 
   const filteredDevs = developers.filter(d => {
+    const ds = (devSearch || '').trim().toLowerCase();
+    if (!ds) return true;
     return (
-      d.displayName.toLowerCase().includes(devSearch.toLowerCase()) ||
-      d.username.toLowerCase().includes(devSearch.toLowerCase()) ||
-      d.title.toLowerCase().includes(devSearch.toLowerCase()) ||
-      d.bio.toLowerCase().includes(devSearch.toLowerCase())
+      (d?.displayName || '').toLowerCase().includes(ds) ||
+      (d?.username || '').toLowerCase().includes(ds) ||
+      (d?.title || '').toLowerCase().includes(ds) ||
+      (d?.bio || '').toLowerCase().includes(ds)
     );
   });
 
@@ -2234,17 +2236,17 @@ export function Community() {
                         .filter(repo => {
                           const sQuery = (trendingSearch || "").trim().toLowerCase();
                           const matchesSearch = !sQuery ||
-                            (repo.name || "").toLowerCase().includes(sQuery) ||
-                            (repo.description || "").toLowerCase().includes(sQuery);
-                          const matchesLang = trendingLang === 'All' || (repo.language && repo.language.toLowerCase() === trendingLang.toLowerCase());
-                          const stars = repo.stargazers_count || 0;
+                            (repo?.name || "").toLowerCase().includes(sQuery) ||
+                            (repo?.description || "").toLowerCase().includes(sQuery);
+                          const matchesLang = trendingLang === 'All' || (repo?.language && (repo.language || '').toLowerCase() === (trendingLang || '').toLowerCase());
+                          const stars = repo?.stargazers_count || 0;
                           const matchesStars = stars >= minStars;
                           return matchesSearch && matchesLang && matchesStars;
                         })
                         .sort((a, b) => {
-                          if (sortBy === 'stars') return (b.stargazers_count || 0) - (a.stargazers_count || 0);
-                          if (sortBy === 'forks') return (b.forks_count || 0) - (a.forks_count || 0);
-                          if (sortBy === 'name') return a.name.localeCompare(b.name);
+                          if (sortBy === 'stars') return (b?.stargazers_count || 0) - (a?.stargazers_count || 0);
+                          if (sortBy === 'forks') return (b?.forks_count || 0) - (a?.forks_count || 0);
+                          if (sortBy === 'name') return (a?.name || '').localeCompare(b?.name || '');
                           return 0;
                         });
 

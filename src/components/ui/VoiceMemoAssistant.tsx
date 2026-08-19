@@ -2621,6 +2621,68 @@ export function VoiceMemoAssistant() {
     };
   }, [isProcessing, proposedAction, convoHistory]);
 
+  // Synchronize Aether mode changes from Dynamic Island / TheBar
+  useEffect(() => {
+    const handleVoiceModeChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const mode = customEvent.detail?.mode;
+      if (!mode) return;
+
+      if (mode === 'OFF') {
+        if (activeRecogRef.current) {
+          try {
+            activeRecogRef.current.onend = null;
+            activeRecogRef.current.stop();
+          } catch (err) {}
+          activeRecogRef.current = null;
+        }
+        if (backgroundRecogRef.current) {
+          try {
+            backgroundRecogRef.current.onend = null;
+            backgroundRecogRef.current.stop();
+          } catch (err) {}
+          backgroundRecogRef.current = null;
+        }
+        setIsListeningForSpeech(false);
+        setIsConversing(false);
+        isConversingRef.current = false;
+        setIsWakeWordListening(false);
+        aetherVoiceRegistry.stopSpeaking();
+      } else if (mode === 'LISTENING') {
+        setIsHubOpen(true);
+        setIsConversing(true);
+        isConversingRef.current = true;
+        setHudTab('speak');
+        startContinuousConversationalListen();
+      } else if (mode === 'WAITING FOR KEYWORD') {
+        setIsWakeWordEnabled(true);
+        startBackgroundWakeWord();
+      } else if (mode === 'CONTEXT') {
+        setIsHubOpen(true);
+        setHudTab('speak');
+      } else if (mode === 'ALWAYS ON') {
+        setIsWakeWordEnabled(true);
+        startBackgroundWakeWord();
+      }
+    };
+
+    const handleVoiceActivate = () => {
+      setIsHubOpen(true);
+      setIsConversing(true);
+      isConversingRef.current = true;
+      setHudTab('speak');
+      startContinuousConversationalListen();
+    };
+
+    window.addEventListener('devspace:aether-voice-mode-changed', handleVoiceModeChanged);
+    window.addEventListener('devspace:voice-activate', handleVoiceActivate);
+
+    return () => {
+      window.removeEventListener('devspace:aether-voice-mode-changed', handleVoiceModeChanged);
+      window.removeEventListener('devspace:voice-activate', handleVoiceActivate);
+    };
+  }, []);
+
   // Manage Hands-Free Conversation Mode lifecycle
   useEffect(() => {
     if (isHubOpen) {

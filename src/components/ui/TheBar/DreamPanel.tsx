@@ -358,23 +358,33 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 text-[10px]">
-                    {item.status === 'pushed' ? (
-                      <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full font-bold">
-                        Pushed ({item.commitHash?.substring(0, 6)})
+                    {item.status === 'complete' ? (
+                      <a
+                        href={item.prUrl || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full font-bold flex items-center gap-1 hover:underline"
+                      >
+                        <Check size={10} /> Complete {item.prNumber ? `PR #${item.prNumber}` : ''}
+                      </a>
+                    ) : item.status === 'error' ? (
+                      <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded-full font-bold truncate max-w-[120px]" title={item.error || item.stageMessage}>
+                        Failed: {item.error || 'Error'}
                       </span>
-                    ) : item.status === 'committing' ? (
-                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full font-bold animate-pulse">
-                        Pushing...
-                      </span>
-                    ) : (
+                    ) : item.status === 'queued' ? (
                       <span className="px-2 py-0.5 bg-zinc-800 text-zinc-300 border border-zinc-700 rounded-full">
                         Queued
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full font-bold animate-pulse capitalize">
+                        {item.status}... ({item.progressPercent}%)
                       </span>
                     )}
 
                     <button
                       onClick={() => pushQueue.removeFromQueue(item.id)}
                       className="p-1 hover:bg-rose-500/20 text-zinc-500 hover:text-rose-400 rounded transition-colors cursor-pointer"
+                      title="Remove from queue"
                     >
                       <Trash2 size={12} />
                     </button>
@@ -387,12 +397,12 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
           {/* Batch Push Action */}
           <div className="pt-2 flex items-center justify-between border-t border-white/10 text-xs">
             <span className="text-[10px] text-zinc-400">
-              {projectQueueItems.filter((i) => i.selected && i.status !== 'pushed').length} items selected
+              {projectQueueItems.filter((i) => i.selected && i.status !== 'complete').length} items selected
             </span>
 
             <button
               onClick={handleExecuteBatchPush}
-              disabled={isPushing || projectQueueItems.filter((i) => i.selected && i.status !== 'pushed').length === 0}
+              disabled={isPushing || projectQueueItems.filter((i) => i.selected && i.status !== 'complete').length === 0}
               className="px-4 py-1.5 bg-amber-400 hover:bg-amber-300 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-950 font-black rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
             >
               <Send size={12} />

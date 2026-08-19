@@ -4680,12 +4680,12 @@ Description of fix or enhancement recommendation
           const existingRecs = p.dreamRecommendations || [];
           const combined = [...existingRecs];
           finalRecs.forEach(newRec => {
-            if (!combined.some(c => c.title.toLowerCase() === newRec.title.toLowerCase())) {
+            if (!combined.some(c => (c.title || '').toLowerCase() === (newRec.title || '').toLowerCase())) {
               combined.push(newRec);
             }
           });
           // Alphabetical Sort
-          combined.sort((a, b) => a.title.localeCompare(b.title));
+          combined.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
           const updated = {
             ...p,
@@ -4719,12 +4719,12 @@ Description of fix or enhancement recommendation
           const existingRecs = p.dreamRecommendations || [];
           const combined = [...existingRecs];
           fallbackRecs.forEach(r => {
-            if (!combined.some(c => c.title.toLowerCase() === r.title.toLowerCase())) {
+            if (!combined.some(c => (c.title || '').toLowerCase() === (r.title || '').toLowerCase())) {
               combined.push(r);
             }
           });
           // Alphabetical Sort
-          combined.sort((a, b) => a.title.localeCompare(b.title));
+          combined.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
           const updated = {
             ...p,
