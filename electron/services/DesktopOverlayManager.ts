@@ -86,7 +86,11 @@ export class DesktopOverlayManager {
     }
 
     try {
-      this.overlayWindow.setAlwaysOnTop(this.settings.alwaysOnTop, 'floating');
+      if (process.platform === 'win32') {
+        this.overlayWindow.setAlwaysOnTop(this.settings.alwaysOnTop, 'screen-saver');
+      } else {
+        this.overlayWindow.setAlwaysOnTop(this.settings.alwaysOnTop, 'floating');
+      }
       // macOS Spaces and Windows Virtual Desktops integration
       this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     } catch (e) {
@@ -99,6 +103,16 @@ export class DesktopOverlayManager {
         const bounds = this.overlayWindow.getBounds();
         this.settings.savedX = bounds.x;
         this.settings.savedY = bounds.y;
+      }
+    });
+
+    // Auto-collapse overlay to capsule when clicking outside/blurring window
+    this.overlayWindow.on('blur', () => {
+      if (this.overlayWindow && !this.overlayWindow.isDestroyed() && this.settings.isExpanded) {
+        try {
+          this.overlayWindow.webContents.send('overlay-collapse-requested');
+        } catch {}
+        this.setOverlaySize(false);
       }
     });
 
@@ -227,7 +241,11 @@ export class DesktopOverlayManager {
   public setAlwaysOnTop(flag: boolean): void {
     this.settings.alwaysOnTop = flag;
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
-      this.overlayWindow.setAlwaysOnTop(flag, 'floating');
+      if (process.platform === 'win32') {
+        this.overlayWindow.setAlwaysOnTop(flag, 'screen-saver');
+      } else {
+        this.overlayWindow.setAlwaysOnTop(flag, 'floating');
+      }
     }
   }
 

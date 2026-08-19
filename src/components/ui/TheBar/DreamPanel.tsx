@@ -1,4 +1,4 @@
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { motion, PanInfo } from 'motion/react';
 import {
   Sparkles,
@@ -58,6 +58,27 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
   );
 
   const currentDream = dreamList[selectedIndex] || dreamList[0];
+
+  // Keyboard navigation: Left/Right arrow keys for previous/next dream item
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (activeSubView === 'dreams' && dreamList.length > 1) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev - 1 + dreamList.length) % dreamList.length);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev + 1) % dreamList.length);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeSubView, dreamList.length]);
 
   const handleDragEnd = (
     _event: MouseEvent | TouchEvent | PointerEvent,

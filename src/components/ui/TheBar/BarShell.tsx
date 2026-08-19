@@ -107,19 +107,51 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isExpanded]);
 
-  // Click outside to collapse automatically
+  // Click outside or window blur to collapse automatically
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsExpanded(false);
       }
     };
+
+    const handleWindowBlur = () => {
+      if (isExpanded) {
+        setIsExpanded(false);
+      }
+    };
+
+    const handleIpcCollapse = () => {
+      setIsExpanded(false);
+    };
+
     if (isExpanded) {
       document.addEventListener('mousedown', handleClickOutside);
+      window.addEventListener('blur', handleWindowBlur);
+      window.addEventListener('devspace:overlay-collapse', handleIpcCollapse);
     } else {
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('devspace:overlay-collapse', handleIpcCollapse);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    const electronApi = getElectronAPI() as any;
+    if (electronApi && electronApi.on) {
+      try {
+        electronApi.on('overlay-collapse-requested', handleIpcCollapse);
+      } catch {}
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('devspace:overlay-collapse', handleIpcCollapse);
+      if (electronApi && electronApi.off) {
+        try {
+          electronApi.off('overlay-collapse-requested', handleIpcCollapse);
+        } catch {}
+      }
+    };
   }, [isExpanded]);
 
   // Handle overlay resize with smooth timing delay during collapse (120-150ms morph)

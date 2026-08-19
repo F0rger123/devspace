@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Compass, FileCode, GitBranch, Zap, AlertTriangle, Sparkles, Check, Send, Cpu, BrainCircuit, History } from 'lucide-react';
+import { Compass, FileCode, GitBranch, Zap, AlertTriangle, Sparkles, Check, Send, Cpu, BrainCircuit, History, Target, Crosshair } from 'lucide-react';
 import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
 import { aetherIntelligence, IntelligenceSummary, PersonalMemory } from '../../../lib/aetherIntelligenceService';
+import { useStore } from '../../../store';
 
 interface ContextPanelProps {
   projectName: string;
@@ -17,6 +18,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
   activeWorkCount,
 }) => {
   const navigate = useSafeOverlayNavigate();
+  const setDrawingModeActive = useStore((s) => s.setDrawingModeActive);
   const [lastActionStatus, setLastActionStatus] = useState<string | null>(null);
   const [nlInput, setNlInput] = useState('');
   const [summary, setSummary] = useState<IntelligenceSummary | null>(null);
@@ -111,6 +113,22 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
           <Send size={11} /> Ask
         </button>
       </form>
+
+      {/* Direct Screen Region & Context Capture Button */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setDrawingModeActive(true);
+            setLastActionStatus('Context Mode Active: Click & drag to draw or select any screen region.');
+            setTimeout(() => setLastActionStatus(null), 4000);
+          }}
+          className="w-full py-2 px-3 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+        >
+          <Crosshair size={13} className="text-amber-400" />
+          <span>Draw Context Selection on Screen (Alt+D)</span>
+        </button>
+      </div>
 
       {/* 4 Core Intelligence Synthesized Answers */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
