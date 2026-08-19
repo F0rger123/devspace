@@ -112,7 +112,7 @@ export const NODE_LIBRARY: NodeTypeDefinition[] = [
     bgColor: 'bg-yellow-500/10',
     defaultConfig: {
       prompt: 'Analyze active workspace issues and generate concise summary.',
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.7-flash',
       temperature: 0.3
     }
   },

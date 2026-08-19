@@ -16,6 +16,7 @@ import { BiometricSessionSecuritySettings } from '../components/BiometricSession
 import { ActivityCenterSettingsTab } from '../components/ui/ActivityCenterSettingsTab';
 import { DesktopOverlaySettingsTab } from '../components/DesktopOverlaySettingsTab';
 import { IntegrationsCenter } from '../components/IntegrationsCenter';
+import { AetherIdentityAndCredentialsManager } from '../components/AetherIdentityAndCredentialsManager';
 import { AetherActionsSection } from '../components/AetherActionsSection';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 import { isElectron } from '../lib/electronBridge';
@@ -471,6 +472,8 @@ export function Settings() {
   const isGithubConnected = auth?.currentUser?.providerData.some(p => p.providerId === 'github.com') || !!userProfile?.githubLinked || !!userProfile?.githubUser || !!userProfile?.githubToken;
 
   const [preferredName, setPreferredNameState] = useState(() => aetherVoiceRegistry.getPreferredName());
+  const [editingRuleIdx, setEditingRuleIdx] = useState<number | null>(null);
+  const [editingRuleText, setEditingRuleText] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('settings_active_tab') || 'profile'); // Default to profile to showcase first-class user profiles
   const [googleLinkError, setGoogleLinkError] = useState(false);
@@ -1605,6 +1608,11 @@ export function Settings() {
           )}
           {activeTab === 'aether' && (
             <div className="space-y-6 animate-fade-in text-zinc-300">
+              {/* Canonical Identity, Directives, and AI Credentials Manager */}
+              <AetherIdentityAndCredentialsManager />
+
+              <div className="my-6 border-t border-zinc-800" />
+
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
                   <Sparkles size={16} className="text-purple-400" /> Aether AI Autonomy & Operations Core
@@ -1998,22 +2006,67 @@ export function Settings() {
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                       {aetherPersonalityRules.map((rule, idx) => (
                         <div
                           key={rule + idx}
-                          className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-900/40 border border-zinc-900 hover:border-zinc-800 transition-all text-xs"
+                          className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-900/40 border border-zinc-900 hover:border-zinc-800 transition-all text-xs gap-2"
                         >
-                          <span className="text-zinc-300 font-medium">{rule}</span>
-                          <button
-                            onClick={() => {
-                              setAetherPersonalityRules(aetherPersonalityRules.filter((_, i) => i !== idx));
-                            }}
-                            className="p-1 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 rounded transition-all cursor-pointer"
-                            title="Forget directive"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {editingRuleIdx === idx ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <input
+                                type="text"
+                                value={editingRuleText}
+                                onChange={(e) => setEditingRuleText(e.target.value)}
+                                className="flex-1 bg-zinc-950 border border-purple-500/50 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none font-sans"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => {
+                                  if (editingRuleText.trim()) {
+                                    const updated = [...aetherPersonalityRules];
+                                    updated[idx] = editingRuleText.trim();
+                                    setAetherPersonalityRules(updated);
+                                  }
+                                  setEditingRuleIdx(null);
+                                }}
+                                className="px-2 py-1 bg-purple-600 text-white rounded text-[10px] font-bold uppercase cursor-pointer"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingRuleIdx(null)}
+                                className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded text-[10px] font-bold uppercase cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-zinc-300 font-medium flex-1">{rule}</span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setEditingRuleIdx(idx);
+                                    setEditingRuleText(rule);
+                                  }}
+                                  className="p-1 hover:bg-purple-500/10 text-zinc-500 hover:text-purple-300 rounded transition-all cursor-pointer"
+                                  title="Edit directive"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setAetherPersonalityRules(aetherPersonalityRules.filter((_, i) => i !== idx));
+                                  }}
+                                  className="p-1 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 rounded transition-all cursor-pointer"
+                                  title="Forget directive"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       ))}
                     </div>

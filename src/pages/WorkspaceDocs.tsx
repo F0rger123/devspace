@@ -563,7 +563,8 @@ export function WorkspaceDocs() {
   };
 
   const filteredDocs = documents.filter(doc => {
-    const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const sq = (searchQuery || "").trim().toLowerCase();
+    const matchesSearch = !sq || (doc.name || "").toLowerCase().includes(sq);
     if (workMode === 'live') {
       return matchesSearch && !doc.isMock;
     } else {

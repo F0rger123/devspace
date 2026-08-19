@@ -207,7 +207,7 @@ export interface AIModelChoice {
 
 export function getAllAvailableModels(): AIModelChoice[] {
   const baseCloudModels: AIModelChoice[] = [
-    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Balanced Orchestrator)', category: 'cloud', description: 'Google Standard Fast Multi-Modal LLM' },
+    { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash (Balanced Orchestrator)', category: 'cloud', description: 'Google Standard Fast Multi-Modal LLM' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Cognitive Executive)', category: 'cloud', description: 'Google Deep Reasoning & Code Architecture' },
     { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Ultra Fast)', category: 'cloud', description: 'Low Latency High Throughput' },
     { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (Anthropic)', category: 'cloud', description: 'Advanced System Refactoring' }

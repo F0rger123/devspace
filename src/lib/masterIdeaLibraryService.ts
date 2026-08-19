@@ -25,6 +25,7 @@ class MasterIdeaLibraryService {
   }
 
   private loadIdeas() {
+    if (typeof localStorage === 'undefined') return;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -74,6 +75,7 @@ class MasterIdeaLibraryService {
   }
 
   private saveIdeas() {
+    if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.ideas));
     } catch (e) {

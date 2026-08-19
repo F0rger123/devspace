@@ -13,8 +13,11 @@ export interface DreamRecommendation {
   description: string;
   snippet?: string;
   category?: 'refactor' | 'security' | 'performance' | 'accessibility' | 'design' | 'new_ideas' | 'general' | string;
-  status?: 'active' | 'approved' | 'dismissed';
+  status?: 'active' | 'approved' | 'dismissed' | 'merged' | string;
   createdAt?: number;
+  mergedAt?: number;
+  mergedCommitSha?: string;
+  mergedBranch?: string;
 }
 
 export interface Project {

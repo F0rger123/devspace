@@ -44,7 +44,8 @@ import {
   Eye,
   Compass,
   Menu,
-  Target
+  Target,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { haptic } from '../../utils/haptics';
@@ -63,7 +64,13 @@ import { aetherConversationalEngine } from '../../lib/aetherConversationalEngine
 import { masterIdeaLibrary } from '../../lib/masterIdeaLibraryService';
 import { aetherSpotify } from '../../lib/aetherSpotifyEngine';
 import { aetherDesktopIntelligence } from '../../lib/aetherDesktopIntelligence';
+import { evaluateRoutingFirewall } from '../../lib/aetherRoutingGuard';
+import { resolveCanonicalAetherIntent } from '../../lib/aetherCanonicalIntentResolver';
+import { getResolvedAetherPersonality } from '../../lib/aetherPersonalityResolver';
 import { aetherTeachEngine } from '../../lib/aetherTeachEngine';
+import { universalActionEngine } from '../../lib/aetherActionEngine';
+import { aetherThreadStorage } from '../../lib/aetherThreadStorage';
+import { AetherErrorBoundary } from '../ui/AetherErrorBoundary';
 
 type Message = {
   id: string;
@@ -146,25 +153,28 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     setDrawingModeActive
   } = useStore();
 
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [copiedAllSidebar, setCopiedAllSidebar] = useState(false);
+
   const getDynamicGreeting = () => {
-    const hr = new Date().getHours();
-    let timeGreeting = "Greetings";
-    if (hr < 12) timeGreeting = "Good morning";
-    else if (hr < 18) timeGreeting = "Good afternoon";
-    else timeGreeting = "Good evening";
-
-    const projectsCount = projects?.length || 0;
-    const rulesCount = cortexSynapses?.length || 0;
-    const hasDreams = projects?.some(p => (p.dreamRecommendations || []).length > 0);
-
-     let welcome = `${timeGreeting}, drummerforger! Aether online and synchronized.\n\n`;
-    welcome += `I am holding our continuous memory of **${rulesCount} custom rules** and **${projectsCount} active projects** fully loaded.\n\n`;
-    if (hasDreams) {
-      welcome += `Last night, I dreamed up several fresh optimizations and code refactors for your active branches. Let me know if you would like me to retrieve my latest dream recommendations or review outstanding tasks!`;
-    } else {
-      welcome += `I am standing by as your central assistant. Let's design some incredible features today. What are we building next?`;
-    }
-    return welcome;
+    const personality = getResolvedAetherPersonality();
+    const rawName = personality.preferredUserName || '';
+    const hasCustomName = Boolean(
+      rawName &&
+      rawName.toLowerCase() !== 'developer' &&
+      rawName.toLowerCase() !== 'operator' &&
+      rawName.toLowerCase() !== 'user'
+    );
+    const userName = hasCustomName ? rawName : 'drummerforger';
+    const greetings = [
+      `Hey ${userName}, what do you want to start with?`,
+      `Hey ${userName}, what are we working on?`,
+      `What's up, ${userName}? Ready when you are.`,
+      `Hey, how can I help you right now?`,
+      `Ready when you are. What's on your mind?`,
+      `Hey ${userName}! What would you like to tackle today?`
+    ];
+    return greetings[Math.floor(Math.random() * greetings.length)];
   };
 
   // Session states for past conversations
@@ -178,6 +188,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
         if (parsed && parsed.length > 0) return parsed;
       }
     } catch (e) {}
+    const defaultGreeting = getDynamicGreeting();
     return [
       {
         id: 'session-default',
@@ -187,7 +198,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           {
             id: '1',
             role: 'agent',
-            content: "You're currently working on DevSpace. You have 3 Dreams waiting for review, active project goals, and your release branch ready. Where shall we focus next?"
+            content: defaultGreeting
           }
         ]
       },
@@ -282,7 +293,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
-      modelName: 'gemini-3.5-flash',
+      modelName: 'gemini-3.7-flash',
       temperature: 0.72,
       systemPersona: 'Aether Brain Orchestrator',
       streamEnabled: true,
@@ -493,7 +504,19 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
   // Persist session variations automatically to local storage and Firestore
   useEffect(() => {
-    localStorage.setItem('aether_chat_sessions', JSON.stringify(chatSessions));
+    // Save to IndexedDB (unlimited, non-blocking storage)
+    if (chatSessions && chatSessions.length > 0) {
+      chatSessions.forEach(session => {
+        if (session.id && session.messages) {
+          aetherThreadStorage.saveMessages(session.id, session.messages).catch(e => {
+            console.warn("IndexedDB session save warning:", e);
+          });
+        }
+      });
+    }
+
+    // Safely write to localStorage without exceeding quota
+    aetherThreadStorage.safeLocalStorageSet('aether_chat_sessions', JSON.stringify(chatSessions));
     window.dispatchEvent(new CustomEvent('aether_sync_chat', { detail: { sender: 'RightSidebar' } }));
 
     if (!isSessionsLoaded || !googleUser) return;
@@ -612,14 +635,14 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [voiceAudioEnabled, setVoiceAudioEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('isAetherMuted') !== 'true';
+    return localStorage.getItem('aether_tts_audio_enabled') !== 'false';
   });
 
   useEffect(() => {
-    const handleSync = () => {
-      const isMuted = localStorage.getItem('isAetherMuted') === 'true';
-      setVoiceAudioEnabled(!isMuted);
-      if (isMuted) {
+    const handleSpeechSync = () => {
+      const isSpeechEnabled = localStorage.getItem('aether_tts_audio_enabled') !== 'false';
+      setVoiceAudioEnabled(isSpeechEnabled);
+      if (!isSpeechEnabled) {
         try {
           if (window.speechSynthesis) {
             window.speechSynthesis.cancel();
@@ -628,8 +651,8 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
         setIsSpeechPlaying(false);
       }
     };
-    window.addEventListener('aether-mute-sync', handleSync);
-    return () => window.removeEventListener('aether-mute-sync', handleSync);
+    window.addEventListener('aether-speech-sync', handleSpeechSync);
+    return () => window.removeEventListener('aether-speech-sync', handleSpeechSync);
   }, []);
 
   useEffect(() => {
@@ -793,19 +816,23 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
   };
 
   // Dispatch matched Voice intent logic directly in frontend (same as in VoiceMemoAssistant)
-  const dispatchCommandAction = (intent: string, parsedData: any): string => {
+  const dispatchCommandAction = (intent: string, parsedData: any, rawInputText?: string): string => {
     if (!intent || intent === 'unknown' || !parsedData || intent === 'chat_query') {
       return '';
     }
 
+    const firewall = evaluateRoutingFirewall(rawInputText || "", intent, parsedData);
+    const finalIntent = firewall.finalIntent;
+    const finalParsedData = firewall.parsedData;
+
     let feedback = '';
 
-    switch (intent) {
+    switch (finalIntent) {
       case 'create_project': {
-        const name = parsedData.name || 'New Voice Project';
-        const description = parsedData.description || 'Drafted via Aether AI workspace direct command.';
-        const frameworks = parsedData.frameworks || ['React'];
-        const customStack = parsedData.customStack || frameworks;
+        const name = finalParsedData.name || 'New Voice Project';
+        const description = finalParsedData.description || 'Drafted via Aether AI workspace direct command.';
+        const frameworks = finalParsedData.frameworks || ['React'];
+        const customStack = finalParsedData.customStack || frameworks;
 
         const newId = addProject({
           name,
@@ -1046,6 +1073,100 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     const lower = textToSend.toLowerCase().trim();
     const clean = lower.replace(/[.,\/#!$%^&*;:{}=\-_`~()]/g, "");
 
+    // Central Canonical Intent Resolution & Precedence Firewall
+    const canonical = resolveCanonicalAetherIntent(textToSend, {
+      activeProjectId: activeProjectId || undefined,
+      activeProjectName: projects.find(p => p.id === activeProjectId)?.name,
+      currentTopic: aetherConversationalEngine.getState().currentTopic,
+      availableProjects: projects.map(p => ({ id: p.id, name: p.name })),
+      lastSearchType: aetherConversationalEngine.getState().lastSearchType,
+      lastSearchQuery: aetherConversationalEngine.getState().lastSearchQuery,
+      lastYouTubeResults: aetherConversationalEngine.getState().lastYouTubeResults,
+      lastSearchResults: aetherConversationalEngine.getState().lastSearchResults,
+      lastPresentedResultSet: aetherConversationalEngine.getState().lastPresentedResultSet,
+      workingMemory: aetherConversationalEngine.getState().workingMemory
+    });
+
+    const isDirectEngineIntent =
+      canonical.intent === 'search_youtube' ||
+      canonical.intent === 'search_web' ||
+      canonical.intent === 'open_search_result' ||
+      canonical.intent === 'search_recommendation' ||
+      canonical.intent === 'youtube_which_first' ||
+      canonical.intent === 'youtube_first_summary' ||
+      canonical.intent === 'search_result_query' ||
+      canonical.intent === 'search_comparison' ||
+      canonical.intent === 'get_weather' ||
+      canonical.intent === 'update_user_name' ||
+      canonical.intent === 'user_tired_query' ||
+      canonical.intent === 'light_work_suggestions' ||
+      canonical.intent === 'what_should_i_work_on' ||
+      canonical.intent === 'what_else_options' ||
+      canonical.intent === 'liked_first_idea' ||
+      canonical.intent === 'what_was_first_idea';
+
+    if (isDirectEngineIntent) {
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      setMessages(prev => [...prev, userMsg]);
+      setIsProcessing(true);
+
+      const processed = await aetherConversationalEngine.processUserMessageAsync(textToSend, projects, activeProjectId, {
+        onNavigate: (path, projId) => {
+          if (projId) setActiveProjectId(projId);
+          navigate(path);
+        },
+        openUrl: (url) => {
+          try {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          } catch (e) {
+            console.warn('Window open error:', e);
+          }
+        },
+        onProjectCreate: async (data) => {
+          const newId = addProject({
+            name: data.name,
+            description: data.description || "Created via Aether command.",
+            status: 'Planning',
+            brainstormIdeas: [],
+            seenRecommendedIdeas: [],
+            dreamRecommendations: []
+          });
+          setActiveProjectId(newId);
+          navigate('/projects');
+          return { id: newId, name: data.name };
+        },
+        onIssueCreate: async (data) => {
+          const issueId = addIssue({
+            title: data.title,
+            description: 'Created via Aether command.',
+            status: 'Todo',
+            priority: (data.priority as any) || 'Medium',
+            type: (data.type as any) || 'Task',
+            projectId: data.projectId,
+            labels: ['aether'],
+            ...(data.parentId ? { parentId: data.parentId } : {})
+          });
+          return { id: issueId, title: data.title };
+        }
+      });
+
+      setIsProcessing(false);
+      if (processed && processed.responseText) {
+        const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: processed.responseText };
+        setMessages(prev => [...prev, modelMsg]);
+        speakVoiceReply(processed.speechText || processed.responseText);
+        if (processed.actionToExecute?.intent === 'open_url' && processed.actionToExecute.parsedData?.url) {
+          try {
+            window.open(processed.actionToExecute.parsedData.url, '_blank', 'noopener,noreferrer');
+          } catch (e) {
+            console.warn('Window open error:', e);
+          }
+        }
+        return;
+      }
+    }
+
     // Dynamic active project switching based on spoken/typed name
     let matchedProject = null;
     for (const proj of projects) {
@@ -1224,22 +1345,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       }
     }
 
-    // 7. YOUTUBE SEARCH & VIDEO PLAY
-    if (lower.includes('youtube') || lower.includes('find video') || lower.includes('search video') || lower.match(/videos?\s+about/)) {
-      const ytQuery = textToSend.replace(/youtube|find|search|video|videos|about|for|me/gi, '').trim() || 'React TypeScript tutorial';
-      const videos = await aetherDesktopIntelligence.searchYouTube(ytQuery, 3);
-      setInputValue('');
-      let reply = `🎥 **YouTube Video Intelligence Results for "${ytQuery}":**\n\n`;
-      reply += videos.map((v, i) => `**${i + 1}. [${v.title}](${v.url})**\n- Channel: ${v.channel} • Duration: ${v.duration} • Views: ${v.views}\n- Link: ${v.url}`).join('\n\n');
-      reply += `\n\n*Click any link above to open in browser.*`;
-      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
-      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: reply };
-      setMessages(prev => [...prev, userMsg, modelMsg]);
-      speakVoiceReply(`Found ${videos.length} YouTube videos for ${ytQuery}.`);
-      return;
-    }
-
-    // 8. DEEP RESEARCH & PRIVACY BOUNDARIES
+    // 7. DEEP RESEARCH & PRIVACY BOUNDARIES
     if (lower.startsWith('research ') || lower.includes('deep research')) {
       const topic = textToSend.replace(/research|deep|about|on/gi, '').trim() || 'Modern Web Application Architecture';
       const report = await aetherDesktopIntelligence.conductResearch(topic);
@@ -1512,7 +1618,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           agents: agents || [],
           aiContextRules: aiContextRules || "",
           aetherPersonalityRules: aetherPersonalityRules || [],
-          aetherModel: aetherModel || 'gemini-3.5-flash',
+          aetherModel: aetherModel || 'gemini-3.7-flash',
           aetherConciseness: aetherConciseness || 'balanced',
           aetherThinkingLevel: aetherThinkingLevel || 'auto',
           aetherControlNotes: aetherControlNotes ?? true,
@@ -1577,6 +1683,24 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       
       setIsProcessing(false);
       
+      // Execute natural action if user prompt matched a workspace action command
+      try {
+        const parsedIntent = universalActionEngine.parseIntent(displayContent);
+        if (parsedIntent) {
+          const res = await parsedIntent.command.execute(parsedIntent.params);
+          if (res && res.message) {
+            currentContent += `\n\n⚡ **Executed Action**: ${res.message}`;
+            setMessages(prev => prev.map(msg => 
+              msg.id === agentMsgId 
+                ? { ...msg, content: currentContent.replace(/<UPDATE_PREFS>[\s\S]*?<\/UPDATE_PREFS>/g, '').trim() }
+                : msg
+            ));
+          }
+        }
+      } catch (actionErr) {
+        console.warn('Action execution error in RightSidebar:', actionErr);
+      }
+
       // Speak response dynamically if enabled
       const finalMsg = currentContent.replace(/<UPDATE_PREFS>[\s\S]*?<\/UPDATE_PREFS>/g, '').trim();
       speakVoiceReply(finalMsg);
@@ -1887,10 +2011,11 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  const currentMute = localStorage.getItem('isAetherMuted') === 'true';
-                  const nextMute = !currentMute;
-                  localStorage.setItem('isAetherMuted', String(nextMute));
-                  window.dispatchEvent(new Event('aether-mute-sync'));
+                  const currentSpeech = localStorage.getItem('aether_tts_audio_enabled') !== 'false';
+                  const nextSpeech = !currentSpeech;
+                  localStorage.setItem('aether_tts_audio_enabled', String(nextSpeech));
+                  setVoiceAudioEnabled(nextSpeech);
+                  window.dispatchEvent(new Event('aether-speech-sync'));
                 }}
                 className={`p-2 rounded-lg border text-xs flex items-center gap-1.5 transition-all outline-none ${
                   voiceAudioEnabled 
@@ -1901,6 +2026,23 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
               >
                 {voiceAudioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
                 <span className="text-[10px] uppercase font-semibold hidden md:inline-block">TTS Speech</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const allText = messages
+                    .map((m) => `${m.role === 'user' ? 'User' : 'Aether'}:\n${m.content}`)
+                    .join('\n\n---\n\n');
+                  navigator.clipboard.writeText(allText);
+                  setCopiedAllSidebar(true);
+                  setTimeout(() => setCopiedAllSidebar(false), 2000);
+                }}
+                className="text-zinc-400 hover:text-yellow-400 text-xs px-3 py-2 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Copy full conversation"
+              >
+                {copiedAllSidebar ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                <span>{copiedAllSidebar ? 'Copied All' : 'Copy All'}</span>
               </button>
 
               <button 
@@ -1945,21 +2087,42 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                     </div>
                   )}
 
-                  <div className="flex flex-col max-w-[80%]">
-                    <div className="text-[10px] text-zinc-600 font-mono mb-1 flex items-center gap-1.5">
-                      {msg.role === 'user' ? 'Operator (Local)' : 'Aether Orchestrator'}
-                      {msg.isVoice && <span className="text-yellow-400 text-[8px] uppercase tracking-widest font-mono border border-yellow-500/10 px-1.5 rounded bg-yellow-950/20 font-bold">Audio input</span>}
+                  <div className="flex flex-col max-w-[80%] group/msg">
+                    <div className="text-[10px] text-zinc-600 font-mono mb-1 flex items-center justify-between gap-1.5 select-none">
+                      <div className="flex items-center gap-1.5">
+                        <span>{msg.role === 'user' ? 'Operator (Local)' : 'Aether Orchestrator'}</span>
+                        {msg.isVoice && <span className="text-yellow-400 text-[8px] uppercase tracking-widest font-mono border border-yellow-500/10 px-1.5 rounded bg-yellow-950/20 font-bold">Audio input</span>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(msg.content);
+                          setCopiedMsgId(msg.id);
+                          setTimeout(() => setCopiedMsgId(null), 2000);
+                        }}
+                        className="opacity-60 group-hover/msg:opacity-100 p-0.5 hover:text-yellow-400 text-zinc-500 rounded transition-opacity cursor-pointer flex items-center gap-1"
+                        title="Copy message text"
+                      >
+                        {copiedMsgId === msg.id ? (
+                          <span className="flex items-center gap-0.5 text-[9px] text-emerald-400 font-mono">
+                            <Check size={11} /> Copied
+                          </span>
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                      </button>
                     </div>
 
-                    <div className={`px-5 py-3.5 rounded-2xl shadow-xl leading-relaxed text-xs sm:text-sm ${
+                    <div className={`px-5 py-3.5 rounded-2xl shadow-xl leading-relaxed text-xs sm:text-sm select-text ${
                       msg.role === 'user'
                         ? 'bg-yellow-500/20 text-yellow-200 border border-yellow-500/40 rounded-tr-none shadow-yellow-950/10'
                         : 'bg-[#121214] border border-[#27272a] text-zinc-300 rounded-tl-none'
                     }`}>
                       {msg.role === 'user' ? (
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                        <div className="whitespace-pre-wrap select-text">{msg.content}</div>
                       ) : (
-                        <div className="markdown-body prose prose-invert prose-p:leading-relaxed prose-pre:bg-[#09090b] prose-pre:border prose-pre:border-zinc-800 prose-sm text-zinc-300 max-w-none">
+                        <div className="markdown-body prose prose-invert prose-p:leading-relaxed prose-pre:bg-[#09090b] prose-pre:border prose-pre:border-zinc-800 prose-sm text-zinc-300 max-w-none select-text">
                           <TypewriterText content={msg.content} isNew={idx === messages.length - 1} />
                         </div>
                       )}
@@ -1973,12 +2136,25 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                     </div>
 
                     {msg.role === 'agent' && (
-                      <button
-                        onClick={() => speakVoiceReply(msg.content)}
-                        className="text-[10px] text-zinc-500 hover:text-yellow-400 font-mono mt-1 px-1 flex items-center gap-1.5 uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
-                      >
-                        <Volume2 size={11} /> Speak Aloud
-                      </button>
+                      <div className="flex items-center gap-3 mt-1 px-1">
+                        <button
+                          onClick={() => speakVoiceReply(msg.content)}
+                          className="text-[10px] text-zinc-500 hover:text-yellow-400 font-mono flex items-center gap-1.5 uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
+                        >
+                          <Volume2 size={11} /> Speak Aloud
+                        </button>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(msg.content);
+                            setCopiedMsgId(msg.id);
+                            setTimeout(() => setCopiedMsgId(null), 2000);
+                          }}
+                          className="text-[10px] text-zinc-500 hover:text-yellow-400 font-mono flex items-center gap-1 uppercase tracking-wider transition-colors bg-transparent border-none cursor-pointer"
+                        >
+                          {copiedMsgId === msg.id ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                          <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </motion.div>
@@ -2856,12 +3032,13 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => {
-              const currentMute = localStorage.getItem('isAetherMuted') === 'true';
-              const nextMute = !currentMute;
-              localStorage.setItem('isAetherMuted', String(nextMute));
-              window.dispatchEvent(new Event('aether-mute-sync'));
+              const currentSpeech = localStorage.getItem('aether_tts_audio_enabled') !== 'false';
+              const nextSpeech = !currentSpeech;
+              localStorage.setItem('aether_tts_audio_enabled', String(nextSpeech));
+              setVoiceAudioEnabled(nextSpeech);
+              window.dispatchEvent(new Event('aether-speech-sync'));
             }}
-            className={`p-1.5 rounded hover:bg-zinc-800 transition-colors ${voiceAudioEnabled ? 'text-[#a855f7]' : 'text-zinc-500'}`}
+            className={`p-1.5 rounded hover:bg-zinc-800 transition-colors ${voiceAudioEnabled ? 'text-yellow-400' : 'text-zinc-500'}`}
             title="Read Speech Output"
           >
             {voiceAudioEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
@@ -2933,24 +3110,43 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             key={msg.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`flex flex-col gap-1 text-[11px] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+            className={`flex flex-col gap-1 text-[11px] group/msg ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
           >
             {msg.role === 'agent' && (
-              <div className="flex items-center gap-1.5 mb-0.5 text-[9px] font-semibold text-yellow-500 uppercase tracking-widest pl-1">
-                <Cpu size={10} className="animate-pulse" /> Aether Orchestrator
+              <div className="flex items-center justify-between w-full mb-0.5 text-[9px] font-semibold text-yellow-500 uppercase tracking-widest pl-1 select-none">
+                <span className="flex items-center gap-1.5">
+                  <Cpu size={10} className="animate-pulse" /> Aether Orchestrator
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(msg.content);
+                    setCopiedMsgId(msg.id);
+                    setTimeout(() => setCopiedMsgId(null), 2000);
+                  }}
+                  className="opacity-60 group-hover/msg:opacity-100 p-0.5 hover:text-yellow-400 text-zinc-500 rounded transition-opacity cursor-pointer flex items-center gap-1 font-mono lowercase"
+                  title="Copy message"
+                >
+                  {copiedMsgId === msg.id ? (
+                    <span className="text-[8px] text-emerald-400 flex items-center gap-0.5"><Check size={9} /> copied</span>
+                  ) : (
+                    <Copy size={10} />
+                  )}
+                </button>
               </div>
             )}
             <div
-              className={`px-3 py-2 rounded-xl max-w-full leading-relaxed ${
+              className={`px-3 py-2 rounded-xl max-w-full leading-relaxed select-text ${
                 msg.role === 'user'
                   ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 shadow-[0_2px_12px_rgba(234,179,8,0.06)]'
                   : 'bg-[#121214] text-zinc-350 border border-zinc-800/80 shadow-sm'
               }`}
             >
               {msg.role === 'user' ? (
-                 <div className="whitespace-pre-wrap">{msg.content}</div>
+                 <div className="whitespace-pre-wrap select-text">{msg.content}</div>
               ) : (
-                 <div className="markdown-body prose prose-invert prose-p:leading-normal prose-pre:bg-[#09090b] prose-pre:border prose-pre:border-zinc-800 max-w-none text-[11px]">
+                 <div className="markdown-body prose prose-invert prose-p:leading-normal prose-pre:bg-[#09090b] prose-pre:border prose-pre:border-zinc-800 max-w-none text-[11px] select-text">
                    <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.content}</Markdown>
                  </div>
               )}

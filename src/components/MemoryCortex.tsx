@@ -737,11 +737,16 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       .attr('class', 'animate-ping')
       .style('transform-origin', 'center');
 
+    const matchesSearch = (name: string | undefined | null) => {
+      if (!searchQuery || !name || typeof name !== 'string') return false;
+      return name.toLowerCase().includes(searchQuery.toLowerCase());
+    };
+
     // Render node representations (circles with custom physical gradients)
     node.append('circle')
       .attr('r', d => {
         let baseR = d.type === 'core' ? 24 : d.type === 'satellite' ? 14 : 7.5;
-        if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+        if (matchesSearch(d.name)) {
            return baseR * 1.35;
         }
         return baseR;
@@ -763,13 +768,13 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       })
       .attr('fill-opacity', d => d.type === 'file' ? 1 : 0.85)
       .attr('stroke', d => {
-         if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+         if (matchesSearch(d.name)) {
             return '#f59e0b';
          }
          return d.color;
       })
       .attr('stroke-width', d => {
-         if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+         if (matchesSearch(d.name)) {
             return 3;
          }
          return d.type === 'core' ? 3 : d.type === 'satellite' ? 2 : 1.2;
@@ -791,7 +796,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
 
     // Conditional text label visibility - fade-in ONLY on node hover or if search query matched!
     const textLabel = node.append('text')
-      .text(d => d.name)
+      .text(d => d.name || '')
       .attr('x', d => {
         if (d.type === 'core') return 34;
         if (d.type === 'satellite') return 24;
@@ -808,7 +813,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
       .attr('font-family', 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
       .style('pointer-events', 'none')
       .style('opacity', d => {
-         if (searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+         if (matchesSearch(d.name)) {
             return 1;
          }
          return 0;
@@ -822,7 +827,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         .transition().duration(250)
         .attr('r', (nodeDatum: any) => {
           let baseSize = nodeDatum.type === 'core' ? 30 : nodeDatum.type === 'satellite' ? 18 : 11;
-          if (searchQuery && nodeDatum.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+          if (matchesSearch(nodeDatum?.name)) {
              return baseSize * 1.35;
           }
           return baseSize;
@@ -831,7 +836,7 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
         .attr('stroke-opacity', 1);
     })
     .on('mouseleave', function(event: any, d: any) {
-      const isMatched = searchQuery && d.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const isMatched = matchesSearch(d?.name);
       d3.select(this).select('text').transition().duration(200).style('opacity', isMatched ? 1 : 0);
       d3.select(this).select('circle')
         .transition().duration(200)
@@ -1368,9 +1373,12 @@ export const MemoryCortex: React.FC<MemoryCortexProps> = ({
                 <div className="p-4 bg-zinc-950/80 border-t border-zinc-900 flex justify-end gap-2.5">
                    <button
                       onClick={() => {
-                         let updatedRules = aiContextRules;
-                         const formattedRule = `\n\n- [Cortex Rule] ${selectedDetailSynapse.name}: ${selectedDetailSynapse.desc}`;
-                         if (!updatedRules.includes(selectedDetailSynapse.name)) {
+                         if (!selectedDetailSynapse) return;
+                         const sName = selectedDetailSynapse.name || 'Unnamed Synapse';
+                         const sDesc = selectedDetailSynapse.desc || '';
+                         const currentRules = (typeof aiContextRules === 'string' ? aiContextRules : '') || '';
+                         const formattedRule = `\n\n- [Cortex Rule] ${sName}: ${sDesc}`;
+                         if (!currentRules.includes(sName)) {
                             setAiContextRules(prev => prev ? prev.trim() + formattedRule : formattedRule.trim());
                             alert('Directive successfully merged into long-term text guidelines pool.');
                          } else {

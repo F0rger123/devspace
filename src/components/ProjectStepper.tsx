@@ -326,15 +326,17 @@ export function ProjectStepper({
   const connectedRepos = new Set(
     (context.projects || [])
       .flatMap((p) => p.githubRepos || [])
-      .map((r) => r.toLowerCase())
+      .map((r) => (r || "").toLowerCase())
   );
 
   const filteredRepos = githubReposList.filter((repo) => {
-    const matchesSearch = repo.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase()) ||
-      (repo.description && repo.description.toLowerCase().includes(repoSearchQuery.toLowerCase()));
+    const rq = (repoSearchQuery || "").trim().toLowerCase();
+    const fullName = (repo.full_name || "").toLowerCase();
+    const matchesSearch = !rq || fullName.includes(rq) ||
+      (repo.description && repo.description.toLowerCase().includes(rq));
     
     if (showOnlyUnconnected) {
-      const isConnected = connectedRepos.has(repo.full_name.toLowerCase());
+      const isConnected = connectedRepos.has(fullName);
       return matchesSearch && !isConnected;
     }
     return matchesSearch;

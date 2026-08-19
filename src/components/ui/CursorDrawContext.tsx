@@ -19,7 +19,9 @@ import {
   Map, 
   Zap,
   MousePointer,
-  Compass
+  Compass,
+  Move,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -59,7 +61,7 @@ export function CursorDrawContext() {
   // State to track handle resizing
   const [resizeState, setResizeState] = useState<{
     contextId: string;
-    handle: 'tl' | 'tr' | 'bl' | 'br';
+    handle: 'tl' | 'tr' | 'bl' | 'br' | 't' | 'b' | 'l' | 'r' | 'move';
     initialBounds: { x: number; y: number; width: number; height: number };
     initialMousePos: { x: number; y: number };
   } | null>(null);
@@ -84,7 +86,15 @@ export function CursorDrawContext() {
 
       let newBounds = { ...initialBounds };
 
-      if (handle === 'tl') {
+      if (handle === 'move') {
+        const newX = Math.max(0, Math.min(initialBounds.x + deltaX, window.innerWidth - initialBounds.width));
+        const newY = Math.max(0, Math.min(initialBounds.y + deltaY, window.innerHeight - initialBounds.height));
+        newBounds = {
+          ...initialBounds,
+          x: newX,
+          y: newY
+        };
+      } else if (handle === 'tl') {
         const right = initialBounds.x + initialBounds.width;
         const bottom = initialBounds.y + initialBounds.height;
         const newX = Math.max(0, Math.min(e.clientX, right - 20));
@@ -128,6 +138,36 @@ export function CursorDrawContext() {
           width: newWidth,
           height: newHeight
         };
+      } else if (handle === 't') {
+        const bottom = initialBounds.y + initialBounds.height;
+        const newY = Math.max(0, Math.min(e.clientY, bottom - 20));
+        newBounds = {
+          ...initialBounds,
+          y: newY,
+          height: bottom - newY
+        };
+      } else if (handle === 'b') {
+        const top = initialBounds.y;
+        const newHeight = Math.max(20, Math.min(e.clientY - top, window.innerHeight - top));
+        newBounds = {
+          ...initialBounds,
+          height: newHeight
+        };
+      } else if (handle === 'l') {
+        const right = initialBounds.x + initialBounds.width;
+        const newX = Math.max(0, Math.min(e.clientX, right - 20));
+        newBounds = {
+          ...initialBounds,
+          x: newX,
+          width: right - newX
+        };
+      } else if (handle === 'r') {
+        const left = initialBounds.x;
+        const newWidth = Math.max(20, Math.min(e.clientX - left, window.innerWidth - left));
+        newBounds = {
+          ...initialBounds,
+          width: newWidth
+        };
       }
 
       setCircledContexts(
@@ -150,12 +190,18 @@ export function CursorDrawContext() {
     };
   }, [resizeState, circledContexts, setCircledContexts]);
 
-  // Monitor Alt key globally
+  // Monitor Alt key & Escape key globally
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Alt') {
         e.preventDefault(); // Prevent browser from focusing menu bar
         setIsAltHeld(true);
+      } else if (e.key === 'Escape') {
+        if (circledContexts.length > 0 || isDrawingModeActive) {
+          clearCircledContexts();
+          setDrawingModeActive(false);
+          showToast("Cancelled context selection", "info", 1500);
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -174,7 +220,7 @@ export function CursorDrawContext() {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, []);
+  }, [circledContexts.length, isDrawingModeActive]);
 
   // Set canvas size
   useEffect(() => {
@@ -517,13 +563,32 @@ export function CursorDrawContext() {
                 className="border-2 border-yellow-500 rounded-xl shadow-[0_0_20px_rgba(234,179,8,0.35)] pointer-events-auto group/box flex flex-col justify-between"
               >
                 {/* Visual Laser Scanning Grid Accent */}
-                <div className="absolute inset-0 bg-yellow-500/5 rounded-[10px] overflow-hidden">
+                <div className="absolute inset-0 bg-yellow-500/5 rounded-[10px] overflow-hidden pointer-events-none">
                   <div className="w-full h-0.5 bg-yellow-400/30 shadow-[0_0_8px_#facc15] absolute top-0 left-0 animate-bounce" />
+                </div>
+
+                {/* Move Bar / Drag Header at top */}
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setResizeState({
+                      contextId: ctx.id,
+                      handle: 'move',
+                      initialBounds: { ...ctx.bounds! },
+                      initialMousePos: { x: e.clientX, y: e.clientY }
+                    });
+                  }}
+                  className="absolute -top-7 left-1/2 -translate-x-1/2 bg-yellow-500/90 hover:bg-yellow-400 text-black px-2.5 py-0.5 rounded-full flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-wider cursor-move shadow-md z-40 transition-colors pointer-events-auto select-none"
+                  title="Click and drag to move selection box"
+                >
+                  <Move size={10} />
+                  <span>Drag Box</span>
                 </div>
 
                 {/* Floating label at the top-left */}
                 {isEditing ? (
-                  <div className="absolute -top-6 left-0 bg-yellow-950/95 border border-yellow-500/40 rounded-md px-1.5 py-0.5 flex items-center gap-1.5 text-[8.5px] font-mono font-bold text-yellow-400 shadow-md z-50 pointer-events-auto">
+                  <div className="absolute -top-7 left-0 bg-yellow-950/95 border border-yellow-500/40 rounded-md px-1.5 py-0.5 flex items-center gap-1.5 text-[8.5px] font-mono font-bold text-yellow-400 shadow-md z-50 pointer-events-auto">
                     <Target size={9} className="text-yellow-400" />
                     <input
                       type="text"
@@ -549,7 +614,7 @@ export function CursorDrawContext() {
                     </button>
                   </div>
                 ) : (
-                  <div className="absolute -top-6 left-0 bg-yellow-955/95 border border-yellow-500/40 rounded-md px-1.5 py-0.5 flex items-center gap-1.5 text-[8.5px] font-mono font-bold text-yellow-400 shadow-md pointer-events-auto group/label">
+                  <div className="absolute -top-7 left-0 bg-yellow-955/95 border border-yellow-500/40 rounded-md px-1.5 py-0.5 flex items-center gap-1.5 text-[8.5px] font-mono font-bold text-yellow-400 shadow-md pointer-events-auto group/label z-30">
                     <Target size={9} />
                     <span className="truncate max-w-28">{ctx.label || `TARGET #${index + 1}`}</span>
                     <button
@@ -566,17 +631,32 @@ export function CursorDrawContext() {
                   </div>
                 )}
 
-                {/* Remove button at top-right */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteContext(ctx.id);
-                  }}
-                  className="absolute -top-6 right-0 p-0.5 bg-zinc-950/95 border border-red-500/40 hover:bg-red-955/50 rounded text-zinc-500 hover:text-red-400 shadow-md transition-colors cursor-pointer z-10 pointer-events-auto"
-                  title="Remove captured context"
-                >
-                  <X size={9} />
-                </button>
+                {/* Remove / Cancel button at top-right */}
+                <div className="absolute -top-7 right-0 flex items-center gap-1 z-40 pointer-events-auto">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteContext(ctx.id);
+                      setDrawingModeActive(true);
+                      showToast("🎯 Redraw selection area", "info", 1500);
+                    }}
+                    className="p-1 bg-yellow-950/90 border border-yellow-500/40 hover:bg-yellow-900 rounded text-yellow-400 hover:text-yellow-200 shadow-md transition-colors cursor-pointer text-[8px] font-mono flex items-center gap-0.5"
+                    title="Redraw this selection"
+                  >
+                    <RefreshCw size={8} />
+                    <span>Redraw</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteContext(ctx.id);
+                    }}
+                    className="p-1 bg-zinc-950/95 border border-red-500/40 hover:bg-red-955/50 rounded text-zinc-500 hover:text-red-400 shadow-md transition-colors cursor-pointer"
+                    title="Cancel and remove selection"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
 
                 {/* Floating Context Actions Toolbar directly below region */}
                 <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-[#09090c]/95 border border-yellow-500/60 backdrop-blur-md rounded-xl p-1 flex items-center gap-1 shadow-2xl z-50 pointer-events-auto shrink-0 select-none">
@@ -701,6 +781,64 @@ export function CursorDrawContext() {
                   }}
                   className="absolute bottom-0 right-0 w-3 h-3 bg-yellow-400 hover:bg-yellow-300 border-2 border-[#0c0c0e] rounded-full translate-x-1/2 translate-y-1/2 cursor-nwse-resize z-50 shadow-[0_0_6px_rgba(234,179,8,0.6)] hover:scale-125 transition-transform pointer-events-auto"
                   title="Resize bottom-right"
+                />
+
+                {/* Edge resizing handles */}
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setResizeState({
+                      contextId: ctx.id,
+                      handle: 't',
+                      initialBounds: { ...ctx.bounds! },
+                      initialMousePos: { x: e.clientX, y: e.clientY }
+                    });
+                  }}
+                  className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-1.5 bg-yellow-400 hover:bg-yellow-300 rounded cursor-ns-resize z-45 pointer-events-auto opacity-70 hover:opacity-100 transition-opacity"
+                  title="Resize top edge"
+                />
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setResizeState({
+                      contextId: ctx.id,
+                      handle: 'b',
+                      initialBounds: { ...ctx.bounds! },
+                      initialMousePos: { x: e.clientX, y: e.clientY }
+                    });
+                  }}
+                  className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-6 h-1.5 bg-yellow-400 hover:bg-yellow-300 rounded cursor-ns-resize z-45 pointer-events-auto opacity-70 hover:opacity-100 transition-opacity"
+                  title="Resize bottom edge"
+                />
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setResizeState({
+                      contextId: ctx.id,
+                      handle: 'l',
+                      initialBounds: { ...ctx.bounds! },
+                      initialMousePos: { x: e.clientX, y: e.clientY }
+                    });
+                  }}
+                  className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-6 bg-yellow-400 hover:bg-yellow-300 rounded cursor-ew-resize z-45 pointer-events-auto opacity-70 hover:opacity-100 transition-opacity"
+                  title="Resize left edge"
+                />
+                <div
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setResizeState({
+                      contextId: ctx.id,
+                      handle: 'r',
+                      initialBounds: { ...ctx.bounds! },
+                      initialMousePos: { x: e.clientX, y: e.clientY }
+                    });
+                  }}
+                  className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-1.5 h-6 bg-yellow-400 hover:bg-yellow-300 rounded cursor-ew-resize z-45 pointer-events-auto opacity-70 hover:opacity-100 transition-opacity"
+                  title="Resize right edge"
                 />
               </motion.div>
             );

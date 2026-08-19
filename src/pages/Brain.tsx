@@ -1,6 +1,7 @@
 import { Bot, Network, Workflow, Zap, MemoryStick, Database, Sparkles, Loader2, GitPullRequest, X, FileText, ChevronRight, ChevronDown, Folder, File, LayoutGrid, ListTree, FolderGit2, Mic, Volume2, Cpu, Clock, Trash2, Play, Check, AlertTriangle, Filter, Plus, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { FlowGraph } from '../components/ui/FlowGraph';
 import { MemoryCortex } from '../components/MemoryCortex';
@@ -77,6 +78,42 @@ export function Brain() {
   const [selectedFile, setSelectedFile] = useState<{name: string, content: string, path: string} | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    const next = !isFullscreen;
+    setIsFullscreen(next);
+    if (next) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    };
+    const handleFsChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('fullscreenchange', handleFsChange);
+    };
+  }, [isFullscreen]);
 
   // Obsidian Brain and Speech Memory States
   const [memoryVoiceActive, setMemoryVoiceActive] = useState(false);

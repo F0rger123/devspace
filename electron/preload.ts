@@ -58,6 +58,23 @@ export interface ElectronAPI {
   // Cross-Window Navigation IPC
   navigateToRoute?: (route: string) => Promise<void>;
   onNavigateTo?: (callback: (route: string) => void) => () => void;
+
+  // System Tray & Background Wake Word
+  setWakeWordStatus?: (active: boolean) => Promise<boolean>;
+  showDesktopNotification?: (title: string, body: string, actionRoute?: string) => Promise<boolean>;
+  setNotificationsEnabled?: (enabled: boolean) => Promise<boolean>;
+  onWakeWordToggle?: (callback: (active: boolean) => void) => () => void;
+  onNotificationToggle?: (callback: (enabled: boolean) => void) => () => void;
+
+  // Safe Mode & Crash Recovery
+  getSafeModeStatus?: () => Promise<any>;
+  restartInSafeMode?: () => Promise<boolean>;
+  clearSafeMode?: () => Promise<boolean>;
+
+  // Context Mode & File Search
+  getDesktopSources?: (options?: { types?: string[]; thumbnailSize?: { width: number; height: number } }) => Promise<any>;
+  checkDesktopPermissions?: (mediaType: 'camera' | 'microphone' | 'screen') => Promise<any>;
+  searchFiles?: (params: { query: string; rootDir?: string; maxResults?: number }) => Promise<any>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -118,6 +135,36 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.removeListener('navigate-to', handler);
     };
   },
+
+  setWakeWordStatus: (active: boolean) => ipcRenderer.invoke('tray:setWakeWord', active),
+  showDesktopNotification: (title: string, body: string, actionRoute?: string) =>
+    ipcRenderer.invoke('tray:showNotification', { title, body, actionRoute }),
+  setNotificationsEnabled: (enabled: boolean) => ipcRenderer.invoke('tray:setNotificationsEnabled', enabled),
+  onWakeWordToggle: (callback: (active: boolean) => void) => {
+    const handler = (_event: any, active: boolean) => callback(active);
+    ipcRenderer.on('aether:wake-word-toggle', handler);
+    return () => {
+      ipcRenderer.removeListener('aether:wake-word-toggle', handler);
+    };
+  },
+  onNotificationToggle: (callback: (enabled: boolean) => void) => {
+    const handler = (_event: any, enabled: boolean) => callback(enabled);
+    ipcRenderer.on('system:notifications-toggle', handler);
+    return () => {
+      ipcRenderer.removeListener('system:notifications-toggle', handler);
+    };
+  },
+
+  getSafeModeStatus: () => ipcRenderer.invoke('safeMode:getStatus'),
+  restartInSafeMode: () => ipcRenderer.invoke('safeMode:restartInSafeMode'),
+  clearSafeMode: () => ipcRenderer.invoke('safeMode:clearSafeMode'),
+
+  getDesktopSources: (options?: { types?: string[]; thumbnailSize?: { width: number; height: number } }) =>
+    ipcRenderer.invoke('desktop:getSources', options),
+  checkDesktopPermissions: (mediaType: 'camera' | 'microphone' | 'screen') =>
+    ipcRenderer.invoke('desktop:checkPermissions', mediaType),
+  searchFiles: (params: { query: string; rootDir?: string; maxResults?: number }) =>
+    ipcRenderer.invoke('desktop:searchFiles', params),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

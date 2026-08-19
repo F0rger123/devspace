@@ -35,6 +35,7 @@ class AetherGoalsService {
   }
 
   private loadGoals() {
+    if (typeof localStorage === 'undefined') return;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -47,6 +48,7 @@ class AetherGoalsService {
   }
 
   private saveGoals() {
+    if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.goals));
     } catch (e) {

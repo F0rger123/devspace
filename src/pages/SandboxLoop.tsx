@@ -91,7 +91,8 @@ export function SandboxLoop() {
     return localStorage.getItem('personal_gemini_api_key') || '';
   });
   const [personalApiModel, setPersonalApiModel] = useState<string>(() => {
-    return localStorage.getItem('personal_gemini_api_model') || 'gemini-3.5-flash';
+    const val = localStorage.getItem('personal_gemini_api_model') || 'gemini-3.7-flash';
+    return (val.includes('1.5') || val.includes('2.0') || val.includes('3.5') || val.includes('3.6')) ? 'gemini-3.7-flash' : val;
   });
   const [usePersonalKey, setUsePersonalKey] = useState<boolean>(() => {
     return localStorage.getItem('app_jules_use_personal_key') === 'true';
@@ -1370,7 +1371,7 @@ Conducted initial structural scanning of target workspace directories. Verified 
                 {/* Terminal Status bar */}
                 <div className="bg-[#0b0b0e] border-t border-zinc-900 px-4 py-2 flex items-center justify-between text-[10px] font-mono text-zinc-500">
                   <div className="flex items-center gap-4">
-                    <span>Model: <strong className="text-zinc-300">Google Jules (gemini-3.5-flash)</strong></span>
+                    <span>Model: <strong className="text-zinc-300">Google Jules (gemini-3.7-flash)</strong></span>
                     <span>Workspace: <strong className="text-zinc-300">{selectedProject?.name || 'Aether Sandbox'}</strong></span>
                   </div>
                   <span className="hidden sm:inline">Connection: <strong className="text-zinc-400">SECURE LOCAL IPC SANDBOX</strong></span>
@@ -1806,10 +1807,9 @@ Conducted initial structural scanning of target workspace directories. Verified 
                         }}
                         className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 text-xs text-zinc-300 focus:outline-none focus:border-yellow-500/40 font-mono"
                       >
-                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (Recommended)</option>
-                        <option value="gemini-2.0-pro-exp">Gemini 2.0 Pro Experimental</option>
-                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                        <option value="gemini-3.7-flash">Gemini 3.7 Flash (Recommended)</option>
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (Deep Reasoning)</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Ultra Fast)</option>
                       </select>
                     </div>
                   </div>

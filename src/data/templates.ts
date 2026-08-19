@@ -1175,7 +1175,7 @@ const renderCatalog = () => {
   const maxPrice = Number(budgetRange.value);
   
   const filtered = products.filter(p => {
-    const matchesQuery = p.name.toLowerCase().includes(query) || p.desc.toLowerCase().includes(query);
+    const matchesQuery = (p.name || '').toLowerCase().includes(query) || (p.desc || '').toLowerCase().includes(query);
     const matchesCat = cat === 'all' || p.category === cat;
     const matchesBudget = p.price <= maxPrice;
     return matchesQuery && matchesCat && matchesBudget;

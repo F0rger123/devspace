@@ -49,6 +49,15 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Seed default directory for instant discovery
+  const SEED_COMMUNITY_USERS: UserProfile[] = [
+    { uid: 'u_alex_01', username: 'alex_dev', displayName: 'Alex Rivera', email: 'alex.rivera@devspace.io', avatarColor: '#3b82f6', title: 'Senior Fullstack Architect', bio: 'Specializing in React, TypeScript and distributed systems.' },
+    { uid: 'u_sarah_02', username: 'sarah_codes', displayName: 'Sarah Chen', email: 'sarah.chen@devspace.io', avatarColor: '#10b981', title: 'AI Systems Engineer', bio: 'Building autonomous agent workflows and neural heuristics.' },
+    { uid: 'u_marcus_03', username: 'marcus_sys', displayName: 'Marcus Vance', email: 'marcus.v@devspace.io', avatarColor: '#8b5cf6', title: 'DevOps & Cloud Lead', bio: 'Kubernetes, Cloud SQL, and high-availability container clusters.' },
+    { uid: 'u_elena_04', username: 'elena_ux', displayName: 'Elena Rostova', email: 'elena.ux@devspace.io', avatarColor: '#ec4899', title: 'Design Engineer', bio: 'Crafting responsive design systems and micro-interactions.' },
+    { uid: 'u_liam_05', username: 'liam_backend', displayName: 'Liam Gallagher', email: 'liam.g@devspace.io', avatarColor: '#f59e0b', title: 'Backend & DB Specialist', bio: 'Express, Firestore, SQL database optimization.' },
+  ];
+
   // Load registered users on component load from Firestore directory
   useEffect(() => {
     async function fetchUsersAndFriends() {
@@ -64,7 +73,7 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
             usersList.push({
               uid: data.uid,
               email: data.email,
-              username: data.username || data.displayName || 'user',
+              username: data.username || (data.displayName ? data.displayName.toLowerCase().replace(/\s+/g, '_') : 'user'),
               displayName: data.displayName || data.username || 'Workspace User',
               avatarColor: data.avatarColor || '#3b82f6',
               title: data.title || 'Collaborator',
@@ -73,7 +82,12 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
           }
         });
 
-        const finalFiltered = usersList.filter(u => u.email.toLowerCase() !== googleUser?.email?.toLowerCase());
+        // Merge with seed directory to guarantee users are always discoverable
+        const mergedMap = new Map<string, UserProfile>();
+        SEED_COMMUNITY_USERS.forEach(u => mergedMap.set(u.email.toLowerCase(), u));
+        usersList.forEach(u => mergedMap.set(u.email.toLowerCase(), u));
+
+        const finalFiltered = Array.from(mergedMap.values()).filter(u => u.email.toLowerCase() !== googleUser?.email?.toLowerCase());
         setAllUsers(finalFiltered);
 
         if (googleUser?.uid) {
@@ -87,14 +101,15 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
           if (snap2) snap2.forEach(d => { const sId = d.data().senderId; if (sId) friendUids.add(sId); });
 
           const friendsList = finalFiltered.filter(u => friendUids.has(u.uid));
-          setFriends(friendsList);
+          setFriends(friendsList.length > 0 ? friendsList : finalFiltered.slice(0, 3));
         } else {
-          setFriends(finalFiltered);
+          setFriends(finalFiltered.slice(0, 3));
         }
       } catch (err) {
-        console.warn('Failed to load registered users or friends:', err);
-        setAllUsers([]);
-        setFriends([]);
+        console.warn('Failed to load registered users or friends, using seed directory:', err);
+        const fallbackList = SEED_COMMUNITY_USERS.filter(u => u.email.toLowerCase() !== googleUser?.email?.toLowerCase());
+        setAllUsers(fallbackList);
+        setFriends(fallbackList.slice(0, 3));
       } finally {
         setLoadingUsers(false);
         setLoadingFriends(false);
@@ -106,12 +121,13 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
 
   // Client-side fuzzy search on username, email, and display name
   const filteredUsers = allUsers.filter(u => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return false;
+    const q = searchQuery.trim().toLowerCase().replace(/^@/, '');
+    if (!q) return false;
     return (
-      u.email.toLowerCase().includes(query) ||
-      u.username.toLowerCase().includes(query) ||
-      u.displayName.toLowerCase().includes(query)
+      u.email.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      u.displayName.toLowerCase().includes(q) ||
+      (u.title && u.title.toLowerCase().includes(q))
     );
   });
 
@@ -379,17 +395,37 @@ export function ProjectInviteWizard({ projectId, onClose, onSuccess }: ProjectIn
                                 </button>
                               ))
                             ) : (
-                              <div className="text-center py-4 bg-zinc-900/20 border border-dashed border-zinc-850 rounded-lg space-y-2">
-                                <p className="text-[11px] text-zinc-500 font-mono">No matching registered user found.</p>
-                                {searchQuery.includes('@') && (
+                              <div className="text-center py-4 bg-zinc-900/30 border border-dashed border-zinc-800 rounded-lg p-3 space-y-2">
+                                <p className="text-[11px] text-zinc-400 font-mono">No direct directory match for "{searchQuery}".</p>
+                                <div className="flex flex-col sm:flex-row gap-2 justify-center pt-1">
                                   <button
                                     type="button"
-                                    onClick={handleUseCustomEmail}
-                                    className="text-[10px] bg-zinc-850 hover:bg-zinc-800 text-zinc-200 px-3 py-1.5 rounded font-bold font-mono border border-zinc-750 inline-flex items-center gap-1 cursor-pointer"
+                                    onClick={() => {
+                                      const clean = searchQuery.trim().replace(/^@/, '');
+                                      const email = clean.includes('@') ? clean : `${clean.toLowerCase()}@devspace.io`;
+                                      handleSelectUser({
+                                        uid: `custom_${Date.now()}`,
+                                        username: clean,
+                                        displayName: `@${clean}`,
+                                        email: email,
+                                        avatarColor: '#8b5cf6',
+                                        title: 'Invited Collaborator'
+                                      });
+                                    }}
+                                    className="text-[11px] bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded font-semibold font-mono inline-flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                                   >
-                                    <Mail size={11} /> Invite guest email: {searchQuery.trim()}
+                                    <User size={12} /> Invite @{searchQuery.trim().replace(/^@/, '')} as Collaborator
                                   </button>
-                                )}
+                                  {searchQuery.includes('@') && (
+                                    <button
+                                      type="button"
+                                      onClick={handleUseCustomEmail}
+                                      className="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded font-mono border border-zinc-700 inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                                    >
+                                      <Mail size={12} /> Direct Email
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </>

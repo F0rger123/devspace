@@ -57,9 +57,12 @@ export function AetherDailyOperatingHub() {
     setDecisions(aetherDailyOperatingService.getDecisionMemories());
   };
 
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+
   const handleRecordFeedback = (recId: string, title: string, outcome: RecommendationFeedbackRecord['outcome']) => {
     aetherDailyOperatingService.recordRecommendationOutcome(recId, title, outcome);
-    alert(`Recorded recommendation outcome as "${outcome.toUpperCase()}". Aether's recommendation engine updated.`);
+    setFeedbackToast(`Recorded outcome as "${outcome.toUpperCase()}" for ${title}.`);
+    setTimeout(() => setFeedbackToast(null), 3000);
   };
 
   return (

@@ -28,6 +28,7 @@ class AetherRemindersService {
   }
 
   private loadReminders() {
+    if (typeof localStorage === 'undefined') return;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -40,6 +41,7 @@ class AetherRemindersService {
   }
 
   private saveReminders() {
+    if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.reminders));
     } catch (e) {

@@ -298,7 +298,7 @@ export function AgenticOS() {
   const [newAgentCommand, setNewAgentCommand] = useState('');
   const [newAgentWatches, setNewAgentWatches] = useState<string[]>([]);
   const [newAgentColor, setNewAgentColor] = useState('border-emerald-500/50 text-emerald-400 bg-emerald-950/20');
-  const [newAgentModelEngine, setNewAgentModelEngine] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | 'claude-3.5-sonnet'>('gemini-3.5-flash');
+  const [newAgentModelEngine, setNewAgentModelEngine] = useState<'gemini-3.7-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | 'claude-3.5-sonnet' | string>('gemini-3.7-flash');
 
   // Terminal state
   const [terminalInput, setTerminalInput] = useState('');
@@ -1397,7 +1397,7 @@ export function AgenticOS() {
     setNewAgentSchedule('Manual');
     setNewAgentCommand('');
     setNewAgentWatches([]);
-    setNewAgentModelEngine('gemini-3.5-flash');
+    setNewAgentModelEngine('gemini-3.7-flash');
     setShowAddForm(false);
   };
 
@@ -1925,7 +1925,7 @@ export function AgenticOS() {
                       setNewAgentCommand('Parse files and organize blueprints asynchronously.');
                       setNewAgentColor('border-purple-500/50 text-purple-400 bg-purple-950/20');
                       setNewAgentWatches(['docs', 'notes']);
-                      setNewAgentModelEngine('gemini-3.5-flash');
+                      setNewAgentModelEngine('gemini-3.7-flash');
                     } else {
                       setNewAgentName('');
                       setNewAgentRole('');
@@ -1933,7 +1933,7 @@ export function AgenticOS() {
                       setNewAgentCommand('');
                       setNewAgentColor('border-emerald-500/50 text-emerald-400 bg-emerald-950/20');
                       setNewAgentWatches([]);
-                      setNewAgentModelEngine('gemini-3.5-flash');
+                      setNewAgentModelEngine('gemini-3.7-flash');
                     }
                   }}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs text-zinc-300 outline-none focus:border-blue-500"
@@ -2155,7 +2155,7 @@ export function AgenticOS() {
                       <div className="flex items-center gap-1 text-[10px] leading-tight mt-0.5">
                         <span className="text-zinc-500">{agent.role}</span>
                         <span className="text-zinc-650">•</span>
-                        <span className="text-zinc-400 font-mono text-[9px] uppercase tracking-tighter opacity-80">{agent.modelEngine || 'gemini-3.5-flash'}</span>
+                        <span className="text-zinc-400 font-mono text-[9px] uppercase tracking-tighter opacity-80">{agent.modelEngine || 'gemini-3.7-flash'}</span>
                       </div>
                     </div>
                   </div>
@@ -2696,7 +2696,7 @@ export function AgenticOS() {
                            </div>
                            <p className="text-[9px] text-zinc-500 leading-snug">Toggle which LLM models power this agent's dynamic reasoning. Powered server-side by AI Studio credentials.</p>
                            <select
-                              value={selectedAgent.modelEngine || 'gemini-3.5-flash'}
+                              value={selectedAgent.modelEngine || 'gemini-3.7-flash'}
                               onChange={(e) => updateAgent(selectedAgent.id, { modelEngine: e.target.value as any })}
                               className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 rounded p-1.5 text-xs outline-none focus:border-blue-500 font-mono transition-colors cursor-pointer"
                            >
@@ -2729,7 +2729,7 @@ export function AgenticOS() {
                            <button
                               onClick={() => {
                                  // Route current task as query to terminal!
-                                 const taskInstruction = `Evaluate active objectives for AI agent "${selectedAgent.name}" as a "${selectedAgent.role}" on model engine "${selectedAgent.modelEngine || 'gemini-3.5-flash'}":\n\nTask Assigned: "${selectedAgent.currentTask}"\n\nGoal Checklist:\n${selectedAgent.goals?.map((g, i) => `${i + 1}. ${g}`).join('\n') || ''}\n\nDirectives: ${selectedAgent.commandList || ''}`;
+                                 const taskInstruction = `Evaluate active objectives for AI agent "${selectedAgent.name}" as a "${selectedAgent.role}" on model engine "${selectedAgent.modelEngine || 'gemini-3.7-flash'}":\n\nTask Assigned: "${selectedAgent.currentTask}"\n\nGoal Checklist:\n${selectedAgent.goals?.map((g, i) => `${i + 1}. ${g}`).join('\n') || ''}\n\nDirectives: ${selectedAgent.commandList || ''}`;
                                  setTerminalInput(taskInstruction);
                                  setActiveTab('terminal');
                                  addLog('system', 'Agent Router', 'info', `Routed agent "${selectedAgent.name}" task thread into the interactive OS terminal.`);

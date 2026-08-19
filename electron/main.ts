@@ -1,11 +1,14 @@
-import { app, BrowserWindow, ipcMain, shell, globalShortcut, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, globalShortcut, nativeTheme, desktopCapturer, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as net from 'net';
 import * as childProcess from 'child_process';
+import * as fs from 'fs';
 import { desktopOverlayManager } from './services/DesktopOverlayManager';
 import { desktopAwarenessService } from './services/DesktopAwarenessService';
 import { desktopAutomationEngine } from './services/DesktopAutomationEngine';
 import { ocrService } from './services/OCRService';
+import { systemTrayService } from './services/SystemTrayService';
+import { safeModeCrashRecovery } from './services/SafeModeCrashRecovery';
 
 let mainWindow: BrowserWindow | null = null;
 let serverProcess: childProcess.ChildProcess | null = null;
@@ -178,8 +181,10 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    safeModeCrashRecovery.recordBootSuccess();
     // Initially hide overlay while DevSpace main window is active/focused
     desktopOverlayManager.toggleVisibility(false);
+    systemTrayService.rebuildContextMenu(mainWindow);
   });
 
   // Focus-aware Desktop Overlay management: hide overlay when DevSpace is active/focused, show when minimized or blurred
@@ -259,6 +264,12 @@ function getTargetWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow | nu
 app.whenReady().then(async () => {
   console.log('[Electron Main] App ready event fired. Initializing native services...');
 
+  // 0. Crash Recovery & Safe Mode check
+  const inSafeMode = safeModeCrashRecovery.initialize();
+  if (inSafeMode) {
+    console.warn('[Electron Main] Booting in SAFE MODE. Hardware acceleration adjusted.');
+  }
+
   // 1. Initialize native services after app is ready
   desktopAwarenessService.initialize();
   desktopOverlayManager.initialize();
@@ -287,7 +298,10 @@ app.whenReady().then(async () => {
   // 5. Create Main Window
   await createWindow();
 
-  // 6. Create Desktop Overlay Window
+  // 6. Initialize System Tray
+  systemTrayService.initialize(mainWindow);
+
+  // 7. Create Desktop Overlay Window
   const preloadPath = path.join(__dirname, 'preload.cjs');
   const port = activeServerPort || 3000;
   desktopOverlayManager.createOverlayWindow(preloadPath, port);
@@ -532,6 +546,145 @@ function setupIpcHandlers() {
       mainWindow.show();
       mainWindow.focus();
       mainWindow.webContents.send('navigate-to', route);
+    }
+  });
+
+  // Tray & Background Wake Word IPC
+  ipcMain.handle('tray:setWakeWord', (event, active: boolean) => {
+    if (!isTrustedSender(event)) return false;
+    systemTrayService.setWakeWordStatus(active, mainWindow);
+    return true;
+  });
+
+  ipcMain.handle('tray:setNotificationsEnabled', (event, enabled: boolean) => {
+    if (!isTrustedSender(event)) return false;
+    systemTrayService.setNotificationsEnabled(enabled, mainWindow);
+    return true;
+  });
+
+  ipcMain.handle('tray:showNotification', (event, payload: { title: string; body: string; actionRoute?: string }) => {
+    if (!isTrustedSender(event)) return false;
+    systemTrayService.showNotification(payload.title, payload.body, payload.actionRoute, mainWindow);
+    return true;
+  });
+
+  // Safe Mode & Crash Recovery IPC
+  ipcMain.handle('safeMode:getStatus', (event) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    return safeModeCrashRecovery.getCrashState();
+  });
+
+  ipcMain.handle('safeMode:restartInSafeMode', (event) => {
+    if (!isTrustedSender(event)) return false;
+    (app as any).isQuitting = true;
+    app.relaunch({ args: process.argv.slice(1).concat(['--safe-mode']) });
+    app.exit(0);
+    return true;
+  });
+
+  ipcMain.handle('safeMode:clearSafeMode', (event) => {
+    if (!isTrustedSender(event)) return false;
+    safeModeCrashRecovery.clearSafeMode();
+    return true;
+  });
+
+  // Desktop Screen Sources for Context Mode
+  ipcMain.handle('desktop:getSources', async (event, options?: { types?: string[]; thumbnailSize?: { width: number; height: number } }) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    try {
+      const types = (options?.types as any) || ['screen', 'window'];
+      const thumbnailSize = options?.thumbnailSize || { width: 400, height: 250 };
+      const sources = await desktopCapturer.getSources({ types, thumbnailSize });
+      return {
+        success: true,
+        sources: sources.map((s) => ({
+          id: s.id,
+          name: s.name,
+          thumbnailUrl: s.thumbnail.toDataURL(),
+          appIconUrl: s.appIcon ? s.appIcon.toDataURL() : null,
+        })),
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message, sources: [] };
+    }
+  });
+
+  // Desktop Permissions Check
+  ipcMain.handle('desktop:checkPermissions', async (event, mediaType: 'camera' | 'microphone' | 'screen') => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    if (process.platform === 'darwin') {
+      try {
+        const status = systemPreferences.getMediaAccessStatus(mediaType as any);
+        return { success: true, status, granted: status === 'granted' };
+      } catch (e: any) {
+        return { success: false, error: e.message, granted: true };
+      }
+    }
+    return { success: true, status: 'granted', granted: true };
+  });
+
+  // Natural Language File Search IPC
+  ipcMain.handle('desktop:searchFiles', async (event, params: { query: string; rootDir?: string; maxResults?: number }) => {
+    if (!isTrustedSender(event)) throw new Error('Unauthorized IPC origin');
+    const { query, rootDir = process.cwd(), maxResults = 20 } = params;
+    const cleanQ = query.toLowerCase().trim();
+    const results: Array<{ name: string; path: string; isDirectory: boolean; size: number; modifiedAt: number; score: number }> = [];
+
+    const walk = (dir: string, depth = 0) => {
+      if (depth > 6 || results.length >= maxResults * 3) return;
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          if (ent.name.startsWith('.') || ent.name === 'node_modules' || ent.name === 'dist' || ent.name === 'dist-electron' || ent.name === 'release') {
+            continue;
+          }
+          const fullPath = path.join(dir, ent.name);
+          const lowerName = ent.name.toLowerCase();
+          let score = 0;
+
+          if (lowerName === cleanQ) score += 100;
+          else if (lowerName.startsWith(cleanQ)) score += 60;
+          else if (lowerName.includes(cleanQ)) score += 40;
+          else {
+            // Check query tokens
+            const tokens = cleanQ.split(/\s+/).filter(Boolean);
+            const tokenMatches = tokens.filter((t) => lowerName.includes(t)).length;
+            if (tokenMatches > 0) score += (tokenMatches / tokens.length) * 30;
+          }
+
+          if (score > 0) {
+            try {
+              const stat = fs.statSync(fullPath);
+              results.push({
+                name: ent.name,
+                path: fullPath,
+                isDirectory: ent.isDirectory(),
+                size: stat.size,
+                modifiedAt: stat.mtimeMs,
+                score,
+              });
+            } catch (e) {}
+          }
+
+          if (ent.isDirectory()) {
+            walk(fullPath, depth + 1);
+          }
+        }
+      } catch (e) {}
+    };
+
+    try {
+      walk(rootDir);
+      results.sort((a, b) => b.score - a.score || b.modifiedAt - a.modifiedAt);
+      return {
+        success: true,
+        query,
+        rootDir,
+        results: results.slice(0, maxResults),
+        totalFound: results.length,
+      };
+    } catch (err: any) {
+      return { success: false, query, error: err.message, results: [] };
     }
   });
 }

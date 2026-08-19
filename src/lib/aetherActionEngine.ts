@@ -839,6 +839,169 @@ class UniversalActionEngine {
         };
       },
     });
+
+    // 21. Create Issue / Task
+    this.register({
+      id: 'create_issue',
+      intent: 'Create task or issue',
+      description: 'Creates a new task or issue in the active workspace project.',
+      parametersSchema: { title: 'string', priority: 'string', type: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const title = params.title || 'New Task';
+        const priority = params.priority || 'Medium';
+        const type = params.type || 'Task';
+        const activeProjectId = localStorage.getItem('active_project_id') || 'proj-default';
+
+        let existing: any[] = [];
+        try {
+          const stored = localStorage.getItem('app_issues');
+          if (stored) existing = JSON.parse(stored);
+        } catch {}
+
+        const newIssue = {
+          id: `iss-${Date.now()}`,
+          projectId: activeProjectId,
+          title,
+          status: 'Todo',
+          priority,
+          type,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const updated = [newIssue, ...existing];
+        localStorage.setItem('app_issues', JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent('app_issues_updated'));
+
+        return {
+          success: true,
+          message: `Created task "${title}" (Priority: ${priority}, Type: ${type}).`,
+          data: newIssue,
+        };
+      },
+    });
+
+    // 22. Update Issue / Task Status
+    this.register({
+      id: 'update_issue_status',
+      intent: 'Update task or issue status',
+      description: 'Updates status of an existing task or issue (Todo, In Progress, Done).',
+      parametersSchema: { title: 'string', status: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const title = (params.title || '').toLowerCase().trim();
+        const newStatus = params.status || 'Done';
+
+        let existing: any[] = [];
+        try {
+          const stored = localStorage.getItem('app_issues');
+          if (stored) existing = JSON.parse(stored);
+        } catch {}
+
+        const target = existing.find((iss: any) =>
+          title ? iss.title.toLowerCase().includes(title) : true
+        );
+
+        if (!target) {
+          return { success: false, message: `Task "${params.title}" not found.` };
+        }
+
+        const prevStatus = target.status;
+        target.status = newStatus;
+        target.updatedAt = new Date().toISOString();
+
+        localStorage.setItem('app_issues', JSON.stringify(existing));
+        window.dispatchEvent(new CustomEvent('app_issues_updated'));
+
+        return {
+          success: true,
+          message: `Updated task "${target.title}" status from "${prevStatus}" to "${newStatus}".`,
+          data: target,
+        };
+      },
+    });
+
+    // 23. Delete Issue / Task
+    this.register({
+      id: 'delete_issue',
+      intent: 'Delete task or issue',
+      description: 'Removes a task or issue from the workspace.',
+      parametersSchema: { title: 'string', issueId: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const title = (params.title || '').toLowerCase().trim();
+        const issueId = params.issueId;
+
+        let existing: any[] = [];
+        try {
+          const stored = localStorage.getItem('app_issues');
+          if (stored) existing = JSON.parse(stored);
+        } catch {}
+
+        const target = existing.find((iss: any) =>
+          issueId ? iss.id === issueId : (title ? iss.title.toLowerCase().includes(title) : false)
+        );
+
+        if (!target) {
+          return { success: false, message: `Task not found.` };
+        }
+
+        const remaining = existing.filter((iss: any) => iss.id !== target.id);
+        localStorage.setItem('app_issues', JSON.stringify(remaining));
+        window.dispatchEvent(new CustomEvent('app_issues_updated'));
+
+        return {
+          success: true,
+          message: `Deleted task "${target.title}".`,
+        };
+      },
+    });
+
+    // 24. Create Quick Note
+    this.register({
+      id: 'create_quick_note',
+      intent: 'Create quick note',
+      description: 'Saves a note into the workspace Notes repository.',
+      parametersSchema: { title: 'string', content: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const title = params.title || 'Quick Note';
+        const content = params.content || params.title || '';
+
+        let existing: any[] = [];
+        try {
+          const stored = localStorage.getItem('app_notes');
+          if (stored) existing = JSON.parse(stored);
+        } catch {}
+
+        const newNote = {
+          id: `note-${Date.now()}`,
+          title,
+          content,
+          category: 'General',
+          updatedAt: new Date().toISOString(),
+        };
+
+        const updated = [newNote, ...existing];
+        localStorage.setItem('app_notes', JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent('app_notes_updated'));
+
+        return {
+          success: true,
+          message: `Saved note "${title}".`,
+          data: newNote,
+        };
+      },
+    });
   }
 
   public register(cmd: ActionCommand) {
@@ -863,6 +1026,33 @@ class UniversalActionEngine {
       const match = prompt.match(/(?:to|as)\s+["']?([^"'\n\.]+)/i);
       const newName = match ? match[1].trim() : 'Renamed Project';
       return { command: this.commands.get('rename_project')!, params: { newName } };
+    }
+
+    if (lower.includes('create task') || lower.includes('add task') || lower.includes('create issue') || lower.includes('add issue') || lower.includes('new task')) {
+      const match = prompt.match(/(?:task|issue|called|named|to)\s+["']?([^"'\n\.]+)/i);
+      const title = match ? match[1].trim() : prompt;
+      return { command: this.commands.get('create_issue')!, params: { title } };
+    }
+
+    if (lower.includes('mark task') || lower.includes('complete task') || lower.includes('update task') || lower.includes('finish task') || lower.includes('task status')) {
+      const isDone = lower.includes('done') || lower.includes('complete') || lower.includes('finished');
+      const isInProgress = lower.includes('in progress') || lower.includes('working on');
+      const status = isDone ? 'Done' : (isInProgress ? 'In Progress' : 'Todo');
+      const match = prompt.match(/(?:task|issue|mark|complete)\s+["']?([^"'\n\.]+)/i);
+      const title = match ? match[1].trim() : '';
+      return { command: this.commands.get('update_issue_status')!, params: { title, status } };
+    }
+
+    if (lower.includes('delete task') || lower.includes('remove task') || lower.includes('delete issue') || lower.includes('remove issue')) {
+      const match = prompt.match(/(?:task|issue)\s+["']?([^"'\n\.]+)/i);
+      const title = match ? match[1].trim() : '';
+      return { command: this.commands.get('delete_issue')!, params: { title } };
+    }
+
+    if (lower.includes('create note') || lower.includes('save note') || lower.includes('take a note') || lower.includes('add note')) {
+      const match = prompt.match(/(?:note|called|named|about)\s+["']?([^"'\n\.]+)/i);
+      const title = match ? match[1].trim() : 'Quick Note';
+      return { command: this.commands.get('create_quick_note')!, params: { title, content: prompt } };
     }
 
     if (lower.includes('create project') || lower.includes('create a project') || lower.includes('new project')) {

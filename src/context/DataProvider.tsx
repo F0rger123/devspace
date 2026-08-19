@@ -5,6 +5,7 @@ import { db, auth } from '../lib/auth';
 import { Toast, ToastContainer } from '../components/ui/Toast';
 import { useStore, KineticGesture } from '../store';
 import { isElectron, getElectronAPI } from '../lib/electronBridge';
+import { aetherActiveProjectContext } from '../lib/aetherActiveProjectContext';
 
 enum OperationType {
   CREATE = 'create',
@@ -302,17 +303,29 @@ export type Project = {
     description: string;
     snippet: string;
     category?: string;
-    status?: 'active' | 'approved' | 'dismissed';
+    status?: 'active' | 'approved' | 'dismissed' | 'merged';
     createdAt?: number;
+    mergedAt?: number;
+    mergedCommitSha?: string;
+    mergedBranch?: string;
   }[];
   brainstormIdeas?: {             // child brainstorm ideas
     id: string;
     text: string;
     details?: string;
-    status: 'pending' | 'approved' | 'rejected';
+    status: 'new' | 'in_progress' | 'completed' | 'pending' | 'approved' | 'rejected' | string;
     priority?: 'Low' | 'Medium' | 'High' | 'Critical';
     createdAt: number;
     updatedAt?: number;
+  }[];
+  virtualFiles?: Record<string, string>;
+  gitCommits?: {
+    id: string;
+    message: string;
+    author: string;
+    timestamp: number;
+    branch?: string;
+    filesChanged?: string[];
   }[];
   goals?: {
     id: string;
@@ -524,7 +537,7 @@ export type Agent = {
   mergeRequests?: AgentBranchMergeRequest[];
   officeZone?: 'sentinel' | 'scrum' | 'docs_lab' | 'dev_bay';
   projectTaskSector?: 'fixes' | 'feature' | 'docs' | 'qa';
-  modelEngine?: 'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | 'claude-3.5-sonnet';
+  modelEngine?: 'gemini-3.7-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | 'claude-3.5-sonnet' | string;
 };
 
 export type VoiceTrigger = {
@@ -1137,7 +1150,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [aetherControlIntegrations, setAetherControlIntegrations] = useState<boolean>(() => getStored('app_aether_control_integrations', false));
   const [aetherDoubleConfirm, setAetherDoubleConfirm] = useState<boolean>(() => getStored('app_aether_double_confirm', false));
   const [aetherAutoRecommend, setAetherAutoRecommend] = useState<boolean>(() => getStored('app_aether_auto_recommend', true));
-  const [aetherModel, setAetherModel] = useState<string>(() => getStored('app_aether_model', 'gemini-3.5-flash'));
+  const [aetherModel, setAetherModel] = useState<string>(() => {
+    const val = getStored<string>('app_aether_model', 'gemini-3.7-flash');
+    return val === 'gemini-3.5-flash' || val === 'gemini-3.6-flash' || val === 'gemini-2.5-flash' ? 'gemini-3.7-flash' : val;
+  });
   const [aetherConciseness, setAetherConciseness] = useState<string>(() => getStored('app_aether_conciseness', 'balanced'));
   const [aetherThinkingLevel, setAetherThinkingLevel] = useState<string>(() => getStored('app_aether_thinking_level', 'auto'));
   const [cortexSynapses, setCortexSynapses] = useState<CortexSynapse[]>(() => {
@@ -1498,9 +1514,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // 12. Provider loading
       await executeStartupTask('task-provider-loading', 'Provider loading', async () => {
-        const model = getStored('app_aether_model', 'gemini-3.5-flash');
+        const model = getStored('app_aether_model', 'gemini-3.7-flash');
         return { activeModel: model, status: 'ready' };
-      }, 1000, { activeModel: 'gemini-3.5-flash', status: 'ready' });
+      }, 1000, { activeModel: 'gemini-3.7-flash', status: 'ready' });
 
       // 13. Ollama detection
       await executeStartupTask('task-ollama-detection', 'Ollama detection', async () => {
@@ -1733,18 +1749,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (res.ok) {
           const data = await safeJsonFromResponse(res);
           if (data) {
+            const deletedProjectIds = getStored<string[]>('app_deleted_project_ids', []) || [];
             if (data.initialized) {
               // Server has backup disk persistence, treat non-empty collections as source of truth
               if (Array.isArray(data.projects) && data.projects.length > 0) {
-                finalProjects = data.projects;
+                finalProjects = data.projects.filter((p: Project) => p && p.id && !deletedProjectIds.includes(p.id));
                 setProjects(finalProjects);
               }
               if (Array.isArray(data.issues) && data.issues.length > 0) {
-                finalIssues = data.issues;
+                finalIssues = data.issues.filter((i: Issue) => i && (!i.projectId || !deletedProjectIds.includes(i.projectId)));
                 setIssues(finalIssues);
               }
-              if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes || []);
-              if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases || []);
+              if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes.filter((n: Note) => !n.projectId || !deletedProjectIds.includes(n.projectId)));
+              if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases.filter((p: Phase) => !p.projectId || !deletedProjectIds.includes(p.projectId)));
               if (Array.isArray(data.agents) && data.agents.length > 0) setAgents(data.agents || []);
               if (Array.isArray(data.cortexSynapses) && data.cortexSynapses.length > 0) setCortexSynapses(data.cortexSynapses || []);
               if (typeof data.aiContextRules === 'string' && data.aiContextRules) setAiContextRules(data.aiContextRules);
@@ -1766,15 +1783,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
             } else {
               // Server not yet initialized, load whatever we have in localStorage or defaults, and save it up
               if (Array.isArray(data.projects) && data.projects.length > 0) {
-                finalProjects = data.projects;
-                setProjects(data.projects);
+                finalProjects = data.projects.filter((p: Project) => p && p.id && !deletedProjectIds.includes(p.id));
+                setProjects(finalProjects);
               }
               if (Array.isArray(data.issues) && data.issues.length > 0) {
-                finalIssues = data.issues;
-                setIssues(data.issues);
+                finalIssues = data.issues.filter((i: Issue) => i && (!i.projectId || !deletedProjectIds.includes(i.projectId)));
+                setIssues(finalIssues);
               }
-              if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes);
-              if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases);
+              if (Array.isArray(data.notes) && data.notes.length > 0) setNotes(data.notes.filter((n: Note) => !n.projectId || !deletedProjectIds.includes(n.projectId)));
+              if (Array.isArray(data.phases) && data.phases.length > 0) setPhases(data.phases.filter((p: Phase) => !p.projectId || !deletedProjectIds.includes(p.projectId)));
               if (Array.isArray(data.agents) && data.agents.length > 0) setAgents(data.agents);
               if (Array.isArray(data.cortexSynapses) && data.cortexSynapses.length > 0) setCortexSynapses(data.cortexSynapses);
               if (typeof data.aiContextRules === 'string' && data.aiContextRules) setAiContextRules(data.aiContextRules);
@@ -1806,7 +1823,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // If they were empty, load defaults from state/localStorage
       if (finalProjects.length === 0) {
-        finalProjects = getStored<Project[]>('app_projects', []);
+        const deletedProjectIds = getStored<string[]>('app_deleted_project_ids', []) || [];
+        finalProjects = (getStored<Project[]>('app_projects', []) || []).filter(p => p && p.id && !deletedProjectIds.includes(p.id));
       }
       if (finalIssues.length === 0) {
         finalIssues = getStored<Issue[]>('app_issues', []);
@@ -2494,6 +2512,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => { setStored('app_ai_context', aiContextRules); }, [aiContextRules]);
   useEffect(() => { setStored('app_aether_personality_rules', aetherPersonalityRules); }, [aetherPersonalityRules]);
   useEffect(() => { setStored('app_github_user', githubUser); }, [githubUser]);
+
+  // Synchronize canonical active project context whenever projects, issues, notes, phases, or activeProjectId change
+  useEffect(() => {
+    aetherActiveProjectContext.syncFromDataContext({
+      activeProjectId,
+      projects,
+      issues,
+      notes,
+      phases
+    });
+  }, [activeProjectId, projects, issues, notes, phases]);
 
   // Sync connected GitHub credentials to Firestore user doc whenever they change
   useEffect(() => {
@@ -3368,8 +3397,11 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         }
       });
 
-      const deletedIds = new Set((getStored<DeletedProject[]>('app_deleted_projects', []) || []).map(dp => dp.id || dp.originalId));
-      const mergedProjectList = Array.from(projectsMap.values()).filter(p => !deletedIds.has(p.id));
+      const deletedIds = new Set([
+        ...(getStored<string[]>('app_deleted_project_ids', []) || []),
+        ...(getStored<DeletedProject[]>('app_deleted_projects', []) || []).map(dp => dp.id || dp.originalId)
+      ]);
+      const mergedProjectList = Array.from(projectsMap.values()).filter(p => p && p.id && !deletedIds.has(p.id));
 
       if (mergedProjectList.length > 0) {
         setProjects(mergedProjectList);
@@ -4146,9 +4178,8 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     setupCompleted?: boolean
   }) => {
     const isSandbox = typeof window !== 'undefined' && window.localStorage.getItem('app_auth_mode') === 'sandbox';
-    const activeUid = auth.currentUser?.uid || googleUser?.uid;
-    const activeEmail = auth.currentUser?.email || googleUser?.email || '';
-    if (!activeUid) throw new Error("Must be logged in to update profile");
+    const activeUid = auth.currentUser?.uid || googleUser?.uid || userProfile?.uid || 'user_devspace_local';
+    const activeEmail = auth.currentUser?.email || googleUser?.email || userProfile?.email || 'developer@devspace.io';
     
     startSync('profile');
     try {
@@ -4160,18 +4191,27 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
         updatedAt: Date.now()
       };
       
-      if (!isSandbox && auth.currentUser) {
-        await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
-      }
-      
+      // Always persist to local React state and localStorage first
       setUserProfile(updatedProfile);
       setStored('app_user_profile', updatedProfile);
+
+      // If online and authenticated with Firebase, synchronize to Firestore users collection
+      if (!isSandbox && auth.currentUser) {
+        try {
+          await setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updatedProfile);
+        } catch (dbErr) {
+          console.warn("Could not synchronize profile to Firestore (using local persistence):", dbErr);
+        }
+      }
+      
       endSync('profile', true);
       showToast('Profile and workspace settings updated successfully.', 'success', 3000);
+      return updatedProfile;
     } catch (e) {
       console.error("Failed to update profile:", e);
       endSync('profile', false);
       showToast('Failed to save profile settings.', 'error', 3000);
+      throw e;
     }
   };
 
@@ -4381,6 +4421,24 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
       if (activeProjectId === id) {
         setActiveProjectId(remaining.length > 0 ? remaining[0].id : null);
       }
+
+      // Immediately sync non-deleted projects to server cache to prevent resurrection
+      try {
+        const remainingIssues = issues.filter(i => i.projectId !== id);
+        const remainingNotes = notes.filter(n => n.projectId !== id);
+        const remainingPhases = phases.filter(p => p.projectId !== id);
+        fetchWithAuth('/api/voice/sync-cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projects: remaining,
+            issues: remainingIssues,
+            notes: remainingNotes,
+            phases: remainingPhases
+          })
+        }).catch(() => {});
+      } catch (err) {}
+
       return remaining;
     });
 

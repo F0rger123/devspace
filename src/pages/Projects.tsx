@@ -55,6 +55,7 @@ import {
   Bot,
   Users,
   AlertTriangle,
+  Code,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -68,6 +69,8 @@ import { ProjectInviteWizard } from "../components/ui/ProjectInviteWizard";
 import { RepoTreeVisualizer } from "../components/ui/RepoTreeVisualizer";
 import { BackendIntegrationTab } from "../components/BackendIntegrationTab";
 import { DreamSwipeDeck } from "../components/DreamSwipeDeck";
+import { ProjectCodeWorkspace } from "../components/ui/ProjectCodeWorkspace";
+import { ApprovedDreamsPushPanel } from "../components/ui/ApprovedDreamsPushPanel";
 import { extractRepoName } from "../lib/utils";
 
 function safeDecodeBase64(str: string): string {
@@ -174,7 +177,7 @@ export function Projects() {
     }
   };
   const [workspaceTab, setWorkspaceTab] = useState<
-    "overview" | "ideas" | "dream" | "issues" | "goals" | "planner" | "branches" | "pull_requests" | "releases" | "activity" | "collaboration" | "settings" | "brainstorm" | "stack" | "ship" | "backend"
+    "overview" | "ideas" | "dream" | "code" | "issues" | "goals" | "planner" | "branches" | "pull_requests" | "releases" | "activity" | "collaboration" | "settings" | "brainstorm" | "stack" | "ship" | "backend"
   >(() => {
     const saved = localStorage.getItem('projects_workspace_tab');
     return (saved as any) || "overview";
@@ -231,14 +234,14 @@ export function Projects() {
   const [newIdeaForm, setNewIdeaForm] = useState({
     text: '',
     details: '',
-    status: 'pending' as 'pending' | 'approved' | 'rejected',
+    status: 'new' as 'new' | 'in_progress' | 'completed' | 'pending' | 'approved' | 'rejected' | string,
     priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Critical',
   });
   const [editingIdea, setEditingIdea] = useState<{
     id: string;
     text: string;
     details: string;
-    status: 'pending' | 'approved' | 'rejected';
+    status: 'new' | 'in_progress' | 'completed' | 'pending' | 'approved' | 'rejected' | string;
     priority: 'Low' | 'Medium' | 'High' | 'Critical';
   } | null>(null);
 
@@ -1578,6 +1581,7 @@ Description of fix or enhancement recommendation
             { id: "overview", label: "Overview", icon: Activity },
             { id: "ideas", label: "Ideas", icon: Lightbulb },
             { id: "dream", label: "Dreams", icon: RefreshCw },
+            { id: "code", label: "Code & Files", icon: Code },
             { id: "issues", label: "Issues", icon: AlertTriangle },
             { id: "goals", label: "Goals", icon: Target },
             { id: "planner", label: "Planner", icon: Calendar },
@@ -1727,8 +1731,8 @@ Description of fix or enhancement recommendation
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {(project.goals || []).slice(0, 5).map((goal: any) => (
-                      <div key={goal.id} className="flex items-center justify-between bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800">
+                    {(project.goals || []).slice(0, 5).map((goal: any, idx: number) => (
+                      <div key={goal.id || `goal-ov-${idx}`} className="flex items-center justify-between bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800">
                         <span className={`text-xs ${goal.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
                           {goal.text}
                         </span>
@@ -1760,8 +1764,8 @@ Description of fix or enhancement recommendation
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {issues.filter(i => i.projectId === project.id).slice(0, 5).map((issue: any) => (
-                      <div key={issue.id} className="flex items-center justify-between bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800">
+                    {issues.filter(i => i.projectId === project.id).slice(0, 5).map((issue: any, idx: number) => (
+                      <div key={issue.id || `issue-ov-${idx}`} className="flex items-center justify-between bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800">
                         <span className="text-xs text-zinc-200 truncate max-w-[70%]">
                           {issue.title}
                         </span>
@@ -1827,8 +1831,8 @@ Description of fix or enhancement recommendation
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {issues.filter(i => i.projectId === project.id).map(issue => (
-                      <div key={issue.id} className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-zinc-700 transition-all">
+                    {issues.filter(i => i.projectId === project.id).map((issue, idx) => (
+                      <div key={issue.id || `issue-list-${idx}`} className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-zinc-700 transition-all">
                         <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase border ${
@@ -2068,7 +2072,7 @@ Description of fix or enhancement recommendation
 
                   <div className="space-y-2 mb-4 max-h-56 overflow-y-auto pr-1">
                     {project.sprints && project.sprints.length > 0 ? (
-                      project.sprints.map((sprint: any) => {
+                      project.sprints.map((sprint: any, idx: number) => {
                         const sprintIssues = issues.filter(
                           (issue: any) =>
                             issue.projectId === project.id &&
@@ -2085,7 +2089,7 @@ Description of fix or enhancement recommendation
 
                         return (
                           <div
-                            key={sprint.id}
+                            key={sprint.id || `sprint-${idx}`}
                             className="flex flex-col gap-2 bg-zinc-900 border border-zinc-800/60 p-3 rounded-lg hover:border-zinc-700 transition-colors group"
                           >
                             <div className="flex items-center justify-between">
@@ -2156,9 +2160,9 @@ Description of fix or enhancement recommendation
                   {/* List of active targets */}
                   <div className="space-y-2 mb-4 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
                     {(project.goals || []).length > 0 ? (
-                      (project.goals || []).map((goal: any) => (
+                      (project.goals || []).map((goal: any, idx: number) => (
                         <div
-                          key={goal.id}
+                          key={goal.id || `goal-${idx}`}
                           className="flex items-center justify-between bg-zinc-900/40 border border-zinc-850 p-2.5 rounded-lg hover:border-zinc-800 hover:bg-zinc-900/60 transition-all group"
                         >
                           <div className="flex items-center gap-3 flex-grow min-w-0">
@@ -2373,7 +2377,7 @@ Description of fix or enhancement recommendation
           )}
 
           {/* TAB 2: AI BRAINSTORMING SANDBOX (Vocal & text sandbox) */}
-          {workspaceTab === "brainstorm" && (
+          {(workspaceTab === "brainstorm" || workspaceTab === "ideas") && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="bg-[#121214] border border-zinc-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2">
@@ -2474,9 +2478,9 @@ Description of fix or enhancement recommendation
                   </h3>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {generatedIdeas.map((idea) => (
+                    {generatedIdeas.map((idea, idx) => (
                       <div
-                        key={idea.id}
+                        key={idea.id || `gen-idea-${idx}`}
                         className="glass-card rounded-xl p-4 flex flex-col justify-between"
                       >
                         <div>
@@ -2542,18 +2546,58 @@ Description of fix or enhancement recommendation
                 </div>
               )}
 
-              {/* ACTIVE BRAINSTORMS LIST */}
+              {/* ACTIVE PROJECT IDEAS LIST & STATUS TRACKER */}
               <div className="glass-card rounded-xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest flex items-center gap-1.5">
-                    <Brain size={14} className="text-zinc-500" /> Project Ideas ({project.brainstormIdeas?.length || 0})
-                  </h3>
-                  <button
-                    onClick={() => setShowNewIdeaModal(true)}
-                    className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
-                  >
-                    <Plus size={14} /> + New Idea
-                  </button>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-widest flex items-center gap-1.5">
+                      <Brain size={14} className="text-cyan-400" /> Project Ideas ({project.brainstormIdeas?.length || 0})
+                    </h3>
+
+                    {/* STATUS FILTER PILLS */}
+                    <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800 text-[10px] font-semibold">
+                      {[
+                        { id: "All", label: "All" },
+                        { id: "new", label: "New" },
+                        { id: "in_progress", label: "In Progress" },
+                        { id: "completed", label: "Completed" },
+                        { id: "approved", label: "Approved" },
+                        { id: "rejected", label: "Archived" },
+                      ].map((st) => (
+                        <button
+                          key={st.id}
+                          onClick={() => setBrainstormFilterTag(st.id)}
+                          className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                            brainstormFilterTag === st.id
+                              ? "bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30"
+                              : "text-zinc-400 hover:text-zinc-200"
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={brainstormSortBy}
+                      onChange={(e) => setBrainstormSortBy(e.target.value as any)}
+                      className="bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 rounded-lg py-1 px-2 outline-none focus:border-cyan-500"
+                    >
+                      <option value="newest">Sort: Newest</option>
+                      <option value="oldest">Sort: Oldest</option>
+                      <option value="alpha">Sort: Alphabetical</option>
+                      <option value="complexity">Sort: Complexity</option>
+                    </select>
+
+                    <button
+                      onClick={() => setShowNewIdeaModal(true)}
+                      className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
+                    >
+                      <Plus size={14} /> + New Idea
+                    </button>
+                  </div>
                 </div>
 
                 {project.brainstormIdeas &&
@@ -2561,62 +2605,14 @@ Description of fix or enhancement recommendation
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[...(project.brainstormIdeas || [])]
                       .filter((idea: any) => {
+                        const status = (idea.status || 'new').toLowerCase();
                         if (brainstormFilterTag === "All") return true;
-                        const text = (
-                          (idea.text || "") +
-                          " " +
-                          (idea.details || "")
-                        ).toLowerCase();
-                        if (brainstormFilterTag === "Database")
-                          return (
-                            text.includes("database") ||
-                            text.includes("firestore") ||
-                            text.includes("sql") ||
-                            text.includes("schema") ||
-                            text.includes("sync")
-                          );
-                        if (brainstormFilterTag === "Security")
-                          return (
-                            text.includes("security") ||
-                            text.includes("auth") ||
-                            text.includes("login") ||
-                            text.includes("rules")
-                          );
-                        if (brainstormFilterTag === "Backend")
-                          return (
-                            text.includes("api") ||
-                            text.includes("express") ||
-                            text.includes("route") ||
-                            text.includes("server")
-                          );
-                        if (brainstormFilterTag === "Frontend")
-                          return (
-                            text.includes("theme") ||
-                            text.includes("ui") ||
-                            text.includes("layout") ||
-                            text.includes("css") ||
-                            text.includes("visual")
-                          );
-                        return ![
-                          "database",
-                          "firestore",
-                          "sql",
-                          "schema",
-                          "sync",
-                          "security",
-                          "auth",
-                          "login",
-                          "rules",
-                          "api",
-                          "express",
-                          "route",
-                          "server",
-                          "theme",
-                          "ui",
-                          "layout",
-                          "css",
-                          "visual",
-                        ].some((word) => text.includes(word));
+                        if (brainstormFilterTag === "new") return status === 'new' || status === 'pending';
+                        if (brainstormFilterTag === "in_progress") return status === 'in_progress' || status === 'in progress';
+                        if (brainstormFilterTag === "completed") return status === 'completed' || status === 'done';
+                        if (brainstormFilterTag === "approved") return status === 'approved';
+                        if (brainstormFilterTag === "rejected") return status === 'rejected' || status === 'archived';
+                        return true;
                       })
                       .sort((a: any, b: any) => {
                         if (brainstormSortBy === "alpha")
@@ -2629,57 +2625,24 @@ Description of fix or enhancement recommendation
                           );
                         return (b.createdAt || 0) - (a.createdAt || 0);
                       })
-                      .map((idea: any) => {
-                        const text = (
-                          (idea.text || "") +
-                          " " +
-                          (idea.details || "")
-                        ).toLowerCase();
-                        const ideaTag =
-                          text.includes("database") ||
-                          text.includes("firestore") ||
-                          text.includes("sql") ||
-                          text.includes("schema") ||
-                          text.includes("sync")
-                            ? "Database"
-                            : text.includes("security") ||
-                                text.includes("auth") ||
-                                text.includes("login") ||
-                                text.includes("rules")
-                              ? "Security"
-                              : text.includes("api") ||
-                                  text.includes("express") ||
-                                  text.includes("route") ||
-                                  text.includes("server")
-                                ? "Backend"
-                                : text.includes("theme") ||
-                                    text.includes("ui") ||
-                                    text.includes("layout") ||
-                                    text.includes("css") ||
-                                    text.includes("visual")
-                                  ? "Frontend"
-                                  : "Architecture";
-                        const rawLen = (idea.details || "").length;
-                        const ideaComplexity =
-                          rawLen < 100
-                            ? "Easy-Mock"
-                            : rawLen < 195
-                              ? "Mid-Level"
-                              : "Advanced-Core";
+                      .map((idea: any, idx: number) => {
+                        const status = (idea.status || 'new').toLowerCase();
                         return (
                           <div
-                            key={idea.id}
-                            className="glass-card bg-zinc-900/30 p-4 rounded-xl flex flex-col justify-between group relative overflow-hidden transition-all duration-300 hover:border-cyan-500/30"
+                            key={idea.id || `idea-${idx}`}
+                            className="glass-card bg-zinc-900/40 p-4 rounded-xl flex flex-col justify-between group relative overflow-hidden transition-all duration-300 hover:border-cyan-500/30 border border-zinc-800"
                           >
                             <div>
-                              <div className="flex items-center justify-between gap-1 mb-1.5">
+                              <div className="flex items-center justify-between gap-1 mb-2">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                                    idea.status === 'approved' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/20' :
-                                    idea.status === 'rejected' ? 'bg-rose-950/60 text-rose-400 border border-rose-500/20' :
-                                    'bg-amber-950/60 text-amber-400 border border-amber-500/20'
+                                    status === 'approved' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30' :
+                                    status === 'in_progress' || status === 'in progress' ? 'bg-amber-950/60 text-amber-400 border border-amber-500/30' :
+                                    status === 'completed' || status === 'done' ? 'bg-indigo-950/60 text-indigo-400 border border-indigo-500/30' :
+                                    status === 'rejected' || status === 'archived' ? 'bg-rose-950/60 text-rose-400 border border-rose-500/30' :
+                                    'bg-cyan-950/60 text-cyan-400 border border-cyan-500/30'
                                   }`}>
-                                    {idea.status || 'pending'}
+                                    {idea.status === 'in_progress' ? 'In Progress' : (idea.status || 'New')}
                                   </span>
                                   <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
                                     idea.priority === 'Critical' ? 'bg-rose-900/40 text-rose-300' :
@@ -2717,6 +2680,7 @@ Description of fix or enhancement recommendation
                                   </button>
                                 </div>
                               </div>
+
                               <h4 className="text-xs font-bold text-zinc-100 mt-1 mb-1.5">
                                 {idea.text}
                               </h4>
@@ -2727,10 +2691,77 @@ Description of fix or enhancement recommendation
                                 Created: {new Date(idea.createdAt || Date.now()).toLocaleDateString()}
                                 {idea.updatedAt && idea.updatedAt !== idea.createdAt ? ` • Updated: ${new Date(idea.updatedAt).toLocaleDateString()}` : ''}
                               </div>
+
+                              {/* QUICK STATUS CHANGER */}
+                              <div className="mt-3 pt-2.5 border-t border-zinc-850">
+                                <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider block mb-1.5">Update Status</span>
+                                <div className="grid grid-cols-4 gap-1">
+                                  <button
+                                    onClick={() => {
+                                      const updated = (project.brainstormIdeas || []).map((bi: any) =>
+                                        bi.id === idea.id ? { ...bi, status: "new", updatedAt: Date.now() } : bi
+                                      );
+                                      updateProject(project.id, { brainstormIdeas: updated });
+                                    }}
+                                    className={`text-[9px] py-1 px-1.5 rounded font-semibold text-center transition-all cursor-pointer ${
+                                      status === 'new' || status === 'pending'
+                                        ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                                        : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                                    }`}
+                                  >
+                                    New
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const updated = (project.brainstormIdeas || []).map((bi: any) =>
+                                        bi.id === idea.id ? { ...bi, status: "in_progress", updatedAt: Date.now() } : bi
+                                      );
+                                      updateProject(project.id, { brainstormIdeas: updated });
+                                    }}
+                                    className={`text-[9px] py-1 px-1.5 rounded font-semibold text-center transition-all cursor-pointer ${
+                                      status === 'in_progress' || status === 'in progress'
+                                        ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30'
+                                        : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                                    }`}
+                                  >
+                                    Progress
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const updated = (project.brainstormIdeas || []).map((bi: any) =>
+                                        bi.id === idea.id ? { ...bi, status: "completed", updatedAt: Date.now() } : bi
+                                      );
+                                      updateProject(project.id, { brainstormIdeas: updated });
+                                    }}
+                                    className={`text-[9px] py-1 px-1.5 rounded font-semibold text-center transition-all cursor-pointer ${
+                                      status === 'completed' || status === 'done'
+                                        ? 'bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30'
+                                        : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                                    }`}
+                                  >
+                                    Done
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const updated = (project.brainstormIdeas || []).map((bi: any) =>
+                                        bi.id === idea.id ? { ...bi, status: "approved", updatedAt: Date.now() } : bi
+                                      );
+                                      updateProject(project.id, { brainstormIdeas: updated });
+                                    }}
+                                    className={`text-[9px] py-1 px-1.5 rounded font-semibold text-center transition-all cursor-pointer ${
+                                      status === 'approved'
+                                        ? 'bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30'
+                                        : 'bg-zinc-800/60 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                                    }`}
+                                  >
+                                    Approved
+                                  </button>
+                                </div>
+                              </div>
                             </div>
 
-                            <div className="mt-4 pt-3 border-t border-zinc-850/60 flex flex-col gap-2">
-                              {/* Primary Action */}
+                            <div className="mt-3 pt-2.5 border-t border-zinc-850/60 flex flex-col gap-1.5">
+                              {/* Primary Promotion Action */}
                               <button
                                 onClick={() => {
                                   addProject({
@@ -2744,7 +2775,6 @@ Description of fix or enhancement recommendation
                                     ],
                                     status: "Planning",
                                   });
-                                  // removes from loop
                                   const remainder =
                                     project.brainstormIdeas.filter(
                                       (bi: any) => bi.id !== idea.id,
@@ -2752,8 +2782,9 @@ Description of fix or enhancement recommendation
                                   updateProject(project.id, {
                                     brainstormIdeas: remainder,
                                   });
-                                  alert(
-                                    `Awesome! Promoted '${idea.text}' into a standalone project Space!`,
+                                  showToast(
+                                    `Promoted '${idea.text}' into a standalone project!`,
+                                    'success'
                                   );
                                 }}
                                 className="w-full text-[10px] bg-cyan-950/40 text-cyan-400 hover:bg-cyan-900/60 px-2.5 py-1.5 rounded font-bold border border-cyan-500/10 flex items-center justify-center gap-1 transition-all cursor-pointer"
@@ -2761,8 +2792,8 @@ Description of fix or enhancement recommendation
                                 <Rocket size={10} /> Promote to Standalone Project 🚀
                               </button>
 
-                              {/* Decision buttons */}
-                              <div className="grid grid-cols-2 gap-1.5">
+                              {/* Conversion buttons */}
+                              <div className="grid grid-cols-3 gap-1">
                                 <button
                                   onClick={() => {
                                     const rawRecs = project.dreamRecommendations || [];
@@ -2781,11 +2812,11 @@ Description of fix or enhancement recommendation
                                     }
                                     const remainder = project.brainstormIdeas.filter((bi: any) => bi.id !== idea.id);
                                     updateProject(project.id, { brainstormIdeas: remainder, dreamRecommendations: updatedRecs });
-                                    alert(`💤 Converted '${idea.text}' into an AI Dream Recommendation!`);
+                                    showToast(`Converted '${idea.text}' to AI Dream Recommendation!`, 'info');
                                   }}
-                                  className="text-[9.5px] bg-cyan-950/40 text-cyan-400 hover:bg-cyan-900/60 p-1.5 rounded font-semibold border border-cyan-500/20 flex items-center justify-center gap-1 cursor-pointer"
+                                  className="text-[9px] bg-cyan-950/30 text-cyan-400 hover:bg-cyan-900/50 p-1 rounded font-medium border border-cyan-500/20 flex items-center justify-center gap-1 cursor-pointer"
                                 >
-                                  <RefreshCw size={10} /> To Dream
+                                  <RefreshCw size={9} /> To Dream
                                 </button>
 
                                 <button
@@ -2794,11 +2825,11 @@ Description of fix or enhancement recommendation
                                     const newGoal = { id: `goal-${Date.now()}`, text: idea.text, completed: false };
                                     const remainder = project.brainstormIdeas.filter((bi: any) => bi.id !== idea.id);
                                     updateProject(project.id, { brainstormIdeas: remainder, goals: [...currentGoals, newGoal] });
-                                    alert(`🎯 Converted '${idea.text}' into a Project Goal!`);
+                                    showToast(`Converted '${idea.text}' to Project Goal!`, 'info');
                                   }}
-                                  className="text-[9.5px] bg-purple-950/40 text-purple-400 hover:bg-purple-900/60 p-1.5 rounded font-semibold border border-purple-500/20 flex items-center justify-center gap-1 cursor-pointer"
+                                  className="text-[9px] bg-purple-950/30 text-purple-400 hover:bg-purple-900/50 p-1 rounded font-medium border border-purple-500/20 flex items-center justify-center gap-1 cursor-pointer"
                                 >
-                                  <Target size={10} /> To Goal
+                                  <Target size={9} /> To Goal
                                 </button>
 
                                 <button
@@ -2817,22 +2848,11 @@ Description of fix or enhancement recommendation
                                     addIssue(newIssue);
                                     const remainder = project.brainstormIdeas.filter((bi: any) => bi.id !== idea.id);
                                     updateProject(project.id, { brainstormIdeas: remainder });
-                                    alert(`⚠️ Converted '${idea.text}' into a Project Issue!`);
+                                    showToast(`Converted '${idea.text}' to Project Issue!`, 'info');
                                   }}
-                                  className="text-[9.5px] bg-amber-950/40 text-amber-400 hover:bg-amber-900/60 p-1.5 rounded font-semibold border border-amber-500/20 flex items-center justify-center gap-1 cursor-pointer"
+                                  className="text-[9px] bg-amber-950/30 text-amber-400 hover:bg-amber-900/50 p-1 rounded font-medium border border-amber-500/20 flex items-center justify-center gap-1 cursor-pointer"
                                 >
-                                  <AlertTriangle size={10} /> To Issue
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    const remainder = project.brainstormIdeas.filter((bi: any) => bi.id !== idea.id);
-                                    updateProject(project.id, { brainstormIdeas: remainder });
-                                    alert(`📁 Archived '${idea.text}'`);
-                                  }}
-                                  className="text-[9.5px] bg-zinc-800 text-zinc-400 hover:bg-zinc-700 p-1.5 rounded font-semibold border border-zinc-700 flex items-center justify-center gap-1 cursor-pointer"
-                                >
-                                  <Trash size={10} /> Archive
+                                  <AlertTriangle size={9} /> To Issue
                                 </button>
                               </div>
                             </div>
@@ -2843,12 +2863,12 @@ Description of fix or enhancement recommendation
                 ) : (
                   <div className="p-8 text-center border border-dashed border-zinc-800 rounded-xl bg-[#18181b]/30 flex flex-col items-center justify-center gap-3">
                     <Brain size={28} className="text-zinc-600" />
-                    <p className="text-xs text-zinc-400">No idea records confirmed in brainstorm pool yet.</p>
+                    <p className="text-xs text-zinc-400">No idea records match this status filter.</p>
                     <button
                       onClick={() => setShowNewIdeaModal(true)}
                       className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-md cursor-pointer"
                     >
-                      <Plus size={14} /> + New Idea
+                      <Plus size={14} /> + Add Project Idea
                     </button>
                   </div>
                 )}
@@ -2856,9 +2876,23 @@ Description of fix or enhancement recommendation
             </div>
           )}
 
+          {/* TAB: CODE & FILES WORKSPACE */}
+          {workspaceTab === "code" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <ProjectCodeWorkspace project={project} updateProject={updateProject} />
+            </div>
+          )}
+
           {/* TAB 3: AUTONOMOUS AI DREAMING */}
           {workspaceTab === "dream" && (
             <div className="space-y-6 animate-in fade-in duration-200 text-left">
+              {/* APPROVED DREAMS DIRECT PUSH TO MAIN PANEL */}
+              <ApprovedDreamsPushPanel
+                project={project}
+                updateProject={updateProject}
+                onSuccessToast={(msg) => showToast(msg, 'success')}
+              />
+
               {/* THOMAS A. DREAMING SUMMARY METRICS DASHBOARD */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="glass-card p-4 rounded-xl flex flex-col justify-between shadow-md">
@@ -3097,7 +3131,7 @@ Description of fix or enhancement recommendation
                       const currentRecs = [...(project.dreamRecommendations || [])];
                       let count = 0;
                       items.forEach(item => {
-                        if (!currentRecs.some(c => c.title.toLowerCase() === item.title.toLowerCase())) {
+                        if (!currentRecs.some(c => (c?.title || '').toLowerCase() === (item?.title || '').toLowerCase())) {
                           currentRecs.push({
                             id: `dream-heal-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                             title: item.title,
@@ -3249,7 +3283,7 @@ Description of fix or enhancement recommendation
 
                         <div className="bg-zinc-950 rounded-lg p-3 border border-zinc-850 h-32 overflow-y-auto font-mono text-[10px] text-zinc-400 space-y-1">
                           {dreamLogs.map((log, index) => (
-                            <div key={index} className="flex items-center gap-2">
+                            <div key={`dream-log-${index}`} className="flex items-center gap-2">
                               <span className="text-cyan-500/70 select-none">&gt;</span>
                               <span>{log}</span>
                             </div>
@@ -3364,12 +3398,12 @@ Description of fix or enhancement recommendation
                           );
                         }
 
-                        return sorted.map((recomm: any) => {
+                        return sorted.map((recomm: any, idx: number) => {
                           const currentStatus = recomm.status || ((project.seenRecommendedIdeas || []).includes(recomm.title) ? 'dismissed' : 'active');
                           const isExpanded = expandedRecs[recomm.id] !== false; // expanded by default
 
                           return (
-                            <div key={recomm.id} className="bg-[#101012] border border-zinc-800/80 rounded-xl shadow-lg hover:border-zinc-700/80 transition-all overflow-hidden">
+                            <div key={recomm.id || `recomm-${idx}`} className="bg-[#101012] border border-zinc-800/80 rounded-xl shadow-lg hover:border-zinc-700/80 transition-all overflow-hidden">
                               {/* Header Title Area */}
                               <div 
                                 onClick={() => setExpandedRecs(prev => ({ ...prev, [recomm.id]: !isExpanded }))}
@@ -3442,7 +3476,7 @@ Description of fix or enhancement recommendation
                                       </div>
                                       {sandboxLogs.map((slog, idx) => (
                                         <div
-                                          key={idx}
+                                          key={`sandbox-log-${idx}`}
                                           className={idx === sandboxLogs.length - 1 && !sandboxRunning ? "text-emerald-400 font-semibold" : ""}
                                         >
                                           &gt; {slog}
@@ -3471,7 +3505,7 @@ Description of fix or enhancement recommendation
                                         type="button"
                                         onClick={() => {
                                           const alreadyExists = (cortexSynapses || []).some(
-                                            (s: any) => s.name.toLowerCase() === recomm.title.toLowerCase()
+                                            (s: any) => (s?.name || '').toLowerCase() === (recomm?.title || '').toLowerCase()
                                           );
                                           if (!alreadyExists) {
                                             const newSynapse = {
@@ -3668,7 +3702,7 @@ Description of fix or enhancement recommendation
                         },
                       ].map((agent, i) => (
                         <div
-                          key={i}
+                          key={`agent-preview-${agent.name}-${i}`}
                           className="flex gap-3 bg-zinc-900/60 p-3 rounded-lg border border-zinc-850 hover:border-zinc-800 transition-colors"
                         >
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 animate-pulse shrink-0" />
@@ -3751,9 +3785,9 @@ Description of fix or enhancement recommendation
 
                   {projectAssets.length > 0 ? (
                     <div className="space-y-2">
-                      {projectAssets.map((asset) => (
+                      {projectAssets.map((asset, idx) => (
                         <div
-                          key={asset.id}
+                          key={asset.id || `asset-${idx}`}
                           className="flex items-center justify-between bg-zinc-900 border border-zinc-850 p-3 rounded-lg"
                         >
                           <div className="flex items-center gap-3">
@@ -3830,9 +3864,9 @@ Description of fix or enhancement recommendation
                     <div className="flex flex-wrap gap-2 pt-2">
                       {/* default frameworks */}
                       {project.frameworks &&
-                        project.frameworks.map((f: string) => (
+                        project.frameworks.map((f: string, idx: number) => (
                           <span
-                            key={f}
+                            key={`fw-${f}-${idx}`}
                             className="text-xs px-2.5 py-1 bg-blue-950/40 border border-blue-500/25 text-blue-400 font-semibold rounded-lg"
                           >
                             {f}
@@ -3841,9 +3875,9 @@ Description of fix or enhancement recommendation
 
                       {/* custom stack tags */}
                       {project.customStack &&
-                        project.customStack.map((f: string) => (
+                        project.customStack.map((f: string, idx: number) => (
                           <button
-                            key={f}
+                            key={`cs-${f}-${idx}`}
                             onClick={() => {
                               const filtered = project.customStack.filter(
                                 (item: string) => item !== f,
@@ -3955,13 +3989,13 @@ Description of fix or enhancement recommendation
                           className="w-full bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-xs text-zinc-350 outline-none cursor-pointer"
                         >
                           <option value="">-- Choose active idea/recommendation to package --</option>
-                          {project.brainstormIdeas?.map((item: any) => (
-                            <option key={item.id} value={`brainstorm::${item.id}`}>
+                          {project.brainstormIdeas?.map((item: any, idx: number) => (
+                            <option key={item.id || `bi-${idx}`} value={`brainstorm::${item.id || idx}`}>
                               💡 [Brainstorm] {item.text || item.title}
                             </option>
                           ))}
-                          {project.dreamRecommendations?.map((item: any) => (
-                            <option key={item.id} value={`dream::${item.id}`}>
+                          {project.dreamRecommendations?.map((item: any, idx: number) => (
+                            <option key={item.id || `dr-${idx}`} value={`dream::${item.id || idx}`}>
                               💭 [Dream] {item.title}
                             </option>
                           ))}
@@ -4084,7 +4118,7 @@ Description of fix or enhancement recommendation
                           <span className={`w-1.5 h-1.5 rounded-full ${isShippingActive ? 'bg-orange-400 animate-pulse' : 'bg-emerald-400'}`} />
                         </div>
                         {shippingLogs.map((log, index) => (
-                          <div key={index} className="animate-in fade-in slide-in-from-left-1 duration-150">
+                          <div key={`ship-log-${index}`} className="animate-in fade-in slide-in-from-left-1 duration-150">
                             {log}
                           </div>
                         ))}
@@ -4134,9 +4168,9 @@ Description of fix or enhancement recommendation
                     </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1.5">
-                      {agents.slice(0, 4).map((agent) => {
+                      {agents.slice(0, 4).map((agent, idx) => {
                         return (
-                          <div key={agent.id} className="p-4 glass-card rounded-xl space-y-3.5 flex flex-col justify-between">
+                          <div key={agent.id || `agent-dispatch-${idx}`} className="p-4 glass-card rounded-xl space-y-3.5 flex flex-col justify-between">
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-xs font-semibold text-zinc-200">{agent.name}</span>
@@ -4300,9 +4334,9 @@ Description of fix or enhancement recommendation
                             </div>
                           ) : (
                             <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar">
-                              {githubReposList.slice(0, 5).map((r) => (
+                              {githubReposList.slice(0, 5).map((r, idx) => (
                                 <button
-                                  key={r.id}
+                                  key={r.id || r.full_name || `repo-${idx}`}
                                   type="button"
                                   onClick={() => {
                                     updateProject(project.id, { githubRepos: [r.full_name] });
@@ -4521,8 +4555,8 @@ Description of fix or enhancement recommendation
                           <div className="text-[10px] text-zinc-500 italic py-2">No commits found or public access restricted.</div>
                         ) : (
                           <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
-                            {workspaceCommits.slice(0, 5).map((c) => (
-                              <div key={c.id} className="p-2 bg-[#09090b] border border-zinc-850 rounded flex flex-col gap-1 hover:border-zinc-700 transition-colors">
+                            {workspaceCommits.slice(0, 5).map((c, idx) => (
+                              <div key={c.id || `commit-${idx}`} className="p-2 bg-[#09090b] border border-zinc-850 rounded flex flex-col gap-1 hover:border-zinc-700 transition-colors">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-medium text-zinc-200 line-clamp-1 flex-1 pr-2">{c.msg}</span>
                                   <span className="text-[9px] font-mono text-zinc-500 bg-zinc-900 px-1 py-0.2 border border-zinc-800 rounded">{c.id}</span>
@@ -4589,8 +4623,8 @@ Description of fix or enhancement recommendation
                   
                   <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
                     {project.brainstormIdeas && project.brainstormIdeas.length > 0 ? (
-                      project.brainstormIdeas.map((idea: any) => (
-                        <div key={idea.id} className="p-2 bg-zinc-950 rounded border border-zinc-900 flex items-center justify-between gap-1.5">
+                      project.brainstormIdeas.map((idea: any, idx: number) => (
+                        <div key={idea.id || `brainstorm-staged-${idx}`} className="p-2 bg-zinc-950 rounded border border-zinc-900 flex items-center justify-between gap-1.5">
                           <span className="text-[10px] text-zinc-305 truncate flex-grow font-medium">💡 {idea.text || idea.title}</span>
                           <span className="text-[8px] bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 block px-1 py-0.5 rounded uppercase font-bold shrink-0">STAGED</span>
                         </div>
@@ -4682,7 +4716,7 @@ Description of fix or enhancement recommendation
                         const collabRole = project.collaboratorRoles?.[collab] || 'editor';
 
                         return (
-                          <div key={idx} className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-xl animate-in fade-in duration-200 space-y-3">
+                          <div key={`collab-${collab}-${idx}`} className="p-4 bg-zinc-900/60 border border-zinc-850 rounded-xl animate-in fade-in duration-200 space-y-3">
                             <div className="flex items-center justify-between">
                               <div 
                                 onClick={() => openCollabProfile(collab)}
@@ -4908,8 +4942,8 @@ Description of fix or enhancement recommendation
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-850 text-zinc-300">
-                          {invitations.filter((i: any) => i.projectId === project.id).map((invite: any) => (
-                            <tr key={invite.id} className="hover:bg-zinc-900/40">
+                          {invitations.filter((i: any) => i.projectId === project.id).map((invite: any, idx: number) => (
+                            <tr key={invite.id || `invite-row-${idx}`} className="hover:bg-zinc-900/40">
                               <td className="py-3 font-medium">{invite.receiverEmail}</td>
                               <td className="py-3 font-mono text-[10px] text-zinc-400 capitalize">{invite.role || 'editor'}</td>
                               <td className="py-3 text-zinc-500">{new Date(invite.createdAt).toLocaleString()}</td>
@@ -4986,8 +5020,8 @@ Description of fix or enhancement recommendation
               </div>
 
               <div className="space-y-2">
-                {(project.tasks || []).map((t: any) => (
-                  <div key={t.id} className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 p-3 rounded-lg">
+                {(project.tasks || []).map((t: any, idx: number) => (
+                  <div key={t.id || `planner-task-${idx}`} className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 p-3 rounded-lg">
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
@@ -5158,7 +5192,7 @@ Description of fix or enhancement recommendation
                   { time: "10 mins ago", event: "Aether Universal Action Engine initialized", type: "ai" },
                   { time: "1 hour ago", event: "Goal roadmap updated", type: "goal" },
                 ].map((act, i) => (
-                  <div key={i} className="flex items-center justify-between bg-zinc-900/60 p-3 rounded-lg border border-zinc-800 text-xs">
+                  <div key={`act-stream-${act.event}-${i}`} className="flex items-center justify-between bg-zinc-900/60 p-3 rounded-lg border border-zinc-800 text-xs">
                     <span className="text-zinc-200 font-medium">{act.event}</span>
                     <span className="text-zinc-500 font-mono text-[10px]">{act.time}</span>
                   </div>
@@ -5310,7 +5344,7 @@ Description of fix or enhancement recommendation
                     {/* Processing logs box */}
                     <div className="w-full bg-zinc-950/60 border border-zinc-850 rounded-xl p-4 font-mono text-[10px] text-zinc-400 h-40 overflow-y-auto space-y-1.5 custom-scrollbar">
                       {syncProcessingLog.map((log, i) => (
-                        <div key={i} className="flex items-start gap-1.5">
+                        <div key={`sync-proc-log-${i}`} className="flex items-start gap-1.5">
                           <span className="text-amber-500/70 select-none">›</span>
                           <p className="leading-normal">{log}</p>
                         </div>
@@ -5365,7 +5399,7 @@ Description of fix or enhancement recommendation
                           </span>
                           <div className="space-y-1">
                             {syncReport.completedTasks.map((t: any, i: number) => (
-                              <div key={i} className="text-xs bg-emerald-950/20 border border-emerald-900/10 p-2 rounded flex flex-col gap-0.5">
+                              <div key={t.id || `sync-comp-task-${i}`} className="text-xs bg-emerald-950/20 border border-emerald-900/10 p-2 rounded flex flex-col gap-0.5">
                                 <span className="font-bold text-emerald-300 flex items-center gap-1">
                                   <Check size={11} /> {t.title}
                                 </span>
@@ -5384,7 +5418,7 @@ Description of fix or enhancement recommendation
                           </span>
                           <div className="space-y-1">
                             {syncReport.newTasks.map((t: any, i: number) => (
-                              <div key={i} className="text-xs bg-blue-950/20 border border-blue-900/10 p-2 rounded flex flex-col gap-0.5">
+                              <div key={t.id || `sync-new-task-${i}`} className="text-xs bg-blue-950/20 border border-blue-900/10 p-2 rounded flex flex-col gap-0.5">
                                 <span className="font-bold text-blue-300 flex items-center justify-between">
                                   <span>• {t.title}</span>
                                   <span className="text-[9px] bg-blue-900/40 px-1 py-0.2 rounded font-mono uppercase">
@@ -5406,7 +5440,7 @@ Description of fix or enhancement recommendation
                           </span>
                           <div className="space-y-1">
                             {syncReport.newBugs.map((b: any, i: number) => (
-                              <div key={i} className="text-xs bg-red-950/20 border border-red-900/10 p-2 rounded flex flex-col gap-0.5">
+                              <div key={b.id || `sync-new-bug-${i}`} className="text-xs bg-red-950/20 border border-red-900/10 p-2 rounded flex flex-col gap-0.5">
                                 <span className="font-bold text-red-300 flex items-center justify-between">
                                   <span>🐞 {b.title}</span>
                                   <span className="text-[9px] bg-red-900/40 px-1 py-0.2 rounded font-mono uppercase">
@@ -5428,7 +5462,7 @@ Description of fix or enhancement recommendation
                           </span>
                           <div className="space-y-1">
                             {syncReport.newIdeas.map((id: any, i: number) => (
-                              <div key={i} className="text-xs bg-purple-950/20 border border-purple-900/10 p-2 rounded flex flex-col gap-0.5">
+                              <div key={id.id || `sync-new-idea-${i}`} className="text-xs bg-purple-950/20 border border-purple-900/10 p-2 rounded flex flex-col gap-0.5">
                                 <span className="font-bold text-purple-300 flex items-center gap-1">
                                   <Sparkles size={11} /> {id.text}
                                 </span>
@@ -5726,8 +5760,8 @@ Description of fix or enhancement recommendation
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {invitations.filter((i: any) => i.status === 'pending').map((invite: any) => (
-              <div key={invite.id} className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg flex flex-col justify-between gap-3 hover:border-zinc-750 transition-colors">
+            {invitations.filter((i: any) => i.status === 'pending').map((invite: any, idx: number) => (
+              <div key={invite.id || `pending-inv-${idx}`} className="p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg flex flex-col justify-between gap-3 hover:border-zinc-750 transition-colors">
                 <div>
                   <h3 className="text-xs font-semibold text-zinc-200">📁 {invite.projectName}</h3>
                   <p className="text-[10px] text-zinc-500 mt-0.5 font-mono">From: {invite.senderEmail} ({invite.senderName})</p>
@@ -5798,7 +5832,7 @@ Description of fix or enhancement recommendation
 
               return (
                 <div
-                  key={project.id}
+                  key={project.id || `project-card-${idx}`}
                   onClick={() => {
                     setActiveProjectId(project.id);
                     setSearchParams({ id: project.id });
@@ -5920,9 +5954,9 @@ Description of fix or enhancement recommendation
                         </span>
                       )}
 
-                      {project.frameworks?.slice(0, 3).map((f) => (
+                      {project.frameworks?.slice(0, 3).map((f, fIdx) => (
                         <span
-                          key={f}
+                          key={`proj-card-fw-${project.id || idx}-${f}-${fIdx}`}
                           className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900 text-zinc-400 border border-zinc-850 truncate max-w-[80px]"
                           title={f}
                         >
@@ -6324,9 +6358,11 @@ Description of fix or enhancement recommendation
                       onChange={(e) => setNewIdeaForm({ ...newIdeaForm, status: e.target.value as any })}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-cyan-500"
                     >
-                      <option value="pending">Pending Review</option>
+                      <option value="new">New / Backlog</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="completed">Completed</option>
                       <option value="approved">Approved</option>
-                      <option value="rejected">Rejected / Deferred</option>
+                      <option value="rejected">Archived / Deferred</option>
                     </select>
                   </div>
                   <div>
@@ -6366,7 +6402,7 @@ Description of fix or enhancement recommendation
                     };
                     const updatedIdeas = [newIdea, ...(modalProject.brainstormIdeas || [])];
                     updateProject(modalProject.id, { brainstormIdeas: updatedIdeas });
-                    setNewIdeaForm({ text: '', details: '', status: 'pending', priority: 'Medium' });
+                    setNewIdeaForm({ text: '', details: '', status: 'new', priority: 'Medium' });
                     setShowNewIdeaModal(false);
                     showToast('Idea added successfully', 'success');
                   }}
@@ -6423,9 +6459,11 @@ Description of fix or enhancement recommendation
                     onChange={(e) => setEditingIdea({ ...editingIdea, status: e.target.value as any })}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-cyan-500"
                   >
-                    <option value="pending">Pending</option>
+                    <option value="new">New / Backlog</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
                     <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
+                    <option value="rejected">Archived / Deferred</option>
                   </select>
                 </div>
                 <div>

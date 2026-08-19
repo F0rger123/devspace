@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -8,68 +8,82 @@ interface TypewriterTextProps {
   isNew?: boolean;
 }
 
-export function TypewriterText({ content, isNew = false }: TypewriterTextProps) {
-  const [displayedText, setDisplayedText] = useState(isNew ? '' : content);
-  const contentRef = useRef(content);
-  contentRef.current = content;
+export const TypewriterText: React.FC<TypewriterTextProps> = React.memo(({ content, isNew = false }) => {
+  const [displayedLength, setDisplayedLength] = useState(() => (isNew ? 0 : content.length));
+  const hasAnimatedRef = useRef(!isNew);
+  const prevContentRef = useRef(content);
 
   useEffect(() => {
-    if (!isNew) {
-      setDisplayedText(content);
+    // If content changes or it's a completely new message that hasn't animated yet
+    if (prevContentRef.current !== content) {
+      prevContentRef.current = content;
+      if (!isNew) {
+        setDisplayedLength(content.length);
+        hasAnimatedRef.current = true;
+        return;
+      }
+    }
+
+    if (!isNew || hasAnimatedRef.current) {
+      setDisplayedLength(content.length);
       return;
     }
 
-    setDisplayedText('');
-    const targetText = content;
-    
-    let startTime: number | null = null;
-    let animationFrameId: number;
+    // Smooth chunked progressive reveal without markdown AST thrashing
+    const targetLength = content.length;
+    if (targetLength === 0) {
+      setDisplayedLength(0);
+      return;
+    }
 
-    // Fast typing time bound between 200ms and 500ms max total duration
-    const duration = Math.min(500, Math.max(200, targetText.length * 0.8)); 
+    // Calculate step size and interval for a smooth, natural flow
+    // Total animation between 150ms (short) and 450ms (long)
+    const duration = Math.min(450, Math.max(150, targetLength * 0.4));
+    const stepInterval = 24; // ~40 fps token tick
+    const totalSteps = Math.max(1, Math.floor(duration / stepInterval));
+    const charsPerStep = Math.max(1, Math.ceil(targetLength / totalSteps));
 
-    const animate = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      
-      // Quadratic-out easing for a sleek premium mechanical ramp-down
-      const easeProgress = 1 - Math.pow(1 - progress, 2);
-      const currentLength = Math.floor(easeProgress * targetText.length);
-      
-      setDisplayedText(targetText.slice(0, currentLength));
+    let currentLength = 0;
+    const timer = setInterval(() => {
+      currentLength = Math.min(targetLength, currentLength + charsPerStep);
+      setDisplayedLength(currentLength);
 
-      if (progress < 1) {
-        animationFrameId = requestAnimationFrame(animate);
-      } else {
-        setDisplayedText(targetText);
+      if (currentLength >= targetLength) {
+        clearInterval(timer);
+        hasAnimatedRef.current = true;
       }
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
+    }, stepInterval);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      clearInterval(timer);
     };
   }, [content, isNew]);
 
-  const isTyping = displayedText.length < content.length;
+  const visibleText = useMemo(() => {
+    if (displayedLength >= content.length) return content;
+    return content.slice(0, displayedLength);
+  }, [content, displayedLength]);
+
+  const isTyping = displayedLength < content.length;
 
   return (
-    <div className="relative leading-relaxed">
-      <div className={`prose prose-invert max-w-none text-zinc-150 transition-opacity duration-200 ${isTyping ? 'opacity-95' : 'opacity-100'}`}>
+    <div className="relative leading-relaxed select-text">
+      <div
+        className={`prose prose-invert max-w-none text-zinc-100 transition-opacity duration-150 ${
+          isTyping ? 'opacity-95' : 'opacity-100'
+        }`}
+      >
         <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-          {displayedText}
+          {visibleText}
         </Markdown>
       </div>
       {isTyping && (
-        <span className="inline-flex items-center ml-1.5 select-none">
-          <span className="inline-block w-1.5 h-3.5 rounded-sm bg-gradient-to-b from-yellow-400 to-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.8)] align-middle" />
-          <span className="text-[9px] text-yellow-400/90 font-mono font-black uppercase tracking-widest ml-1.5 animate-pulse">
-            TYPING
-          </span>
+        <span className="inline-flex items-center ml-1.5 select-none align-middle">
+          <span className="inline-block w-1.5 h-3.5 rounded-sm bg-yellow-400 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.8)]" />
         </span>
       )}
     </div>
   );
-}
+});
+
+export default TypewriterText;

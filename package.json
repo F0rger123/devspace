@@ -5,7 +5,7 @@
   "private": true,
   "version": "2.5.0",
   "type": "module",
-  "main": "dist-electron/main.cjs",
+  "main": "dist/server.cjs",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
@@ -19,6 +19,7 @@
     "build:all": "npm run build && npm run build:electron && electron-builder"
   },
   "dependencies": {
+    "@babel/standalone": "^8.0.4",
     "@google-cloud/billing": "^5.1.2",
     "@google/genai": "^1.52.0",
     "@mediapipe/camera_utils": "^0.3.1675466862",
@@ -58,12 +59,14 @@
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "@types/express": "^4.17.25",
+    "@types/jsdom": "^30.0.0",
     "@types/jszip": "^3.4.1",
     "@types/node": "^22.19.19",
     "@types/nodemailer": "^8.0.1",
     "autoprefixer": "^10.4.21",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
+    "jsdom": "^30.0.1",
     "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.22.3",

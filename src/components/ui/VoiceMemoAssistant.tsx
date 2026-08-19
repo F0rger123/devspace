@@ -27,8 +27,13 @@ import {
   Maximize2,
   Video,
   Target,
-  MousePointerClick
+  MousePointerClick,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
@@ -36,8 +41,13 @@ import { useData } from '../../context/DataProvider';
 import { aetherConversationalEngine } from '../../lib/aetherConversationalEngine';
 import { aetherVoiceRegistry } from '../../lib/aetherVoiceRegistry';
 import { aetherDesktopIntelligence } from '../../lib/aetherDesktopIntelligence';
+import { aetherInstanceEngine } from '../../lib/aetherInstanceEngine';
+import { evaluateRoutingFirewall } from '../../lib/aetherRoutingGuard';
+import { getResolvedAetherPersonality, formatResponseWithPersonality } from '../../lib/aetherPersonalityResolver';
 import { haptic } from '../../utils/haptics';
 import { WakeCanvasVisualizer } from './WakeCanvasVisualizer';
+import { aetherThreadStorage } from '../../lib/aetherThreadStorage';
+import { AetherErrorBoundary } from './AetherErrorBoundary';
 
 function extractExplanationFromPartialJson(partialJson: string): string {
   // Try to find completed explanation block
@@ -509,6 +519,8 @@ export function VoiceMemoAssistant() {
     }
   });
   const [pendingNote, setPendingNote] = useState<string | null>(null);
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
   const [sessionItems, setSessionItems] = useState<{ id: string; type: 'note' | 'task' | 'brainstorm' | 'synapse'; title: string; content: string; saved: boolean; isSuggested?: boolean }[]>(() => {
     try {
       const saved = localStorage.getItem('aether_session_items');
@@ -667,7 +679,28 @@ export function VoiceMemoAssistant() {
   }, [aetherFeedback, setLastSpeechTranscript, setLastAiResponse]);
 
   // TTS Feedback controls
-  const [voicePlayback, setVoicePlayback] = useState(true);
+  const [voicePlayback, setVoicePlayback] = useState<boolean>(() => {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem('aether_tts_audio_enabled') !== 'false' : true;
+  });
+  const voicePlaybackRef = useRef(voicePlayback);
+  useEffect(() => {
+    voicePlaybackRef.current = voicePlayback;
+    try {
+      localStorage.setItem('aether_tts_audio_enabled', String(voicePlayback));
+    } catch (e) {}
+  }, [voicePlayback]);
+
+  useEffect(() => {
+    const handleSpeechSync = () => {
+      const isSpeechEnabled = localStorage.getItem('aether_tts_audio_enabled') !== 'false';
+      setVoicePlayback(isSpeechEnabled);
+      if (!isSpeechEnabled) {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+      }
+    };
+    window.addEventListener('aether-speech-sync', handleSpeechSync);
+    return () => window.removeEventListener('aether-speech-sync', handleSpeechSync);
+  }, []);
   
   // Synchronized state refs to prevent stale closure bugs in browser speech recognition callbacks
   const isHubOpenRef = useRef(isHubOpen);
@@ -687,17 +720,25 @@ export function VoiceMemoAssistant() {
 
   useEffect(() => { 
     isHubOpenRef.current = isHubOpen || isDrawingModeActive; 
-    // Automatically synchronize Aether mic state with the assistant's visibility popup state
+    // Automatically manage continuous listening when the hub opens without overriding manual mute
     if (isHubOpen || isDrawingModeActive) {
-      if (isAetherMuted) {
-        toggleAetherMutedState(false);
+      if (!isAetherMutedRef.current && !isListeningForSpeechRef.current && !isProcessingRef.current) {
+        startContinuousConversationalListen();
       }
     } else {
-      if (!isAetherMuted && !isWakeWordEnabled) {
-        toggleAetherMutedState(true);
+      if (!isWakeWordEnabled) {
+        // When hub closes and wake-word is not enabled, ensure active mic stops
+        if (activeRecogRef.current) {
+          try {
+            activeRecogRef.current.onend = null;
+            activeRecogRef.current.stop();
+          } catch (e) {}
+          activeRecogRef.current = null;
+          setIsListeningForSpeech(false);
+        }
       }
     }
-  }, [isHubOpen, isDrawingModeActive, isAetherMuted, isWakeWordEnabled]);
+  }, [isHubOpen, isDrawingModeActive, isWakeWordEnabled]);
   useEffect(() => { isConversingRef.current = isConversing; }, [isConversing]);
   useEffect(() => { isListeningForSpeechRef.current = isListeningForSpeech; }, [isListeningForSpeech]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
@@ -720,6 +761,8 @@ export function VoiceMemoAssistant() {
   }, []);
 
   const getGreeting = () => {
+    const personality = getResolvedAetherPersonality(aetherPersonalityRules);
+    const userName = personality.preferredUserName;
     const hours = new Date().getHours();
     let timeOfDay = "evening";
     if (hours >= 5 && hours < 12) {
@@ -727,20 +770,16 @@ export function VoiceMemoAssistant() {
     } else if (hours >= 12 && hours < 17) {
       timeOfDay = "afternoon";
     }
+
+    if (personality.verbosity === 'concise') {
+      return `Good ${timeOfDay}, ${userName}. Standing by for commands.`;
+    }
     
     const greetings = [
-      `Good ${timeOfDay}! Aether voice deck online. What ideas are we designing or brainstorming today?`,
-      `Good ${timeOfDay}! Welcome back to your central command center. I'm listening—what shall we build next?`,
-      `Aether virtual workspace fully synchronized. Let's map out a new project or expand on an existing design.`,
-      `Vocal nodes active and calibrated. Standing by to draft objectives, name projects, or sketch layouts.`,
-      `Synaptic core online. What rough project idea can we refine and shape into a full-scale plan today?`,
-      `Aether design assistant ready. Shall we brainstorm name ideas, outline checklists, or explore interface themes?`,
-      `Listening and prepared! Share your creative vision and let's craft something spectacular together.`,
-      `Good ${timeOfDay}! Aether intelligence hub activated. Do you want to review your active workspace or design a new app?`,
-      `Vocal nodes initialized. Speak or write your thoughts, and I will help you formulate a clean blueprint layout.`,
-      `Aether active in cooperative workspace. What core notes, tasks, or custom synapse ideas are we modeling today?`,
-      `Aether visualization deck online. Tell me what we should build, analyze, or deploy today!`,
-      `Your creative engineering partner is fully prepared. Let's design some layouts or brainstorm a fresh project.`
+      `Good ${timeOfDay}, ${userName}! Aether voice deck online. What ideas are we designing or brainstorming today?`,
+      `Good ${timeOfDay}, ${userName}! Welcome back to your central command center. I'm listening—what shall we build next?`,
+      `Aether virtual workspace fully synchronized, ${userName}. Ready when you are.`,
+      `Standing by, ${userName}. What shall we build or analyze today?`
     ];
     return greetings[Math.floor(Math.random() * greetings.length)];
   };
@@ -832,9 +871,30 @@ export function VoiceMemoAssistant() {
     convoHistoryRef.current = convoHistory;
   }, [convoHistory]);
 
-  // Save conversation history to local storage and sync to server when it changes
+  // Save conversation history to robust IndexedDB thread storage and sync to server when it changes
   useEffect(() => {
-    localStorage.setItem('aether_convo_history', JSON.stringify(convoHistory));
+    const activeSessionId = typeof localStorage !== 'undefined' ? (localStorage.getItem('aether_current_session_id') || 'session-default') : 'session-default';
+    
+    // Save to IndexedDB (asynchronous, limitless storage)
+    if (convoHistory.length > 0) {
+      const dbMessages = convoHistory.map((item, idx) => ({
+        id: `msg-voice-${idx}-${Date.now()}`,
+        role: (item.role === 'model' ? 'agent' : 'user') as 'user' | 'agent',
+        content: item.text,
+        timestamp: Date.now()
+      }));
+      aetherThreadStorage.saveMessages(activeSessionId, dbMessages).catch(err => {
+        console.warn("IndexedDB thread save warning:", err);
+      });
+    }
+
+    // Keep working memory lightweight in localStorage (< 50KB)
+    try {
+      const recentWindow = convoHistory.slice(-20);
+      aetherThreadStorage.safeLocalStorageSet('aether_convo_history', JSON.stringify(recentWindow));
+    } catch (err) {
+      console.warn("Could not write recent window to localStorage:", err);
+    }
     
     // Sync to backend central database / Server-Side Mobile Gateway Chat History
     if (!isPollingUpdateRef.current && convoHistory.length > 0) {
@@ -846,7 +906,6 @@ export function VoiceMemoAssistant() {
     }
 
     try {
-      const activeSessionId = localStorage.getItem('aether_current_session_id') || 'session-default';
       const savedSessions = localStorage.getItem('aether_chat_sessions');
       if (savedSessions) {
         const sessions = JSON.parse(savedSessions);
@@ -890,7 +949,7 @@ export function VoiceMemoAssistant() {
         });
         
         if (modified) {
-          localStorage.setItem('aether_chat_sessions', JSON.stringify(updatedSessions));
+          aetherThreadStorage.safeLocalStorageSet('aether_chat_sessions', JSON.stringify(updatedSessions));
           // Dispatch events to notify other components on the page
           window.dispatchEvent(new Event('storage'));
           window.dispatchEvent(new CustomEvent('aether_sync_chat', { detail: { sender: 'VoiceMemoAssistant' } }));
@@ -1814,6 +1873,7 @@ export function VoiceMemoAssistant() {
         projectContexts: contextPayload,
         cortexSynapses: cortexSynapses || [],
         notes: notes || [],
+        aetherPersonalityRules: aetherPersonalityRules || [],
         history: convoHistory,
         pendingNote: pendingNote,
         activeProjectId,
@@ -2564,20 +2624,21 @@ export function VoiceMemoAssistant() {
   // Manage Hands-Free Conversation Mode lifecycle
   useEffect(() => {
     if (isHubOpen) {
+      // Opening popup MUST default to Open Hands-Free mode
+      setIsConversing(true);
+      isConversingRef.current = true;
+      setHudTab('speak');
+
       // Warm up micro-permissions in the active document window context to avoid secure origin isolation
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then((stream) => {
           stream.getTracks().forEach(track => track.stop());
           addVocalDiagnostic("SUCCESS: Warm-up mic feed captured & released. Permission granted!");
-          if (isConversing) {
-            startContinuousConversationalListen();
-          }
+          startContinuousConversationalListen();
         })
         .catch((err) => {
           addVocalDiagnostic(`WARNING: Warm-up mic feed query failed with code: ${err.message}. Proceeding standalone.`);
-          if (isConversing) {
-            startContinuousConversationalListen();
-          }
+          startContinuousConversationalListen();
         });
     } else {
       if (activeRecogRef.current) {
@@ -2710,6 +2771,7 @@ export function VoiceMemoAssistant() {
             projectContexts: contextPayload,
             cortexSynapses: cortexSynapses || [],
             notes: notes || [],
+            aetherPersonalityRules: aetherPersonalityRules || [],
             history: convoHistory,
             pendingNote: pendingNote,
             activeProjectId,
@@ -2740,6 +2802,15 @@ export function VoiceMemoAssistant() {
     // AETHER IDENTITY & CONVERSATIONAL INTELLIGENCE INTERCEPTOR
     // -----------------------------------------------------------------
     if (
+      cleanInput.includes("google") ||
+      cleanInput.includes("search") ||
+      cleanInput.includes("youtube") ||
+      cleanInput.includes("video") ||
+      cleanInput.includes("tutorial") ||
+      cleanInput.includes("screencast") ||
+      cleanInput.includes("look up") ||
+      cleanInput.includes("find information") ||
+      cleanInput.includes("research") ||
       cleanInput.includes("call me") ||
       cleanInput.includes("my name is") ||
       cleanInput.includes("what should you call me") ||
@@ -2747,6 +2818,8 @@ export function VoiceMemoAssistant() {
       cleanInput.includes("what can you do") ||
       cleanInput.includes("capabilities") ||
       cleanInput.includes("take me to") ||
+      cleanInput.includes("take me back") ||
+      cleanInput.includes("previous project") ||
       cleanInput.includes("call") ||
       cleanInput.includes("remember this") ||
       cleanInput.includes("when i say") ||
@@ -2756,37 +2829,152 @@ export function VoiceMemoAssistant() {
       cleanInput.startsWith("switch to") ||
       cleanInput.startsWith("create") ||
       cleanInput.includes("show me the issues") ||
+      cleanInput.includes("open issues") ||
+      cleanInput.includes("blockers") ||
+      cleanInput.includes("blocking") ||
+      cleanInput.includes("what was i working on") ||
+      cleanInput.includes("what did i work on") ||
+      cleanInput.includes("what changed") ||
+      cleanInput.includes("whats changed") ||
+      cleanInput.includes("what should i work on") ||
+      cleanInput.includes("what is going on with") ||
+      cleanInput.includes("whats going on with") ||
+      cleanInput.includes("brainstorm") ||
+      cleanInput.includes("ideas") ||
+      cleanInput.includes("give me") ||
+      cleanInput.includes("save the second") ||
+      cleanInput.includes("save idea") ||
+      cleanInput.includes("save this idea") ||
+      cleanInput.includes("turn that into an issue") ||
+      cleanInput.includes("turn the second idea into an issue") ||
+      cleanInput.includes("make it an idea") ||
+      cleanInput.includes("actually make it an idea") ||
+      cleanInput.includes("subissue") ||
+      cleanInput.includes("sub task") ||
+      cleanInput.includes("sub-issue") ||
+      cleanInput.includes("safe to merge") ||
+      cleanInput.includes("check merge") ||
+      cleanInput.includes("merge safety") ||
+      cleanInput.includes("open repo") ||
+      cleanInput.includes("connected repo") ||
+      cleanInput.includes("compare") ||
+      cleanInput.includes("save as note") ||
+      cleanInput.includes("save this as a note") ||
       cleanInput.includes("make it high priority") ||
-      cleanInput.includes("search") ||
-      cleanInput.includes("youtube") ||
-      cleanInput.includes("video") ||
-      cleanInput.includes("tutorial") ||
-      cleanInput.includes("look up") ||
+      cleanInput.includes("make it medium priority") ||
+      cleanInput.includes("make it low priority") ||
+      cleanInput.includes("make it critical") ||
       cleanInput.includes("about it") ||
       cleanInput.includes("explaining") ||
       cleanInput.includes("explanation") ||
       cleanInput.includes("open the second") ||
       cleanInput.includes("open the first") ||
+      cleanInput.includes("open option") ||
+      cleanInput.includes("which one") ||
+      cleanInput.includes("recommend") ||
       cleanInput.includes("pull that website up") ||
       cleanInput.includes("what does this mean") ||
       cleanInput.includes("stop") ||
       cleanInput.includes("cancel")
     ) {
-      const processed = aetherConversationalEngine.processUserMessage(inputText, projects, activeProjectId);
-      if (processed && processed.responseText) {
-        setAetherFeedback({
-          transcript: inputText,
-          explanation: processed.responseText,
-          intent: 'conversational_action',
-          triggeredAction: `🗣️ Aether Intelligence: ${processed.responseText.slice(0, 50)}...`
-        });
-        triggerBrowserSpeechSynthesis(processed.responseText);
-
-        if (processed.actionToExecute) {
-          executeProposedAction(processed.actionToExecute);
+      aetherConversationalEngine.processUserMessageAsync(inputText, projects, activeProjectId, {
+        onNavigate: (path, projId) => {
+          if (projId) setActiveProjectId(projId);
+          navigate(path);
+        },
+        onProjectCreate: async (data) => {
+          const newId = addProject({
+            name: data.name,
+            description: data.description || "Created via Aether voice command.",
+            status: 'Planning',
+            brainstormIdeas: [],
+            seenRecommendedIdeas: [],
+            dreamRecommendations: []
+          });
+          setActiveProjectId(newId);
+          navigate('/projects');
+          return { id: newId, name: data.name };
+        },
+        onIssueCreate: async (data) => {
+          const issueId = addIssue({
+            title: data.title,
+            description: 'Created via Aether voice command.',
+            status: 'Todo',
+            priority: (data.priority as any) || 'Medium',
+            type: (data.type as any) || 'Task',
+            projectId: data.projectId,
+            labels: ['aether', 'voice'],
+            ...(data.parentId ? { parentId: data.parentId } : {})
+          });
+          return { id: issueId, title: data.title };
+        },
+        onIssueUpdate: async (data) => {
+          if (data.id) {
+            updateIssue(data.id, {
+              ...(data.title ? { title: data.title } : {}),
+              ...(data.priority ? { priority: data.priority as any } : {}),
+              ...(data.status ? { status: data.status as any } : {})
+            });
+          }
+        },
+        onIssueDelete: async (issueId) => {
+          if (issueId) {
+            deleteIssue(issueId);
+          }
+        },
+        onNoteCreate: async (data) => {
+          addNote({
+            title: data.title,
+            content: data.content || '',
+            projectId: data.projectId || activeProjectId
+          });
+        },
+        onIdeaCreate: async (data) => {
+          const targetProj = projects.find(p => p.id === (data.projectId || activeProjectId));
+          if (targetProj) {
+            const currentIdeas = targetProj.brainstormIdeas || [];
+            updateProject(targetProj.id, {
+              brainstormIdeas: [
+                ...currentIdeas,
+                {
+                  id: `idea-${Date.now()}`,
+                  text: data.title,
+                  details: data.description || '',
+                  status: 'approved' as const,
+                  createdAt: Date.now()
+                }
+              ]
+            });
+          }
+        },
+        openUrl: (url) => {
+          window.open(url, '_blank');
+        },
+        launchApp: (appName) => {
+          aetherDesktopIntelligence.launchApp(appName);
         }
-        return true;
-      }
+      }).then(processed => {
+        if (processed && processed.responseText) {
+          setConvoHistory(prev => [
+            ...prev,
+            { role: 'user' as const, text: inputText },
+            { role: 'model' as const, text: processed.responseText }
+          ].slice(-10));
+
+          setAetherFeedback({
+            transcript: inputText,
+            explanation: processed.responseText,
+            intent: 'conversational_action',
+            triggeredAction: `🗣️ Aether Intelligence: ${processed.responseText.slice(0, 50)}...`
+          });
+          triggerBrowserSpeechSynthesis(processed.speechText || processed.responseText);
+
+          if (processed.actionToExecute) {
+            executeProposedAction(processed.actionToExecute);
+          }
+        }
+      });
+      return true;
     }
 
     // -----------------------------------------------------------------
@@ -4352,6 +4540,7 @@ export function VoiceMemoAssistant() {
         projectContexts: contextPayload,
         cortexSynapses: cortexSynapses || [],
         notes: notes || [],
+        aetherPersonalityRules: aetherPersonalityRules || [],
         history: convoHistory,
         pendingNote: pendingNote,
         activeProjectId,
@@ -4367,7 +4556,13 @@ export function VoiceMemoAssistant() {
   };
 
   const executeProposedAction = (action: any) => {
-    const { intent, parsedData, explanation } = action;
+    const rawInput = action.transcript || action.userSpeak || action.text || "";
+    const firewallResult = evaluateRoutingFirewall(rawInput, action.intent, action.parsedData);
+
+    const intent = firewallResult.finalIntent;
+    const parsedData = firewallResult.parsedData;
+    const explanation = action.explanation;
+
     let actionTriggeredDisplay = "Consulted Central Workspace Map Interface.";
     setIsAssistantMinimized(false);
 
@@ -4603,10 +4798,16 @@ export function VoiceMemoAssistant() {
         const projName = parsedData.projectNameMentioned || '';
         let matchedProj = null;
 
+        const isGenericProjectNav = 
+          projName.toLowerCase().trim() === 'projects' || 
+          projName.toLowerCase().trim() === 'my projects' || 
+          projName.toLowerCase().trim() === 'take me to my projects' || 
+          projName.toLowerCase().trim() === 'all projects';
+
         if (parsedData.projectId) {
           matchedProj = projects.find(p => p.id === parsedData.projectId);
         }
-        if (!matchedProj && projName && projects.length > 0) {
+        if (!matchedProj && projName && !isGenericProjectNav && projects.length > 0) {
           matchedProj = projects.find(p => {
             const pName = p.name.toLowerCase().trim();
             return pName === projName.toLowerCase().trim() || pName.includes(projName.toLowerCase().trim()) || projName.toLowerCase().trim().includes(pName);
@@ -4631,15 +4832,41 @@ export function VoiceMemoAssistant() {
 
       case 'search_web': {
         const query = parsedData.query || 'latest developer news';
-        actionTriggeredDisplay = `🌐 Searching online for "${query}"...`;
-        window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+        actionTriggeredDisplay = `🌐 Opened Google Search for "${query}" in new tab.`;
+        const searchUrl = parsedData.url || `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+        try {
+          window.open(searchUrl, '_blank', 'noopener,noreferrer');
+        } catch (e) {
+          console.warn('Window open blocked for search_web:', e);
+        }
         break;
       }
 
       case 'search_youtube': {
         const query = parsedData.query || 'devspace aether';
-        actionTriggeredDisplay = `📺 Found YouTube video tutorials for "${query}". Opening YouTube results...`;
-        window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
+        actionTriggeredDisplay = `📺 YouTube video results retrieved for "${query}".`;
+        if (parsedData.forceExternal || parsedData.url) {
+          const ytUrl = parsedData.url || `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+          try {
+            window.open(ytUrl, '_blank', 'noopener,noreferrer');
+          } catch (e) {
+            console.warn('Window open blocked for search_youtube:', e);
+          }
+        }
+        break;
+      }
+
+      case 'open_url':
+      case 'open_search_result': {
+        const url = parsedData.url;
+        actionTriggeredDisplay = `🔗 Opened search result in new tab.`;
+        if (url) {
+          try {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          } catch (e) {
+            console.warn('Window open blocked for open_url:', e);
+          }
+        }
         break;
       }
 
@@ -4647,42 +4874,6 @@ export function VoiceMemoAssistant() {
         const appName = parsedData.appName || 'browser';
         actionTriggeredDisplay = `🚀 Launched system application "${appName}".`;
         aetherDesktopIntelligence.launchApp(appName);
-        break;
-      }
-
-      case 'create_issue': {
-        const title = parsedData.title || 'New Backlog Item';
-        const priority = parsedData.priority || 'Medium';
-        const pId = parsedData.projectId || activeProjectId || (projects[0]?.id || 'p-1');
-        
-        const newIssue = {
-          id: `issue-${Date.now()}`,
-          title,
-          description: 'Created via Aether voice directive.',
-          status: 'Backlog' as const,
-          priority: priority as any,
-          type: 'Task' as const,
-          projectId: pId,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        };
-        addIssue(newIssue);
-        actionTriggeredDisplay = `📋 Created issue "${title}" with priority ${priority}.`;
-        navigate('/issues');
-        break;
-      }
-
-      case 'update_issue_status': {
-        const priority = parsedData.priority || 'High';
-        const pId = parsedData.projectId || activeProjectId;
-        if (issues && issues.length > 0) {
-          const target = issues.find(i => !pId || i.projectId === pId) || issues[0];
-          if (target) {
-            updateIssue(target.id, { priority: priority as any });
-          }
-        }
-        actionTriggeredDisplay = `⚡ Updated top issue priority to ${priority}.`;
-        navigate('/issues');
         break;
       }
 
@@ -4716,7 +4907,7 @@ export function VoiceMemoAssistant() {
         const agentRole = parsedData.role || 'Code Engineer';
         const zone = parsedData.officeZone || 'dev_bay';
         const sector = parsedData.projectTaskSector || 'feature';
-        const engine = parsedData.modelEngine || 'gemini-3.5-flash';
+        const engine = parsedData.modelEngine || 'gemini-3.7-flash';
         const goals = parsedData.goals || ['Implement active backlog items', 'Conduct build checks'];
 
         const newAgent = {
@@ -4777,19 +4968,26 @@ export function VoiceMemoAssistant() {
       }
     }
 
+    const isProposalFlow = action.intent === 'DEVSPACE_CUSTOMIZATION' || proposedAction !== null;
+    const speechMessage = isProposalFlow 
+      ? `Proposal approved. Executed: ${actionTriggeredDisplay}`
+      : (action.explanation || actionTriggeredDisplay);
+
     setAetherFeedback({
       transcript: action.transcript,
-      explanation: `Action processed. ${actionTriggeredDisplay}`,
+      explanation: speechMessage,
       intent: action.intent,
       triggeredAction: actionTriggeredDisplay
     });
 
     setConvoHistory(prev => [
       ...prev,
-      { role: 'model' as const, text: `Proposal approved. Executed: ${actionTriggeredDisplay}` }
+      { role: 'model' as const, text: speechMessage }
     ].slice(-10));
 
-    triggerBrowserSpeechSynthesis(`Proposal approved. ${actionTriggeredDisplay}`);
+    if (voicePlayback) {
+      triggerBrowserSpeechSynthesis(speechMessage);
+    }
     setProposedAction(null);
   };
 
@@ -4828,15 +5026,65 @@ export function VoiceMemoAssistant() {
       setAetherPersonalityRules(prev => prev.filter(r => r.toLowerCase() !== ruleToDelete.toLowerCase()));
     }
 
+    const userSpeak = String(transcript || "[Voice dispatch]");
+
+    // Diagnostic logging requirement
+    console.log('[Aether Routing Diagnostic]', {
+      userInput: userSpeak,
+      detectedIntent: intent,
+      confidence: data.confidence || 0.95,
+      selectedEngine: data.selectedEngine || (isFromStream ? 'AetherStreamEngine' : 'AetherConversationalEngine'),
+      selectedTool: data.selectedTool || intent,
+      result: explanation || 'Processed successfully'
+    });
+
     // Intercept with Voice Triggers matches
     if (transcript && checkVoiceTriggers(transcript)) {
       return;
     }
 
-    const userSpeak = String(transcript || "[Voice dispatch]");
+    // DevSpace Customization proposals (ONLY when user explicitly requests UI customization)
+    if (intent === 'DEVSPACE_CUSTOMIZATION' || intent === 'edit_devspace') {
+      setIsHubOpen(true);
+      setIsAssistantMinimized(false);
+      setHudTab('speak');
+      setIsConversing(true);
 
-    // Verify if we should route to validation/proposal first
-    const modifyingIntents = [
+      const promptInput = userSpeak || (parsedData && parsedData.prompt) || "Customize DevSpace layout";
+      const activeProfile = aetherInstanceEngine.getActiveProfile();
+      const proposal = aetherInstanceEngine.generateProposalFromPrompt(promptInput, activeProfile);
+      const proposalMsg = explanation || `Generated DevSpace customization proposal: "${proposal.title}". Would you like to apply it?`;
+
+      setProposedAction({
+        id: proposal.id || crypto.randomUUID(),
+        intent: 'DEVSPACE_CUSTOMIZATION',
+        parsedData: { prompt: promptInput, proposal },
+        explanation: proposalMsg,
+        actionDisplay: `DevSpace Customization: ${proposal.title}`,
+        transcript: userSpeak
+      });
+
+      setConvoHistory(prev => [
+        ...prev,
+        { role: 'user' as const, text: userSpeak },
+        { role: 'model' as const, text: proposalMsg }
+      ].slice(-10));
+
+      setAetherFeedback({
+        transcript: userSpeak,
+        explanation: proposalMsg,
+        intent: 'DEVSPACE_CUSTOMIZATION',
+        triggeredAction: `🎨 DevSpace Customization Proposal: "${proposal.title}"`
+      });
+
+      if (voicePlayback) {
+        triggerBrowserSpeechSynthesis(proposalMsg);
+      }
+      return;
+    }
+
+    // Standard operational intents execute immediately without proposals
+    const standardIntents = [
       'create_project', 
       'create_issue', 
       'add_note', 
@@ -4847,166 +5095,19 @@ export function VoiceMemoAssistant() {
       'approve_dream_recommendation',
       'navigate_to',
       'start_dreaming',
-      'create_agent'
+      'create_agent',
+      'search_youtube',
+      'open_url',
+      'launch_app',
+      'github_autopilot_deploy'
     ];
-    if (intent && modifyingIntents.includes(intent) && parsedData) {
-      let displayTitle = "";
-      let targetPath = "";
-      if (intent === 'create_project') {
-        displayTitle = `Create Project: "${parsedData.name || 'New Project'}"`;
-        targetPath = '/projects';
-      } else if (intent === 'create_issue') {
-        displayTitle = `Create Operational Task: "${parsedData.title || 'Task Summary'}"`;
-        targetPath = '/issues';
-      } else if (intent === 'add_note') {
-        displayTitle = `Add Workspace Note: "${parsedData.title || 'Vocal Note'}"`;
-        targetPath = '/notes';
-      } else if (intent === 'add_brainstorm_idea') {
-        displayTitle = `Add Brainstorm Concept: "${parsedData.text || 'Idea Headline'}"`;
-        targetPath = '/ideas';
-      } else if (intent === 'add_cortex_synapse') {
-        displayTitle = `Enforce Cognitive Memory Synapse: "${parsedData.name || 'Synaptic Rule'}"`;
-        targetPath = '/brain';
-      } else if (intent === 'update_issue_status') {
-        displayTitle = `Update Task "${parsedData.issueTitleMentioned || 'Task status'}" to ${parsedData.newStatus || 'Done'}`;
-        targetPath = '/issues';
-      } else if (intent === 'delete_issue') {
-        displayTitle = `Delete Task "${parsedData.issueTitleMentioned || 'Task summary'}"`;
-        targetPath = '/issues';
-      } else if (intent === 'approve_dream_recommendation') {
-        displayTitle = `Approve Dream Recommendation: "${parsedData.title || 'Dream Optimization'}"`;
-        targetPath = '/projects';
-      } else if (intent === 'navigate_to') {
-        displayTitle = `Navigate to Workspace Section: "${parsedData.path || '/'}"`;
-        targetPath = parsedData.path || '/';
-      } else if (intent === 'start_dreaming') {
-        displayTitle = `Initiate Project Autonomous Dream: "${parsedData.projectNameMentioned || 'Active Project'}"`;
-        targetPath = '/projects';
-      } else if (intent === 'create_agent') {
-        displayTitle = `Deploy Specialized AI Developer Agent: "${parsedData.name || 'AI Developer Pro'}"`;
-        targetPath = '/agents';
-      }
 
-      // Intercept project creation with confirmation prompt before executing
-      if (intent === 'create_project') {
-        setIsHubOpen(true);
-        setIsAssistantMinimized(false);
-        setHudTab('speak');
-        setIsConversing(true);
-
-        const proposedName = parsedData.name || 'New Project';
-        const proposalMsg = `You want me to create a project named "${proposedName}", correct?`;
-
-        setProposedAction({
-          id: crypto.randomUUID(),
-          intent: intent || 'create_project',
-          parsedData,
-          explanation: explanation || proposalMsg,
-          actionDisplay: displayTitle,
-          transcript: transcript || ''
-        });
-
-        setConvoHistory(prev => [
-          ...prev,
-          { role: 'user' as const, text: userSpeak },
-          { role: 'model' as const, text: proposalMsg }
-        ].slice(-10));
-
-        setAetherFeedback({
-          transcript,
-          explanation: proposalMsg,
-          intent,
-          triggeredAction: `📋 Action Proposed: Create Project "${proposedName}"`
-        });
-
-        if (voicePlayback) {
-          triggerBrowserSpeechSynthesis(proposalMsg);
-        }
-
-        setTimeout(() => {
-          if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
-            startContinuousConversationalListen();
-          }
-        }, 1200);
-
-        return;
-      }
-
-      // Execute action immediately!
+    if (intent && standardIntents.includes(intent) && parsedData) {
       executeProposedAction({
         intent,
         parsedData,
         explanation
       });
-
-      // Navigate so they see it being done!
-      if (targetPath) {
-        navigate(targetPath);
-        setIsAssistantMinimized(true); // Minimize and move to the sidebar on navigation
-      }
-
-      const creationFollowUpPhrases = [
-        "What's our next step with this?",
-        "All set! What would you like us to work on next?",
-        "I've updated that for you. What's on your mind now?",
-        "Done. What should we tackle next?"
-      ];
-      const randomPrompt = creationFollowUpPhrases[Math.floor(Math.random() * creationFollowUpPhrases.length)];
-      const baseMessage = explanation || `Done. I have created that item for you and navigated to the relevant page.`;
-      const voiceMessage = `${baseMessage} ${randomPrompt}`;
-      
-      setConvoHistory(prev => [
-        ...prev,
-        { role: 'user' as const, text: userSpeak },
-        { role: 'model' as const, text: voiceMessage }
-      ].slice(-10));
-
-      setAetherFeedback({
-        transcript,
-        explanation: voiceMessage,
-        intent,
-        triggeredAction: `⚡ Instantly Executed & Navigated: "${displayTitle}"`
-      });
-
-      if (voicePlayback) {
-        triggerBrowserSpeechSynthesis(voiceMessage);
-      }
-
-      // Automatically stage new interactive suggestion item on the right
-      const typeMap: Record<string, 'note' | 'task' | 'brainstorm' | 'synapse'> = {
-        'create_project': 'note',
-        'create_issue': 'task',
-        'add_note': 'note',
-        'add_brainstorm_idea': 'brainstorm',
-        'add_cortex_synapse': 'synapse'
-      };
-      const extractedType = typeMap[intent] || 'note';
-      const extTitle = parsedData.title || parsedData.name || parsedData.text || "Suggested Action Card";
-      const extContent = parsedData.content || parsedData.description || parsedData.details || parsedData.desc || "";
-
-      setSessionItems(prev => {
-        const possesses = prev.some(i => i.title.toLowerCase() === extTitle.toLowerCase());
-        if (possesses) return prev;
-        return [
-          ...prev,
-          {
-            id: Math.random().toString(36).substring(7),
-            type: extractedType,
-            title: extTitle,
-            content: extContent || "Drafting transcription details...",
-            saved: true,
-            isSuggested: false
-          }
-        ];
-      });
-
-      // Keep assistant open and recycle microphone to continue conversing!
-      setTimeout(() => {
-        if (isHubOpenRef.current && isConversingRef.current && !isRecordingRef.current && !isProcessingRef.current) {
-          startContinuousConversationalListen();
-        }
-      }, 250);
-
       return;
     }
 
@@ -5274,16 +5375,19 @@ export function VoiceMemoAssistant() {
   };
 
   const triggerBrowserSpeechSynthesis = (text: string) => {
-    if (isAetherMutedRef.current) {
-      console.log("Aether is muted. Speech suppressed:", text);
+    if (!voicePlaybackRef.current) {
+      console.log("Speech audio output is disabled. Speech suppressed:", text);
       return;
     }
     activeSpeechTextRef.current = text;
     try {
       if (!window.speechSynthesis) return;
       window.speechSynthesis.cancel();
-      // Remove symbols/stars for clear speech
-      const cleanText = text.replace(/[*#`_\-]/g, '');
+      // Remove emojis and symbols/stars for crystal-clear verbalization
+      const cleanText = text
+        .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E0}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '')
+        .replace(/[*#`_\-•\[\]\(\)]/g, '')
+        .trim();
       const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.rate = speechRate || 1.18;
       utterance.pitch = speechPitch || 1.0; // Warm, natural voice pitch
@@ -5424,7 +5528,7 @@ export function VoiceMemoAssistant() {
 
 
   return (
-    <>
+    <AetherErrorBoundary>
       {/* 1. Large Immersive Split-Dashboard Modal Overlay */}
       <AnimatePresence>
         {isHubOpen && !isDrawingModeActive && (
@@ -5521,7 +5625,7 @@ export function VoiceMemoAssistant() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.1, ease: "easeOut" }}
-              className={`fixed select-none selection:bg-yellow-500/30 flex items-center justify-center transition-all duration-300 ${
+              className={`fixed selection:bg-yellow-500/30 flex items-center justify-center transition-all duration-300 ${
                 isAssistantMinimized 
                   ? "inset-x-0 bottom-0 top-auto h-[48vh] w-full z-[90] pointer-events-none bg-transparent backdrop-blur-none sm:right-4 sm:bottom-[108px] sm:top-4 sm:w-[420px] sm:max-w-[95vw] sm:h-auto sm:max-h-[85vh] sm:inset-auto sm:z-[90] lg:right-0 lg:bottom-0 lg:top-0 lg:h-screen lg:w-[440px] lg:max-h-none lg:inset-auto lg:z-[90]" 
                   : "inset-0 z-[100] bg-black/85 backdrop-blur-md p-0 sm:p-4 pointer-events-auto"
@@ -5929,10 +6033,34 @@ export function VoiceMemoAssistant() {
                       </div>
 
                       {/* Chat bubbles container */}
-                      <div className="flex-grow min-h-0 pr-2 space-y-3.5 rounded-xl bg-zinc-950/40 p-3 border border-zinc-900/60 flex flex-col justify-between">
-                        <div className="space-y-3.5 flex-1 overflow-y-auto mb-2">
+                      <div className="flex-grow min-h-0 pr-2 space-y-2 rounded-xl bg-zinc-950/40 p-3 border border-zinc-900/60 flex flex-col justify-between select-text">
+                        {convoHistory.length > 0 && (
+                          <div className="flex items-center justify-between pb-2 border-b border-zinc-900/80 text-[10px] text-zinc-500 font-mono">
+                            <span className="flex items-center gap-1.5 text-zinc-400">
+                              <MessageSquare size={11} className="text-yellow-400" />
+                              <span>{convoHistory.length} messages</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allText = convoHistory
+                                  .map((m) => `${m.role === 'user' ? 'User' : 'Aether'}:\n${m.text}`)
+                                  .join('\n\n---\n\n');
+                                navigator.clipboard.writeText(allText);
+                                setCopiedAll(true);
+                                setTimeout(() => setCopiedAll(false), 2000);
+                              }}
+                              className="px-2 py-0.5 rounded bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-yellow-400 border border-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Copy full conversation"
+                            >
+                              {copiedAll ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                              <span>{copiedAll ? 'Copied All' : 'Copy All'}</span>
+                            </button>
+                          </div>
+                        )}
+                        <div className="space-y-3.5 flex-1 overflow-y-auto mb-2 select-text">
                           {convoHistory.length === 0 && !aetherFeedback ? (
-                            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+                            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 select-none">
                               <div className="relative flex items-center justify-center w-24 h-24">
                                 {/* Outer concentric pulsing rings */}
                                 <motion.div 
@@ -5964,25 +6092,70 @@ export function VoiceMemoAssistant() {
                               </div>
                             </div>
                           ) : (
-                            <div className="space-y-3.5">
+                            <div className="space-y-3.5 select-text">
                               {convoHistory.map((item, idX) => (
-                                <div key={idX} className={`flex flex-col ${item.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                  <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed border transition-all ${
+                                <div key={idX} className={`flex flex-col group/msg ${item.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                  <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed border transition-all relative select-text ${
                                     item.role === 'user'
                                       ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-100 rounded-tr-none font-sans'
                                       : 'bg-zinc-900/60 border-zinc-800 text-zinc-200 rounded-tl-none font-sans'
                                   }`}>
-                                    <span className="text-[8px] tracking-widest uppercase font-mono block text-left mb-1 opacity-60">
-                                      {item.role === 'user' ? '👨‍💻 Dispatch command' : '🤖 Aether Synthesis'}
-                                    </span>
-                                    <p className="leading-relaxed whitespace-pre-wrap">{item.text}</p>
+                                    <div className="flex items-center justify-between gap-2 mb-1.5 select-none">
+                                      <span className="text-[8px] tracking-widest uppercase font-mono block text-left opacity-60">
+                                        {item.role === 'user' ? '👨‍💻 Dispatch command' : '🤖 Aether Synthesis'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(item.text);
+                                          setCopiedMessageIndex(idX);
+                                          setTimeout(() => setCopiedMessageIndex(null), 2000);
+                                        }}
+                                        className="opacity-60 group-hover/msg:opacity-100 p-0.5 hover:text-yellow-400 text-zinc-400 rounded transition-opacity cursor-pointer"
+                                        title="Copy message text"
+                                      >
+                                        {copiedMessageIndex === idX ? (
+                                          <span className="flex items-center gap-0.5 text-[8px] text-emerald-400 font-mono">
+                                            <Check size={10} /> Copied
+                                          </span>
+                                        ) : (
+                                          <Copy size={11} />
+                                        )}
+                                      </button>
+                                    </div>
+                                    
+                                    {item.role === 'user' ? (
+                                      <p className="leading-relaxed whitespace-pre-wrap select-text">{item.text}</p>
+                                    ) : (
+                                      <div className="markdown-body prose prose-invert prose-p:leading-relaxed prose-sm text-zinc-250 max-w-none select-text">
+                                        <Markdown
+                                          remarkPlugins={[remarkGfm]}
+                                          components={{
+                                            a: ({ node, ...props }) => (
+                                              <a
+                                                {...props}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-yellow-400 font-medium hover:underline inline-flex items-center gap-0.5"
+                                              >
+                                                {props.children}
+                                                <ExternalLink size={10} className="inline opacity-70" />
+                                              </a>
+                                            )
+                                          }}
+                                        >
+                                          {item.text}
+                                        </Markdown>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ))}
 
                               {/* Proposed Action Confirmation Panel */}
                               {proposedAction && (
-                                <div className="mt-3 bg-zinc-900/95 border-2 border-yellow-500/40 rounded-2xl p-4 space-y-3 shadow-lg hover:shadow-yellow-500/5 transition-all text-left">
+                                <div className="mt-3 bg-zinc-900/95 border-2 border-yellow-500/40 rounded-2xl p-4 space-y-3 shadow-lg hover:shadow-yellow-500/5 transition-all text-left select-text">
                                   <div className="flex items-center gap-2">
                                     <span className="p-1.5 rounded-lg bg-yellow-500/20 text-yellow-400">
                                       <BrainCircuit size={14} className="animate-pulse" />
@@ -5993,7 +6166,7 @@ export function VoiceMemoAssistant() {
                                     </div>
                                   </div>
 
-                                  <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-805 text-xs text-zinc-300 font-sans space-y-1">
+                                  <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-805 text-xs text-zinc-300 font-sans space-y-1 select-text">
                                     <div className="font-bold text-yellow-400 font-mono text-[10px] uppercase">
                                       {proposedAction.actionDisplay}
                                     </div>
@@ -6025,12 +6198,37 @@ export function VoiceMemoAssistant() {
 
                               {/* Direct Aether dynamic single fallback feedback */}
                               {aetherFeedback?.explanation && convoHistory.length === 0 && (
-                                <div className="flex flex-col items-start">
-                                  <div className="max-w-[85%] p-3.5 rounded-2xl rounded-tl-none bg-zinc-900/60 border border-zinc-800 text-zinc-200 text-xs leading-relaxed">
-                                    <span className="text-[8px] tracking-widest uppercase font-mono block text-left mb-1.5 text-yellow-400 font-black">
-                                      🤖 Aether Synthesis
-                                    </span>
-                                    <p>{aetherFeedback.explanation}</p>
+                                <div className="flex flex-col items-start select-text">
+                                  <div className="max-w-[85%] p-3.5 rounded-2xl rounded-tl-none bg-zinc-900/60 border border-zinc-800 text-zinc-200 text-xs leading-relaxed select-text">
+                                    <div className="flex items-center justify-between gap-2 mb-1.5 select-none">
+                                      <span className="text-[8px] tracking-widest uppercase font-mono block text-left text-yellow-400 font-black">
+                                        🤖 Aether Synthesis
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(aetherFeedback.explanation);
+                                          setCopiedMessageIndex(9999);
+                                          setTimeout(() => setCopiedMessageIndex(null), 2000);
+                                        }}
+                                        className="p-0.5 hover:text-yellow-400 text-zinc-400 rounded transition-opacity cursor-pointer"
+                                        title="Copy feedback"
+                                      >
+                                        {copiedMessageIndex === 9999 ? (
+                                          <span className="flex items-center gap-0.5 text-[8px] text-emerald-400 font-mono">
+                                            <Check size={10} /> Copied
+                                          </span>
+                                        ) : (
+                                          <Copy size={11} />
+                                        )}
+                                      </button>
+                                    </div>
+                                    <div className="markdown-body prose prose-invert prose-p:leading-relaxed prose-sm text-zinc-250 max-w-none select-text">
+                                      <Markdown remarkPlugins={[remarkGfm]}>
+                                        {aetherFeedback.explanation}
+                                      </Markdown>
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -6170,227 +6368,132 @@ export function VoiceMemoAssistant() {
                       </div>
                     )}
 
-                    {/* Interaction Engine Mode Option Switcher */}
-                    <div className="flex items-center justify-between border-b border-zinc-850 pb-2 mb-2 font-sans select-none">
-                      <span className="text-[10px] uppercase font-black text-zinc-500 tracking-wider font-mono">Interaction Engine</span>
-                      <div className="flex bg-zinc-950/70 p-0.5 rounded-lg border border-zinc-850">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsConversing(false);
-                            // Cleanup active conversational listen if any
-                            if (activeRecogRef.current) {
-                              activeRecogRef.current.onend = null;
-                              try { activeRecogRef.current.stop(); } catch(e){}
-                              activeRecogRef.current = null;
-                            }
-                            setIsListeningForSpeech(false);
-                          }}
-                          className={`px-2 py-1 text-[9px] font-extrabold rounded-md transition-all cursor-pointer ${
-                            !isConversing 
-                              ? 'bg-amber-500/15 text-yellow-400 border border-yellow-500/10' 
-                              : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
-                          }`}
-                        >
-                          Manual Voice Memo
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsConversing(true);
-                            setTimeout(() => {
-                              startContinuousConversationalListen();
-                            }, 150);
-                          }}
-                          className={`px-2 py-1 text-[9px] font-extrabold rounded-md transition-all cursor-pointer ${
-                            isConversing 
-                              ? 'bg-amber-500/15 text-yellow-400 border border-yellow-500/10 animate-pulse' 
-                              : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
-                          }`}
-                        >
-                          Hands-Free Hands On [Active]
-                        </button>
-                      </div>
-                    </div>
-
                     {/* Microphone capture tray */}
                     {!isProcessing && (
                       <div className="flex flex-col items-center justify-center py-1">
-                        {isConversing ? (
-                          /* Interactive Hands-Free Voice Conversational Dashboard Tray */
-                          <div className="w-full">
-                            {isMicPermissionBlocked ? (
-                              /* 1. Mic permission blocked warning & Troubleshooting widget */
-                              <div 
-                                onClick={() => {
-                                  setIsMicPermissionBlocked(false);
-                                  navigator.mediaDevices.getUserMedia({ audio: true })
-                                    .then((stream) => {
-                                        stream.getTracks().forEach(track => track.stop());
-                                        addVocalDiagnostic("SUCCESS: Microphone permission calibrated manually!");
-                                        startContinuousConversationalListen();
-                                    })
-                                    .catch((err) => {
-                                        addVocalDiagnostic(`ERROR: Re-requesting microphone failed with: ${err.message}`);
-                                    });
-                                }}
-                                className="w-full bg-[#1c1112] hover:bg-[#201415] border border-rose-500/20 rounded-xl p-3.5 flex flex-col gap-2.5 cursor-pointer transition-all text-left shadow-lg"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 text-rose-400 font-sans font-bold text-xs uppercase tracking-wider">
-                                    <span className="relative flex h-2 w-2 shrink-0">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
-                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
-                                    </span>
-                                    <span>Microphone Not Detected</span>
-                                  </div>
-                                  <span className="px-2 py-0.5 bg-rose-500/20 border border-rose-500/30 text-[9px] font-mono text-rose-300 rounded font-black tracking-wider uppercase animate-pulse">CLICK TO FIX</span>
-                                </div>
-                                
-                                <p className="text-[11px] text-zinc-300 leading-normal">
-                                  Your browser blocked standard microphone capture. <span className="text-yellow-400 font-extrabold underline">Tap here to re-prompt and authorize mic feeds</span> so you can talk to Aether.
-                                </p>
-                                
-                                <div className="bg-zinc-950/70 p-2.5 rounded-lg border border-zinc-900 text-[10px] text-zinc-400 font-sans space-y-1">
-                                  <p className="font-extrabold text-zinc-300 uppercase tracking-wider text-[8px] font-mono">Chrome / Safari Fix Guide:</p>
-                                  <p>1. Look at your address bar (near URL refresh button) & look for a <strong className="text-zinc-200">mic/camera lock icon</strong>.</p>
-                                  <p>2. Tap it, and set <strong className="text-emerald-400">Microphone to "Allow"</strong>.</p>
-                                  <p>3. Tap anywhere inside this window to wake up the Aether standby circuit.</p>
-                                </div>
-                              </div>
-                            ) : isSpeechActive ? (
-                              /* 2. AI is currently speaking - clicking anywhere cancels and listens! */
-                              <div 
-                                onClick={() => handleIntelligentInterrupt()}
-                                className="w-full bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-all animate-pulse shadow-sm"
-                              >
-                                <div className="text-left font-sans flex items-center gap-2.5">
-                                  <span className="relative flex h-3 w-3 shrink-0">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+                        {/* Interactive Hands-Free Voice Conversational Dashboard Tray */}
+                        <div className="w-full">
+                          {isMicPermissionBlocked ? (
+                            /* 1. Mic permission blocked warning & Troubleshooting widget */
+                            <div 
+                              onClick={() => {
+                                setIsMicPermissionBlocked(false);
+                                navigator.mediaDevices.getUserMedia({ audio: true })
+                                  .then((stream) => {
+                                      stream.getTracks().forEach(track => track.stop());
+                                      addVocalDiagnostic("SUCCESS: Microphone permission calibrated manually!");
+                                      startContinuousConversationalListen();
+                                  })
+                                  .catch((err) => {
+                                      addVocalDiagnostic(`ERROR: Re-requesting microphone failed with: ${err.message}`);
+                                  });
+                              }}
+                              className="w-full bg-[#1c1112] hover:bg-[#201415] border border-rose-500/20 rounded-xl p-3.5 flex flex-col gap-2.5 cursor-pointer transition-all text-left shadow-lg"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-rose-400 font-sans font-bold text-xs uppercase tracking-wider">
+                                  <span className="relative flex h-2 w-2 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
                                   </span>
-                                  <div>
-                                    <span className="text-[9px] font-mono text-amber-500 block leading-none font-bold uppercase tracking-wider">AETHER COGNITIVE FEEDBACK ACTIVE</span>
-                                    <span className="text-xs font-bold text-zinc-100 mt-0.5 block">AI is speaking... Tap anywhere to interrupt & speak!</span>
-                                  </div>
+                                  <span>Microphone Not Detected</span>
                                 </div>
-                                <div className="px-2 py-1 bg-amber-500/20 text-yellow-400 text-[9px] font-black tracking-wide border border-yellow-500/20 rounded-md">
-                                  INTERRUPT
+                                <span className="px-2 py-0.5 bg-rose-500/20 border border-rose-500/30 text-[9px] font-mono text-rose-300 rounded font-black tracking-wider uppercase animate-pulse">CLICK TO FIX</span>
+                              </div>
+                              
+                              <p className="text-[11px] text-zinc-300 leading-normal">
+                                Your browser blocked standard microphone capture. <span className="text-yellow-400 font-extrabold underline">Tap here to re-prompt and authorize mic feeds</span> so you can talk to Aether.
+                              </p>
+                              
+                              <div className="bg-zinc-950/70 p-2.5 rounded-lg border border-zinc-900 text-[10px] text-zinc-400 font-sans space-y-1">
+                                <p className="font-extrabold text-zinc-300 uppercase tracking-wider text-[8px] font-mono">Chrome / Safari Fix Guide:</p>
+                                <p>1. Look at your address bar (near URL refresh button) & look for a <strong className="text-zinc-200">mic/camera lock icon</strong>.</p>
+                                <p>2. Tap it, and set <strong className="text-emerald-400">Microphone to "Allow"</strong>.</p>
+                                <p>3. Tap anywhere inside this window to wake up the Aether standby circuit.</p>
+                              </div>
+                            </div>
+                          ) : isSpeechActive ? (
+                            /* 2. AI is currently speaking - clicking anywhere cancels and listens! */
+                            <div 
+                              onClick={() => handleIntelligentInterrupt()}
+                              className="w-full bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-all animate-pulse shadow-sm"
+                            >
+                              <div className="text-left font-sans flex items-center gap-2.5">
+                                <span className="relative flex h-3 w-3 shrink-0">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+                                </span>
+                                <div>
+                                  <span className="text-[9px] font-mono text-amber-500 block leading-none font-bold uppercase tracking-wider">AETHER COGNITIVE FEEDBACK ACTIVE</span>
+                                  <span className="text-xs font-bold text-zinc-100 mt-0.5 block">AI is speaking... Tap anywhere to interrupt & speak!</span>
                                 </div>
                               </div>
-                            ) : isListeningForSpeech ? (
-                              /* 3. Microphone is open and listening in real-time */
-                              <div className="w-full space-y-2.5">
-                                <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-900 shadow-inner">
-                                  <div className="flex items-center gap-2">
-                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                                    </span>
-                                    <span className="font-mono text-zinc-300 text-xs font-black uppercase tracking-widest">
-                                      {speechTransitText ? 'Aether Hearing You...' : 'Speak Now...'}
-                                    </span>
-                                  </div>
-
-                                  {/* Dynamic visual spectrum wave using simulated buffer */}
-                                  <div className="flex items-end gap-[3px] h-4 overflow-hidden max-w-[80px]">
-                                    {Array.from({ length: 8 }).map((_, i) => {
-                                      const h = speechTransitText ? Math.max(3, Math.round(Math.random() * 20 + 4)) : 3;
-                                      return (
-                                        <span
-                                          key={i}
-                                          className="w-[3.5px] rounded-t bg-emerald-500 transition-all duration-100"
-                                          style={{ height: `${h}px` }}
-                                        />
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-
-                                {speechTransitText && (
-                                  <div className="bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl text-left">
-                                    <span className="text-[8px] tracking-wider uppercase font-extrabold text-emerald-500 font-mono block mb-1">Live Transcript</span>
-                                    <p className="text-xs font-medium text-emerald-100 italic leading-snug">"{speechTransitText}"</p>
-                                  </div>
-                                )}
-
-                                <div className="flex justify-end pt-1">
-                                  <button
-                                    onClick={() => setIsUltraCompact(true)}
-                                    className="px-2.5 py-1 text-[9px] font-black tracking-wide bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm select-none uppercase font-mono animate-pulse"
-                                    title="Minimize to floating micro-pill while keeping conversational microphone active"
-                                  >
-                                    <Minimize2 size={11} /> Minimize & Keep Conversing
-                                  </button>
-                                </div>
+                              <div className="px-2 py-1 bg-amber-500/20 text-yellow-400 text-[9px] font-black tracking-wide border border-yellow-500/20 rounded-md">
+                                INTERRUPT
                               </div>
-                            ) : (
-                              /* 4. Silent wait state or starting up state */
-                              <div 
-                                onClick={startContinuousConversationalListen}
-                                className="w-full bg-zinc-950 hover:bg-zinc-900 p-3 rounded-xl border border-zinc-850 flex items-center justify-between cursor-pointer transition-all"
-                              >
-                                <div className="text-left font-sans flex items-center gap-2.5">
-                                  <span className="w-2.5 h-2.5 rounded-full bg-zinc-650 animate-pulse shrink-0" />
-                                  <div>
-                                    <span className="text-[9px] font-mono text-zinc-550 block leading-none">AETHER HANDS-FREE SESSION READY</span>
-                                    <span className="text-xs font-bold text-zinc-400">Mic in standby mode. Speak to wake or tap to force-listen!</span>
-                                  </div>
-                                </div>
-                                <div className="w-8 h-8 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400">
-                                  <Mic size={12} className="animate-pulse" />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          /* CLASSIC PUSH-TO-TALK CAPTURE TRAY */
-                          <div className="w-full">
-                            {!isRecording ? (
-                              <div className="flex items-center justify-between w-full gap-4">
-                                <div className="text-left font-sans">
-                                  <span className="text-[10px] font-mono text-zinc-500 block leading-none">SPEECH COMMAND</span>
-                                  <span className="text-xs font-semibold text-zinc-300">Click microphone to dictate</span>
-                                </div>
-                                <button
-                                  onClick={startVoiceCapture}
-                                  type="button"
-                                  className="w-12 h-12 rounded-full cursor-pointer bg-gradient-to-tr from-amber-600 to-yellow-450 hover:from-amber-500 hover:to-yellow-350 flex items-center justify-center text-zinc-950 shadow-xl transition-all duration-300 active:scale-95 border border-white/10"
-                                >
-                                  <Mic size={18} />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="w-full flex items-center justify-between gap-4 bg-zinc-950 p-2.5 rounded-xl border border-zinc-850">
+                            </div>
+                          ) : isListeningForSpeech ? (
+                            /* 3. Microphone is open and listening in real-time */
+                            <div className="w-full space-y-2.5">
+                              <div className="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-900 shadow-inner">
                                 <div className="flex items-center gap-2">
-                                  <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
-                                  <span className="font-mono text-zinc-200 text-xs font-black">
-                                    RECORDING {recordingSeconds}s
+                                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                                  </span>
+                                  <span className="font-mono text-zinc-300 text-xs font-black uppercase tracking-widest">
+                                    {speechTransitText ? 'Aether Hearing You...' : 'Speak Now...'}
                                   </span>
                                 </div>
 
-                                {/* Sound spectrum wave */}
-                                <div className="flex items-end gap-[3px] h-6 overflow-hidden max-w-[100px]">
-                                  {frequencyBuffer.slice(0, 10).map((h, i) => (
-                                    <span
-                                      key={i}
-                                      className="w-[3px] rounded-t bg-yellow-500 transition-all duration-75"
-                                      style={{ height: `${Math.max(2, h / 1.5)}px` }}
-                                    />
-                                  ))}
+                                {/* Dynamic visual spectrum wave using simulated buffer */}
+                                <div className="flex items-end gap-[3px] h-4 overflow-hidden max-w-[80px]">
+                                  {Array.from({ length: 8 }).map((_, i) => {
+                                    const h = speechTransitText ? Math.max(3, Math.round(Math.random() * 20 + 4)) : 3;
+                                    return (
+                                      <span
+                                        key={i}
+                                        className="w-[3.5px] rounded-t bg-emerald-500 transition-all duration-100"
+                                        style={{ height: `${h}px` }}
+                                      />
+                                    );
+                                  })}
                                 </div>
+                              </div>
 
+                              {speechTransitText && (
+                                <div className="bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl text-left">
+                                  <span className="text-[8px] tracking-wider uppercase font-extrabold text-emerald-500 font-mono block mb-1">Live Transcript</span>
+                                  <p className="text-xs font-medium text-emerald-100 italic leading-snug">"{speechTransitText}"</p>
+                                </div>
+                              )}
+
+                              <div className="flex justify-end pt-1">
                                 <button
-                                  onClick={stopVoiceCapture}
-                                  type="button"
-                                  className="px-3 py-1.5 bg-rose-950/65 hover:bg-rose-900 border border-rose-800 rounded-lg text-rose-300 text-[10px] font-extrabold cursor-pointer transition-colors flex items-center gap-1 shrink-0"
+                                  onClick={() => setIsUltraCompact(true)}
+                                  className="px-2.5 py-1 text-[9px] font-black tracking-wide bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm select-none uppercase font-mono animate-pulse"
+                                  title="Minimize to floating micro-pill while keeping conversational microphone active"
                                 >
-                                  <Square size={10} /> STOP DISPATCH
+                                  <Minimize2 size={11} /> Minimize & Keep Conversing
                                 </button>
                               </div>
-                            )}
-                          </div>
-                        )}
+                            </div>
+                          ) : (
+                            /* 4. Silent wait state or starting up state */
+                            <div 
+                              onClick={startContinuousConversationalListen}
+                              className="w-full bg-zinc-950/70 hover:bg-zinc-900/80 p-2.5 rounded-xl border border-zinc-850 flex items-center justify-between cursor-pointer transition-all"
+                            >
+                              <div className="text-left font-sans flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-zinc-600 animate-pulse shrink-0" />
+                                <span className="text-xs font-semibold text-zinc-400">Ready for voice input. Tap or speak to start.</span>
+                              </div>
+                              <div className="w-6 h-6 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400">
+                                <Mic size={11} className="animate-pulse" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -6417,53 +6520,6 @@ export function VoiceMemoAssistant() {
                         <Send size={11} />
                       </button>
                     </div>
-
-                    {/* Hands Free Voice Activation Toggle controls */}
-                    <div className="pt-2 border-t border-zinc-850 flex items-center justify-between text-[10px] text-zinc-500 font-sans">
-                      <div className="flex items-center gap-1.5">
-                        <span className="relative flex h-2 w-2">
-                          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isWakeWordListening ? 'bg-emerald-400' : 'bg-amber-600'}`} />
-                          <span className={`relative inline-flex rounded-full h-2 w-2 ${isWakeWordListening ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                        </span>
-                        <span>Hands-Free Speech Activation (Say '{wakeWord}')</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          id="wakeword-dashboard-toggle"
-                          checked={isWakeWordEnabled}
-                          onChange={(e) => setIsWakeWordEnabled(e.target.checked)}
-                          className="rounded border-zinc-800 text-yellow-500 focus:ring-yellow-500 bg-zinc-950 w-3.5 h-3.5 cursor-pointer"
-                        />
-                        <label htmlFor="wakeword-dashboard-toggle" className="cursor-pointer font-semibold hover:text-zinc-300">
-                          Active
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Concurrent Stream / Voice Interrupt Toggle control */}
-                    <div className="pt-2 mt-1 border-t border-zinc-850/60 flex items-center justify-between text-[10px] text-zinc-500 font-sans">
-                      <div className="flex items-center gap-1.5">
-                        <span className="relative flex h-2 w-2">
-                          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isSpeechActive ? 'bg-amber-400' : 'bg-emerald-600'}`} />
-                          <span className={`relative inline-flex rounded-full h-2 w-2 ${isSpeechActive ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                        </span>
-                        <span>Concurrent Stream Barge-In (Active Interruption)</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          id="concurrent-stream-toggle"
-                          checked={isConcurrentStreamEnabled}
-                          onChange={(e) => setIsConcurrentStreamEnabled(e.target.checked)}
-                          className="rounded border-zinc-800 text-yellow-500 focus:ring-yellow-500 bg-zinc-950 w-3.5 h-3.5 cursor-pointer"
-                        />
-                        <label htmlFor="concurrent-stream-toggle" className="cursor-pointer font-semibold hover:text-zinc-300">
-                          Enabled
-                        </label>
-                      </div>
-                    </div>
-
 
                   </div>
                 </div>
@@ -6830,7 +6886,7 @@ export function VoiceMemoAssistant() {
           />
         )}
       </AnimatePresence>
-    </>
+    </AetherErrorBoundary>
   );
 }
 

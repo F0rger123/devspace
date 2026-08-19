@@ -35,7 +35,7 @@ export default defineConfig(() => {
   }
 
   return {
-    base: './',
+    base: process.env.ELECTRON === 'true' ? './' : '/',
     plugins: [react(), tailwindcss(), splitVendorChunkPlugin()],
     define: {
       'import.meta.env.VITE_BUILD_TIMESTAMP': JSON.stringify(new Date().toISOString()),

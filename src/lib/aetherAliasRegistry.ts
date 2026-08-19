@@ -32,9 +32,30 @@ class AetherAliasRegistry {
   private ALIASES_KEY = 'aether_aliases_v1';
   private AUTONOMY_KEY = 'aether_autonomy_level_v1';
   private ACTIONS_KEY = 'aether_user_actions_v1';
+  private memoryStore: Map<string, string> = new Map();
 
   constructor() {
     this.seedDefaults();
+  }
+
+  private getItem(key: string): string | null {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return this.memoryStore.get(key) || null;
+      }
+    }
+    return this.memoryStore.get(key) || null;
+  }
+
+  private setItem(key: string, value: string): void {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(key, value);
+      } catch {}
+    }
+    this.memoryStore.set(key, value);
   }
 
   private seedDefaults() {
@@ -74,7 +95,7 @@ class AetherAliasRegistry {
           description: 'Video streaming service'
         }
       ];
-      localStorage.setItem(this.ALIASES_KEY, JSON.stringify(defaultAliases));
+      this.setItem(this.ALIASES_KEY, JSON.stringify(defaultAliases));
     }
 
     const actions = this.getActions();
@@ -95,13 +116,13 @@ class AetherAliasRegistry {
           executionCount: 2
         }
       ];
-      localStorage.setItem(this.ACTIONS_KEY, JSON.stringify(defaultActions));
+      this.setItem(this.ACTIONS_KEY, JSON.stringify(defaultActions));
     }
   }
 
   public getAliases(): AetherAlias[] {
     try {
-      const data = localStorage.getItem(this.ALIASES_KEY);
+      const data = this.getItem(this.ALIASES_KEY);
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -126,13 +147,13 @@ class AetherAliasRegistry {
       aliases.unshift(newEntry);
     }
 
-    localStorage.setItem(this.ALIASES_KEY, JSON.stringify(aliases));
+    this.setItem(this.ALIASES_KEY, JSON.stringify(aliases));
     return newEntry;
   }
 
   public deleteAlias(id: string): void {
     const aliases = this.getAliases().filter(a => a.id !== id);
-    localStorage.setItem(this.ALIASES_KEY, JSON.stringify(aliases));
+    this.setItem(this.ALIASES_KEY, JSON.stringify(aliases));
   }
 
   public findMatchingAlias(phrase: string): AetherAlias | undefined {
@@ -152,9 +173,14 @@ class AetherAliasRegistry {
     return aliases.find(a => lower.includes(a.alias.toLowerCase().trim()) || a.alias.toLowerCase().trim().includes(lower));
   }
 
+  public resolveAlias(phrase: string): string | null {
+    const matched = this.findMatchingAlias(phrase);
+    return matched ? matched.target : null;
+  }
+
   public getActions(): UserDefinedAction[] {
     try {
-      const data = localStorage.getItem(this.ACTIONS_KEY);
+      const data = this.getItem(this.ACTIONS_KEY);
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -169,12 +195,12 @@ class AetherAliasRegistry {
     } else {
       actions.unshift(action);
     }
-    localStorage.setItem(this.ACTIONS_KEY, JSON.stringify(actions));
+    this.setItem(this.ACTIONS_KEY, JSON.stringify(actions));
   }
 
   public deleteAction(id: string): void {
     const actions = this.getActions().filter(a => a.id !== id);
-    localStorage.setItem(this.ACTIONS_KEY, JSON.stringify(actions));
+    this.setItem(this.ACTIONS_KEY, JSON.stringify(actions));
   }
 
   public findMatchingAction(phrase: string): UserDefinedAction | undefined {
@@ -192,7 +218,7 @@ class AetherAliasRegistry {
 
   public getAutonomyLevel(): AutonomyLevel {
     try {
-      const level = localStorage.getItem(this.AUTONOMY_KEY);
+      const level = this.getItem(this.AUTONOMY_KEY);
       if (level === 'conservative' || level === 'balanced' || level === 'autonomous') {
         return level;
       }
@@ -201,7 +227,7 @@ class AetherAliasRegistry {
   }
 
   public setAutonomyLevel(level: AutonomyLevel): void {
-    localStorage.setItem(this.AUTONOMY_KEY, level);
+    this.setItem(this.AUTONOMY_KEY, level);
   }
 }
 

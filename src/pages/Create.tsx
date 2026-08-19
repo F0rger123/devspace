@@ -161,7 +161,10 @@ export default function App() {
 
   const filteredTasks = tasks.filter(t => {
     const matchesFilter = activeFilter === 'All' || t.status === activeFilter;
-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.category.toLowerCase().includes(searchQuery.toLowerCase());
+    const sq = (searchQuery || "").trim().toLowerCase();
+    const matchesSearch = !sq ||
+      (t.title || "").toLowerCase().includes(sq) ||
+      (t.category || "").toLowerCase().includes(sq);
     return matchesFilter && matchesSearch;
   });
 
@@ -429,7 +432,7 @@ export function Create() {
         id: p.id,
         name: p.name,
         description: p.description || 'Custom virtual sandbox website container.',
-        model: (p as any).model || 'gemini-3.5-flash',
+        model: (p as any).model || 'gemini-3.7-flash',
         systemInstruction: (p as any).systemInstruction || 'You are a master developer. When the user requests features, write pristine HTML, CSS (Tailwind), and JS inside standard code blocks with standard filenames so the parser can save them directly.',
         temperature: (p as any).temperature ?? 0.7,
         topP: (p as any).topP ?? 0.9,
@@ -455,7 +458,7 @@ export function Create() {
           id: 'proj-1',
           name: 'My Sandbox Web App',
           description: 'A custom, fully-functional prototype project crafted through DevSpace.',
-          model: 'gemini-3.5-flash',
+          model: 'gemini-3.7-flash',
           systemInstruction: 'You are a master developer. When the user requests features, write pristine HTML, CSS (Tailwind), and JS inside standard code blocks with standard filenames so the parser can save them directly.',
           temperature: 0.7,
           topP: 0.9,
@@ -489,7 +492,7 @@ export function Create() {
   const activeProject = projectsList.find(p => p.id === activeProjectId) || projectsList[0];
 
   // Parameters States
-  const [model, setModel] = useState(activeProject?.model || 'gemini-3.5-flash');
+  const [model, setModel] = useState(activeProject?.model || 'gemini-3.7-flash');
   const [systemInstruction, setSystemInstruction] = useState(activeProject?.systemInstruction || '');
   const [temperature, setTemperature] = useState(activeProject?.temperature || 0.7);
   const [topP, setTopP] = useState(activeProject?.topP || 0.9);
@@ -955,7 +958,7 @@ Try using the following commands:
   // Sync state variables when switching active projects
   useEffect(() => {
     if (!activeProject) return;
-    setModel(activeProject.model || 'gemini-3.5-flash');
+    setModel(activeProject.model || 'gemini-3.7-flash');
     setSystemInstruction(activeProject.systemInstruction || '');
     setTemperature(activeProject.temperature || 0.7);
     setTopP(activeProject.topP || 0.9);
@@ -1218,7 +1221,7 @@ Try using the following commands:
       description: newProjDesc || 'Custom virtual sandbox website container.',
       status: 'Active' as const,
       createdAt: Date.now(),
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.7-flash',
       systemInstruction: 'You are a master developer. When the user requests features, write pristine HTML, CSS (Tailwind), and JS inside standard code blocks with standard filenames so the parser can save them directly.',
       temperature: 0.7,
       topP: 0.9,

@@ -142,9 +142,11 @@ export function IntegrationsCenter() {
 
   const filteredSkills = skills.filter(skill => {
     const matchesCategory = categoryFilter === 'all' || skill.category === categoryFilter;
-    const matchesSearch = skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          skill.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          skill.capabilities.some(c => c.toLowerCase().includes(searchQuery.toLowerCase()));
+    const sq = (searchQuery || "").trim().toLowerCase();
+    const matchesSearch = !sq ||
+                          (skill.name || "").toLowerCase().includes(sq) ||
+                          (skill.description || "").toLowerCase().includes(sq) ||
+                          (skill.capabilities || []).some(c => (c || "").toLowerCase().includes(sq));
     return matchesCategory && matchesSearch;
   });
 

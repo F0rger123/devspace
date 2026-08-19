@@ -1709,8 +1709,10 @@ IMPORTANT REQUIREMENTS:
   // Filtered Repos based on search & language select input
   const filteredRepos = useMemo(() => {
     return trendingRepos.filter(repo => {
-      const matchesSearch = repo.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            (repo.description && repo.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      const sq = (searchQuery || "").trim().toLowerCase();
+      const matchesSearch = !sq ||
+                            (repo.name || "").toLowerCase().includes(sq) || 
+                            (repo.description && repo.description.toLowerCase().includes(sq));
       const matchesLang = selectedLanguage === 'All' || repo.language === selectedLanguage;
       return matchesSearch && matchesLang;
     });

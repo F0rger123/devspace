@@ -153,7 +153,7 @@ class ActivityCenterManager {
 
   private aiStatus: AIProviderStatus = {
     currentProvider: 'gemini',
-    currentModel: 'gemini-3.5-flash',
+    currentModel: 'gemini-3.7-flash',
     tokensUsedSession: 14280,
     estimatedQuotaRemaining: '96%',
     providerHealth: 'healthy',
@@ -748,7 +748,7 @@ class ActivityCenterManager {
 
   public setAIProvider(provider: 'gemini' | 'openai' | 'anthropic' | 'ollama', model?: string) {
     const defaultModels: Record<string, string> = {
-      gemini: 'gemini-3.5-flash',
+      gemini: 'gemini-3.7-flash',
       openai: 'gpt-4o',
       anthropic: 'claude-3-5-sonnet',
       ollama: 'llama3:8b',

@@ -267,10 +267,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
     window.addEventListener('devspace:open-daily-brief', handleOpenDailyBrief);
     window.addEventListener('devspace:open-cursor-inspection', handleOpenCursorInspection);
 
-    // Auto-trigger daily briefing once per session day
-    const todayStr = new Date().toISOString().split('T')[0];
-    const lastSeen = localStorage.getItem('devspace_last_brief_date');
-    if (lastSeen !== todayStr) {
+    // Auto-trigger daily briefing once per calendar day per user
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const lastShown = localStorage.getItem('dailyOperatingIntelligenceLastShownDate') || localStorage.getItem('devspace_last_brief_date');
+    if (lastShown !== todayStr) {
+      localStorage.setItem('dailyOperatingIntelligenceLastShownDate', todayStr);
       localStorage.setItem('devspace_last_brief_date', todayStr);
       const timer = setTimeout(() => {
         setDailyBriefOpen(true);
@@ -563,7 +564,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {!isAssistantRoute && !isAssistantOpen && <RightSidebar />}
         </div>
         <CommandPalette />
-        <ActivityCenterPill />
+        {isElectron() && <ActivityCenterPill />}
         <VoiceMemoAssistant />
         <KineticController />
         <KineticHUDOverlay />
@@ -696,9 +697,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
       />
       <DailyAetherBriefModal
         isOpen={dailyBriefOpen}
-        onClose={() => setDailyBriefOpen(false)}
-        onResumeWorking={() => setDailyBriefOpen(false)}
+        onClose={() => {
+          const today = new Date().toLocaleDateString('en-CA');
+          localStorage.setItem('dailyOperatingIntelligenceLastShownDate', today);
+          localStorage.setItem('devspace_last_brief_date', today);
+          setDailyBriefOpen(false);
+        }}
+        onResumeWorking={() => {
+          const today = new Date().toLocaleDateString('en-CA');
+          localStorage.setItem('dailyOperatingIntelligenceLastShownDate', today);
+          localStorage.setItem('devspace_last_brief_date', today);
+          setDailyBriefOpen(false);
+        }}
         onOpenReport={() => {
+          const today = new Date().toLocaleDateString('en-CA');
+          localStorage.setItem('dailyOperatingIntelligenceLastShownDate', today);
+          localStorage.setItem('devspace_last_brief_date', today);
           setDailyBriefOpen(false);
           navigate('/aether-report');
         }}

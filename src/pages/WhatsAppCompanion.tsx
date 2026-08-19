@@ -5718,7 +5718,7 @@ export function WhatsAppCompanion() {
 
                     {/* Aggregate brainstorm ideas across all projects */}
                     {(() => {
-                      const allBrainstorms: { id: string; text: string; details?: string; status: 'approved' | 'rejected' | 'pending'; projId: string; projName: string }[] = [];
+                      const allBrainstorms: { id: string; text: string; details?: string; status: 'approved' | 'rejected' | 'pending' | 'new' | 'in_progress' | 'completed' | string; projId: string; projName: string }[] = [];
                       projects.forEach(p => {
                         (p.brainstormIdeas || []).forEach(b => {
                           allBrainstorms.push({

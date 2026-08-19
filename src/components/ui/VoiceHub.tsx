@@ -33,8 +33,10 @@ import {
   RefreshCw,
   LayoutDashboard,
   Sliders,
-  Loader2
+  Loader2,
+  Layers
 } from 'lucide-react';
+import { AetherProjectIntelligencePanel } from './AetherProjectIntelligencePanel';
 
 export function VoiceHub() {
   const { 
@@ -57,7 +59,7 @@ export function VoiceHub() {
   } = useData();
 
   // Unified AI Assistant & Terminal States
-  const [activeLayoutTab, setActiveLayoutTab] = useState<'console' | 'gateway' | 'queue'>('console');
+  const [activeLayoutTab, setActiveLayoutTab] = useState<'console' | 'intelligence' | 'gateway' | 'queue'>('console');
   const [activeTab, setActiveTab] = useState<'pending' | 'applied' | 'rejected'>('pending');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -106,7 +108,7 @@ export function VoiceHub() {
   const [whatsappChatHistory, setWhatsappChatHistory] = useState<{sender: 'user' | 'aether', text: string, type?: 'text' | 'voice', time: string}[]>([
     {
       sender: 'aether',
-      text: "WhatsApp Bot online. Send me a voice memo or text, and I'll update your projects, backlog tasks, or notes in the Obsidian Semantic Brain instantly!",
+      text: "WhatsApp Bot online. Send me a voice message or text, and I'll update your projects, backlog tasks, or notes in the Obsidian Semantic Brain instantly!",
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -722,10 +724,11 @@ export function VoiceHub() {
   };
 
   // Keyboard console dispatch text prompt
-  const submitTextCommand = async () => {
-    if (!typedMessage.trim() || isProcessing) return;
+  const submitTextCommand = async (overrideText?: string) => {
+    const rawText = overrideText || typedMessage;
+    if (!rawText.trim() || isProcessing) return;
     
-    const plainText = typedMessage.trim();
+    const plainText = rawText.trim();
     setTypedMessage('');
     setIsProcessing(true);
 
@@ -1262,7 +1265,7 @@ export function VoiceHub() {
           </button>
 
           <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0 flex-1 md:flex-initial">
-            {(['console', 'gateway', 'queue'] as const).map((tab) => {
+            {(['console', 'intelligence', 'gateway', 'queue'] as const).map((tab) => {
               const badgeCount = tab === 'queue' ? voiceQueue.filter(v => v.status === 'pending').length : 0;
               return (
                 <button
@@ -1275,9 +1278,10 @@ export function VoiceHub() {
                   }`}
                 >
                   {tab === 'console' && <Terminal size={12} />}
+                  {tab === 'intelligence' && <Layers size={12} />}
                   {tab === 'gateway' && <Cpu size={12} />}
                   {tab === 'queue' && <CheckCircle2 size={12} />}
-                  {tab}
+                  {tab === 'intelligence' ? 'Intelligence' : tab}
                   {badgeCount > 0 && (
                     <span className="bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono text-[9px] px-1.5 py-0.5 rounded-full animate-pulse">
                       {badgeCount}
@@ -1516,7 +1520,7 @@ export function VoiceHub() {
                     className="flex-1 bg-slate-900 border border-slate-850 hover:border-slate-700 focus:border-yellow-500/70 focus:outline-none rounded-xl px-3.5 py-2.5 text-xs text-white tracking-wide transition-colors font-sans"
                   />
                   <button
-                    onClick={submitTextCommand}
+                    onClick={() => submitTextCommand()}
                     disabled={!typedMessage.trim() || isProcessing}
                     className="p-3 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 disabled:opacity-50 text-black font-extrabold rounded-xl transition-all cursor-pointer"
                   >
@@ -1592,7 +1596,19 @@ export function VoiceHub() {
           </div>
         )}
 
-               {/* TAB 2: REMOTE POLL GATEWAYS */}
+        {/* TAB 2: PROJECT INTELLIGENCE & CONTINUOUS AETHER CONTEXT */}
+        {activeLayoutTab === 'intelligence' && (
+          <div className="space-y-4">
+            <AetherProjectIntelligencePanel
+              onRunAetherCommand={(cmd) => {
+                setTypedMessage(cmd);
+                submitTextCommand(cmd);
+              }}
+            />
+          </div>
+        )}
+
+               {/* TAB 3: REMOTE POLL GATEWAYS */}
         {activeLayoutTab === 'gateway' && (
           <div className="space-y-6">
             

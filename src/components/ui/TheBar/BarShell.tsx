@@ -37,6 +37,10 @@ interface BarShellProps {
 }
 
 export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
+  if (!isElectron()) {
+    return null;
+  }
+
   const {
     activeActivities,
     activities,

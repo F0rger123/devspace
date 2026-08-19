@@ -798,9 +798,9 @@ Provide a highly professional, technically precise database supervisor response.
                         </thead>
                         <tbody className="divide-y divide-zinc-850 text-zinc-300">
                           {tableData[selectedTable].map((row, idx) => (
-                            <tr key={idx} className="hover:bg-zinc-900/30">
+                            <tr key={row.id || `table-row-${idx}`} className="hover:bg-zinc-900/30">
                               {Object.values(row).map((val: any, vIdx) => (
-                                <td key={vIdx} className="p-2.5 max-w-[180px] truncate" title={String(val)}>
+                                <td key={`cell-${idx}-${vIdx}`} className="p-2.5 max-w-[180px] truncate" title={String(val)}>
                                   {typeof val === 'boolean' ? (val ? "✓ TRUE" : "✗ FALSE") : String(val)}
                                 </td>
                               ))}
@@ -939,7 +939,7 @@ Provide a highly professional, technically precise database supervisor response.
                       <div className="text-zinc-500">--- Sandbox Telemetry logs ---</div>
                       {sqlLogs.length === 0 && <div className="text-zinc-600">Console ready. Write command and click 'Run'.</div>}
                       {sqlLogs.map((log, i) => (
-                        <div key={i} className={log.includes("✓") ? "text-emerald-400" : log.includes("Error") ? "text-red-400" : "text-zinc-400"}>
+                        <div key={`sql-log-${i}`} className={log.includes("✓") ? "text-emerald-400" : log.includes("Error") ? "text-red-400" : "text-zinc-400"}>
                           {log}
                         </div>
                       ))}
@@ -959,7 +959,7 @@ Provide a highly professional, technically precise database supervisor response.
                         { label: "Index relationship key", sql: "CREATE INDEX IF NOT EXISTS idx_todos_user_id ON public.todos(user_id);" }
                       ].map((preset, i) => (
                         <button
-                          key={i}
+                          key={`preset-${preset.label}-${i}`}
                           onClick={() => setSqlQuery(preset.sql)}
                           className="w-full text-left p-1.5 hover:bg-zinc-900 rounded border border-transparent hover:border-zinc-800 text-zinc-400 hover:text-zinc-200 truncate block"
                           title={preset.sql}
@@ -986,9 +986,9 @@ Provide a highly professional, technically precise database supervisor response.
                         </thead>
                         <tbody className="divide-y divide-zinc-850 text-zinc-300">
                           {sqlResults.map((row, idx) => (
-                            <tr key={idx} className="hover:bg-zinc-900/30">
-                              {sqlColumns.map(col => (
-                                <td key={col} className="p-2 truncate max-w-[150px]" title={String(row[col])}>
+                            <tr key={row.id || `sql-result-${idx}`} className="hover:bg-zinc-900/30">
+                              {sqlColumns.map((col, cIdx) => (
+                                <td key={`sql-col-${idx}-${col}-${cIdx}`} className="p-2 truncate max-w-[150px]" title={String(row[col])}>
                                   {typeof row[col] === 'boolean' ? (row[col] ? "✓" : "✗") : String(row[col] ?? '')}
                                 </td>
                               ))}
@@ -1021,7 +1021,7 @@ Provide a highly professional, technically precise database supervisor response.
                     <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Identity Providers</span>
                     <div className="space-y-2">
                       {authProviders.map((prov, i) => (
-                        <div key={i} className="p-3 bg-[#09090b] border border-zinc-850 rounded-lg flex items-center justify-between">
+                        <div key={prov.id || prov.name || `prov-${i}`} className="p-3 bg-[#09090b] border border-zinc-850 rounded-lg flex items-center justify-between">
                           <div className="space-y-0.5">
                             <span className="text-xs font-semibold text-zinc-250">{prov.name}</span>
                             <p className="text-[9px] text-zinc-500">
@@ -1099,7 +1099,7 @@ Provide a highly professional, technically precise database supervisor response.
         {/* chat history */}
         <div className="flex-grow p-4 overflow-y-auto custom-scrollbar space-y-4 bg-[#0a0a0c]/40">
           {aiSupervisorChat.map((msg, i) => (
-            <div key={i} className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"} space-y-1`}>
+            <div key={`supervisor-chat-${msg.id || i}`} className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"} space-y-1`}>
               <div className={`text-[10px] text-zinc-500 font-mono flex items-center gap-1 px-1`}>
                 <span>{msg.sender === "user" ? "You" : "Aether AI"}</span>
                 <span>•</span>

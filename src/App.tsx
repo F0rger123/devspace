@@ -30,7 +30,7 @@ export default function App() {
   const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
   const RouterComponent = isDesktop ? HashRouter : BrowserRouter;
 
-  const isOverlayWindow = typeof window !== 'undefined' && (
+  const isOverlayWindow = typeof window !== 'undefined' && isDesktop && (
     window.location.hash.includes('overlay') || 
     window.location.pathname.includes('/overlay') ||
     window.location.search.includes('overlay')

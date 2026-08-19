@@ -240,3 +240,141 @@ export function safeSubscribeNativeTheme(callback: (theme: any) => void) {
   return () => {};
 }
 
+export async function safeLaunchApp(appName: string) {
+  return await safeExecuteDesktopAction('launch_app', { appName });
+}
+
+export async function safeOpenVSCode(projectPath?: string) {
+  return await safeExecuteDesktopAction('open_vscode', { projectPath });
+}
+
+export async function safeOpenTerminal(cwd?: string) {
+  return await safeExecuteDesktopAction('open_terminal', { cwd });
+}
+
+export async function safeOpenInFileManager(targetPath: string) {
+  return await safeExecuteDesktopAction('open_in_file_manager', { path: targetPath });
+}
+
+export async function safeOpenExternalUrl(url: string) {
+  if (isElectron()) {
+    return await safeExecuteDesktopAction('open_url', { url });
+  } else if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return { success: true, payload: { url, status: 'Opened in new browser tab' } };
+  }
+  return { success: false, error: 'Cannot open URL in current context' };
+}
+
+export async function safeShowDesktopNotification(title: string, body: string) {
+  if (isElectron()) {
+    return await safeExecuteDesktopAction('show_notification', { title, body });
+  } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body });
+    return { success: true, payload: { title, body, status: 'Web notification shown' } };
+  }
+  return { success: false, error: 'Notifications not permitted' };
+}
+
+export async function safeGetInstalledApps() {
+  if (isElectron()) {
+    return await safeExecuteDesktopAction('get_installed_apps');
+  }
+  return { success: true, payload: { apps: [], count: 0 } };
+}
+
+export async function safeOpenFile(filePath: string) {
+  if (isElectron()) {
+    return await safeExecuteDesktopAction('open_file', { filePath });
+  }
+  return { success: false, error: 'Desktop Electron runtime required to open local files' };
+}
+
+export async function safeOpenFolder(folderPath: string) {
+  if (isElectron()) {
+    return await safeExecuteDesktopAction('open_folder', { folderPath });
+  }
+  return { success: false, error: 'Desktop Electron runtime required to open local folders' };
+}
+
+export async function safeSetWakeWordStatus(active: boolean) {
+  const api = getElectronAPI();
+  if (api && api.setWakeWordStatus) {
+    return await api.setWakeWordStatus(active);
+  }
+  return false;
+}
+
+export function safeSubscribeWakeWordToggle(callback: (active: boolean) => void) {
+  const api = getElectronAPI();
+  if (api && api.onWakeWordToggle) {
+    return api.onWakeWordToggle(callback);
+  }
+  return () => {};
+}
+
+export async function safeSetNotificationsEnabled(enabled: boolean) {
+  const api = getElectronAPI();
+  if (api && api.setNotificationsEnabled) {
+    return await api.setNotificationsEnabled(enabled);
+  }
+  return false;
+}
+
+export function safeSubscribeNotificationToggle(callback: (enabled: boolean) => void) {
+  const api = getElectronAPI();
+  if (api && api.onNotificationToggle) {
+    return api.onNotificationToggle(callback);
+  }
+  return () => {};
+}
+
+export async function safeGetSafeModeStatus() {
+  const api = getElectronAPI();
+  if (api && api.getSafeModeStatus) {
+    return await api.getSafeModeStatus();
+  }
+  return { inSafeMode: false, consecutiveCrashCount: 0, crashLogs: [] };
+}
+
+export async function safeRestartInSafeMode() {
+  const api = getElectronAPI();
+  if (api && api.restartInSafeMode) {
+    return await api.restartInSafeMode();
+  }
+  return false;
+}
+
+export async function safeClearSafeMode() {
+  const api = getElectronAPI();
+  if (api && api.clearSafeMode) {
+    return await api.clearSafeMode();
+  }
+  return false;
+}
+
+export async function safeGetDesktopSources(options?: { types?: string[]; thumbnailSize?: { width: number; height: number } }) {
+  const api = getElectronAPI();
+  if (api && api.getDesktopSources) {
+    return await api.getDesktopSources(options);
+  }
+  return { success: false, sources: [], error: 'Desktop capturer requires DevSpace Electron runtime' };
+}
+
+export async function safeCheckDesktopPermissions(mediaType: 'camera' | 'microphone' | 'screen') {
+  const api = getElectronAPI();
+  if (api && api.checkDesktopPermissions) {
+    return await api.checkDesktopPermissions(mediaType);
+  }
+  return { success: true, status: 'granted', granted: true };
+}
+
+export async function safeSearchDesktopFiles(params: { query: string; rootDir?: string; maxResults?: number }) {
+  const api = getElectronAPI();
+  if (api && api.searchFiles) {
+    return await api.searchFiles(params);
+  }
+  return { success: false, query: params.query, error: 'Filesystem search requires DevSpace Electron runtime', results: [] };
+}
+
+

@@ -1123,14 +1123,15 @@ export function Community() {
   // Filter & Search computation with Enhanced Tags & Status
   const filteredProjects = publicProjects
     .filter(p => {
-      const matchesSearch = 
-        p.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
-        p.description.toLowerCase().includes(projectSearch.toLowerCase()) ||
-        p.tags?.some(t => t.toLowerCase().includes(projectSearch.toLowerCase())) ||
-        p.ownerName?.toLowerCase().includes(projectSearch.toLowerCase());
+      const ps = (projectSearch || "").trim().toLowerCase();
+      const matchesSearch = !ps ||
+        (p.name || "").toLowerCase().includes(ps) ||
+        (p.description || "").toLowerCase().includes(ps) ||
+        p.tags?.some(t => (t || "").toLowerCase().includes(ps)) ||
+        p.ownerName?.toLowerCase().includes(ps);
       
-      const matchesTag = selectedTag === 'All' || p.tags?.some(t => t.toLowerCase() === selectedTag.toLowerCase());
-      const matchesStatus = selectedStatus === 'All' || p.status?.toLowerCase() === selectedStatus.toLowerCase();
+      const matchesTag = selectedTag === 'All' || p.tags?.some(t => (t || "").toLowerCase() === selectedTag.toLowerCase());
+      const matchesStatus = selectedStatus === 'All' || (p.status || "").toLowerCase() === selectedStatus.toLowerCase();
 
       return matchesSearch && matchesTag && matchesStatus;
     })
@@ -2231,8 +2232,10 @@ export function Community() {
                     (() => {
                       const processedTrending = trendingRepos
                         .filter(repo => {
-                          const sQuery = trendingSearch.toLowerCase();
-                          const matchesSearch = repo.name.toLowerCase().includes(sQuery) || repo.description.toLowerCase().includes(sQuery);
+                          const sQuery = (trendingSearch || "").trim().toLowerCase();
+                          const matchesSearch = !sQuery ||
+                            (repo.name || "").toLowerCase().includes(sQuery) ||
+                            (repo.description || "").toLowerCase().includes(sQuery);
                           const matchesLang = trendingLang === 'All' || (repo.language && repo.language.toLowerCase() === trendingLang.toLowerCase());
                           const stars = repo.stargazers_count || 0;
                           const matchesStars = stars >= minStars;

@@ -785,7 +785,7 @@ export function RepoTreeVisualizer({ repoName, project }: RepoTreeVisualizerProp
                 {/* Micro Terminal logs */}
                 <div className="p-2.5 bg-black border border-zinc-900 rounded-lg max-h-[100px] overflow-y-auto font-mono text-[9px] text-zinc-400 space-y-1">
                   {dreamLog.map((log, i) => (
-                    <div key={i} className={log.includes('Failed') || log.includes('error') ? 'text-red-400' : log.includes('✨') || log.includes('💡') ? 'text-emerald-400 font-semibold' : ''}>
+                    <div key={`repo-dream-log-${i}`} className={log.includes('Failed') || log.includes('error') ? 'text-red-400' : log.includes('✨') || log.includes('💡') ? 'text-emerald-400 font-semibold' : ''}>
                       {log}
                     </div>
                   ))}
