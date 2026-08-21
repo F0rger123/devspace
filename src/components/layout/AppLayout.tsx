@@ -564,7 +564,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {!isAssistantRoute && !isAssistantOpen && <RightSidebar />}
         </div>
         <CommandPalette />
-        <ActivityCenterPill />
         <VoiceMemoAssistant />
         <KineticController />
         <KineticHUDOverlay />

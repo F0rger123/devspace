@@ -4244,6 +4244,41 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   };
 
   useEffect(() => { setStored('app_user_profile', userProfile); }, [userProfile]);
+
+  // Account-level synchronization for Aether Voice Mode preference
+  useEffect(() => {
+    const handlePersistAccountMode = (e: Event) => {
+      const customEvent = e as CustomEvent<{ mode: string }>;
+      if (customEvent.detail?.mode) {
+        setUserProfile((prev: any) => {
+          const base = prev || {};
+          const updated = { ...base, aetherVoiceMode: customEvent.detail.mode, updatedAt: Date.now() };
+          setStored('app_user_profile', updated);
+          if (auth.currentUser) {
+            try {
+              setDocWithSanitize(doc(db, 'users', auth.currentUser.uid), updated);
+            } catch (err) {
+              console.warn('Could not sync aetherVoiceMode to Firestore:', err);
+            }
+          }
+          return updated;
+        });
+      }
+    };
+    window.addEventListener('devspace:aether-persist-account-mode', handlePersistAccountMode);
+    return () => window.removeEventListener('devspace:aether-persist-account-mode', handlePersistAccountMode);
+  }, []);
+
+  useEffect(() => {
+    if (userProfile?.aetherVoiceMode) {
+      window.dispatchEvent(
+        new CustomEvent('devspace:aether-account-preference-sync', {
+          detail: { mode: userProfile.aetherVoiceMode },
+        })
+      );
+    }
+  }, [userProfile?.aetherVoiceMode]);
+
   useEffect(() => { setStored('app_google_token', googleToken); }, [googleToken]);
   useEffect(() => { setStored('app_github_token', githubToken); }, [githubToken]);
   useEffect(() => { setStored('app_github_profile', githubProfile); }, [githubProfile]);

@@ -57,22 +57,26 @@ export default function App() {
   return (
     <RouterComponent>
       <Routes>
-        <Route
-          path="/overlay"
-          element={
-            <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
-              <BarShell standalone />
-            </div>
-          }
-        />
-        <Route
-          path="overlay"
-          element={
-            <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
-              <BarShell standalone />
-            </div>
-          }
-        />
+        {isDesktop && (
+          <>
+            <Route
+              path="/overlay"
+              element={
+                <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
+                  <BarShell standalone />
+                </div>
+              }
+            />
+            <Route
+              path="overlay"
+              element={
+                <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
+                  <BarShell standalone />
+                </div>
+              }
+            />
+          </>
+        )}
         <Route
           path="*"
           element={

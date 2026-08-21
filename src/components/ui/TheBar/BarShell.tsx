@@ -65,7 +65,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<TheBarTab>('dreams');
   const [aiMode, setAiMode] = useState<AIMode>(() => {
-    return aetherVoiceEngine.toLegacyMode(aetherVoiceEngine.getMode());
+    return aetherVoiceEngine.getMode();
   });
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
@@ -75,8 +75,8 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
   // Sync with authoritative voice engine
   useEffect(() => {
-    const unsub = aetherVoiceEngine.subscribe((engineMode) => {
-      setAiMode(aetherVoiceEngine.toLegacyMode(engineMode));
+    const unsub = aetherVoiceEngine.subscribe((snapshot) => {
+      setAiMode(snapshot.mode);
     });
 
     const handleHideToggle = (e: Event) => {
@@ -295,8 +295,24 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     setDismissedIds((prev) => new Set(prev).add(id));
   };
 
-  // Ultra-fast 100ms fluid morphing transition
-  const morphTransition = { duration: 0.10, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] };
+  // Fast, responsive 140ms Apple-style fluid morphing transition
+  const morphTransition = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] };
+
+  const getPillModeDisplay = (mode: AIMode) => {
+    const canonical = aetherVoiceEngine.migrateMode(mode);
+    switch (canonical) {
+      case 'off':
+        return { label: 'AETHER OFF', badgeColor: 'bg-zinc-800/80 border-zinc-700 text-zinc-400' };
+      case 'wake_word':
+        return { label: 'KEYWORD READY', badgeColor: 'bg-amber-500/15 border-amber-500/30 text-amber-300' };
+      case 'listening':
+        return { label: 'AETHER ON', badgeColor: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' };
+      case 'context':
+        return { label: 'CONTEXT', badgeColor: 'bg-cyan-500/15 border-cyan-500/35 text-cyan-300' };
+    }
+  };
+
+  const pillMode = getPillModeDisplay(aiMode);
 
   if (isHidden && !standalone) {
     return null;
@@ -331,9 +347,9 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
             <div className="h-3.5 w-[1px] bg-white/15" />
 
-            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-[10px] font-mono font-bold text-amber-300">
-              <Sparkles size={10} className="text-amber-400" />
-              <span>{aiMode}</span>
+            <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-mono font-bold ${pillMode.badgeColor}`}>
+              <Sparkles size={10} className={aiMode === 'listening' ? 'animate-spin' : ''} />
+              <span>{pillMode.label}</span>
             </div>
 
             {spotifyState?.isAuthenticated && spotifyState?.isPlaying && spotifyState?.currentTrack && (

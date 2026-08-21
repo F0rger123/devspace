@@ -1871,42 +1871,23 @@ Return ONLY this JSON object.`,
     });
   });
 
-  // POST push branch with optional simulation fallback if no origin repo is defined
+  // POST push branch
   app.post('/api/sandbox/git/push', (req, res) => {
     const { branch, force = false } = req.body;
     const targetBranch = branch || 'main';
-    
-    exec(`git push origin ${targetBranch}`, (error, stdout, stderr) => {
-      const duration = (Math.random() * 1.5 + 1.0).toFixed(2);
-      
+
+    exec(`git push origin ${targetBranch}${force ? ' --force' : ''}`, (error, stdout, stderr) => {
       if (error) {
-        // Fallback to simulated terminal progress if origin is not configured in sandbox
-        const simulatedPushLogs = [
-          `git push origin ${targetBranch}`,
-          `Enumerating objects: ${Math.floor(Math.random() * 15 + 5)}, done.`,
-          `Counting objects: 100% (${Math.floor(Math.random() * 15 + 5)}/${Math.floor(Math.random() * 15 + 5)}), done.`,
-          `Delta compression using up to 4 threads`,
-          `Compressing objects: 100% (${Math.floor(Math.random() * 5 + 3)}/${Math.floor(Math.random() * 5 + 3)}), done.`,
-          `Writing objects: 100% (${Math.floor(Math.random() * 15 + 5)}/${Math.floor(Math.random() * 15 + 5)}), ${Math.floor(Math.random() * 2000 + 500)} bytes | ${Math.floor(Math.random() * 500 + 200)} KiB/s, done.`,
-          `Total ${Math.floor(Math.random() * 15 + 5)} (delta ${Math.floor(Math.random() * 3 + 1)}), reused 0 (delta 0), pack-reused 0`,
-          `To github.com/user/devspace-sandbox-repo.git`,
-          `   f2a3c7b..9e4d5f1  ${targetBranch} -> ${targetBranch}`,
-          `Branch '${targetBranch}' set up to track remote branch '${targetBranch}' from 'origin'.`,
-          `Push operation completed successfully in ${duration}s.`
-        ].join('\n');
-        
-        return res.json({ 
-          success: true, 
-          output: simulatedPushLogs, 
-          simulated: true,
-          errorDetails: stderr || error.message
+        return res.status(500).json({
+          success: false,
+          error: stderr || error.message || `Failed to push branch ${targetBranch}`,
+          details: stderr,
         });
       }
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         output: stdout || stderr || `Branch ${targetBranch} pushed successfully to remote origin.`,
-        simulated: false 
       });
     });
   });
@@ -4720,11 +4701,12 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
         return res.status(400).json({ error: 'Repository name and branch name are required' });
       }
 
-      if (!token) {
-        return res.json({
-          success: true,
-          isSimulated: true,
-          message: `[Simulated] Branch '${branchName}' created from '${fromBranch}' on ${repo}`
+      const activeToken = token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+      if (!activeToken) {
+        return res.status(401).json({
+          success: false,
+          error: 'GitHub authentication token required. Connect GitHub in DevSpace Settings to push branches.',
+          requiresAuth: true,
         });
       }
 
@@ -4733,16 +4715,16 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
       const getRefRes = await fetch(refUrl, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'AgenticOS-Build',
-          'Authorization': `token ${token}`
-        }
+          'User-Agent': 'DevSpace-Aether-Build',
+          'Authorization': `token ${activeToken}`,
+        },
       });
 
       if (!getRefRes.ok) {
         const errData = await getRefRes.json().catch(() => ({}));
         return res.status(getRefRes.status).json({
-          error: `Failed to find base branch '${fromBranch}'`,
-          details: errData
+          error: `Failed to find base branch '${fromBranch}' on ${repo}`,
+          details: errData,
         });
       }
 
@@ -4756,29 +4738,28 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'AgenticOS-Build',
-          'Authorization': `token ${token}`
+          'User-Agent': 'DevSpace-Aether-Build',
+          'Authorization': `token ${activeToken}`,
         },
         body: JSON.stringify({
           ref: `refs/heads/${branchName}`,
-          sha
-        })
+          sha,
+        }),
       });
 
       if (!createRefRes.ok) {
         const errData = await createRefRes.json().catch(() => ({}));
         return res.status(createRefRes.status).json({
-          error: `Failed to create branch '${branchName}'`,
-          details: errData
+          error: `Failed to create branch '${branchName}' on ${repo}`,
+          details: errData,
         });
       }
 
       const createData = await createRefRes.json();
       return res.json({
         success: true,
-        isSimulated: false,
         branch: branchName,
-        sha: createData.object?.sha || sha
+        sha: createData.object?.sha || sha,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Error creating branch' });
@@ -4788,16 +4769,17 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
   // Push or create a file on a specific branch on GitHub
   app.post('/api/github/push-file', async (req, res) => {
     try {
-      const { repo, branchName, filePath, content, commitMessage = 'Update file via AgenticOS', token } = req.body;
+      const { repo, branchName, filePath, content, commitMessage = 'Update file via DevSpace Aether', token } = req.body;
       if (!repo || !branchName || !filePath || content === undefined) {
         return res.status(400).json({ error: 'Repository, branch, file path, and content are required' });
       }
 
-      if (!token) {
-        return res.json({
-          success: true,
-          isSimulated: true,
-          message: `[Simulated] File '${filePath}' pushed to branch '${branchName}' on ${repo}`
+      const activeToken = token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+      if (!activeToken) {
+        return res.status(401).json({
+          success: false,
+          error: 'GitHub authentication token required. Connect GitHub in DevSpace Settings to push changes.',
+          requiresAuth: true,
         });
       }
 
@@ -4806,9 +4788,9 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
       const getFileRes = await fetch(fileUrl, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'AgenticOS-Build',
-          'Authorization': `token ${token}`
-        }
+          'User-Agent': 'DevSpace-Aether-Build',
+          'Authorization': `token ${activeToken}`,
+        },
       });
 
       let existingSha: string | undefined = undefined;
@@ -4824,32 +4806,31 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'AgenticOS-Build',
-          'Authorization': `token ${token}`
+          'User-Agent': 'DevSpace-Aether-Build',
+          'Authorization': `token ${activeToken}`,
         },
         body: JSON.stringify({
           message: commitMessage,
           content: base64Content,
           branch: branchName,
-          ...(existingSha ? { sha: existingSha } : {})
-        })
+          ...(existingSha ? { sha: existingSha } : {}),
+        }),
       });
 
       if (!putFileRes.ok) {
         const errData = await putFileRes.json().catch(() => ({}));
         return res.status(putFileRes.status).json({
           error: `Failed to write file '${filePath}' on branch '${branchName}'`,
-          details: errData
+          details: errData,
         });
       }
 
       const putData = await putFileRes.json();
       return res.json({
         success: true,
-        isSimulated: false,
         filePath,
         branch: branchName,
-        commitSha: putData.commit?.sha
+        commitSha: putData.commit?.sha,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Error pushing file' });
@@ -4864,11 +4845,12 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
         return res.status(400).json({ error: 'Repository, PR title, and head branch are required' });
       }
 
-      if (!token) {
-        return res.json({
-          success: true,
-          isSimulated: true,
-          message: `[Simulated] Pull Request '${title}' created from '${head}' into '${base}' on ${repo}`
+      const activeToken = token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+      if (!activeToken) {
+        return res.status(401).json({
+          success: false,
+          error: 'GitHub authentication token required. Connect GitHub in DevSpace Settings to open Pull Requests.',
+          requiresAuth: true,
         });
       }
 
@@ -4877,32 +4859,31 @@ Strictly output valid JSON. Do not include any markdown format blocks outside th
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'AgenticOS-Build',
-          'Authorization': `token ${token}`
+          'User-Agent': 'DevSpace-Aether-Build',
+          'Authorization': `token ${activeToken}`,
         },
         body: JSON.stringify({
           title,
           body,
           head,
-          base
-        })
+          base,
+        }),
       });
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         return res.status(response.status).json({
           error: 'Failed to create pull request on GitHub',
-          details: errData
+          details: errData,
         });
       }
 
       const prData = await response.json();
       return res.json({
         success: true,
-        isSimulated: false,
         prNumber: prData.number,
         htmlUrl: prData.html_url,
-        title: prData.title
+        title: prData.title,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || 'Error creating PR' });

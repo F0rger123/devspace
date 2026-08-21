@@ -2625,10 +2625,11 @@ export function VoiceMemoAssistant() {
   useEffect(() => {
     const handleVoiceModeChanged = (e: Event) => {
       const customEvent = e as CustomEvent;
-      const mode = customEvent.detail?.mode;
-      if (!mode) return;
+      const rawMode = customEvent.detail?.mode;
+      if (!rawMode) return;
+      const mode = (typeof rawMode === 'string' ? rawMode.toLowerCase() : '');
 
-      if (mode === 'OFF') {
+      if (mode === 'off' || mode === 'muted') {
         if (activeRecogRef.current) {
           try {
             activeRecogRef.current.onend = null;
@@ -2648,21 +2649,18 @@ export function VoiceMemoAssistant() {
         isConversingRef.current = false;
         setIsWakeWordListening(false);
         aetherVoiceRegistry.stopSpeaking();
-      } else if (mode === 'LISTENING') {
+      } else if (mode === 'listening' || mode === 'always on' || mode === 'always_on') {
         setIsHubOpen(true);
         setIsConversing(true);
         isConversingRef.current = true;
         setHudTab('speak');
         startContinuousConversationalListen();
-      } else if (mode === 'WAITING FOR KEYWORD') {
+      } else if (mode === 'wake_word' || mode === 'waiting for keyword' || mode === 'wake') {
         setIsWakeWordEnabled(true);
         startBackgroundWakeWord();
-      } else if (mode === 'CONTEXT') {
+      } else if (mode === 'context' || mode === 'focus') {
         setIsHubOpen(true);
         setHudTab('speak');
-      } else if (mode === 'ALWAYS ON') {
-        setIsWakeWordEnabled(true);
-        startBackgroundWakeWord();
       }
     };
 

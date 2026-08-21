@@ -419,23 +419,45 @@ export const DreamPanel: React.FC<DreamPanelProps> = ({
                           <GitBranch size={11} /> Branch
                         </button>
 
-                        {/* Open Pull Request (active when PR ready) */}
+                        {/* Open Pull Request (active when real PR exists) */}
                         {item.prUrl ? (
                           <button
                             onClick={() => window.open(item.prUrl, '_blank', 'noopener,noreferrer')}
                             className="px-2.5 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-lg transition-colors cursor-pointer font-black flex items-center gap-1"
-                            title="Open Pull Request"
+                            title="Open Real Pull Request on GitHub"
                           >
                             <GitPullRequest size={11} /> Open PR {item.prNumber ? `#${item.prNumber}` : ''}
                           </button>
+                        ) : item.requiresAuth ? (
+                          <button
+                            onClick={() => navigate('/settings')}
+                            className="px-2.5 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg transition-colors cursor-pointer font-bold flex items-center gap-1"
+                            title="Connect GitHub in Settings to create Pull Requests"
+                          >
+                            <AlertCircle size={11} /> Connect GitHub
+                          </button>
+                        ) : item.status === 'pr_ready' || item.status === 'complete' ? (
+                          <span className="px-2 py-0.5 text-cyan-300 bg-cyan-500/15 border border-cyan-500/30 rounded-lg text-[9.5px] font-mono font-bold">
+                            Branch Pushed
+                          </span>
                         ) : (
                           <span className="px-2 py-0.5 text-zinc-500 bg-zinc-800/50 rounded-lg text-[9.5px]">
-                            PR in progress
+                            {item.status === 'failed' ? 'Failed' : 'Processing...'}
                           </span>
                         )}
                       </div>
 
                       <div className="flex items-center gap-1">
+                        {/* Retry on failure */}
+                        {item.status === 'failed' && (
+                          <button
+                            onClick={() => pushQueue.retryItem(item.id)}
+                            className="px-2 py-0.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-lg transition-colors cursor-pointer font-bold text-[10px]"
+                          >
+                            Retry
+                          </button>
+                        )}
+
                         {/* View Changes Toggle */}
                         <button
                           onClick={() => toggleDetail(item.id, 'changes')}
