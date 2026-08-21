@@ -64,6 +64,8 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
 
   const handleEnableOverlay = (val: boolean) => {
     handleToggle(setIsEnabled, 'desktopOverlay_enabled', val, (newVal) => {
+      localStorage.setItem('devspace_hide_dynamic_island', newVal ? 'false' : 'true');
+      window.dispatchEvent(new CustomEvent('devspace:toggle-dynamic-island', { detail: { hidden: !newVal } }));
       safeToggleOverlay(newVal);
     });
   };
@@ -77,8 +79,8 @@ export const DesktopOverlaySettingsTab: React.FC = () => {
   const toggleOptions = [
     {
       id: 'enabled',
-      title: 'Enable Desktop Overlay',
-      description: 'Display the floating desktop bar across your operating system workspace.',
+      title: 'Show Dynamic Island / Top Notch',
+      description: 'Display the floating top notch Dynamic Island overlay across your Windows desktop and apps. Toggle on to restore if previously hidden.',
       icon: Monitor,
       color: 'text-amber-400',
       checked: isEnabled,

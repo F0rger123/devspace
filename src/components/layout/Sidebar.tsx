@@ -93,7 +93,7 @@ export function Sidebar() {
           <div className="space-y-1">
             {navItems
               .filter((item) => {
-                if (item.path === '/editable-devspace' && !isElectron()) return false;
+                if (item.path === '/editable-devspace') return false; // Hidden from UI for now
                 if (isSafeMode) return true;
                 const hidden = activeProfile.layoutOverrides?.hiddenSections || [];
                 return !hidden.includes(item.label);

@@ -2,6 +2,7 @@ import React from 'react';
 
 export type AIMode =
   | 'OFF'
+  | 'MUTED'
   | 'WAITING FOR KEYWORD'
   | 'CONTEXT'
   | 'LISTENING'

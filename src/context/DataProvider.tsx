@@ -6,6 +6,7 @@ import { Toast, ToastContainer } from '../components/ui/Toast';
 import { useStore, KineticGesture } from '../store';
 import { isElectron, getElectronAPI } from '../lib/electronBridge';
 import { aetherActiveProjectContext } from '../lib/aetherActiveProjectContext';
+import { undoRedoManager } from '../lib/aetherActionEngine';
 
 enum OperationType {
   CREATE = 'create',
@@ -4345,27 +4346,46 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
   };
 
   const updateProject = (id: string, p: Partial<Project>) => {
-    setProjects(prev => prev.map(proj => {
-      if (proj.id === id) {
-        const updated = { ...proj, ...p };
-        setDocWithSanitize(doc(db, 'projects', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
+    let prevProj: Project | undefined;
+    setProjects(prev => {
+      prevProj = prev.find(proj => proj.id === id);
+      return prev.map(proj => {
+        if (proj.id === id) {
+          const updated = { ...proj, ...p };
+          setDocWithSanitize(doc(db, 'projects', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `projects/${id}`));
 
-        // Version history snapshot on update
-        const newVersion: ProjectVersion = {
-          id: 'ver_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-          projectId: id,
-          projectName: updated.name,
-          versionNumber: (projectVersions.filter(v => v.projectId === id).length || 0) + 1,
-          timestamp: Date.now(),
-          description: `Updated project properties (${Object.keys(p).join(', ')})`,
-          data: JSON.parse(JSON.stringify(updated))
-        };
-        setProjectVersions(prev => [newVersion, ...(prev || []).slice(0, 30)]);
+          // Version history snapshot on update
+          const newVersion: ProjectVersion = {
+            id: 'ver_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            projectId: id,
+            projectName: updated.name,
+            versionNumber: (projectVersions.filter(v => v.projectId === id).length || 0) + 1,
+            timestamp: Date.now(),
+            description: `Updated project properties (${Object.keys(p).join(', ')})`,
+            data: JSON.parse(JSON.stringify(updated))
+          };
+          setProjectVersions(vprev => [newVersion, ...(vprev || []).slice(0, 30)]);
 
-        return updated;
-      }
-      return proj;
-    }));
+          return updated;
+        }
+        return proj;
+      });
+    });
+
+    if (prevProj) {
+      const original = { ...prevProj };
+      undoRedoManager.pushAction(
+        `Updated project "${original.name}"`,
+        async () => {
+          setProjects(prev => prev.map(proj => proj.id === id ? original : proj));
+          setDocWithSanitize(doc(db, 'projects', id), original).catch(() => {});
+        },
+        async () => {
+          setProjects(prev => prev.map(proj => proj.id === id ? { ...proj, ...p } : proj));
+          setDocWithSanitize(doc(db, 'projects', id), { ...original, ...p }).catch(() => {});
+        }
+      );
+    }
   };
   const deleteProject = (id: string) => {
     // Record deleted ID in persistent array to prevent re-hydration from local storage or Firestore
@@ -4459,21 +4479,72 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     const newIss = { ...i, id, createdAt: Date.now() };
     setIssues(prev => [...prev, newIss]);
     setDocWithSanitize(doc(db, 'issues', id), newIss).catch(e => handleFirestoreError(e, OperationType.WRITE, `issues/${id}`));
+
+    undoRedoManager.pushAction(
+      `Created issue "${newIss.title}"`,
+      async () => {
+        setIssues(prev => prev.filter(iss => iss.id !== id));
+        deleteDocWithSanitize(doc(db, 'issues', id)).catch(() => {});
+      },
+      async () => {
+        setIssues(prev => [...prev, newIss]);
+        setDocWithSanitize(doc(db, 'issues', id), newIss).catch(() => {});
+      }
+    );
+
     return id;
   };
   const updateIssue = (id: string, i: Partial<Issue>) => {
-    setIssues(prev => prev.map(iss => {
-      if (iss.id === id) {
-        const updated = { ...iss, ...i };
-        setDocWithSanitize(doc(db, 'issues', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `issues/${id}`));
-        return updated;
-      }
-      return iss;
-    }));
+    let prevIssue: Issue | undefined;
+    setIssues(prev => {
+      prevIssue = prev.find(iss => iss.id === id);
+      return prev.map(iss => {
+        if (iss.id === id) {
+          const updated = { ...iss, ...i };
+          setDocWithSanitize(doc(db, 'issues', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `issues/${id}`));
+          return updated;
+        }
+        return iss;
+      });
+    });
+
+    if (prevIssue) {
+      const original = { ...prevIssue };
+      undoRedoManager.pushAction(
+        `Updated issue "${original.title}"`,
+        async () => {
+          setIssues(prev => prev.map(iss => iss.id === id ? original : iss));
+          setDocWithSanitize(doc(db, 'issues', id), original).catch(() => {});
+        },
+        async () => {
+          setIssues(prev => prev.map(iss => iss.id === id ? { ...iss, ...i } : iss));
+          setDocWithSanitize(doc(db, 'issues', id), { ...original, ...i }).catch(() => {});
+        }
+      );
+    }
   };
   const deleteIssue = (id: string) => {
-    setIssues(prev => prev.filter(iss => iss.id !== id));
+    let toDelete: Issue | undefined;
+    setIssues(prev => {
+      toDelete = prev.find(iss => iss.id === id);
+      return prev.filter(iss => iss.id !== id);
+    });
     deleteDocWithSanitize(doc(db, 'issues', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `issues/${id}`));
+
+    if (toDelete) {
+      const deletedCopy = { ...toDelete };
+      undoRedoManager.pushAction(
+        `Deleted issue "${deletedCopy.title}"`,
+        async () => {
+          setIssues(prev => [...prev, deletedCopy]);
+          setDocWithSanitize(doc(db, 'issues', id), deletedCopy).catch(() => {});
+        },
+        async () => {
+          setIssues(prev => prev.filter(iss => iss.id !== id));
+          deleteDocWithSanitize(doc(db, 'issues', id)).catch(() => {});
+        }
+      );
+    }
   };
 
   const addPhase = (p: Omit<Phase, 'id'>) => {
@@ -4492,21 +4563,72 @@ ${profileObj.recommendedGuidelines.map((g: string) => `- **Preference:** ${g}`).
     const newNote = { ...n, id, createdAt: now, updatedAt: now };
     setNotes(prev => [...prev, newNote]);
     setDocWithSanitize(doc(db, 'notes', id), newNote).catch(e => handleFirestoreError(e, OperationType.WRITE, `notes/${id}`));
+
+    undoRedoManager.pushAction(
+      `Created note "${newNote.title}"`,
+      async () => {
+        setNotes(prev => prev.filter(note => note.id !== id));
+        deleteDocWithSanitize(doc(db, 'notes', id)).catch(() => {});
+      },
+      async () => {
+        setNotes(prev => [...prev, newNote]);
+        setDocWithSanitize(doc(db, 'notes', id), newNote).catch(() => {});
+      }
+    );
+
     return id;
   };
   const updateNote = (id: string, n: Partial<Note>) => {
-    setNotes(prev => prev.map(note => {
-      if (note.id === id) {
-        const updated = { ...note, ...n, updatedAt: Date.now() };
-        setDocWithSanitize(doc(db, 'notes', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `notes/${id}`));
-        return updated;
-      }
-      return note;
-    }));
+    let prevNote: Note | undefined;
+    setNotes(prev => {
+      prevNote = prev.find(note => note.id === id);
+      return prev.map(note => {
+        if (note.id === id) {
+          const updated = { ...note, ...n, updatedAt: Date.now() };
+          setDocWithSanitize(doc(db, 'notes', id), updated).catch(e => handleFirestoreError(e, OperationType.WRITE, `notes/${id}`));
+          return updated;
+        }
+        return note;
+      });
+    });
+
+    if (prevNote) {
+      const original = { ...prevNote };
+      undoRedoManager.pushAction(
+        `Updated note "${original.title}"`,
+        async () => {
+          setNotes(prev => prev.map(note => note.id === id ? original : note));
+          setDocWithSanitize(doc(db, 'notes', id), original).catch(() => {});
+        },
+        async () => {
+          setNotes(prev => prev.map(note => note.id === id ? { ...note, ...n } : note));
+          setDocWithSanitize(doc(db, 'notes', id), { ...original, ...n }).catch(() => {});
+        }
+      );
+    }
   };
   const deleteNote = (id: string) => {
-    setNotes(prev => prev.filter(note => note.id !== id));
+    let toDelete: Note | undefined;
+    setNotes(prev => {
+      toDelete = prev.find(note => note.id === id);
+      return prev.filter(note => note.id !== id);
+    });
     deleteDocWithSanitize(doc(db, 'notes', id)).catch(e => handleFirestoreError(e, OperationType.DELETE, `notes/${id}`));
+
+    if (toDelete) {
+      const deletedCopy = { ...toDelete };
+      undoRedoManager.pushAction(
+        `Deleted note "${deletedCopy.title}"`,
+        async () => {
+          setNotes(prev => [...prev, deletedCopy]);
+          setDocWithSanitize(doc(db, 'notes', id), deletedCopy).catch(() => {});
+        },
+        async () => {
+          setNotes(prev => prev.filter(note => note.id !== id));
+          deleteDocWithSanitize(doc(db, 'notes', id)).catch(() => {});
+        }
+      );
+    }
   };
 
   const startProjectDreaming = async (

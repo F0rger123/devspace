@@ -23,6 +23,7 @@ import { useData } from '../../../context/DataProvider';
 import { useSafeOverlayNavigate } from '../../../hooks/useSafeOverlayNavigate';
 import { safeToggleOverlay, safeSetOverlayAlwaysOnTop, safeSetOverlayExpanded, getElectronAPI, isElectron } from '../../../lib/electronBridge';
 import { AIMode, TheBarTab } from './types';
+import { aetherVoiceEngine } from '../../../lib/aetherVoiceStateEngine';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { AIModeSwitcher } from './AIModeSwitcher';
 import { DreamPanel } from './DreamPanel';
@@ -59,20 +60,49 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   const navigate = useSafeOverlayNavigate();
   const activePath = typeof window !== 'undefined' ? window.location.pathname : '/';
 
+  const [isHidden, setIsHidden] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('devspace_hide_dynamic_island') === 'true';
+    }
+    return false;
+  });
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<TheBarTab>('dreams');
   const [aiMode, setAiMode] = useState<AIMode>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('devspace_active_aether_mode');
-      if (saved) return saved as AIMode;
-    }
-    return 'ALWAYS ON';
+    return aetherVoiceEngine.toLegacyMode(aetherVoiceEngine.getMode());
   });
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sync with authoritative voice engine
+  useEffect(() => {
+    const unsub = aetherVoiceEngine.subscribe((engineMode) => {
+      setAiMode(aetherVoiceEngine.toLegacyMode(engineMode));
+    });
+
+    const handleHideToggle = (e: Event) => {
+      const custom = e as CustomEvent;
+      if (typeof custom.detail?.hidden === 'boolean') {
+        setIsHidden(custom.detail.hidden);
+        localStorage.setItem('devspace_hide_dynamic_island', custom.detail.hidden ? 'true' : 'false');
+      } else {
+        setIsHidden((prev) => {
+          const next = !prev;
+          localStorage.setItem('devspace_hide_dynamic_island', next ? 'true' : 'false');
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener('devspace:toggle-dynamic-island', handleHideToggle);
+    return () => {
+      unsub();
+      window.removeEventListener('devspace:toggle-dynamic-island', handleHideToggle);
+    };
+  }, []);
 
   useEffect(() => {
     const handleClick = () => setContextMenuPos(null);
@@ -127,10 +157,14 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
     if (isExpanded) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('pointerdown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
       window.addEventListener('blur', handleWindowBlur);
       window.addEventListener('devspace:overlay-collapse', handleIpcCollapse);
     } else {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('pointerdown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('devspace:overlay-collapse', handleIpcCollapse);
     }
@@ -144,6 +178,8 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('pointerdown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('devspace:overlay-collapse', handleIpcCollapse);
       if (electronApi && electronApi.off) {
@@ -221,7 +257,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
   const pendingOfflineCount = offlineQueue.filter((i) => i.status === 'pending' || i.status === 'conflict').length;
   const hasSyncConflict = offlineQueue.some((i) => i.status === 'conflict');
 
-  const handleApprove = (id: string, actionUrl?: string) => {
+  const handleApprove = (id: string, _actionUrl?: string) => {
     setApprovedIds((prev) => new Set(prev).add(id));
     const targetDream = combinedDreams.find((d) => d.id === id);
     if (targetDream) {
@@ -232,25 +268,25 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
         projectName: currentProject.name,
       });
     }
-    if (actionUrl) {
-      navigate(actionUrl);
-      setIsExpanded(false);
-    }
   };
 
   const handleDismiss = (id: string) => {
     setDismissedIds((prev) => new Set(prev).add(id));
   };
 
-  // Fast 120-150ms fluid morphing transition matching Apple Liquid Glass guidelines
-  const morphTransition = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] };
+  // Ultra-fast 100ms fluid morphing transition
+  const morphTransition = { duration: 0.10, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] };
+
+  if (isHidden && !standalone) {
+    return null;
+  }
 
   return (
     <div
       ref={containerRef}
       onContextMenu={handleContextMenu}
       className={`${
-        standalone ? 'relative' : 'fixed top-2 left-1/2 -translate-x-1/2 z-[110]'
+        standalone ? 'relative' : 'fixed top-0 left-1/2 -translate-x-1/2 z-[110]'
       } font-sans select-none pointer-events-auto`}
     >
       <AnimatePresence mode="wait">
@@ -480,11 +516,17 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
           <button
             onClick={() => {
               setContextMenuPos(null);
+              setIsHidden(true);
+              localStorage.setItem('devspace_hide_dynamic_island', 'true');
+              window.dispatchEvent(new CustomEvent('devspace:toggle-dynamic-island', { detail: { hidden: true } }));
               safeToggleOverlay(false);
             }}
-            className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+            className="w-full px-3 py-2 text-left hover:bg-zinc-800 flex items-center justify-between text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
-            <EyeOff size={13} className="text-zinc-400" /> Hide Overlay
+            <span className="flex items-center gap-2">
+              <EyeOff size={13} className="text-zinc-400" /> Hide Dynamic Island
+            </span>
+            <span className="text-[9px] text-zinc-500 font-mono">Restore in Settings</span>
           </button>
           <button
             onClick={() => {

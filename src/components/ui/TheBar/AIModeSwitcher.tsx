@@ -1,8 +1,9 @@
 import React from 'react';
-import { Power, Radio, Target, Mic, Monitor, ShieldAlert } from 'lucide-react';
+import { Power, Radio, Target, Mic, MicOff, Monitor, ShieldAlert } from 'lucide-react';
 import { AIMode } from './types';
 import { useActivityCenter } from '../../../hooks/useActivityCenter';
 import { activityCenter } from '../../../lib/activityCenterService';
+import { aetherVoiceEngine } from '../../../lib/aetherVoiceStateEngine';
 
 interface AIModeSwitcherProps {
   currentMode: AIMode;
@@ -10,7 +11,8 @@ interface AIModeSwitcherProps {
 }
 
 const MODES: { mode: AIMode; label: string; icon: React.ReactNode; description: string }[] = [
-  { mode: 'OFF', label: 'OFF', icon: <Power size={11} />, description: 'Nothing running' },
+  { mode: 'OFF', label: 'OFF', icon: <Power size={11} />, description: 'Fully disabled' },
+  { mode: 'MUTED', label: 'MUTED', icon: <MicOff size={11} />, description: 'Mic muted; preserves session context' },
   { mode: 'WAITING FOR KEYWORD', label: 'WAITING FOR KEYWORD', icon: <Radio size={11} />, description: 'Listens only for "Hey Aether"' },
   { mode: 'CONTEXT', label: 'CONTEXT', icon: <Target size={11} />, description: 'Reads workspace & answers questions' },
   { mode: 'LISTENING', label: 'LISTENING', icon: <Mic size={11} />, description: 'Continuous open mic conversation' },
@@ -24,10 +26,9 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
   const handleModeChange = (mode: AIMode) => {
     onSelectMode(mode);
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('devspace_active_aether_mode', mode);
-      window.dispatchEvent(new CustomEvent('devspace:aether-voice-mode-changed', { detail: { mode } }));
-    }
+    // Sync to authoritative voice state engine
+    const engineMode = aetherVoiceEngine.fromLegacyMode(mode);
+    aetherVoiceEngine.setMode(engineMode);
 
     switch (mode) {
       case 'OFF':
@@ -37,8 +38,20 @@ export const AIModeSwitcher: React.FC<AIModeSwitcherProps> = ({ currentMode, onS
           message: 'All background voice & AI tasks completely suspended.',
           type: 'warning',
           category: 'ai',
-          summary: 'Aether Disables',
+          summary: 'Aether Disabled',
           reason: 'WHY: Developer toggled OFF mode.',
+        });
+        break;
+
+      case 'MUTED':
+        updateConfig({ soundEnabled: false });
+        activityCenter.addNotification({
+          title: 'Aether Muted',
+          message: 'Microphone input muted. Conversational state is preserved.',
+          type: 'info',
+          category: 'voice',
+          summary: 'Microphone Muted',
+          reason: 'WHY: Developer toggled Mute.',
         });
         break;
 

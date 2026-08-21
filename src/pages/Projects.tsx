@@ -5226,6 +5226,123 @@ Description of fix or enhancement recommendation
                 </div>
               </div>
 
+              {/* GitHub Repository Connection Card */}
+              <div className="bg-[#121214] border border-zinc-800 rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-bold text-zinc-100 flex items-center gap-2">
+                    <Github size={18} className="text-zinc-300" /> GitHub Repository Connection
+                  </h2>
+                  {project.githubRepos && project.githubRepos.length > 0 ? (
+                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold rounded flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      CONNECTED
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 bg-zinc-800 text-zinc-400 text-[10px] font-mono rounded">
+                      NOT CONNECTED
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-zinc-400">
+                  Connect a GitHub repository to enable autonomous code pushes, Dream branch deployments, and CI/CD tracking for this DevSpace project.
+                </p>
+
+                {project.githubRepos && project.githubRepos.length > 0 ? (
+                  <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-zinc-800 text-zinc-200 rounded-lg">
+                          <Github size={20} />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-zinc-100 font-mono flex items-center gap-1.5">
+                            {project.githubRepos[0]}
+                            <a
+                              href={`https://github.com/${project.githubRepos[0]}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-zinc-500 hover:text-yellow-400 transition-colors"
+                              title="Open on GitHub"
+                            >
+                              <ExternalLink size={12} />
+                            </a>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">
+                            Authoritative repository linked to this DevSpace project
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          updateProject(project.id, { githubRepos: [] });
+                          showToast("GitHub repository disconnected from project.", "info");
+                        }}
+                        className="px-3 py-1.5 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 text-red-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        Disconnect Repo
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        id="connect-repo-input"
+                        placeholder="e.g. username/repo-name or https://github.com/username/repo-name"
+                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-100 outline-none focus:border-yellow-500 font-mono"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const val = (e.currentTarget as HTMLInputElement).value.trim();
+                            if (val) {
+                              const cleanRepo = extractRepoName(val);
+                              updateProject(project.id, { githubRepos: [cleanRepo] });
+                              showToast(`Connected ${cleanRepo} to ${project.name}!`, "success");
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          const input = document.getElementById("connect-repo-input") as HTMLInputElement;
+                          if (input && input.value.trim()) {
+                            const cleanRepo = extractRepoName(input.value.trim());
+                            updateProject(project.id, { githubRepos: [cleanRepo] });
+                            showToast(`Connected ${cleanRepo} to ${project.name}!`, "success");
+                            input.value = "";
+                          }
+                        }}
+                        className="px-4 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                      >
+                        Connect Repo
+                      </button>
+                    </div>
+
+                    {githubReposList.length > 0 && (
+                      <div>
+                        <span className="text-[11px] text-zinc-500 block mb-1.5">Or choose from your account's repositories:</span>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto custom-scrollbar">
+                          {githubReposList.map((repo: any) => (
+                            <button
+                              key={repo.full_name || repo.name}
+                              onClick={() => {
+                                const repoName = repo.full_name || repo.name;
+                                updateProject(project.id, { githubRepos: [repoName] });
+                                showToast(`Connected ${repoName} to ${project.name}!`, "success");
+                              }}
+                              className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-yellow-500/40 text-zinc-300 text-xs rounded font-mono transition-colors cursor-pointer"
+                            >
+                              {repo.full_name || repo.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <BackendIntegrationTab project={project} updateProject={updateProject} />
             </div>
           )}

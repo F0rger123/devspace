@@ -1,5 +1,5 @@
 # 🌌 Aether Synaptic Memory Cortex
-*Last synchronized: 8/19/2026, 2:49:40 AM*
+*Last synchronized: 8/21/2026, 12:33:17 AM*
 
 This is the physical workspace memory file of Aether (your central brain orchestrator). These learnings persist across route changes, sidebar interactions, and system restarts to guide AI behavior.
 
@@ -25,4 +25,10 @@ This is the physical workspace memory file of Aether (your central brain orchest
 ## 🧠 Learned Synaptic Rules (Cognitive Cortex)
 ### 1. UI Termination Protocol
 - **Description**: Respect the 'Close Assistant' button in the top right as the hard-stop command for all active sessions; maintain unmuted state until this UI trigger is pressed.
+
+### 2. Authentication Protocol
+- **Description**: Secure Firestore database security rules require write verification check where auth is not null.
+
+### 3. UI Responsive Grid
+- **Description**: Enforce fluid spacing using Tailwind, keeping touch elements to minimum of 44px on mobile layers.
 

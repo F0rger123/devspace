@@ -68,16 +68,16 @@ export function AetherDailyOperatingHub() {
   return (
     <div className="space-y-6 font-sans text-zinc-200">
       {/* HEADER HERO */}
-      <div className="p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-3">
+      <div className="p-6 rounded-2xl bg-zinc-900/70 backdrop-blur-xl border border-white/10 shadow-2xl space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shadow-inner">
               <Compass size={24} />
             </div>
             <div>
               <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
                 <span>Aether Daily Operating Intelligence</span>
-                <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[10px] font-mono font-bold uppercase">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold uppercase tracking-wider">
                   ACTIVE SYNC
                 </span>
               </h2>
@@ -107,8 +107,8 @@ export function AetherDailyOperatingHub() {
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-3.5 py-2 rounded-xl border flex items-center gap-2 whitespace-nowrap transition font-bold ${
                 isActive
-                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/40'
-                  : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm'
+                  : 'bg-zinc-900/50 backdrop-blur border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
             >
               <IconComp size={14} className={isActive ? 'text-amber-400' : 'text-zinc-500'} />
@@ -121,35 +121,35 @@ export function AetherDailyOperatingHub() {
       {/* TAB 1: MORNING BRIEFING */}
       {activeTab === 'morning' && (
         <div className="space-y-6 font-mono text-xs">
-          <div className="p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <div className="p-6 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
               <span className="font-bold text-amber-300 text-sm flex items-center gap-2">
                 <Sun size={18} />
                 <span>Today's Morning Briefing ({morningBrief.date})</span>
               </span>
-              <span className="px-2.5 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 text-[10px]">
+              <span className="px-2.5 py-1 rounded-lg bg-zinc-900/80 border border-zinc-800 text-zinc-400 text-[10px]">
                 {morningBrief.weather?.location} • {morningBrief.weather?.condition} ({morningBrief.weather?.tempF}°F)
               </span>
             </div>
 
-            <p className="text-xs font-sans text-zinc-200 leading-relaxed bg-zinc-950 p-4 rounded-xl border border-zinc-800/80">
+            <p className="text-xs font-sans text-zinc-200 leading-relaxed bg-zinc-950/70 p-4 rounded-xl border border-zinc-800/80 shadow-inner">
               {morningBrief.naturalNarrative}
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
-              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+              <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
                 <span className="text-zinc-500 block">Pending Dreams</span>
                 <span className="font-bold text-amber-300 text-base">{morningBrief.dreamsWaitingReviewCount}</span>
               </div>
-              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+              <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
                 <span className="text-zinc-500 block">Open Issues</span>
                 <span className="font-bold text-rose-400 text-base">{morningBrief.openIssuesCount}</span>
               </div>
-              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+              <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
                 <span className="text-zinc-500 block">Pending PRs</span>
-                <span className="font-bold text-cyan-300 text-base">{morningBrief.pendingPRsCount}</span>
+                <span className="font-bold text-amber-300 text-base">{morningBrief.pendingPRsCount}</span>
               </div>
-              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+              <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
                 <span className="text-zinc-500 block">Est. Workload</span>
                 <span className="font-bold text-emerald-400 text-base">{morningBrief.estimatedWorkloadHours} hrs</span>
               </div>
@@ -157,14 +157,14 @@ export function AetherDailyOperatingHub() {
 
             {/* CALENDAR & FOCUS GOALS */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+              <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
                 <span className="font-bold text-zinc-300 text-xs flex items-center gap-1.5">
-                  <Calendar size={14} className="text-cyan-400" />
+                  <Calendar size={14} className="text-amber-400" />
                   <span>Today's Calendar Schedule</span>
                 </span>
                 <div className="space-y-1.5">
                   {morningBrief.calendarEvents.map((evt, idx) => (
-                    <div key={idx} className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-between text-[11px]">
+                    <div key={idx} className="p-2.5 rounded-lg bg-zinc-900/70 border border-zinc-800/60 flex items-center justify-between text-[11px]">
                       <span className="text-amber-300 font-bold">{evt.time}</span>
                       <span className="text-zinc-200">{evt.title}</span>
                     </div>
@@ -172,14 +172,14 @@ export function AetherDailyOperatingHub() {
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+              <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
                 <span className="font-bold text-zinc-300 text-xs flex items-center gap-1.5">
                   <Zap size={14} className="text-amber-400" />
                   <span>Current Active Goals</span>
                 </span>
                 <div className="space-y-1.5">
                   {morningBrief.currentFocusGoals.map((g, idx) => (
-                    <div key={idx} className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-300 flex items-center gap-2">
+                    <div key={idx} className="p-2.5 rounded-lg bg-zinc-900/70 border border-zinc-800/60 text-[11px] text-zinc-300 flex items-center gap-2">
                       <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
                       <span>{g}</span>
                     </div>
@@ -193,29 +193,29 @@ export function AetherDailyOperatingHub() {
 
       {/* TAB 2: CONTINUOUS DAILY CONTEXT */}
       {activeTab === 'context' && (
-        <div className="p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-4 font-mono text-xs">
+        <div className="p-6 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-4 font-mono text-xs">
           <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2">
-            <Layers size={16} className="text-cyan-400" />
+            <Layers size={16} className="text-amber-400" />
             <span>Real-Time Continuous Daily Context</span>
           </h3>
 
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2 font-sans text-xs">
+          <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2 font-sans text-xs shadow-inner">
             <span className="text-zinc-400 block font-mono text-[10px] uppercase">Core Daily Objective</span>
             <p className="text-zinc-100 font-semibold">{continuousContext.todayObjective}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+            <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
               <span className="font-bold text-zinc-300 text-xs">Active Project & Task</span>
               <div className="space-y-1.5 text-[11px]">
-                <div><span className="text-zinc-500">Project:</span> <span className="text-cyan-300 font-bold">{continuousContext.currentProject}</span></div>
+                <div><span className="text-zinc-500">Project:</span> <span className="text-amber-300 font-bold">{continuousContext.currentProject}</span></div>
                 <div><span className="text-zinc-500">Task:</span> <span className="text-zinc-200">{continuousContext.currentTask}</span></div>
                 <div><span className="text-zinc-500">Active Dream:</span> <span className="text-amber-300 font-bold">{continuousContext.activeDreamTitle}</span></div>
-                <div><span className="text-zinc-500">Active Agent:</span> <span className="text-indigo-400 font-bold">{continuousContext.activeAgentName}</span></div>
+                <div><span className="text-zinc-500">Active Agent:</span> <span className="text-emerald-400 font-bold">{continuousContext.activeAgentName}</span></div>
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+            <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
               <span className="font-bold text-zinc-300 text-xs">Subsystem Counts</span>
               <div className="space-y-1.5 text-[11px]">
                 <div><span className="text-zinc-500">Planner Items:</span> <span className="text-zinc-200 font-bold">{continuousContext.activePlannerItemsCount} active</span></div>
@@ -229,41 +229,41 @@ export function AetherDailyOperatingHub() {
 
       {/* TAB 3: EVENING WRAP-UP */}
       {activeTab === 'evening' && (
-        <div className="p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-4 font-mono text-xs">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-            <span className="font-bold text-indigo-300 text-sm flex items-center gap-2">
+        <div className="p-6 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-4 font-mono text-xs">
+          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+            <span className="font-bold text-amber-300 text-sm flex items-center gap-2">
               <Moon size={18} />
               <span>Evening Reflection & Daily Wrap-Up ({eveningWrapUp.date})</span>
             </span>
-            <span className="px-2.5 py-1 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-bold">
+            <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-bold">
               {eveningWrapUp.focusDurationFormatted}
             </span>
           </div>
 
-          <p className="text-xs font-sans text-zinc-200 leading-relaxed bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+          <p className="text-xs font-sans text-zinc-200 leading-relaxed bg-zinc-950/70 p-4 rounded-xl border border-zinc-800/80 shadow-inner">
             {eveningWrapUp.reflectionNarrative}
           </p>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
-            <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 block">Dreams Completed</span>
               <span className="font-bold text-amber-300 text-base">{eveningWrapUp.dreamsCompleted}</span>
             </div>
-            <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 block">PRs Merged</span>
-              <span className="font-bold text-cyan-300 text-base">{eveningWrapUp.prsMerged}</span>
+              <span className="font-bold text-emerald-400 text-base">{eveningWrapUp.prsMerged}</span>
             </div>
-            <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 block">Issues Resolved</span>
               <span className="font-bold text-emerald-400 text-base">{eveningWrapUp.issuesResolved}</span>
             </div>
-            <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 block">Tech Debt Delta</span>
               <span className="font-bold text-emerald-400 text-base">{eveningWrapUp.techDebtDelta}</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+          <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
             <span className="font-bold text-zinc-300 text-xs">Tomorrow's Priorities</span>
             <div className="space-y-1 text-zinc-300 text-[11px] font-sans">
               {eveningWrapUp.tomorrowsPriorities.map((pri, i) => (
@@ -320,13 +320,13 @@ export function AetherDailyOperatingHub() {
           </div>
 
           {/* RECOMMENDATION FEEDBACK HISTORY */}
-          <div className="p-4 rounded-2xl bg-[#121316] border border-zinc-800 space-y-3 pt-4">
+          <div className="p-5 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-xl space-y-3 pt-4">
             <span className="font-bold text-zinc-300 text-xs">Recommendation Feedback Outcomes ({feedbackList.length})</span>
             <div className="space-y-1.5">
               {feedbackList.map((fb) => (
-                <div key={fb.id} className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between text-[11px]">
+                <div key={fb.id} className="p-2.5 rounded-lg bg-zinc-950/60 border border-zinc-800/80 flex items-center justify-between text-[11px]">
                   <span className="text-zinc-200">{fb.title}</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
                     fb.outcome === 'accepted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                   }`}>
                     {fb.outcome}
@@ -340,32 +340,32 @@ export function AetherDailyOperatingHub() {
 
       {/* TAB 5: FOCUS JOURNEY */}
       {activeTab === 'journey' && (
-        <div className="p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-4 font-mono text-xs">
+        <div className="p-6 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-4 font-mono text-xs">
           <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2">
             <Flame size={16} className="text-amber-400" />
             <span>Focus Journey Trends & Behavioral Metrics</span>
           </h3>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 text-[10px] block">Avg Duration</span>
               <span className="font-bold text-amber-300 text-base">{focusJourney.averageDurationMinutes}m</span>
             </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 text-[10px] block">Longest Streak</span>
               <span className="font-bold text-emerald-400 text-base">{focusJourney.longestStreakDays} days</span>
             </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 text-[10px] block">Total Sessions</span>
-              <span className="font-bold text-cyan-300 text-base">{focusJourney.totalFocusSessions}</span>
+              <span className="font-bold text-amber-300 text-base">{focusJourney.totalFocusSessions}</span>
             </div>
-            <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800">
+            <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
               <span className="text-zinc-500 text-[10px] block">Break Quality</span>
               <span className="font-bold text-emerald-400 text-base">{focusJourney.breakQualityRating}</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+          <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
             <span className="font-bold text-zinc-300 text-xs">Observed Productive Trends</span>
             <div className="space-y-1.5 font-sans text-xs text-zinc-300">
               {focusJourney.trends.map((t, idx) => (
@@ -381,20 +381,20 @@ export function AetherDailyOperatingHub() {
 
       {/* TAB 6: CONVERSATION CONTINUITY */}
       {activeTab === 'continuity' && (
-        <div className="p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-4 font-mono text-xs">
+        <div className="p-6 rounded-2xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-4 font-mono text-xs">
           <h3 className="font-bold text-zinc-100 text-sm flex items-center gap-2">
-            <MessageSquare size={16} className="text-indigo-400" />
+            <MessageSquare size={16} className="text-amber-400" />
             <span>Workspace Grounded Conversation Continuity</span>
           </h3>
 
           <div className="space-y-3 font-sans text-xs">
             {continuityHistory.map((item, idx) => (
-              <div key={idx} className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+              <div key={idx} className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2">
                 <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="font-bold text-indigo-300">Previous Intent ({item.date})</span>
+                  <span className="font-bold text-amber-300">Previous Intent ({item.date})</span>
                 </div>
                 <p className="text-zinc-300">{item.summary}</p>
-                <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-amber-300 font-mono">
+                <div className="p-3 rounded-lg bg-zinc-900/80 border border-zinc-800 text-[11px] text-amber-300 font-mono">
                   <strong>Aether Continuity Observation:</strong> {item.followUpContext}
                 </div>
               </div>
@@ -405,8 +405,8 @@ export function AetherDailyOperatingHub() {
 
       {/* MODAL: ADD DECISION RULE */}
       {showDecisionModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-6 rounded-2xl bg-[#121316] border border-zinc-800 space-y-4 font-mono text-xs">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl space-y-4 font-mono text-xs">
             <div className="flex items-center justify-between">
               <span className="font-bold text-zinc-100 text-sm">Add Decision Memory Rule</span>
               <button onClick={() => setShowDecisionModal(false)} className="text-zinc-500 hover:text-zinc-300">
@@ -422,7 +422,7 @@ export function AetherDailyOperatingHub() {
                   value={newRule}
                   onChange={(e) => setNewRule(e.target.value)}
                   placeholder="e.g. 'Always run unit tests before approval'"
-                  className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 focus:outline-none focus:border-amber-500/50"
                 />
               </div>
 
@@ -431,7 +431,7 @@ export function AetherDailyOperatingHub() {
                 <select
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 focus:outline-none focus:border-cyan-500/50"
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-100 focus:outline-none focus:border-amber-500/50"
                 >
                   <option value="git">Git & Branching</option>
                   <option value="deployment">Deployment</option>
@@ -446,13 +446,13 @@ export function AetherDailyOperatingHub() {
                 <button
                   type="button"
                   onClick={() => setShowDecisionModal(false)}
-                  className="px-4 py-2 rounded-xl bg-zinc-900 text-zinc-300 font-bold"
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-cyan-500 text-zinc-950 font-bold"
+                  className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold transition shadow-sm"
                 >
                   Save Rule
                 </button>

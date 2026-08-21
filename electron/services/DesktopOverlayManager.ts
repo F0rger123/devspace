@@ -57,7 +57,7 @@ export class DesktopOverlayManager {
       : Math.floor(workArea.x + (workArea.width - overlayWidth) / 2);
     const initialY = this.settings.rememberPosition && this.settings.savedY !== undefined
       ? this.settings.savedY
-      : workArea.y + 16;
+      : workArea.y + 2;
 
     this.overlayWindow = new BrowserWindow({
       width: overlayWidth,
