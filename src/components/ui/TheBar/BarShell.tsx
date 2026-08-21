@@ -38,10 +38,6 @@ interface BarShellProps {
 }
 
 export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
-  if (!isElectron()) {
-    return null;
-  }
-
   const {
     activeActivities,
     activities,
@@ -122,24 +118,56 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
 
   const currentProject = projectList.find((p) => p.id === activeProjectId) || projectList[0];
 
-  // Hotkey Cmd/Ctrl + Shift + A to toggle & Escape key to collapse
+  const TAB_ORDER: TheBarTab[] = ['dreams', 'live', 'aether', 'sync', 'notifications'];
+
+  // Hotkey Cmd/Ctrl + Shift + A to toggle & Escape key to collapse & Left/Right arrow tab navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.getAttribute('contenteditable') === 'true');
+
       if (e.key === 'Escape' && isExpanded) {
         setIsExpanded(false);
+        return;
       }
+
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         setIsExpanded((prev) => !prev);
+        return;
+      }
+
+      // Left/Right arrow navigation between tabs when expanded (and not typing or when on non-dream tabs)
+      if (isExpanded && !isTyping) {
+        if (e.altKey || (activeTab !== 'dreams')) {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setActiveTab((curr) => {
+              const idx = TAB_ORDER.indexOf(curr);
+              return TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+            });
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setActiveTab((curr) => {
+              const idx = TAB_ORDER.indexOf(curr);
+              return TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+            });
+          }
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isExpanded]);
+  }, [isExpanded, activeTab]);
 
   // Click outside or window blur to collapse automatically
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | PointerEvent | TouchEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsExpanded(false);
       }
@@ -156,15 +184,15 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     };
 
     if (isExpanded) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('pointerdown', handleClickOutside);
-      document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('mousedown', handleClickOutside, true);
+      document.addEventListener('pointerdown', handleClickOutside, true);
+      document.addEventListener('touchstart', handleClickOutside, true);
       window.addEventListener('blur', handleWindowBlur);
       window.addEventListener('devspace:overlay-collapse', handleIpcCollapse);
     } else {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('pointerdown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      document.removeEventListener('pointerdown', handleClickOutside, true);
+      document.removeEventListener('touchstart', handleClickOutside, true);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('devspace:overlay-collapse', handleIpcCollapse);
     }
@@ -177,9 +205,9 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('pointerdown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      document.removeEventListener('pointerdown', handleClickOutside, true);
+      document.removeEventListener('touchstart', handleClickOutside, true);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('devspace:overlay-collapse', handleIpcCollapse);
       if (electronApi && electronApi.off) {
@@ -190,16 +218,9 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
     };
   }, [isExpanded]);
 
-  // Handle overlay resize with smooth timing delay during collapse (120-150ms morph)
+  // Handle overlay resize in Electron seamlessly
   useEffect(() => {
-    if (isExpanded) {
-      safeSetOverlayExpanded(true);
-    } else {
-      const timer = setTimeout(() => {
-        safeSetOverlayExpanded(false);
-      }, 140);
-      return () => clearTimeout(timer);
-    }
+    safeSetOverlayExpanded(isExpanded);
   }, [isExpanded]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -289,7 +310,7 @@ export const BarShell: React.FC<BarShellProps> = ({ standalone = false }) => {
         standalone ? 'relative' : 'fixed top-0 left-1/2 -translate-x-1/2 z-[110]'
       } font-sans select-none pointer-events-auto`}
     >
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {!isExpanded ? (
           /* COLLAPSED BAR - LIQUID GLASS CAPSULE */
           <motion.div

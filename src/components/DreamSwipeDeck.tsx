@@ -201,6 +201,16 @@ export function DreamSwipeDeck({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.getAttribute('contenteditable') === 'true')
+      ) {
+        return;
+      }
       if (e.key === 'ArrowRight') {
         handleSwipe('right');
       } else if (e.key === 'ArrowLeft') {
