@@ -10707,22 +10707,18 @@ Generate ${optionsCount} distinct architectural options/blueprints for this idea
   });
 
   // Vite middleware for development (with static dist fallback protection)
-  const distDir = fs.existsSync(path.join(currentDir, 'index.html'))
-    ? currentDir
-    : path.join(process.cwd(), 'dist');
-  const distHtmlPath = path.join(distDir, 'index.html');
-  const hasBuild = fs.existsSync(distHtmlPath);
-
-  if (process.env.NODE_ENV !== 'production' || !hasBuild) {
-    console.log(`[Server] Booting Vite development middleware (NODE_ENV=${process.env.NODE_ENV}, hasBuild=${hasBuild})`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[Server] Booting Vite development middleware (NODE_ENV=${process.env.NODE_ENV})`);
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    console.log(`[Server] Serving production static files from ${distDir}`);
-    app.use(express.static(distDir));
+    const distPath = path.resolve(process.cwd(), 'dist');
+    const distHtmlPath = path.join(distPath, 'index.html');
+    console.log(`[Server] Serving production static files from ${distPath}`);
+    app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(distHtmlPath);
     });
