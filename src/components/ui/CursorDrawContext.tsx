@@ -21,9 +21,13 @@ import {
   MousePointer,
   Compass,
   Move,
-  RefreshCw
+  RefreshCw,
+  Layers,
+  Code2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { aetherContextActions, ContextCaptureData } from '../../lib/aetherContextModeActions';
+import { AetherContextActionMenu } from './AetherContextActionMenu';
 
 export function CursorDrawContext() {
   const {
@@ -53,6 +57,7 @@ export function CursorDrawContext() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [activeStrategyContext, setActiveStrategyContext] = useState<any | null>(null);
+  const [activeActionMenuContext, setActiveActionMenuContext] = useState<ContextCaptureData | null>(null);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -354,14 +359,28 @@ export function CursorDrawContext() {
           else plainEnglishLabel = `Workspace Area (${currentPath})`;
 
           const label = `${plainEnglishLabel} #${index}`;
+          const newContextId = `circle-${crypto.randomUUID()}`;
           
           addCircledContext({
-            id: `circle-${crypto.randomUUID()}`,
+            id: newContextId,
             type: 'circle',
             points: [...path],
             bounds: { x: minX, y: minY, width, height },
             label,
             timestamp: Date.now()
+          });
+
+          // Automatically analyze region with deep domain classifier
+          const targetProj = projects?.find(p => p.id === activeProjectId) || projects?.[0];
+          aetherContextActions.captureAndAnalyzeRegion({
+            id: newContextId,
+            label,
+            bounds: { x: minX, y: minY, width, height },
+            points: [...path],
+            projectId: activeProjectId,
+            projectName: targetProj?.name
+          }).then((analyzed) => {
+            setActiveActionMenuContext(analyzed);
           });
 
           showToast(`🎯 Captured Context: "${label}"`, 'success', 2000);
@@ -660,6 +679,28 @@ export function CursorDrawContext() {
 
                 {/* Floating Context Actions Toolbar directly below region */}
                 <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-[#09090c]/95 border border-yellow-500/60 backdrop-blur-md rounded-xl p-1 flex items-center gap-1 shadow-2xl z-50 pointer-events-auto shrink-0 select-none">
+                  <button
+                    onClick={async () => {
+                      const targetProj = projects?.find(p => p.id === activeProjectId) || projects?.[0];
+                      const analyzed = await aetherContextActions.captureAndAnalyzeRegion({
+                        id: ctx.id,
+                        label: ctx.label,
+                        bounds: ctx.bounds,
+                        points: ctx.points,
+                        projectId: activeProjectId,
+                        projectName: targetProj?.name
+                      });
+                      setActiveActionMenuContext(analyzed);
+                    }}
+                    className="p-1.5 bg-yellow-500 hover:bg-yellow-400 text-black rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer shadow-[0_0_12px_rgba(234,179,8,0.3)]"
+                    title="Open full Aether Context Action Menu (Explain, Summarize, Fix, Workflow, etc.)"
+                  >
+                    <Sparkles size={11} className="animate-spin-slow" />
+                    <span>Smart Actions</span>
+                  </button>
+
+                  <div className="w-[1px] h-3 bg-zinc-800" />
+
                   <button
                     onClick={() => handleCopyContext(ctx)}
                     className="p-1.5 hover:bg-yellow-500/20 text-yellow-300 hover:text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
@@ -1050,6 +1091,26 @@ export function CursorDrawContext() {
                   SAVE AS WORKSPACE DOC
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Smart Aether Context Action Menu Modal */}
+      <AnimatePresence>
+        {activeActionMenuContext && (
+          <div className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <AetherContextActionMenu
+                captureData={activeActionMenuContext}
+                onClose={() => setActiveActionMenuContext(null)}
+              />
             </motion.div>
           </div>
         )}

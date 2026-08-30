@@ -80,10 +80,7 @@ export function Header() {
       }
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-          setDropdownOpen(true);
-        }
+        toggleCommandPalette();
       }
     };
     const handleOpenDownloadModal = () => setShowDownloadModal(true);
@@ -411,141 +408,18 @@ export function Header() {
         </div>
       </div>
       <div className="flex-grow max-w-xs sm:max-w-[260px] mx-2 sm:mx-4 relative hidden sm:block">
-        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none z-10">
-          <span className="text-zinc-600 text-xs mr-2">
-            {searchQuery.startsWith('>') ? (
-              <Terminal size={14} className="text-amber-500 animate-pulse" />
-            ) : (
-              <Search size={14} className="text-zinc-500" />
-            )}
-          </span>
-        </div>
-        <input 
-          ref={searchInputRef}
-          type="text" 
-          placeholder="Search (use > for AI execution)..." 
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            setDropdownOpen(true);
-          }}
-          onFocus={() => setDropdownOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setDropdownOpen(false);
-              e.currentTarget.blur();
-            }
-            if (e.key === 'Enter' && searchQuery.startsWith('>') && searchQuery.length > 1) {
-              handleExecuteSearchAI();
-            }
-          }}
-          className="w-full bg-[#101012] border border-zinc-850 hover:border-zinc-800 focus:border-yellow-500/50 rounded-md py-1.5 pl-8 pr-8 text-xs focus:outline-none text-zinc-200 transition-colors"
-        />
-        <div className="absolute inset-y-0 right-3 flex items-center gap-1 z-10">
-          {searchQuery ? (
-            <button 
-              onClick={() => { setSearchQuery(''); setDropdownOpen(false); }}
-              className="p-0.5 hover:bg-zinc-850 rounded text-zinc-500 hover:text-zinc-300 cursor-pointer"
-            >
-              <X size={10} />
-            </button>
-          ) : (
-            <span className="text-[10px] text-zinc-500 border border-zinc-850 px-1 rounded font-mono">K</span>
-          )}
-        </div>
-
-        {/* Dropdown Container for Desktop */}
-        <AnimatePresence>
-          {dropdownOpen && (
-            <>
-              {/* Overlay listner to close when clicking outside */}
-              <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-              
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                transition={{ duration: 0.15 }}
-                className="absolute left-0 right-0 top-full mt-2 bg-[#121214] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden flex flex-col z-50 max-h-[80vh]"
-              >
-                <div className="overflow-y-auto p-1.5">
-                  {searchQuery.startsWith('>') ? (
-                    <div className="px-3 py-3">
-                      <div className="text-[10px] font-semibold text-amber-500/80 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <Zap size={10} /> AI Execution Mode
-                      </div>
-                      {searchQuery.length > 1 ? (
-                        <button 
-                          onClick={handleExecuteSearchAI}
-                          disabled={executing}
-                          className="w-full flex items-center justify-between px-3 py-3 bg-[#09090b] border border-zinc-800 rounded-lg hover:border-amber-500/50 hover:bg-[#18181b] transition-colors group text-left cursor-pointer"
-                        >
-                          <div>
-                            <div className="text-xs font-medium text-zinc-200 flex items-center gap-2">
-                              {executing ? 'Executing...' : 'Run Command'}
-                            </div>
-                            <div className="text-[11px] text-zinc-500 mt-0.5 max-w-[90%] truncate font-mono">
-                              "{searchQuery.substring(1).trim()}"
-                            </div>
-                          </div>
-                          <div className="text-zinc-600 group-hover:text-amber-500 shrink-0">
-                            {executing ? <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" /> : <Send size={14} />}
-                          </div>
-                        </button>
-                      ) : (
-                        <div className="text-center text-xs text-zinc-500 py-6 font-mono">
-                          Type an AI command to execute...
-                          <div className="text-[10px] mt-2 opacity-50">e.g., "&gt; Deploy latest staging build"</div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="text-[10px] font-semibold text-zinc-500 px-3 py-1.5 uppercase tracking-wider font-mono">Suggestions</div>
-                      <div className="space-y-0.5">
-                        {commands.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).length > 0 ? (
-                          commands.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).map((cmd) => (
-                            <button
-                              key={cmd.id}
-                              onClick={() => {
-                                if (cmd.path) {
-                                  navigate(cmd.path);
-                                }
-                                setDropdownOpen(false);
-                              }}
-                              className="w-full flex items-center px-3 py-2 rounded-[8px] hover:bg-yellow-500/10 hover:text-yellow-400 text-zinc-300 transition-colors group cursor-pointer text-left"
-                            >
-                              <cmd.icon size={14} className="mr-3 text-zinc-500 group-hover:text-yellow-400" />
-                              <span className="text-xs font-medium">{cmd.name}</span>
-                              {cmd.shortcut && (
-                                <div className="ml-auto flex gap-1 items-center">
-                                  <span className="text-[10px] text-zinc-500 group-hover:text-yellow-400/70 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <ArrowRight size={12}/>
-                                  </span>
-                                  <kbd className="bg-[#09090b] group-hover:bg-yellow-500/15 px-1.5 py-0.5 rounded text-[9px] uppercase font-mono border border-zinc-800 group-hover:border-yellow-500/25 text-zinc-400 group-hover:text-yellow-400">
-                                    {cmd.shortcut}
-                                  </kbd>
-                                </div>
-                              )}
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-3 py-4 text-center text-xs text-zinc-500">
-                            No results found for "{searchQuery}"
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-                <div className="px-4 py-2 border-t border-zinc-850 bg-[#09090b] text-[10px] text-zinc-500 flex items-center justify-between">
-                  <span>Esc to close</span>
-                  <span className="flex items-center gap-1"><kbd className="bg-zinc-800 px-1 py-0.5 rounded border border-zinc-700 font-mono text-[9px]">&gt;</kbd> AI command mode</span>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+        <button
+          onClick={() => toggleCommandPalette()}
+          className="w-full flex items-center justify-between bg-[#101012] border border-zinc-850 hover:border-zinc-750 hover:bg-[#151518] rounded-md py-1.5 px-3 text-xs text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer text-left group"
+        >
+          <div className="flex items-center gap-2 truncate">
+            <Search size={13} className="text-zinc-500 group-hover:text-yellow-400 transition-colors shrink-0" />
+            <span className="truncate text-zinc-400 group-hover:text-zinc-300">Command Bar or Ask Aether...</span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            <span className="text-[10px] text-zinc-500 border border-zinc-800 bg-zinc-900 px-1 py-0.2 rounded font-mono">⌘K</span>
+          </div>
+        </button>
       </div>
 
       {/* Global Undo / Redo Actions Toolbar */}

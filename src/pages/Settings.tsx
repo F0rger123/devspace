@@ -18,9 +18,13 @@ import { DesktopOverlaySettingsTab } from '../components/DesktopOverlaySettingsT
 import { IntegrationsCenter } from '../components/IntegrationsCenter';
 import { AetherIdentityAndCredentialsManager } from '../components/AetherIdentityAndCredentialsManager';
 import { AetherActionsSection } from '../components/AetherActionsSection';
+import { AetherAutonomyControls } from '../components/AetherAutonomyControls';
+import { WellnessSettingsTab } from '../components/WellnessSettingsTab';
+import { LifeContextSettingsTab } from '../components/LifeContextSettingsTab';
 import { getAllAvailableModels, AIModelChoice } from '../lib/localModelEngine';
 import { isElectron } from '../lib/electronBridge';
 import { aetherVoiceRegistry } from '../lib/aetherVoiceRegistry';
+import { AndroidDiagnosticsScreen } from '../components/AndroidDiagnosticsScreen';
 
 function KineticSandboxVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1564,7 +1568,7 @@ export function Settings() {
       <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         {/* Settings Navigation */}
         <div className="flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-x-visible shrink-0 pb-2 md:pb-0 w-full md:w-48 border-b md:border-b-0 md:border-r border-zinc-900 md:pr-4">
-          {['profile', 'activity-center', 'recovery', 'aether', 'desktop_overlay', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
+          {['profile', 'android-diagnostics', 'wellness', 'life-context', 'activity-center', 'recovery', 'aether', 'desktop_overlay', 'desktop_local', 'voice-triggers', 'kinetic-gestures', 'integrations', 'api-keys', 'billing', 'security', 'advanced'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1574,7 +1578,7 @@ export function Settings() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
               }`}
             >
-              {tab === 'billing' ? 'Sandbox Quotas' : tab === 'activity-center' ? 'Activity Center ✨' : tab === 'recovery' ? 'Recovery & Sync 🛡️' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_overlay' ? 'Desktop Overlay 🖥️' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+              {tab === 'android-diagnostics' ? 'Android Diagnostics 📱' : tab === 'wellness' ? 'Wellness & Health ❤️' : tab === 'life-context' ? 'Life Context & Travel 🚗' : tab === 'billing' ? 'Sandbox Quotas' : tab === 'activity-center' ? 'Activity Center ✨' : tab === 'recovery' ? 'Recovery & Sync 🛡️' : tab === 'aether' ? 'Aether Autonomy 🔮' : tab === 'desktop_overlay' ? 'Desktop Overlay 🖥️' : tab === 'desktop_local' ? 'Desktop & Local AI 💻' : tab === 'voice-triggers' ? 'Voice & Triggers 🎙️' : tab === 'kinetic-gestures' ? 'Hand Gestures & Shortcuts 🖐️' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
             </button>
           ))}
           <div className="hidden md:block my-2 border-t border-zinc-900" />
@@ -1591,6 +1595,21 @@ export function Settings() {
 
         {/* Settings Content */}
         <div className="flex-1 border border-zinc-800 bg-[#121214] rounded-xl p-4 md:p-6 overflow-y-auto w-full min-w-0">
+          {activeTab === 'android-diagnostics' && (
+            <div className="animate-fade-in">
+              <AndroidDiagnosticsScreen />
+            </div>
+          )}
+          {activeTab === 'wellness' && (
+            <div className="animate-fade-in">
+              <WellnessSettingsTab />
+            </div>
+          )}
+          {activeTab === 'life-context' && (
+            <div className="animate-fade-in">
+              <LifeContextSettingsTab />
+            </div>
+          )}
           {activeTab === 'activity-center' && (
             <div className="animate-fade-in">
               <ActivityCenterSettingsTab />
@@ -1613,12 +1632,17 @@ export function Settings() {
 
               <div className="my-6 border-t border-zinc-800" />
 
+              {/* Comprehensive 4-Level Autonomy Engine, Per-Domain Matrix, History & Recurring Memory */}
+              <AetherAutonomyControls />
+
+              <div className="my-6 border-t border-zinc-800" />
+
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100 mb-1 flex items-center gap-2">
-                  <Sparkles size={16} className="text-purple-400" /> Aether AI Autonomy & Operations Core
+                  <Sparkles size={16} className="text-purple-400" /> Advanced Agent Operational Toggles
                 </h3>
                 <p className="text-xs text-zinc-400">
-                  Configure the permissions, operational boundaries, and security barriers of your central workspace companion.
+                  Legacy granular module switches and operational boundary overrides.
                 </p>
               </div>
 

@@ -11,6 +11,11 @@ export type AetherCanonicalIntentType =
   | 'search_recommendation'
   | 'search_comparison'
   | 'recent_work_intelligence'
+  | 'since_last_opened_query'
+  | 'unfinished_work_query'
+  | 'attention_query'
+  | 'activity_timeline_query'
+  | 'proactive_suggestions_query'
   | 'current_project_query'
   | 'conversation_topic_query'
   | 'blockers_query'
@@ -78,7 +83,14 @@ export type AetherCanonicalIntentType =
   | 'youtube_first_summary'
   | 'pre_search_context'
   | 'take_me_back'
-  | 'take_me_to_project';
+  | 'take_me_to_project'
+  | 'remember_this'
+  | 'forget_this'
+  | 'query_memory'
+  | 'meeting_prep_brief'
+  | 'meeting_quick_intake'
+  | 'meeting_post_review'
+  | 'meeting_recording_control';
 
 export interface CanonicalResolvedIntent {
   intent: AetherCanonicalIntentType;
@@ -574,6 +586,207 @@ export function resolveCanonicalAetherIntent(
     return result;
   }
 
+  // G. HARD MEMORY PRECEDENCE: REMEMBER THIS, FORGET THIS, RECALL MEMORIES
+  // 1. "Remember this: ...", "Remember that ...", "Please remember ...", "Save this to memory"
+  if (
+    norm.startsWith('remember this') ||
+    norm.startsWith('remember that') ||
+    norm.startsWith('please remember') ||
+    norm.startsWith('remember to ') ||
+    norm.startsWith('remember: ') ||
+    norm.startsWith('remember ') ||
+    norm.includes('save to memory') ||
+    norm.includes('save this to memory') ||
+    norm.includes('save to your memory') ||
+    norm.includes("don't forget that") ||
+    norm.includes('dont forget that') ||
+    norm.includes('keep in mind that') ||
+    norm.includes('note that for future sessions')
+  ) {
+    const cleanMemoryText = original
+      .replace(/^(?:can\s+you\s+)?(?:please\s+)?(?:remember\s+this\s*:\s*|remember\s+that\s+|remember\s+this\s+|remember\s+|save\s+to\s+memory\s*:\s*|save\s+to\s+memory\s+|don't\s+forget\s+that\s+|dont\s+forget\s+that\s+|keep\s+in\s+mind\s+that\s+|note\s+that\s+)/i, '')
+      .trim();
+
+    const result: CanonicalResolvedIntent = {
+      intent: 'remember_this',
+      confidence: 0.99,
+      entities: { memoryText: cleanMemoryText || original, raw: original },
+      requestedTool: 'aetherLongTermMemory.rememberThis',
+      riskLevel: 'state_creating',
+      reasoning: 'User explicitly commanded Aether to store long-term memory.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  // 2. "Forget this", "Forget that we ...", "Forget memory about ...", "Delete that memory"
+  if (
+    norm.startsWith('forget this') ||
+    norm.startsWith('forget that') ||
+    norm.startsWith('forget memory') ||
+    norm.startsWith('forget about') ||
+    norm.startsWith('forget ') ||
+    norm.includes('delete memory') ||
+    norm.includes('delete that memory') ||
+    norm.includes('remove from memory') ||
+    norm.includes('clear memory about')
+  ) {
+    const cleanForgetText = original
+      .replace(/^(?:can\s+you\s+)?(?:please\s+)?(?:forget\s+this|forget\s+that\s+|forget\s+memory\s+about\s+|forget\s+about\s+|forget\s+|delete\s+memory\s+about\s+|delete\s+that\s+memory\s+|remove\s+from\s+memory\s+|clear\s+memory\s+about\s+)/i, '')
+      .trim();
+
+    const result: CanonicalResolvedIntent = {
+      intent: 'forget_this',
+      confidence: 0.99,
+      entities: { query: cleanForgetText || original, raw: original },
+      requestedTool: 'aetherLongTermMemory.forgetThis',
+      riskLevel: 'destructive',
+      reasoning: 'User requested forgetting or removing a long-term memory.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  // 3. "What do you remember", "What memories do you have", "Recall memories", "What are my preferences", "Recall architecture decisions", "What are the project goals"
+  if (
+    norm.includes('what do you remember') ||
+    norm.includes('what memories do you have') ||
+    norm.includes('show memories') ||
+    norm.includes('show my memories') ||
+    norm.includes('list memories') ||
+    norm.includes('recall memories') ||
+    norm.includes('recall memory') ||
+    norm.includes('what is stored in your memory') ||
+    norm.includes('what is in your memory') ||
+    norm.includes('what are my preferences') ||
+    norm.includes('what are our project goals') ||
+    norm.includes('what are the project goals') ||
+    norm.includes('what did we decide about') ||
+    norm.includes('what did i decide about') ||
+    norm.includes('what architecture choices') ||
+    norm.includes('recall project goals')
+  ) {
+    const memoryQuery = original
+      .replace(/^(?:what\s+do\s+you\s+remember\s+about|what\s+memories\s+do\s+you\s+have\s+about|recall\s+memories\s+for|recall\s+memories\s+about|what\s+did\s+we\s+decide\s+about|what\s+did\s+i\s+decide\s+about)\s+/i, '')
+      .trim();
+
+    const result: CanonicalResolvedIntent = {
+      intent: 'query_memory',
+      confidence: 0.98,
+      entities: { query: memoryQuery },
+      requestedTool: 'aetherLongTermMemory.queryMemories',
+      riskLevel: 'safe',
+      reasoning: 'User requested recalling long-term memories or preferences.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  // 3.0 ACTIVITY TIMELINE, TEMPORAL & UNFINISHED WORK INTELLIGENCE
+  if (
+    norm.includes('what changed since i last opened') ||
+    norm.includes("what's changed since i last opened") ||
+    norm.includes('whats changed since i last opened') ||
+    norm.includes('what changed since last open') ||
+    norm.includes('what changed since last time') ||
+    norm.includes('changes since last opened')
+  ) {
+    const matchProj = original.match(/(?:in|for|on)\s+([a-zA-Z0-9_\-\s]+)/i);
+    const targetProject = matchProj ? matchProj[1].trim() : undefined;
+    const result: CanonicalResolvedIntent = {
+      intent: 'since_last_opened_query',
+      confidence: 0.99,
+      entities: { targetProject },
+      requestedTool: 'aetherActiveProjectContext.getChangesSinceLastOpened',
+      riskLevel: 'safe',
+      reasoning: 'User asked what changed since they last opened this project.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  if (
+    norm.includes('what did i leave unfinished') ||
+    norm.includes('what did we leave unfinished') ||
+    norm.includes('what was left unfinished') ||
+    norm.includes('what is unfinished') ||
+    norm.includes('unfinished work') ||
+    norm.includes('left unfinished') ||
+    norm.includes('pending tasks') ||
+    norm.includes('what tasks are unfinished')
+  ) {
+    const result: CanonicalResolvedIntent = {
+      intent: 'unfinished_work_query',
+      confidence: 0.99,
+      entities: {},
+      requestedTool: 'aetherActiveProjectContext.getUnfinishedWork',
+      riskLevel: 'safe',
+      reasoning: 'User asked for unfinished work across DevSpace.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  if (
+    norm.includes('what needs my attention') ||
+    norm.includes('what needs attention') ||
+    norm.includes('items needing attention') ||
+    norm.includes('anything need my attention') ||
+    norm.includes('anything needing attention') ||
+    norm.includes('what requires attention')
+  ) {
+    const result: CanonicalResolvedIntent = {
+      intent: 'attention_query',
+      confidence: 0.99,
+      entities: {},
+      requestedTool: 'aetherConversationalEngine.handleAttentionQuery',
+      riskLevel: 'safe',
+      reasoning: 'User asked what items require their attention.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  if (
+    norm.includes('activity timeline') ||
+    norm.includes('show activity timeline') ||
+    norm.includes('view timeline') ||
+    norm.includes('workspace timeline') ||
+    norm.includes('show timeline')
+  ) {
+    const result: CanonicalResolvedIntent = {
+      intent: 'activity_timeline_query',
+      confidence: 0.99,
+      entities: {},
+      requestedTool: 'aetherActiveProjectContext.getActivityTimeline',
+      riskLevel: 'safe',
+      reasoning: 'User requested the workspace activity timeline.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
   // 3. RECENT WORK & WORKSPACE INTELLIGENCE
   const isRecentWorkQuery =
     norm.includes('what am i doing') ||
@@ -585,6 +798,9 @@ export function resolveCanonicalAetherIntent(
     norm.includes('what did i work on') ||
     norm.includes('what was i doing') ||
     norm.includes('what did i do') ||
+    norm.includes('what did i change this morning') ||
+    norm.includes('what did i change today') ||
+    norm.includes('what changed this morning') ||
     norm.includes('what about yesterday') ||
     norm.includes('what did i do yesterday') ||
     norm.includes('what was i doing yesterday') ||
@@ -611,9 +827,11 @@ export function resolveCanonicalAetherIntent(
 
   if (isRecentWorkQuery) {
     let targetProjectName: string | undefined = undefined;
-    let timeFilter: 'today' | 'yesterday' | 'this_week' | 'last_month' | 'recent' = 'recent';
+    let timeFilter: 'today' | 'this_morning' | 'yesterday' | 'this_week' | 'last_month' | 'recent' = 'recent';
 
-    if (norm.includes('today')) {
+    if (norm.includes('this morning') || norm.includes('morning')) {
+      timeFilter = 'this_morning';
+    } else if (norm.includes('today')) {
       timeFilter = 'today';
     } else if (norm.includes('yesterday')) {
       timeFilter = 'yesterday';
@@ -2227,6 +2445,110 @@ export function resolveCanonicalAetherIntent(
       lastCanonicalIntentTrace = result;
       return result;
     }
+  }
+
+  // I. Meeting Intelligence: Pre-Meeting Briefing
+  if (
+    norm.includes('what should i know before my') ||
+    norm.includes('what should i know before this meeting') ||
+    norm.includes('prep me for my meeting') ||
+    norm.includes('prep me for meeting') ||
+    norm.includes('prepare me for my meeting') ||
+    norm.includes('meeting prep') ||
+    norm.includes('pre-meeting brief') ||
+    norm.includes('pre meeting brief') ||
+    norm.includes('what did we discuss last time') ||
+    norm.includes('what did we last discuss')
+  ) {
+    const match = original.match(/(?:with|for|before my meeting with|before meeting with|before my|before)\s+([A-Za-z0-9\s._:-]+?)(?:\?|$|\.|\n)/i);
+    const query = match ? match[1].trim() : 'upcoming meeting';
+    const result: CanonicalResolvedIntent = {
+      intent: 'meeting_prep_brief',
+      confidence: 0.98,
+      entities: { query },
+      requestedTool: 'aetherMeetingIntelligence.getPreMeetingBrief',
+      riskLevel: 'safe',
+      reasoning: `Pre-meeting briefing requested for "${query}".`,
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  // J. Meeting Quick Intake: Commitments, Notes, Issues
+  if (
+    norm.startsWith('create an issue for') ||
+    norm.startsWith('create issue for') ||
+    norm.startsWith('i told ') ||
+    norm.startsWith('i promised ') ||
+    norm.startsWith('i agreed to ') ||
+    norm.startsWith('save these meeting notes') ||
+    norm.startsWith('save meeting notes') ||
+    norm.match(/^[a-zA-Z0-9._-]+\s+(agreed to|promised to|said they would|will send|will deliver)/i)
+  ) {
+    const result: CanonicalResolvedIntent = {
+      intent: 'meeting_quick_intake',
+      confidence: 0.98,
+      entities: { text: original },
+      requestedTool: 'aetherMeetingIntelligence.quickIntake',
+      riskLevel: 'safe',
+      reasoning: `Meeting quick intake parsed: "${original}".`,
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  // K. Post-Meeting Review
+  if (
+    norm.includes('post-meeting review') ||
+    norm.includes('post meeting review') ||
+    norm.includes('capture outcomes from that meeting') ||
+    norm.includes('capture meeting outcomes') ||
+    norm.includes('process meeting notes')
+  ) {
+    const result: CanonicalResolvedIntent = {
+      intent: 'meeting_post_review',
+      confidence: 0.98,
+      entities: { rawNotes: original },
+      requestedTool: 'aetherMeetingIntelligence.processMeetingNotes',
+      riskLevel: 'safe',
+      reasoning: 'Post-meeting structured outcome processing requested.',
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
+  }
+
+  // L. Meeting Recording Safety Controls
+  if (
+    norm.includes('start recording meeting') ||
+    norm.includes('start meeting recording') ||
+    norm.includes('record this meeting') ||
+    norm.includes('stop recording meeting') ||
+    norm.includes('stop meeting recording') ||
+    norm.includes('stop recording')
+  ) {
+    const isStart = norm.includes('start') || norm.includes('record this');
+    const result: CanonicalResolvedIntent = {
+      intent: 'meeting_recording_control',
+      confidence: 0.98,
+      entities: { action: isStart ? 'start' : 'stop' },
+      requestedTool: isStart ? 'aetherMeetingIntelligence.startRecording' : 'aetherMeetingIntelligence.stopRecording',
+      riskLevel: 'safe',
+      reasoning: `Meeting recording control: ${isStart ? 'start' : 'stop'}.`,
+      rawInput: original,
+      normalizedInput: norm,
+      timestamp: Date.now()
+    };
+    lastCanonicalIntentTrace = result;
+    return result;
   }
 
   // 16. DEFAULT CONVERSATIONAL / CHAT QUERY

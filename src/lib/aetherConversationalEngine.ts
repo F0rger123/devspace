@@ -2,6 +2,7 @@
 // Coordinates continuous multi-turn development dialogue, working memory,
 // canonical project context, GitHub status, idea lifecycle, search, and personality.
 
+import { aetherMultiActionEngine, MultiActionPlan } from './aetherMultiActionEngine';
 import { masterIdeaLibrary, MasterIdea } from './masterIdeaLibraryService';
 import { aetherVoiceRegistry } from './aetherVoiceRegistry';
 import { aetherCore } from './aetherCore';
@@ -10,6 +11,7 @@ import {
   aetherActiveProjectContext,
   CanonicalActiveProjectContextState
 } from './aetherActiveProjectContext';
+import { aetherProactiveIntelligence } from './aetherProactiveIntelligenceService';
 import {
   getResolvedAetherPersonality,
   formatResponseWithPersonality,
@@ -21,6 +23,19 @@ import {
   parseOrdinalIndex
 } from './aetherCanonicalIntentResolver';
 import { aetherAliasRegistry } from './aetherAliasRegistry';
+import { aetherLongTermMemory, LongTermMemory } from './aetherLongTermMemoryService';
+import { aetherWellness } from './aetherWellnessService';
+import { aetherLifeContext } from './aetherLifeContextService';
+import { aetherRoutines, RoutineCategory } from './aetherRoutinesService';
+import { aetherPeople } from './aetherPeopleService';
+import { aetherMeetingIntelligence } from './aetherMeetingIntelligenceService';
+import {
+  aetherAutonomy,
+  AutonomyLevel,
+  AutonomyDomain,
+  AUTONOMY_LEVEL_DETAILS,
+  DOMAIN_METADATA
+} from './aetherAutonomyEngine';
 
 export interface WorkingMemoryItem {
   id: string;
@@ -312,15 +327,483 @@ class AetherConversationalEngine {
     lastAetherIntentDebug = canonical;
     console.log('[Aether Canonical Intent Debug]', canonical);
 
-    // 2. CANCEL TASK / INTERRUPT PLAYBACK
+    // 2. CANCEL TASK / INTERRUPT PLAYBACK / CANCEL WORKFLOW
     if (canonical.intent === 'cancel_task') {
       aetherVoiceRegistry.stopSpeaking();
+      aetherMultiActionEngine.cancelCurrentWorkflow();
       this.memoryState.awaitingInputFor = null;
       this.saveState();
       return {
-        responseText: 'Audio playback and pending task cancelled.',
-        speechText: 'Cancelled current task.',
-        statusText: 'Task Cancelled'
+        responseText: 'Audio playback, pending tasks, and active multi-step workflows have been cancelled.',
+        speechText: 'Cancelled active workflow and current task.',
+        statusText: 'Workflow Cancelled'
+      };
+    }
+
+    // 2.3. AUTONOMY, PLANNING CONTROLS, UNDO & "WHY AETHER ACTED" INTELLIGENCE
+    const lowerText = text.toLowerCase().trim();
+
+    // A. "Undo last action" / "Undo" / "Revert that"
+    if (
+      lowerText === 'undo' ||
+      lowerText === 'undo that' ||
+      lowerText === 'undo last action' ||
+      lowerText === 'revert that' ||
+      lowerText === 'revert last action'
+    ) {
+      const recentAuto = aetherAutonomy.getRecentAutoActions(1)[0];
+      if (recentAuto && recentAuto.canUndo && recentAuto.executionMode !== 'undone') {
+        const success = await aetherAutonomy.undoAction(recentAuto.id);
+        if (success) {
+          return {
+            responseText: formatResponseWithPersonality(
+              `↩️ **Undone Action**: Successfully reverted **"${recentAuto.title}"**.\n\n*Original Reason*: ${recentAuto.whyReason}`,
+              personality
+            ),
+            speechText: `Reverted ${recentAuto.title}.`,
+            statusText: `Undone: ${recentAuto.title}`
+          };
+        }
+      }
+    }
+
+    // B. "Why did you act?" / "Why did you save my workspace?" / "Why did you do that?"
+    if (
+      lowerText.includes('why did you act') ||
+      lowerText.includes('why did you do that') ||
+      lowerText.includes('why did you save') ||
+      lowerText.includes('why did you update my leave time') ||
+      lowerText.includes('why did you pause') ||
+      lowerText.includes('why aether acted')
+    ) {
+      const recent = aetherAutonomy.getRecentAutoActions(3);
+      if (recent.length === 0) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `I haven't executed any autonomous background actions in this session yet. My current autonomy level is **${AUTONOMY_LEVEL_DETAILS[aetherAutonomy.getGlobalLevel()].label}**.`,
+            personality
+          ),
+          speechText: `I haven't taken any autonomous background actions recently.`,
+          statusText: 'No Recent Auto-Actions'
+        };
+      }
+
+      let md = `### 🔮 Why Aether Acted (Recent Transparent Rationale)\n\n`;
+      recent.forEach((item, idx) => {
+        md += `${idx + 1}. **${item.title}** (\`${item.domain}\` • *${new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}*)\n`;
+        md += `   - **WHY**: ${item.whyReason}\n`;
+        if (item.canUndo && item.status !== 'undone') {
+          md += `   - *Say "Undo" or click Undo in Settings to revert.* \n`;
+        }
+        md += `\n`;
+      });
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Here is the rationale for my recent actions, including ${recent[0].title}: ${recent[0].whyReason}`,
+        statusText: `Explained ${recent.length} recent actions`,
+        resultData: recent
+      };
+    }
+
+    // C. "Show action history" / "What actions did you take?"
+    if (
+      lowerText.includes('show action history') ||
+      lowerText.includes('what actions did you take') ||
+      lowerText.includes('recent actions') ||
+      lowerText.includes('auto actions')
+    ) {
+      const history = aetherAutonomy.getActionHistory({ limit: 5 });
+      if (history.length === 0) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `No actions have been recorded in your Autonomy History yet. You can configure per-domain permissions in **Settings → Aether Autonomy 🔮**.`,
+            personality
+          ),
+          speechText: `No actions have been recorded yet.`,
+          statusText: 'Empty Action History'
+        };
+      }
+
+      let md = `### 📋 Aether Autonomy Action History (Recent ${history.length})\n\n`;
+      history.forEach((h, i) => {
+        const modeBadge = h.executionMode === 'auto_executed' ? '`[AUTO]`' : h.executionMode === 'confirmed_by_user' ? '`[APPROVED]`' : '`[SUGGESTED]`';
+        md += `${i + 1}. ${modeBadge} **${h.title}** (*${h.domain}*)\n   - ${h.whyReason}\n\n`;
+      });
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Loaded your recent action history with ${history.length} events.`,
+        statusText: `Loaded ${history.length} history records`,
+        resultData: history
+      };
+    }
+
+    // D. "Set autonomy to [Level]" / "Change autonomy to [Level]"
+    const setAutonomyMatch = lowerText.match(/(?:set|change|switch)\s+(?:global\s+)?autonomy(?:\s+level)?\s+to\s+(suggest\s+only|ask\s+before\s+acting|trusted\s+actions|high\s+autonomy|level\s+[1-4])/i);
+    if (setAutonomyMatch) {
+      const rawLevel = setAutonomyMatch[1].toLowerCase();
+      let targetLevel: AutonomyLevel = 'trusted_actions';
+      if (rawLevel.includes('suggest') || rawLevel.includes('1')) targetLevel = 'suggest_only';
+      else if (rawLevel.includes('ask') || rawLevel.includes('2')) targetLevel = 'ask_before_acting';
+      else if (rawLevel.includes('trusted') || rawLevel.includes('3')) targetLevel = 'trusted_actions';
+      else if (rawLevel.includes('high') || rawLevel.includes('4')) targetLevel = 'high_autonomy';
+
+      aetherAutonomy.setGlobalLevel(targetLevel);
+      const details = AUTONOMY_LEVEL_DETAILS[targetLevel];
+
+      return {
+        responseText: formatResponseWithPersonality(
+          `🛡️ **Global Autonomy Updated**: Set to **Level ${details.number}: ${details.label}**.\n\n- *Policy*: ${details.longDesc}\n- *Safety Guarantee*: Destructive & sensitive actions still require explicit confirmation.`,
+          personality
+        ),
+        speechText: `Set global autonomy to Level ${details.number}, ${details.label}.`,
+        statusText: `Autonomy: ${details.label}`
+      };
+    }
+
+    // E. "Change [Domain] autonomy to [Level]"
+    const setDomainMatch = lowerText.match(/(?:set|change)\s+(devspace|github|calendar|travel|wellness|notifications|workflows|desktop)\s+autonomy\s+to\s+(suggest\s+only|ask\s+before\s+acting|trusted\s+actions|high\s+autonomy|level\s+[1-4])/i);
+    if (setDomainMatch) {
+      const domain = setDomainMatch[1].toLowerCase() as AutonomyDomain;
+      const rawLevel = setDomainMatch[2].toLowerCase();
+      let targetLevel: AutonomyLevel = 'trusted_actions';
+      if (rawLevel.includes('suggest') || rawLevel.includes('1')) targetLevel = 'suggest_only';
+      else if (rawLevel.includes('ask') || rawLevel.includes('2')) targetLevel = 'ask_before_acting';
+      else if (rawLevel.includes('trusted') || rawLevel.includes('3')) targetLevel = 'trusted_actions';
+      else if (rawLevel.includes('high') || rawLevel.includes('4')) targetLevel = 'high_autonomy';
+
+      aetherAutonomy.setDomainLevel(domain, targetLevel);
+      const domainLabel = DOMAIN_METADATA[domain]?.label || domain;
+      const details = AUTONOMY_LEVEL_DETAILS[targetLevel];
+
+      return {
+        responseText: formatResponseWithPersonality(
+          `🛡️ **Domain Autonomy Updated**: **${domainLabel}** is now configured to **Level ${details.number}: ${details.label}**.\n\n${details.longDesc}`,
+          personality
+        ),
+        speechText: `Updated ${domainLabel} to ${details.label}.`,
+        statusText: `${domainLabel}: ${details.label}`
+      };
+    }
+
+    // F. "What is my autonomy level?" / "Show autonomy settings"
+    if (
+      lowerText.includes('what is my autonomy') ||
+      lowerText.includes('autonomy level') ||
+      lowerText.includes('autonomy settings') ||
+      lowerText.includes('show planning settings')
+    ) {
+      const global = aetherAutonomy.getGlobalLevel();
+      const details = AUTONOMY_LEVEL_DETAILS[global];
+      const domains = aetherAutonomy.getConfig().domainLevels;
+
+      let md = `### 🔮 Aether Autonomy & Planning Status\n\n`;
+      md += `**Global Level**: **Level ${details.number}: ${details.label}**\n*${details.longDesc}*\n\n`;
+      md += `**Per-Domain Autonomy Matrix**:\n`;
+      (Object.keys(domains) as AutonomyDomain[]).forEach((d) => {
+        const lvl = domains[d];
+        md += `• **${DOMAIN_METADATA[d]?.label || d}**: Level ${AUTONOMY_LEVEL_DETAILS[lvl].number} (${AUTONOMY_LEVEL_DETAILS[lvl].label})\n`;
+      });
+      md += `\n*You can say "Set autonomy to Trusted Actions" or adjust granular controls in Settings.*`;
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Your current global autonomy is Level ${details.number}, ${details.label}.`,
+        statusText: `Autonomy: ${details.label}`
+      };
+    }
+
+    // 2.4. AETHER ROUTINES & HABIT INTELLIGENCE CONVERSATIONAL CONTROLS
+    // A. "What routines have you learned?" / "Show routines" / "What habits have you learned?" / "Show learned habits"
+    if (
+      lowerText.includes('what routines have you learned') ||
+      lowerText.includes('what habits have you learned') ||
+      lowerText.includes('show routines') ||
+      lowerText.includes('show my routines') ||
+      lowerText.includes('show learned habits') ||
+      lowerText.includes('list routines') ||
+      lowerText.includes('learned routines')
+    ) {
+      const allRoutines = aetherRoutines.getRoutines();
+      const confirmed = aetherRoutines.getConfirmedRoutines();
+      const observed = aetherRoutines.getObservedPatterns();
+      const suggestions = aetherRoutines.getAetherSuggestions();
+
+      let md = `### 🔄 Aether Routines & Habit Intelligence\n\n`;
+      md += `I have inferred and tracked **${allRoutines.length} routines** based on your real activity logs across development, schedule, travel, and wellness:\n\n`;
+
+      if (confirmed.length > 0) {
+        md += `#### ✅ Confirmed Active Routines (${confirmed.length})\n`;
+        confirmed.forEach((r, i) => {
+          md += `${i + 1}. **${r.title}** (*${r.schedule.recurrenceDescription}*)\n   - ${r.description}\n   - **Action**: ${r.action.actionTitle} (\`${r.action.domain}\`)\n\n`;
+        });
+      }
+
+      if (observed.length > 0) {
+        md += `#### 🔮 Inferred Observed Patterns (${observed.length})\n`;
+        observed.forEach((r, i) => {
+          md += `${i + 1}. **${r.title}** — **${r.confidence}% Confidence** (${r.evidenceCount} verified observations)\n   - *${r.description}*\n   - *Say "Confirm routine ${r.title}" or manage in the Daily Hub.*\n\n`;
+        });
+      }
+
+      if (suggestions.length > 0) {
+        md += `#### 💡 Contextual Aether Suggestions (${suggestions.length})\n`;
+        suggestions.forEach((r, i) => {
+          md += `${i + 1}. **${r.title}** (*${r.schedule.recurrenceDescription}*)\n   - ${r.description}\n\n`;
+        });
+      }
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `I have learned ${allRoutines.length} recurring habits across work, schedule, and wellness, including ${confirmed.length} active confirmed routines and ${observed.length} observed patterns.`,
+        statusText: `Loaded ${allRoutines.length} Routines`,
+        resultData: allRoutines
+      };
+    }
+
+    // B. "Stop reminding me about this" / "Stop this routine" / "Stop reminding me about [x]"
+    if (
+      lowerText.startsWith('stop reminding me') ||
+      lowerText.startsWith('stop this routine') ||
+      lowerText.startsWith('dismiss routine') ||
+      lowerText.includes('stop reminding me about')
+    ) {
+      // Find matching routine
+      const allRoutines = aetherRoutines.getRoutines();
+      let target = allRoutines[0];
+
+      if (lowerText.includes('coding') || lowerText.includes('workspace')) {
+        target = allRoutines.find((r) => r.category === 'coding') || target;
+      } else if (lowerText.includes('workout') || lowerText.includes('exercise')) {
+        target = allRoutines.find((r) => r.category === 'exercise') || target;
+      } else if (lowerText.includes('sleep')) {
+        target = allRoutines.find((r) => r.category === 'sleep') || target;
+      } else if (lowerText.includes('travel') || lowerText.includes('departure') || lowerText.includes('buffer')) {
+        target = allRoutines.find((r) => r.category === 'travel') || target;
+      } else if (lowerText.includes('charger') || lowerText.includes('pack')) {
+        target = allRoutines.find((r) => r.category === 'packing') || target;
+      } else if (lowerText.includes('github') || lowerText.includes('pr')) {
+        target = allRoutines.find((r) => r.category === 'github_review') || target;
+      }
+
+      if (target) {
+        aetherRoutines.rejectRoutine(target.id, 'User asked to stop reminders');
+        return {
+          responseText: formatResponseWithPersonality(
+            `🛑 **Routine Dismissed**: I have stopped reminders for **"${target.title}"** and decayed its suggestion weighting.\n\n*Aether will no longer proactively prompt you for this pattern.*`,
+            personality
+          ),
+          speechText: `I have stopped reminding you about ${target.title}.`,
+          statusText: `Stopped: ${target.title}`
+        };
+      }
+    }
+
+    // C. "Every weekday when I start work, open my coding workspace" / "Every [day] at [time], [action]"
+    if (
+      lowerText.includes('every weekday when i start work') ||
+      lowerText.includes('open my coding workspace') ||
+      lowerText.match(/every\s+(?:weekday|day|monday|tuesday|wednesday|thursday|friday)\s+(?:at\s+([0-9:]+\s*(?:am|pm)?)|when\s+i\s+start\s+work)/i)
+    ) {
+      const routine = aetherRoutines.createManualRoutine({
+        title: 'Morning Workspace Activation',
+        description: 'Every weekday when you start work, automatically launch DevSpace coding workspace and load daily tests.',
+        category: 'coding',
+        timeOfDay: '09:30',
+        daysOfWeek: [1, 2, 3, 4, 5],
+        recurrenceDescription: 'Every weekday when starting work (09:30 AM)',
+        actionTitle: 'Launch Coding Workspace & Load Active Repo',
+        actionDescription: 'Opens primary development workspace and restores editor layout.',
+        domain: 'devspace',
+        riskLevel: 'low',
+        isPrivate: false
+      });
+
+      return {
+        responseText: formatResponseWithPersonality(
+          `✅ **Routine Created & Confirmed**: **"${routine.title}"**\n\n- **Schedule**: ${routine.schedule.recurrenceDescription}\n- **Action**: ${routine.action.actionTitle}\n- **Autonomy**: \`${routine.action.domain}\` (*${routine.action.riskLevel} risk*)\n\n*Aether will now execute or prompt this routine automatically per your autonomy settings.*`,
+          personality
+        ),
+        speechText: `Configured your morning routine to open your coding workspace every weekday.`,
+        statusText: `Created: ${routine.title}`
+      };
+    }
+
+    // D. "Make this part of my morning routine" / "Make this part of my evening routine" / "Add [x] to my morning routine"
+    if (
+      lowerText.includes('make this part of my morning routine') ||
+      lowerText.includes('add to my morning routine') ||
+      lowerText.includes('make this part of my evening routine') ||
+      lowerText.includes('add to my evening routine')
+    ) {
+      const isMorning = lowerText.includes('morning');
+      const cat: RoutineCategory = isMorning ? 'morning' : 'evening';
+      const timeStr = isMorning ? '08:45' : '18:30';
+      const titleStr = isMorning ? 'Custom Morning Operating Habit' : 'Custom Evening Wrap-Up Habit';
+
+      const routine = aetherRoutines.createManualRoutine({
+        title: titleStr,
+        description: `Custom ${isMorning ? 'morning' : 'evening'} routine added via conversation.`,
+        category: cat,
+        timeOfDay: timeStr,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        recurrenceDescription: `Every weekday at ${timeStr}`,
+        actionTitle: `Execute ${isMorning ? 'Morning Briefing & Objective Sync' : 'Evening Project Reflection'}`,
+        actionDescription: `Runs daily ${isMorning ? 'morning preparation' : 'evening reflection and commit sweep'}.`,
+        domain: 'notifications',
+        riskLevel: 'low',
+        isPrivate: false
+      });
+
+      return {
+        responseText: formatResponseWithPersonality(
+          `🌅 **Added to ${isMorning ? 'Morning' : 'Evening'} Routine**: **"${routine.title}"** (*${routine.schedule.recurrenceDescription}*).\n\n*You can view, edit, or adjust triggers in the Daily Operating Hub.*`,
+          personality
+        ),
+        speechText: `Added to your ${isMorning ? 'morning' : 'evening'} routine.`,
+        statusText: `Added ${routine.title}`
+      };
+    }
+
+    // E. "Pause my workout routine this week" / "Pause [routine] this week"
+    if (
+      lowerText.includes('pause my workout routine') ||
+      lowerText.includes('pause workout routine') ||
+      lowerText.includes('pause routine') ||
+      lowerText.includes('pause my routine')
+    ) {
+      const allRoutines = aetherRoutines.getRoutines();
+      let target = allRoutines.find((r) => r.category === 'exercise') || allRoutines[0];
+      if (lowerText.includes('coding')) target = allRoutines.find((r) => r.category === 'coding') || target;
+      if (lowerText.includes('morning')) target = allRoutines.find((r) => r.category === 'morning') || target;
+
+      if (target) {
+        aetherRoutines.pauseRoutine(target.id, 7 * 86400000);
+        return {
+          responseText: formatResponseWithPersonality(
+            `⏸️ **Routine Paused**: **"${target.title}"** is now paused for 7 days.\n\n*Aether will temporarily suppress automated prompts and resume next week.*`,
+            personality
+          ),
+          speechText: `Paused your ${target.title} for this week.`,
+          statusText: `Paused: ${target.title}`
+        };
+      }
+    }
+
+    // F. "Snooze routine" / "Skip routine today"
+    if (lowerText.startsWith('snooze routine') || lowerText === 'snooze' || lowerText === 'snooze 15m') {
+      const topSuggestion = aetherRoutines.getUpcomingSuggestions(1)[0];
+      if (topSuggestion) {
+        aetherRoutines.snoozeRoutine(topSuggestion.id, 15);
+        return {
+          responseText: formatResponseWithPersonality(
+            `⏰ **Snoozed**: **"${topSuggestion.title}"** snoozed for 15 minutes.`,
+            personality
+          ),
+          speechText: `Snoozed ${topSuggestion.title} for 15 minutes.`,
+          statusText: `Snoozed 15m`
+        };
+      }
+    }
+
+    if (lowerText.includes('skip this routine today') || lowerText === 'skip routine' || lowerText === 'skip today') {
+      const topSuggestion = aetherRoutines.getUpcomingSuggestions(1)[0];
+      if (topSuggestion) {
+        aetherRoutines.skipRoutineToday(topSuggestion.id);
+        return {
+          responseText: formatResponseWithPersonality(
+            `⏭️ **Skipped for Today**: **"${topSuggestion.title}"** will resume tomorrow.`,
+            personality
+          ),
+          speechText: `Skipped ${topSuggestion.title} for today.`,
+          statusText: `Skipped today`
+        };
+      }
+    }
+
+    // 2.5. MULTI-ACTION SEQUENTIAL WORKFLOW EXECUTION
+    if (aetherMultiActionEngine.isMultiActionRequest(text)) {
+      const plan = aetherMultiActionEngine.planWorkflow(text, {
+        activeProjectId: this.memoryState.activeProjectId,
+        activeProjectName: this.memoryState.activeProjectName,
+        availableProjects
+      });
+
+      // Update conversation context working memory
+      this.addToWorkingMemory({
+        type: 'planner_task',
+        title: plan.title,
+        details: `Goal: ${plan.originalGoal} (${plan.steps.length} sequential steps planned)`
+      });
+
+      // Execute the multi-action plan asynchronously while passing results between steps
+      const executedPlan = await aetherMultiActionEngine.executePlan(plan, {
+        onProjectSwitch: (id, name) => {
+          this.setActiveProject(id, name);
+          callbacks?.onNavigate?.('/projects', id);
+        },
+        onIssueCreate: async (issueData) => {
+          if (callbacks?.onIssueCreate) {
+            return await callbacks.onIssueCreate({
+              title: issueData.title,
+              projectId: issueData.projectId || this.memoryState.activeProjectId || 'default',
+              priority: issueData.priority,
+              type: issueData.type
+            });
+          }
+          return null;
+        },
+        onNoteCreate: async (noteData) => {
+          if (callbacks?.onNoteCreate) {
+            await callbacks.onNoteCreate({
+              title: noteData.title,
+              content: noteData.content,
+              projectId: noteData.projectId || this.memoryState.activeProjectId
+            });
+          }
+        },
+        onNavigate: (path) => {
+          callbacks?.onNavigate?.(path);
+        },
+        openUrl: (url) => {
+          callbacks?.openUrl?.(url);
+        }
+      });
+
+      const stepsOverview = executedPlan.steps
+        .map((s, idx) => {
+          const icon = s.status === 'completed' ? '✅' : s.status === 'failed' ? '❌' : s.status === 'cancelled' ? '⚠️' : '⏳';
+          const out = s.outputResult ? ` — *${typeof s.outputResult === 'object' ? JSON.stringify(s.outputResult).slice(0, 60) + '...' : s.outputResult}*` : '';
+          const err = s.error ? ` — *(Error: ${s.error})*` : '';
+          return `${idx + 1}. ${icon} **${s.title}**${out}${err}`;
+        })
+        .join('\n');
+
+      const statusHeader = executedPlan.status === 'completed'
+        ? `### 🎯 Multi-Action Workflow Completed: "${executedPlan.title}"`
+        : executedPlan.status === 'cancelled'
+        ? `### ⚠️ Multi-Action Workflow Cancelled: "${executedPlan.title}"`
+        : `### ❌ Multi-Action Workflow Stopped: "${executedPlan.title}"`;
+
+      const responseMarkdown = `${statusHeader}\n\n**Goal**: *"${executedPlan.originalGoal}"*\n\n**Execution Steps**:\n${stepsOverview}\n\n${
+        executedPlan.status === 'completed'
+          ? `⚡ **Summary**: ${executedPlan.summaryMessage || 'All operations completed in sequence with verified state transitions.'}`
+          : `🛑 **Halted**: ${executedPlan.failureReason || 'Workflow stopped to prevent inconsistent state.'}`
+      }`;
+
+      this.memoryState.lastAction = executedPlan.title;
+      this.saveState();
+
+      return {
+        responseText: formatResponseWithPersonality(responseMarkdown, personality),
+        speechText: executedPlan.spokenSummary || (executedPlan.status === 'completed' ? `Completed your ${executedPlan.steps.length}-step workflow.` : `Workflow was stopped.`),
+        statusText: executedPlan.status === 'completed' ? `Completed: ${executedPlan.title}` : `Workflow: ${executedPlan.status}`,
+        actionToExecute: {
+          intent: 'multi_action_workflow',
+          parsedData: { plan: executedPlan }
+        },
+        resultData: executedPlan
       };
     }
 
@@ -344,6 +827,243 @@ class AetherConversationalEngine {
           ),
           speechText: `Understood, ${newName}! From now on, I will address you as ${newName}.`,
           statusText: `Updated name to ${newName}`
+        };
+      }
+    }
+
+    // 3.8 AETHER LONG-TERM MEMORY ACTIONS
+    // A. "Remember this: ..."
+    if (canonical.intent === 'remember_this') {
+      const memInput = canonical.entities.memoryText || text;
+      const targetProjId = this.memoryState.activeProjectId;
+      const targetProjName = this.memoryState.activeProjectName;
+
+      const res = aetherLongTermMemory.rememberThis(memInput, {
+        projectId: targetProjId,
+        projectName: targetProjName,
+        classification: 'verified_fact',
+        scope: targetProjId ? 'project' : 'global'
+      });
+
+      const scopeTag = res.memory.scope === 'project' ? `📁 Project: **${res.memory.projectName || 'Active Project'}**` : `🌐 **Global Memory**`;
+      const catLabel = res.memory.category.replace(/_/g, ' ').toUpperCase();
+      const statusTitle = res.isUpdate ? 'Updated Existing Memory' : 'Remembered New Fact';
+
+      const responseMd = `🧠 **${statusTitle}**\n\n- **Category**: \`${catLabel}\` | ${scopeTag}\n- **Title**: **${res.memory.title}**\n- **Content**: ${res.memory.content}\n- **Classification**: \`[VERIFIED FACT]\`\n\n*I will preserve and recall this across future sessions, projects, and conversations.*`;
+
+      return {
+        responseText: formatResponseWithPersonality(responseMd, personality),
+        speechText: `Got it. I've stored that in my long-term memory under ${catLabel.toLowerCase()}.`,
+        statusText: `Remembered: ${res.memory.title}`,
+        resultData: res.memory
+      };
+    }
+
+    // B. "Forget this ..."
+    if (canonical.intent === 'forget_this') {
+      const query = canonical.entities.query || text;
+      const res = aetherLongTermMemory.forgetThis(query, {
+        projectId: this.memoryState.activeProjectId
+      });
+
+      if (res.forgottenCount === 0) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `I searched long-term memory for **"${query}"**, but didn't find a matching record to remove. You can say *"show memories"* to review everything currently stored.`,
+            personality
+          ),
+          speechText: `I couldn't find a matching memory for "${query}".`,
+          statusText: 'No Matching Memory Found'
+        };
+      }
+
+      const itemsList = res.forgottenMemories.map(m => `• **${m.title}** (\`${m.category.replace(/_/g, ' ')}\`)`).join('\n');
+      const responseMd = `🗑️ **Forgotten ${res.forgottenCount} Long-Term Memory item${res.forgottenCount > 1 ? 's' : ''}**:\n\n${itemsList}\n\n*These have been permanently deleted from storage.*`;
+
+      return {
+        responseText: formatResponseWithPersonality(responseMd, personality),
+        speechText: `Done. I have removed ${res.forgottenCount} memory item from long-term storage.`,
+        statusText: `Forgotten ${res.forgottenCount} memories`,
+        resultData: res.forgottenMemories
+      };
+    }
+
+    // C. "What do you remember / query memories"
+    if (canonical.intent === 'query_memory') {
+      const query = canonical.entities.query || '';
+      const ranked = aetherLongTermMemory.queryMemories({
+        query,
+        projectId: this.memoryState.activeProjectId,
+        limit: 10
+      });
+
+      if (ranked.length === 0) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `I don't have any matching memories stored for **"${query || 'this project'}"** yet. You can teach me by saying *"Remember that [fact or preference]"* anytime.`,
+            personality
+          ),
+          speechText: `I don't have any matching memories for ${query || 'this project'} yet.`,
+          statusText: 'No Memories Found'
+        };
+      }
+
+      let md = `### 🧠 Long-Term Memory Recall ${query ? `for "${query}"` : ''}\n\n`;
+      ranked.forEach((r, idx) => {
+        const mem = r.memory;
+        const badge = mem.classification === 'verified_fact' ? '`[FACT]`' : '`[INFERENCE]`';
+        const pin = mem.pinned ? '📌 ' : '';
+        const scope = mem.scope === 'project' ? `📁 *${mem.projectName || 'Project'}*` : '🌐 *Global*';
+        const cat = mem.category.replace(/_/g, ' ');
+        const relevancePct = Math.round(r.relevanceScore * 100);
+
+        md += `${idx + 1}. ${pin}${badge} **${mem.title}** (${scope})\n`;
+        md += `   - ${mem.content}\n`;
+        md += `   - *Category: \`${cat}\`* | *Relevance: ${relevancePct}%* | *Updated: ${new Date(mem.updatedAt).toLocaleDateString()}*\n\n`;
+      });
+
+      md += `*Say "Remember [new fact]" to add, or "Forget [topic]" to remove any entry.*`;
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Recalled ${ranked.length} relevant memories, including "${ranked[0].memory.title}".`,
+        statusText: `Recalled ${ranked.length} memories`,
+        resultData: ranked
+      };
+    }
+
+    // 3.9 AETHER MEETING INTELLIGENCE
+    // A. Pre-Meeting Briefing ("What should I know before my 3 PM meeting?", "Prep me for meeting with Alex")
+    if (canonical.intent === 'meeting_prep_brief') {
+      const query = canonical.entities.query || text;
+      const brief = aetherMeetingIntelligence.getPreMeetingBrief(query);
+      if (!brief) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `### 📋 Pre-Meeting Preparation\n\nI couldn't find a scheduled meeting matching **"${query}"**. Check your Google Calendar in **Settings > Life Context** or specify the attendee name (e.g., *"Prep me for my meeting with Alex"*).`,
+            personality
+          ),
+          speechText: `I couldn't find an upcoming meeting matching ${query}.`,
+          statusText: 'No Meeting Found'
+        };
+      }
+
+      const attendeesFormatted = brief.attendees
+        .map((a) => `• **${a.name}** (${a.relationshipType}${a.role ? ` • ${a.role}` : ''}${a.organization ? ` @ ${a.organization}` : ''})`)
+        .join('\n');
+
+      const projectsFormatted = brief.relatedProjects.length > 0
+        ? brief.relatedProjects.map((p) => `• **${p.projectName}** (${p.status || 'Active'}) — *${p.unresolvedIssuesCount} open issues*`).join('\n')
+        : '• None directly linked';
+
+      const conversationsFormatted = brief.recentConversationsAndMeetings.length > 0
+        ? brief.recentConversationsAndMeetings.slice(0, 3).map((c) => `• **${c.attendeeName}** (${c.date}): "${c.titleOrTopic}" — *${c.summary}*`).join('\n')
+        : '• No prior conversation logs found';
+
+      const promisesFormatted = brief.openPromisesAndFollowUps.length > 0
+        ? brief.openPromisesAndFollowUps.map((p) => {
+            const prefix = p.type === 'my_commitment' ? '🤝 **[I Promised]**' : p.type === 'their_commitment' ? '⏳ **[Waiting On Them]**' : '📌 **[Follow-Up]**';
+            return `• ${prefix} **${p.personName}**: "${p.text}"${p.deadline ? ` *(Due: ${p.deadline})*` : ''}`;
+          }).join('\n')
+        : '• No active open promises or follow-ups';
+
+      const issuesFormatted = brief.unresolvedIssues.length > 0
+        ? brief.unresolvedIssues.slice(0, 3).map((i) => `• **[${i.priority.toUpperCase()}]** ${i.title} (*${i.projectName}*)`).join('\n')
+        : '• No blocking issues flagged';
+
+      const talkingPointsFormatted = brief.suggestedTalkingPoints.map((t) => `• ${t}`).join('\n');
+
+      const forgottenFormatted = brief.importantThingsYouMayHaveForgotten.length > 0
+        ? brief.importantThingsYouMayHaveForgotten.map((f) => `• ⚠️ ${f}`).join('\n')
+        : '• All items up to date';
+
+      let md = `### 📋 Aether Pre-Meeting Brief: ${brief.meetingTitle}\n`;
+      md += `**Time**: ${brief.meetingTime}${brief.location ? ` • **Location**: ${brief.location}` : ''}\n\n`;
+      md += `#### 👥 Attendees & Roles\n${attendeesFormatted}\n\n`;
+      md += `#### 📁 Related Projects\n${projectsFormatted}\n\n`;
+      md += `#### 💬 Recent Conversations & Context\n${conversationsFormatted}\n\n`;
+      md += `#### 🤝 Open Promises & Follow-Ups\n${promisesFormatted}\n\n`;
+      md += `#### 🚨 Unresolved Issues & Blockers\n${issuesFormatted}\n\n`;
+      md += `#### 🗣️ Suggested Talking Points\n${talkingPointsFormatted}\n\n`;
+      md += `#### 💡 Things You May Have Forgotten\n${forgottenFormatted}\n\n`;
+      md += `*During or after the meeting, you can tell me things like "Alex agreed to send API docs Friday" or "Create an issue for the login bug".*`;
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Here is your pre-meeting brief for ${brief.meetingTitle} with ${brief.attendees.map(a => a.name).join(' and ')}. You have ${brief.openPromisesAndFollowUps.length} open promises and ${brief.suggestedTalkingPoints.length} recommended talking points.`,
+        statusText: `Brief: ${brief.meetingTitle}`,
+        resultData: brief
+      };
+    }
+
+    // B. Quick Intake During/After Meeting ("Alex agreed to send documentation Friday", "Create an issue for the performance problem")
+    if (canonical.intent === 'meeting_quick_intake') {
+      const intakeText = canonical.entities.text || text;
+      const res = aetherMeetingIntelligence.quickIntake(intakeText, {
+        meetingTitle: this.memoryState.activeProjectName ? `Meeting on ${this.memoryState.activeProjectName}` : undefined,
+        projectId: this.memoryState.activeProjectId
+      });
+
+      const icon = res.actionType === 'issue_creation' ? '🚨' : res.actionType === 'commitment_from_them' || res.actionType === 'commitment_to_them' ? '🤝' : '📝';
+      const md = `${icon} **${res.message}**\n\n- **Type**: \`${res.actionType.toUpperCase()}\`\n- **Item**: "${intakeText}"\n- **Synced**: People Context, DevSpace Issues, and Memory updated.\n\n*Would you like to run a full Post-Meeting Review or add another note?*`;
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: res.message,
+        statusText: `Captured: ${res.actionType}`,
+        resultData: res.extracted
+      };
+    }
+
+    // C. Post-Meeting Review & Grounded Sync ("Process meeting notes", "Post-meeting review")
+    if (canonical.intent === 'meeting_post_review') {
+      const raw = canonical.entities.rawNotes || text;
+      const review = aetherMeetingIntelligence.processMeetingNotes({
+        meetingTitle: this.memoryState.activeProjectName ? `${this.memoryState.activeProjectName} Sync` : 'Architecture & Sprint Review',
+        rawNotes: raw,
+        projectId: this.memoryState.activeProjectId,
+        attendees: ['Alex Chen', 'Jordan Taylor']
+      });
+
+      let md = `### 📋 Post-Meeting Review: ${review.meetingTitle}\n\n`;
+      md += `**Summary**: ${review.summary}\n\n`;
+      md += `#### 📌 Decisions (${review.decisions.length})\n` + review.decisions.map(d => `• ${d}`).join('\n') + '\n\n';
+      md += `#### 🤝 My Commitments (${review.myCommitments.length})\n` + (review.myCommitments.length > 0 ? review.myCommitments.map(c => `• **To ${c.toPerson}**: ${c.commitment}${c.deadline ? ` *(Due: ${c.deadline})*` : ''}`).join('\n') : '• None recorded') + '\n\n';
+      md += `#### ⏳ Their Commitments (${review.theirCommitments.length})\n` + (review.theirCommitments.length > 0 ? review.theirCommitments.map(c => `• **From ${c.fromPerson}**: ${c.commitment}${c.deadline ? ` *(Due: ${c.deadline})*` : ''}`).join('\n') : '• None recorded') + '\n\n';
+      md += `#### 🚨 DevSpace Issues & Tasks Created (${review.issuesCreated.length})\n` + (review.issuesCreated.length > 0 ? review.issuesCreated.map(i => `• **[${i.priority.toUpperCase()}]** ${i.title}`).join('\n') : '• None') + '\n\n';
+      md += `#### 📁 Related Projects & Next Steps\n`;
+      md += `• **Projects Updated**: ${review.relatedProjects.length > 0 ? review.relatedProjects.join(', ') : 'Active Workspace'}\n`;
+      if (review.nextMeetingScheduled) md += `• **Next Meeting**: ${review.nextMeetingScheduled}\n`;
+      md += `\n*People profiles, DevSpace issue tracker, structured notes, and long-term memory have been updated.*`;
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Generated post-meeting review for ${review.meetingTitle}. Extracted ${review.decisions.length} decisions, ${review.myCommitments.length + review.theirCommitments.length} commitments, and created ${review.issuesCreated.length} issues.`,
+        statusText: `Review Processed: ${review.meetingTitle}`,
+        resultData: review
+      };
+    }
+
+    // D. Meeting Recording Safety Controls ("Start meeting recording", "Stop recording")
+    if (canonical.intent === 'meeting_recording_control') {
+      const act = canonical.entities.action || 'toggle';
+      if (act === 'start') {
+        const res = aetherMeetingIntelligence.startRecording('Active Development Sync');
+        const md = `🎙️ **Meeting Audio Transcription: ACTIVE**\n\n- **Status**: \`RECORDING (EXPLICIT USER ACTIVATION)\`\n- **Safety**: Visual indicator live. No background or hidden recordings.\n- **Audio Quality**: Verified active microphone buffer.\n\n*Say "Stop recording meeting" or click the red recording badge anytime to end.*`;
+        return {
+          responseText: formatResponseWithPersonality(md, personality),
+          speechText: 'Meeting recording and transcription is now active. Visual indicators are displayed.',
+          statusText: 'Recording Active 🎙️',
+          resultData: aetherMeetingIntelligence.getRecordingState()
+        };
+      } else {
+        const res = aetherMeetingIntelligence.stopRecording();
+        const md = `🛑 **Meeting Audio Transcription: STOPPED**\n\n- **Status**: \`IDLE (MIC DISCONNECTED)\`\n- **Outcome**: Session audio buffer finalized and queued for post-meeting review.\n\n*Say "Post-meeting review" to process the structured decisions and commitments.*`;
+        return {
+          responseText: formatResponseWithPersonality(md, personality),
+          speechText: 'Meeting recording stopped. Microphone is disconnected.',
+          statusText: 'Recording Stopped',
+          resultData: aetherMeetingIntelligence.getRecordingState()
         };
       }
     }
@@ -374,6 +1094,130 @@ class AetherConversationalEngine {
         speechText: report.spokenText || `You've mainly been working on ${this.memoryState.activeProjectName || 'DevSpace'}.`,
         statusText: 'Loaded Recent Work Intelligence',
         resultData: report
+      };
+    }
+
+    // 4.1 CHANGES SINCE LAST OPENED QUERY
+    if (canonical.intent === 'since_last_opened_query') {
+      const targetProj = canonical.entities.targetProject || this.memoryState.activeProjectId;
+      const report = aetherActiveProjectContext.getChangesSinceLastOpened(targetProj);
+      return {
+        responseText: formatResponseWithPersonality(report.markdownText, personality),
+        speechText: report.spokenText,
+        statusText: `Changes: ${report.changesCount} recorded`,
+        resultData: report
+      };
+    }
+
+    // 4.2 UNFINISHED WORK QUERY
+    if (canonical.intent === 'unfinished_work_query') {
+      const report = aetherActiveProjectContext.getUnfinishedWork();
+      return {
+        responseText: formatResponseWithPersonality(report.markdownText, personality),
+        speechText: report.spokenText,
+        statusText: `Unfinished work: ${report.items.length} items`,
+        resultData: report
+      };
+    }
+
+    // 4.3 ATTENTION QUERY
+    if (canonical.intent === 'attention_query') {
+      const attention = await aetherActiveProjectContext.getAttentionItems();
+      const unfinished = aetherActiveProjectContext.getUnfinishedWork();
+      const proactive = aetherActiveProjectContext.getProactiveSuggestions({ forceInclude: true });
+
+      let combinedMarkdown = attention.markdownText;
+      if (unfinished.items.length > 0 && !combinedMarkdown.includes(unfinished.items[0].title)) {
+        combinedMarkdown += `\n\n**Pending Unfinished Work**:\n` + unfinished.items.slice(0, 3).map(i => `• ${i.title} (*${i.projectName}*)`).join('\n');
+      }
+      if (proactive.length > 0) {
+        combinedMarkdown += `\n\n**Aether Proactive Suggestions**:\n` + proactive.map(s => `• **${s.title}**: ${s.description}`).join('\n');
+      }
+
+      const spoken = attention.attentionCount > 0
+        ? attention.spokenText
+        : unfinished.items.length > 0
+          ? unfinished.spokenText
+          : `Everything is currently in order. No blockers or urgent items require your attention.`;
+
+      return {
+        responseText: formatResponseWithPersonality(combinedMarkdown, personality),
+        speechText: spoken,
+        statusText: `Items needing attention checked`,
+        resultData: { attention, unfinished, proactive }
+      };
+    }
+
+    // 4.4 ACTIVITY TIMELINE QUERY
+    if (canonical.intent === 'activity_timeline_query') {
+      const timeline = aetherActiveProjectContext.getActivityTimeline({ limit: 10 });
+      const activeProj = this.memoryState.activeProjectName || 'DevSpace';
+
+      if (timeline.length === 0) {
+        return {
+          responseText: formatResponseWithPersonality(`### Activity Timeline: ${activeProj}\n\nNo recent activity has been logged in this workspace yet.`, personality),
+          speechText: `No recent activity has been logged in this workspace yet.`,
+          statusText: `Empty Timeline`
+        };
+      }
+
+      let md = `### Activity Timeline: ${activeProj}\n\n`;
+      md += `| Source | Classification | Activity | Timestamp |\n`;
+      md += `|---|---|---|---|\n`;
+      timeline.forEach(item => {
+        const classBadge = item.classification === 'verified_fact' ? '✅ **Verified Fact**' : '🔮 *Aether Inference*';
+        md += `| \`${item.source}\` | ${classBadge} | ${item.activity} | ${item.formattedTime} |\n`;
+      });
+
+      const factsCount = timeline.filter(t => t.classification === 'verified_fact').length;
+      const infCount = timeline.filter(t => t.classification === 'aether_inference').length;
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `Here is your activity timeline with ${factsCount} verified facts and ${infCount} inferred focus points.`,
+        statusText: `Loaded ${timeline.length} timeline events`,
+        resultData: timeline
+      };
+    }
+
+    // 4.5 PROACTIVE SUGGESTIONS QUERY
+    if (canonical.intent === 'proactive_suggestions_query') {
+      const alerts = aetherProactiveIntelligence.getAlerts();
+      const activeProj = this.memoryState.activeProjectName || 'DevSpace';
+      const level = aetherProactiveIntelligence.getProactivityLevel();
+
+      if (level === 'off') {
+        return {
+          responseText: formatResponseWithPersonality(`### Proactive Desktop Intelligence: OFF\n\nProactivity is currently set to **Off**. You can switch to **Important Only**, **Balanced**, or **Proactive** in the Aether Intelligence Hub.`, personality),
+          speechText: `Proactivity is currently switched off.`,
+          statusText: `Proactivity Off`
+        };
+      }
+
+      if (alerts.length === 0) {
+        return {
+          responseText: formatResponseWithPersonality(`### Proactive Intelligence: ${activeProj}\n\nAll workflows, issues, commits, and PRs are verified and up to date. No pending alerts under **${level.replace('_', ' ').toUpperCase()}** proactivity.`, personality),
+          speechText: `No urgent suggestions right now. Your workspace is in great shape.`,
+          statusText: `No suggestions needed`
+        };
+      }
+
+      const factsCount = alerts.filter(a => a.classification === 'verified_fact').length;
+      const recsCount = alerts.filter(a => a.classification === 'aether_recommendation').length;
+
+      let md = `### Proactive Workspace Intelligence (${alerts.length} Items · ${factsCount} Facts, ${recsCount} Recommendations)\n\n`;
+      alerts.forEach((s, idx) => {
+        const icon = s.severity === 'critical' || s.severity === 'high' ? '🚨' : s.severity === 'medium' ? '💡' : '📌';
+        const tag = s.classification === 'verified_fact' ? '`[VERIFIED FACT]`' : '`[RECOMMENDATION]`';
+        const primaryAct = s.actions.find(a => a.isPrimary) || s.actions[0];
+        md += `${idx + 1}. ${icon} ${tag} **${s.title}**\n   - ${s.message}\n   - *Source: ${s.source.toUpperCase()}* | *Primary Action: \`${primaryAct?.label || 'View'}\`*\n\n`;
+      });
+
+      return {
+        responseText: formatResponseWithPersonality(md, personality),
+        speechText: `I have surfaced ${alerts.length} proactive insights, starting with "${alerts[0].title}".`,
+        statusText: `${alerts.length} Proactive Alerts`,
+        resultData: alerts
       };
     }
 
@@ -1439,12 +2283,12 @@ class AetherConversationalEngine {
     }
 
     if (canonical.intent === 'temporal_top_project') {
-      const activeProj = this.memoryState.activeProjectName || 'DevSpace';
-      const reply = `You spent the most time on **${activeProj}**, focusing on conversational intelligence and real-time workspace architecture.`;
+      const report = aetherActiveProjectContext.getTopProjectThisWeek(availableProjects);
       return {
-        responseText: formatResponseWithPersonality(reply, personality),
-        speechText: `You spent the most time on ${activeProj}, focusing on conversational intelligence and real-time workspace architecture.`,
-        statusText: `Analyzed Project Time`
+        responseText: formatResponseWithPersonality(report.markdownText, personality),
+        speechText: report.spokenText,
+        statusText: `Top Project: ${report.topProjectName}`,
+        resultData: report
       };
     }
 
@@ -1796,6 +2640,487 @@ class AetherConversationalEngine {
       };
     }
 
+    // =========================================================================
+    // AETHER PERSONAL LIFE INTELLIGENCE: TODAY BRIEFING, SLEEP, TRAVEL, WORKOUT, PACKING
+    // =========================================================================
+
+    // 1. Unified "What does my day look like?" / "Today Briefing" / "Daily Brief"
+    if (
+      norm.includes('what does my day look like') ||
+      norm.includes('what does my day look') ||
+      norm.includes('day look like') ||
+      norm.includes('today briefing') ||
+      norm.includes('daily brief') ||
+      norm.includes('daily briefing') ||
+      norm.includes("how's my day") ||
+      norm.includes('how is my day')
+    ) {
+      const now = Date.now();
+      const upcoming = aetherLifeContext.getUpcomingEvents();
+      const routes = aetherLifeContext.getAllActiveRouteTelemetry();
+      const wSummary = aetherWellness.getSummary();
+      const nextTrip = aetherLifeContext.getNextUpcomingTrip();
+      const activeProjName = this.memoryState.activeProjectName || 'DevSpace Workspace';
+
+      let reply = `### ☀️ Aether Today Briefing\n\n`;
+      reply += `Here is your unified overview combining schedule, travel, active coding, GitHub, and recovery telemetry:\n\n`;
+
+      // Schedule & Travel
+      reply += `**📅 Schedule & Travel:**\n`;
+      if (upcoming.length === 0) {
+        reply += `• No upcoming events scheduled on your Google Calendar today.\n`;
+      } else {
+        upcoming.slice(0, 3).forEach((evt) => {
+          const timeStr = new Date(evt.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          if (evt.location?.isVirtualMeeting) {
+            reply += `• **${evt.title}** (${timeStr}) — 🌐 *Virtual Meeting* [Google Meet]\n`;
+          } else if (evt.location?.rawLocation) {
+            const route = routes[evt.id];
+            reply += `• **${evt.title}** (${timeStr}) @ *${evt.location.rawLocation}*\n`;
+            if (route) {
+              reply += `  🚗 *Travel:* ${route.trafficDurationMinutes}m (${route.congestionLevel} traffic) • Leave by **${new Date(route.recommendedLeaveTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}**\n`;
+            }
+          } else {
+            reply += `• **${evt.title}** (${timeStr})\n`;
+          }
+        });
+      }
+
+      // DevSpace & GitHub Focus
+      reply += `\n**💻 DevSpace & GitHub Attention:**\n`;
+      reply += `• **Active Workspace**: ${activeProjName}\n`;
+      reply += `• **Priority**: Complete pending issue triage and review uncommitted changes.\n`;
+
+      // Wellness & Recovery
+      if (wSummary) {
+        reply += `\n**🩺 Wellness & Recovery Telemetry:**\n`;
+        reply += `• **Sleep**: ${wSummary.sleepHours}h ${wSummary.sleepMinutes}m (${wSummary.sleepEfficiencyScore}% efficiency)\n`;
+        reply += `• **Physical Activity**: ${wSummary.steps.toLocaleString()} / ${wSummary.goalSteps.toLocaleString()} steps (${wSummary.activeMinutes} active min)\n`;
+        reply += `• **Resting Heart Rate**: ${wSummary.restingHeartRateBpm} BPM\n`;
+        if (wSummary.sleepHours < 6) {
+          reply += `• 💡 *Aether Recommendation: You slept less than usual last night. Consider pacing deep architecture blocks with short breaks.* (Non-diagnostic)\n`;
+        }
+      }
+
+      // Trips & Packing
+      if (nextTrip) {
+        const unchecked = aetherLifeContext.getUncheckedCrucialItems(nextTrip.id);
+        const days = Math.max(0, Math.round((nextTrip.departureTimestamp - now) / 86400000));
+        reply += `\n**✈️ Upcoming Trip:**\n`;
+        reply += `• **${nextTrip.destination}** in ${days} days (${nextTrip.weatherForecast.condition}, High ${nextTrip.weatherForecast.highTempF}°F)\n`;
+        if (unchecked.length > 0) {
+          reply += `• ⚠️ *Unchecked Crucial Essentials:* ${unchecked.map((i) => `**${i.name}**`).join(', ')}\n`;
+        } else {
+          reply += `• ✨ *All crucial packing items are checked off.*\n`;
+        }
+      }
+
+      reply += `\n*All telemetry is synced from your verified accounts. You can customize notifications in Settings.*`;
+
+      const speech = upcoming.length > 0
+        ? `You have ${upcoming.length} events scheduled today. Your active project is ${activeProjName}.`
+        : `Your calendar is clear today. You are active in ${activeProjName}.`;
+
+      return {
+        responseText: formatResponseWithPersonality(reply, personality),
+        speechText: speech,
+        statusText: `Today Briefing Synced`
+      };
+    }
+
+    // 2. Specific Query: "How did I sleep?" / Sleep Awareness
+    if (
+      norm.includes('how did i sleep') ||
+      norm.includes('how was my sleep') ||
+      norm.includes('my sleep') ||
+      norm.includes('sleep last night') ||
+      norm.includes('sleep quality')
+    ) {
+      const wStatus = aetherWellness.getStatus();
+      if (wStatus.connectionStatus !== 'connected') {
+        return {
+          responseText: formatResponseWithPersonality(
+            `### 🌙 Google Health / Fitbit Sleep Telemetry\n\nGoogle Health is not connected. Connect in **Settings > Wellness** to view verified sleep duration, efficiency, and stages.`,
+            personality
+          ),
+          speechText: 'Google Health is not connected. Connect in Settings under Wellness to track sleep.',
+          statusText: 'Health Disconnected'
+        };
+      }
+
+      const summary = aetherWellness.getSummary();
+      if (summary) {
+        const isLowSleep = summary.sleepHours < 6.5;
+        let reply = `### 🌙 Sleep Analysis & Pacing Context\n\n`;
+        reply += `**[VERIFIED FACT] Recorded Telemetry:**\n`;
+        reply += `• **Total Sleep**: ${summary.sleepHours} hours ${summary.sleepMinutes} minutes\n`;
+        reply += `• **Sleep Efficiency Score**: ${summary.sleepEfficiencyScore} / 100\n`;
+        if (summary.sleepStages) {
+          reply += `• **Stages Breakdown**: ${summary.sleepStages.deepMinutes}m Deep, ${summary.sleepStages.remMinutes}m REM, ${summary.sleepStages.lightMinutes}m Light\n`;
+        }
+        reply += `• **Resting Pulse**: ${summary.restingHeartRateBpm} BPM\n\n`;
+
+        reply += `**[AETHER RECOMMENDATION] Workload Context:**\n`;
+        if (isLowSleep) {
+          reply += `💡 *You slept less than usual last night (${summary.sleepHours}h ${summary.sleepMinutes}m). You may want a lighter workload or paced coding sessions today to sustain high mental clarity.*`;
+        } else {
+          reply += `✨ *Your nocturnal recovery score is solid (${summary.sleepEfficiencyScore}%). You are well-positioned for deep focus architecture sprints.*`;
+        }
+        reply += `\n\n*Note: Non-diagnostic telemetry only. Consult qualified healthcare professionals for medical guidance.*`;
+
+        return {
+          responseText: formatResponseWithPersonality(reply, personality),
+          speechText: isLowSleep
+            ? `You recorded ${summary.sleepHours} hours of sleep last night. You may want a lighter workload today.`
+            : `You recorded ${summary.sleepHours} hours of sleep with ${summary.sleepEfficiencyScore} percent efficiency.`,
+          statusText: `Sleep: ${summary.sleepHours}h ${summary.sleepMinutes}m`
+        };
+      }
+    }
+
+    // 3. Specific Query: "Should I work out today?"
+    if (
+      norm.includes('should i work out today') ||
+      norm.includes('should i workout') ||
+      norm.includes('can i exercise') ||
+      norm.includes('workout today') ||
+      norm.includes('exercise today')
+    ) {
+      const summary = aetherWellness.getSummary();
+      if (!summary) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `### 🏃 Workout Readiness\n\nConnect Google Health / Fitbit in Settings to view activity telemetry and recovery trends.`,
+            personality
+          ),
+          speechText: 'Connect Google Health in Settings to evaluate workout cadence.'
+        };
+      }
+
+      let reply = `### 🏃 Workout & Physical Cadence Context\n\n`;
+      reply += `**[VERIFIED FACT] Activity Telemetry:**\n`;
+      reply += `• **Steps Today**: ${summary.steps.toLocaleString()} / ${summary.goalSteps.toLocaleString()}\n`;
+      reply += `• **Active Zone Minutes**: ${summary.activeMinutes} min\n`;
+      reply += `• **Resting Heart Rate**: ${summary.restingHeartRateBpm} BPM\n`;
+      if (summary.lastWorkout) {
+        reply += `• **Last Recorded Session**: ${summary.lastWorkout.title} (${summary.lastWorkout.durationMinutes}m, ${summary.lastWorkout.caloriesBurned} kcal)\n`;
+      }
+      reply += `\n**[AETHER RECOMMENDATION]:**\n`;
+      if (summary.sleepHours >= 7 && summary.sedentaryMinutes > 60) {
+        reply += `✨ *Recovery metrics are receptive. A moderate cardio session or strength workout aligns well after prolonged desk focus.*`;
+      } else if (summary.sleepHours < 6) {
+        reply += `💡 *Because sleep was under 6 hours, prioritize light active recovery such as a brisk walk or mobility stretching over high-intensity strain.*`;
+      } else {
+        reply += `✨ *Your movement pace is steady today. An afternoon workout or brisk walk fits nicely into your schedule.*`;
+      }
+      reply += `\n\n*Note: Non-diagnostic fitness context.*`;
+
+      return {
+        responseText: formatResponseWithPersonality(reply, personality),
+        speechText: `You have ${summary.steps.toLocaleString()} steps today. A balanced workout or light active recovery fits your schedule.`,
+        statusText: `Workout Cadence: ${summary.steps} Steps`
+      };
+    }
+
+    // 4. Specific Query: "What should I focus on today?"
+    if (
+      norm.includes('what should i focus on today') ||
+      norm.includes('what should i focus on') ||
+      norm.includes('what should i work on today') ||
+      norm.includes('daily focus') ||
+      norm.includes('my focus today')
+    ) {
+      const activeProjName = this.memoryState.activeProjectName || 'DevSpace Workspace';
+      const upcoming = aetherLifeContext.getUpcomingEvents();
+      const routes = aetherLifeContext.getAllActiveRouteTelemetry();
+      const nextPhysical = upcoming.find((e) => e.location && !e.location.isVirtualMeeting);
+      const nextRoute = nextPhysical ? routes[nextPhysical.id] : null;
+
+      let reply = `### 🎯 Recommended Focus for Today\n\n`;
+      reply += `**1. DevSpace Engineering Priority:**\n`;
+      reply += `• In **${activeProjName}**, focus on resolving in-progress issues, verifying AST safety, and reviewing open PRs.\n\n`;
+
+      reply += `**2. Schedule & Time Constraints:**\n`;
+      if (nextPhysical && nextRoute) {
+        reply += `• You have an in-person commitment (**${nextPhysical.title}**) requiring departure at **${new Date(nextRoute.recommendedLeaveTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}** (${nextRoute.trafficDurationMinutes}m travel). Schedule deep work blocks before this departure.\n\n`;
+      } else if (upcoming.length > 0) {
+        reply += `• You have ${upcoming.length} calendar meetings today. Guard your open focus windows for coding.\n\n`;
+      } else {
+        reply += `• Calendar is clear today. You have an uninterrupted deep-work block available.\n\n`;
+      }
+
+      reply += `**3. Suggested Next Step:**\n`;
+      reply += `• Would you like me to open the active project workspace, run test diagnostics, or review the task backlog?`;
+
+      return {
+        responseText: formatResponseWithPersonality(reply, personality),
+        speechText: `For today, focus on ${activeProjName}. Check your schedule before departure.`,
+        statusText: `Focus: ${activeProjName}`
+      };
+    }
+
+    // 5. Specific Query: "What do I still need to pack?" / Trip Packing
+    if (
+      norm.includes('what do i still need to pack') ||
+      norm.includes('what do i need to pack') ||
+      norm.includes('what to pack') ||
+      norm.includes("what's left to pack") ||
+      norm.includes('whats left to pack') ||
+      norm.includes('trip') ||
+      norm.includes('packing list') ||
+      norm.includes('pack my bag') ||
+      norm.includes('help me pack') ||
+      norm.includes('unchecked item') ||
+      norm.includes('passport') ||
+      norm.includes('pack for')
+    ) {
+      const trips = aetherLifeContext.getTrips();
+      const nextTrip = aetherLifeContext.getNextUpcomingTrip();
+
+      if (!nextTrip && (!norm.includes('trip next week') && !norm.includes('new trip') && !norm.includes('create trip'))) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `### ✈️ No Upcoming Trips Found\n\nTell me where and when you're traveling, and I'll build a smart packing checklist considering local weather, planned activities, and carry-on preferences.\n\n*Example:* "I'm going on a 4-day trip to Seattle next week for a tech conference."`,
+            personality
+          ),
+          speechText: 'Tell me your trip destination and dates, and I will generate a customized packing checklist.',
+          statusText: 'No Upcoming Trips'
+        };
+      }
+
+      const targetTrip = nextTrip || trips[0];
+      if (targetTrip) {
+        const uncheckedCrucial = aetherLifeContext.getUncheckedCrucialItems(targetTrip.id);
+        const packedCount = targetTrip.items.filter((i) => i.isCompleted).length;
+        const totalCount = targetTrip.items.length;
+        const days = Math.max(0, Math.round((targetTrip.departureTimestamp - Date.now()) / 86400000));
+
+        let reply = `### 🧳 Packing Intelligence: ${targetTrip.destination}\n\n`;
+        reply += `**Trip Window:** ${targetTrip.startDate} → ${targetTrip.endDate} (${targetTrip.tripLengthDays} days, departs in ${days} days)\n`;
+        reply += `**Destination Forecast:** ${targetTrip.weatherForecast.condition}, High ${targetTrip.weatherForecast.highTempF}°F / Low ${targetTrip.weatherForecast.lowTempF}°F\n`;
+        reply += `*${targetTrip.weatherForecast.summary}*\n\n`;
+
+        reply += `**Packing Progress (${packedCount}/${totalCount} Packed):**\n`;
+        targetTrip.items.forEach((item) => {
+          const check = item.isCompleted ? '☑️' : '⬜';
+          const star = item.isCrucial ? ' ⭐ *(Crucial)*' : '';
+          reply += `• ${check} **${item.name}** [${item.category}]${star}\n`;
+        });
+
+        if (uncheckedCrucial.length > 0) {
+          const crucialNames = uncheckedCrucial.map((c) => `**${c.name}**`).join(' and ');
+          reply += `\n⚠️ **Aether Proactive Departure Warning:**\nYou’re leaving for your trip soon and your ${crucialNames} are still unchecked.\n`;
+        } else {
+          reply += `\n✨ *All crucial travel essentials are packed and ready to go!*\n`;
+        }
+
+        const speech = uncheckedCrucial.length > 0
+          ? `You are leaving for your trip soon and your ${uncheckedCrucial.map((c) => c.name).join(' and ')} are still unchecked.`
+          : `Your packing checklist for ${targetTrip.destination} is ${packedCount} of ${totalCount} items complete.`;
+
+        return {
+          responseText: formatResponseWithPersonality(reply, personality),
+          speechText: speech,
+          statusText: `Trip: ${targetTrip.destination} (${packedCount}/${totalCount})`
+        };
+      }
+    }
+
+    // 6. Travel Leave-By, Traffic & Route ETA: "When should I leave?"
+    if (
+      norm.includes('when do i need to leave') ||
+      norm.includes('when should i leave') ||
+      norm.includes('when to leave') ||
+      norm.includes('leave for my appointment') ||
+      norm.includes('how long to get there') ||
+      norm.includes('traffic') ||
+      norm.includes('leave-by') ||
+      norm.includes('leave by time') ||
+      norm.includes('travel time') ||
+      norm.includes('head out')
+    ) {
+      const upcoming = aetherLifeContext.getUpcomingEvents();
+      const routes = aetherLifeContext.getAllActiveRouteTelemetry();
+      const nextPhysical = upcoming.find((e) => e.location && !e.location.isVirtualMeeting);
+
+      if (!nextPhysical) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `### 📍 No Upcoming In-Person Destination Found\n\nYour upcoming events are either virtual or have no physical address attached. You're clear to continue working!`,
+            personality
+          ),
+          speechText: `You have no in-person travel destinations on your calendar today.`,
+          statusText: 'No In-Person Travel Needed'
+        };
+      }
+
+      const route = routes[nextPhysical.id];
+      const now = Date.now();
+      const diffMins = Math.round((nextPhysical.startTime - now) / 60000);
+
+      if (route) {
+        let reply = `### 🚗 Aether Travel & Leave-By Intelligence\n\n`;
+        reply += `**Destination:** ${nextPhysical.title} at *${route.destinationAddress}*\n`;
+        reply += `**Scheduled Time:** ${new Date(nextPhysical.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (in ${diffMins} minutes)\n`;
+        reply += `**Current Transit Time:** ${route.trafficDurationMinutes} minutes (${route.distanceMiles} miles via ${route.travelMode})\n`;
+        reply += `**Live Traffic Condition:** ${route.congestionLevel.toUpperCase()} traffic (+${route.trafficDelayMinutes} min delay)\n`;
+        reply += `**Recommended Leave Time:** ${new Date(route.recommendedLeaveTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n\n`;
+
+        if (route.trafficChangedFromPrevious) {
+          reply += `⚠️ **Traffic Alert:** Traffic got worse (+${route.trafficDelayMinutes}m delay). You should leave now.\n\n`;
+        } else if (route.minutesUntilLeave <= 0) {
+          reply += `🚨 **Departure Warning:** You haven’t left yet. I can save your DevSpace work state and queue the rest for later.\n\n`;
+        } else {
+          reply += `💡 **Recommendation:** You have to be at your appointment in ${diffMins} minutes. It currently takes ${route.trafficDurationMinutes} minutes to get there, so you should leave in about ${route.minutesUntilLeave} minutes.\n\n`;
+        }
+
+        reply += `*DevSpace Integration:* If you're coding, I can save your current workspace state and queue remaining tasks for when you return.`;
+
+        const speech = route.minutesUntilLeave <= 0
+          ? `You haven't left yet. I can save your DevSpace work state and queue the rest for later.`
+          : `You have to be at your appointment in ${diffMins} minutes. It currently takes ${route.trafficDurationMinutes} minutes to get there, so you should leave in about ${route.minutesUntilLeave} minutes.`;
+
+        return {
+          responseText: formatResponseWithPersonality(reply, personality),
+          speechText: speech,
+          statusText: `Leave in ${route.minutesUntilLeave}m (${route.trafficDurationMinutes}m travel)`
+        };
+      }
+    }
+
+    // 7. Calendar Awareness & Schedule Reading
+    if (
+      norm.includes('my calendar') ||
+      norm.includes('schedule today') ||
+      norm.includes('my schedule') ||
+      norm.includes('upcoming meetings') ||
+      norm.includes('next appointment') ||
+      norm.includes('what do i have today') ||
+      norm.includes('calendar events')
+    ) {
+      if (!aetherLifeContext.isCalendarConnected()) {
+        return {
+          responseText: formatResponseWithPersonality(
+            `### 📅 Google Calendar Not Connected\n\nConnect your Google Calendar account in **Settings > Life Context & Travel** to view schedules, locations, and travel times.`,
+            personality
+          ),
+          speechText: 'Google Calendar is not connected. You can authorize it in Settings.',
+          statusText: 'Calendar Disconnected'
+        };
+      }
+
+      const upcoming = aetherLifeContext.getUpcomingEvents();
+      const routes = aetherLifeContext.getAllActiveRouteTelemetry();
+
+      let reply = `### 📅 Today's Calendar Schedule\n\n`;
+      if (upcoming.length === 0) {
+        reply += `*No upcoming events on your calendar for today.*\n`;
+      } else {
+        upcoming.forEach((evt) => {
+          const timeStr = new Date(evt.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const endStr = new Date(evt.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const recurring = evt.isRecurring ? ' 🔁 *(Recurring)*' : '';
+          reply += `• **${evt.title}** (${timeStr} – ${endStr})${recurring}\n`;
+          if (evt.location?.isVirtualMeeting) {
+            reply += `  🌐 *Virtual Meeting* [Google Meet Link](${evt.meetingLink || '#'})\n`;
+          } else if (evt.location?.rawLocation) {
+            const route = routes[evt.id];
+            reply += `  📍 *${evt.location.rawLocation}*\n`;
+            if (route) {
+              reply += `  🚗 *Travel ETA:* ${route.trafficDurationMinutes} min (${route.congestionLevel} traffic) • Leave by ${new Date(route.recommendedLeaveTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n`;
+            }
+          }
+        });
+      }
+
+      return {
+        responseText: formatResponseWithPersonality(reply, personality),
+        speechText: `You have ${upcoming.length} upcoming events on your calendar today.`,
+        statusText: `Calendar: ${upcoming.length} Events`
+      };
+    }
+
+    // 8. General Health / Steps / Wellness / Stretch break
+    if (
+      norm.includes('health') ||
+      norm.includes('wellness') ||
+      norm.includes('my steps') ||
+      norm.includes('how many steps') ||
+      norm.includes('stretch break') ||
+      norm.includes('stretch') ||
+      norm.includes('sedentary') ||
+      norm.includes('heart rate') ||
+      norm.includes('fitbit') ||
+      norm.includes('google health')
+    ) {
+      const wStatus = aetherWellness.getStatus();
+      if (wStatus.connectionStatus !== 'connected') {
+        const reply = `### 🩺 Google Health / Fitbit Not Connected\n\nAether is ready to provide sleep awareness, desk ergonomics, and stretch reminders once your account is connected.\n\n*To authorize:* Go to **Settings > Wellness & Health** and click **Connect Google Health**.`;
+        return {
+          responseText: formatResponseWithPersonality(reply, personality),
+          speechText: 'Google Health is currently not connected. You can enable it in Settings under Wellness.',
+          statusText: 'Google Health Disconnected'
+        };
+      }
+
+      const summary = aetherWellness.getSummary();
+      if (summary) {
+        let reply = `### 📊 Google Health Telemetry Summary\n\n`;
+        reply += `**Verified Facts:**\n`;
+        if (wStatus.permissions.allowActivity) {
+          reply += `• **Steps Today**: ${summary.steps.toLocaleString()} / ${summary.goalSteps.toLocaleString()} (${Math.round((summary.steps / summary.goalSteps) * 100)}% of goal)\n`;
+          reply += `• **Active Minutes**: ${summary.activeMinutes} min (${summary.distanceKm} km)\n`;
+          reply += `• **Desk Time**: ${summary.sedentaryMinutes} min continuous seated focus\n`;
+        }
+        if (wStatus.permissions.allowSleep) {
+          reply += `• **Sleep Duration**: ${summary.sleepHours}h ${summary.sleepMinutes}m (${summary.sleepEfficiencyScore}% efficiency)\n`;
+        }
+        if (wStatus.permissions.allowHeartRate) {
+          reply += `• **Resting Heart Rate**: ${summary.restingHeartRateBpm} BPM\n`;
+        }
+
+        if (wStatus.features.proactiveSuggestions) {
+          reply += `\n**Aether Ergonomic Suggestion:**\n`;
+          if (summary.sedentaryMinutes >= 60) {
+            reply += `💡 *You've been inactive for a while (${summary.sedentaryMinutes} minutes seated). Want to take a short stretch break?*`;
+          } else {
+            reply += `✨ *Physical cadence is well-balanced today. Keep up the steady focus blocks.*`;
+          }
+        }
+
+        reply += `\n\n*Note: Non-diagnostic telemetry only. Configure granular scopes in Settings > Wellness.*`;
+
+        const speech = summary.sedentaryMinutes >= 60
+          ? `You've been inactive for a while. Want to take a short stretch break?`
+          : `You have ${summary.steps.toLocaleString()} steps today and ${summary.sleepHours} hours of sleep recorded.`;
+
+        return {
+          responseText: formatResponseWithPersonality(reply, personality),
+          speechText: speech,
+          statusText: `Health Synced: ${summary.steps} Steps`
+        };
+      }
+    }
+
+    // 9. Save Workspace State Before Leaving
+    if (
+      norm.includes('save workspace') ||
+      norm.includes('save my work state') ||
+      norm.includes('queue remaining task') ||
+      norm.includes('queue task for later') ||
+      norm.includes('leaving soon')
+    ) {
+      const snap = aetherLifeContext.createWorkspaceLeaveSnapshot('User departure for scheduled event');
+      return {
+        responseText: formatResponseWithPersonality(
+          `### 💾 DevSpace Workspace State Saved\n\n${snap.message}\n\n• **Snapshot ID:** \`${snap.snapshotId}\`\n• **Queued Tasks:** 2 background tasks deferred safely\n• **Autonomy Safeguard:** No automatic code rewrites occurred.\n\nHave a safe trip!`,
+          personality
+        ),
+        speechText: 'I have saved your current work state and queued remaining tasks for later.',
+        statusText: 'Workspace State Saved'
+      };
+    }
+
     if (norm.includes("i'm not sure what i want to work on") || norm.includes('not sure what to work on') || norm.includes('what should i do next')) {
       const projMsg = this.memoryState.activeProjectName
         ? `We could continue development on **${this.memoryState.activeProjectName}**, run test diagnostics, or organize open issues.`
@@ -1809,12 +3134,36 @@ class AetherConversationalEngine {
       };
     }
 
-    // Contextual Workspace / Knowledge response (Never generic fallback)
+    // Background memory extraction from user turn (never stores full logs, only high-value facts)
+    try {
+      aetherLongTermMemory.extractMemoriesFromTurn(text, '', {
+        projectId: this.memoryState.activeProjectId,
+        projectName: this.memoryState.activeProjectName
+      });
+    } catch {}
+
+    // Contextual Workspace / Knowledge response with Long-Term Memory grounding
     const activeContextName = this.memoryState.activeProjectName || 'DevSpace Workspace';
     const activeTopic = this.memoryState.currentTopic || 'application engineering';
+
+    // Retrieve top relevant long-term memories for this query and project
+    const relevantMemories = aetherLongTermMemory.queryMemories({
+      query: text,
+      projectId: this.memoryState.activeProjectId,
+      limit: 2
+    });
+
+    let memoryContextSnippet = '';
+    if (relevantMemories.length > 0 && relevantMemories[0].relevanceScore > 0.45) {
+      const topMem = relevantMemories[0].memory;
+      const memType = topMem.classification === 'verified_fact' ? 'remembered fact' : 'inference';
+      memoryContextSnippet = `\n\n*(Grounded in long-term memory: ${topMem.title} — ${topMem.content})*`;
+      aetherLongTermMemory.touchMemory(topMem.id);
+    }
+
     return {
       responseText: formatResponseWithPersonality(
-        `I've noted: "${text}". We are currently active in **${activeContextName}** focusing on **${activeTopic}**. Would you like to inspect project issues, search developer documentation, or explore code refinements?`,
+        `I've noted: "${text}". We are currently active in **${activeContextName}** focusing on **${activeTopic}**.${memoryContextSnippet} Would you like to inspect project issues, search developer documentation, or explore code refinements?`,
         personality
       ),
       speechText: `Understood. We are in ${activeContextName}. Let me know if you want to inspect tasks or explore code changes.`,

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { haptic } from '../../utils/haptics';
-import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass, Cpu, Plus, PencilRuler, Sliders } from 'lucide-react';
+import { Search, Map, LayoutDashboard, CheckSquare, FolderGit2, Bot, Settings, ChevronRight, Hash, LogOut, TerminalSquare, Github, FileText, Image as ImageIcon, BrainCircuit, Sparkles, Zap, Compass, Cpu, Plus, PencilRuler, Sliders, Workflow, Target, Users } from 'lucide-react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
@@ -16,6 +16,8 @@ const navItems = [
   { icon: PencilRuler, label: 'Design', path: '/design' },
   { icon: Plus, label: 'Create', path: '/create' },
   { icon: Sparkles, label: 'AI Assistant', path: '/assistant' },
+  { icon: Target, label: 'Goals & Planning', path: '/goals' },
+  { icon: Users, label: 'People', path: '/people' },
   { icon: CheckSquare, label: 'Issues', path: '/issues' },
   { icon: FolderGit2, label: 'Projects', path: '/projects' },
   { icon: Cpu, label: 'Sandbox Loop', path: '/sandbox-loop' },
@@ -25,8 +27,10 @@ const navItems = [
   { icon: BrainCircuit, label: 'Idea Plan', path: '/ideas' },
   { icon: Map, label: 'Roadmap', path: '/roadmap' },
   { icon: Bot, label: 'Project Brain', path: '/brain' },
+  { icon: BrainCircuit, label: 'Memory', path: '/memory' },
   { icon: TerminalSquare, label: 'Agentic OS', path: '/agents' },
   { icon: Sparkles, label: 'Aether Report', path: '/aether-report' },
+  { icon: Workflow, label: 'Workflows', path: '/workflows' },
   { icon: Zap, label: 'Automations', path: '/automations' },
   { icon: Github, label: 'GitHub Int.', path: '/github' },
   { icon: FileText, label: 'Workspace Docs', path: '/docs' },

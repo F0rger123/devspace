@@ -103,6 +103,31 @@ export const INTEGRATION_PROVIDERS: IntegrationProvider[] = [
     envVarDocs: ['VITE_GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
   },
   {
+    id: 'skill-google-health',
+    name: 'Google Health & Fitbit',
+    category: 'productivity',
+    description: 'Modern Google Health API v4 integration for sleep awareness, activity tracking, desk ergonomics, and stretch reminders from Fitbit, Pixel Watch, and WearOS devices.',
+    authType: 'OAuth 2.0 (Google Identity)',
+    developerPortalUrl: 'https://console.cloud.google.com/apis/library/health.googleapis.com',
+    redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/oauth/callback` : '/oauth/callback',
+    requiredCredentials: [
+      { key: 'clientId', label: 'Google OAuth Client ID', type: 'text', placeholder: 'e.g. xxx.apps.googleusercontent.com', required: true, envVarName: 'VITE_GOOGLE_CLIENT_ID', description: 'Google Cloud OAuth 2.0 Web Client ID with Google Health API enabled.' },
+    ],
+    requiredScopes: [
+      { scope: 'https://www.googleapis.com/auth/googlehealth.sleep.readonly', description: 'Read sleep duration, efficiency score, and nocturnal sleep stages', required: true },
+      { scope: 'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly', description: 'Read daily steps, active minutes, calories, and logged workouts', required: true },
+      { scope: 'https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly', description: 'Read resting heart rate and continuous biometrics', required: false },
+      { scope: 'https://www.googleapis.com/auth/googlehealth.body_composition.readonly', description: 'Read body composition metrics (optional)', required: false },
+    ],
+    setupSteps: [
+      { stepNumber: 1, title: 'Enable Google Health API in Cloud Console', description: 'Go to Google Cloud Console > APIs & Services > Library and enable "Google Health API" (successor to Fitbit Web API).', actionLink: { label: 'Google Health API Console', url: 'https://console.cloud.google.com/apis/library/health.googleapis.com' } },
+      { stepNumber: 2, title: 'Configure OAuth 2.0 Restricted Scopes', description: 'Under OAuth Consent Screen, add the `https://www.googleapis.com/auth/googlehealth.*` scopes required for your preferred biometric categories.' },
+      { stepNumber: 3, title: 'Set Authorized Redirect URI', description: `Add ${typeof window !== 'undefined' ? `${window.location.origin}/oauth/callback` : '/oauth/callback'} as an authorized JavaScript origin and redirect URI.` },
+      { stepNumber: 4, title: 'Connect & Configure Wellness Rules', description: 'Open Settings > Wellness to customize stretch reminders, sleep pacing, and proactive suggestions.' },
+    ],
+    envVarDocs: ['VITE_GOOGLE_CLIENT_ID'],
+  },
+  {
     id: 'skill-github',
     name: 'GitHub Intelligence & Repositories',
     category: 'git_dev',

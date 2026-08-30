@@ -561,16 +561,36 @@ function DesignInner() {
     for (const test of tests) {
       const startTime = performance.now();
       try {
-        const res = await fetch(test.url, { method: 'HEAD' }).catch(() => fetch(test.url, { method: 'GET' }));
+        let res: Response | null = null;
+        try {
+          res = await fetch(test.url, { method: 'HEAD' });
+        } catch {
+          try {
+            res = await fetch(test.url, { method: 'GET' });
+          } catch {
+            res = null;
+          }
+        }
         const duration = Math.round(performance.now() - startTime);
-        results.push({
-          resource: test.resource,
-          url: test.url,
-          status: res.status,
-          timeMs: duration,
-          success: res.ok,
-          details: res.ok ? `HTTP ${res.status} OK (${duration}ms)` : `HTTP ${res.status}`
-        });
+        if (res) {
+          results.push({
+            resource: test.resource,
+            url: test.url,
+            status: res.status,
+            timeMs: duration,
+            success: res.ok,
+            details: res.ok ? `HTTP ${res.status} OK (${duration}ms)` : `HTTP ${res.status}`
+          });
+        } else {
+          results.push({
+            resource: test.resource,
+            url: test.url,
+            status: 'NETWORK_ERROR',
+            timeMs: duration,
+            success: false,
+            details: 'Could not connect or fetch resource'
+          });
+        }
       } catch (err: any) {
         results.push({
           resource: test.resource,

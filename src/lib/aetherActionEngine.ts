@@ -2,6 +2,8 @@ import { activityCenter } from './activityCenterService';
 import { aetherCore } from './aetherCore';
 import { aetherReminders } from './aetherRemindersService';
 import { aetherGoals } from './aetherGoalsService';
+import { aetherPeople } from './aetherPeopleService';
+import { aetherMeetingIntelligence } from './aetherMeetingIntelligenceService';
 import { aetherSpotify } from './aetherSpotifyEngine';
 import { workspaceReplay } from './workspaceReplayService';
 import { dreamBranchManager } from './dreamBranchManagerService';
@@ -518,19 +520,440 @@ class UniversalActionEngine {
       },
     });
 
-    // 11. Create Goal
+    // 11. Create / Manage Goal
     this.register({
       id: 'create_goal',
       intent: 'Create a goal',
-      description: 'Adds a long-term goal in Aether Reminders & Goals.',
-      parametersSchema: { title: 'string', category: 'string' },
+      description: 'Creates and decomposes a long-term goal across work, projects, health, learning, or routines.',
+      parametersSchema: { text: 'string', title: 'string', category: 'string' },
       riskLevel: 'low',
       requiresConfirmation: false,
       supportsUndo: true,
       execute: async (params) => {
-        const title = params.title || 'Ship Production Release';
-        const goal = aetherGoals.createGoal(title, 'coding');
-        return { success: true, message: `Goal target created: "${goal.title}".`, data: goal };
+        const input = params.text || params.title || 'Launch DevSpace beta in six weeks';
+        const goal = aetherGoals.createGoalFromNaturalLanguage(input);
+        return {
+          success: true,
+          message: `Created goal "${goal.title}" (${goal.category.toUpperCase()}) with ${goal.milestones.length} milestones, target date ${goal.targetDate || 'open'}, and real evidence tracking.`,
+          data: goal,
+        };
+      },
+    });
+
+    // 11b. Goal Status Query
+    this.register({
+      id: 'get_goals_status',
+      intent: 'Check goals status',
+      description: 'Reviews active goals, milestones progress %, and flags goals falling behind schedule.',
+      parametersSchema: {},
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async () => {
+        aetherGoals.detectBlockersAndScheduleAdherence();
+        const active = aetherGoals.getActiveGoals();
+        if (active.length === 0) {
+          return { success: true, message: 'You have no active goals tracked right now. Tell me what you want to accomplish (e.g. "I want to launch DevSpace beta in 6 weeks") and I will set it up.' };
+        }
+        const summary = active
+          .map((g) => `• **${g.title}** (${g.progress}% completed${g.isFallingBehind ? ' ⚠️ BEHIND SCHEDULE' : ' ✅ On Track'})${g.targetDate ? ` — Target: ${g.targetDate}` : ''}`)
+          .join('\n');
+        return {
+          success: true,
+          message: `Here is the authoritative status of your ${active.length} active goals:\n\n${summary}\n\nAsk me *"What should I work on next?"* or *"Break this into smaller steps"* to proceed.`,
+          data: active,
+        };
+      },
+    });
+
+    // 11c. What should I work on next?
+    this.register({
+      id: 'get_next_goal_action',
+      intent: 'Suggest next action',
+      description: 'Identifies the highest priority goal and its concrete next executable action.',
+      parametersSchema: {},
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async () => {
+        const topGoal = aetherGoals.getTopPriorityGoal();
+        if (!topGoal) {
+          return { success: true, message: 'No active goals found. Let me know what you want to achieve!' };
+        }
+        const na = topGoal.nextAction;
+        const upcomingMs = topGoal.milestones.find((m) => !m.completed);
+        const actionTitle = na ? na.title : (upcomingMs ? `Work on milestone: ${upcomingMs.title}` : 'Review goal deliverables');
+        const actionDesc = na ? na.description : 'Focus on completing open milestone tasks.';
+        return {
+          success: true,
+          message: `🎯 **Top Priority Recommendation**: For goal **"${topGoal.title}"** (${topGoal.progress}% done):\n\n**Next Action**: ${actionTitle}\n*${actionDesc}*${topGoal.isFallingBehind ? `\n\n⚠️ *Note: This goal is currently ${topGoal.behindReason || 'behind schedule'}.*` : ''}`,
+          data: { topGoal, nextAction: na },
+        };
+      },
+    });
+
+    // 11d. Re-plan: Move goal back a week
+    this.register({
+      id: 'replan_goal_extend',
+      intent: 'Move goal back a week',
+      description: 'Extends target deadline by 7 days and rebalances milestone schedules.',
+      parametersSchema: { goalId: 'string', days: 'number' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const topGoal = params.goalId ? aetherGoals.getGoalById(params.goalId) : aetherGoals.getTopPriorityGoal();
+        if (!topGoal) {
+          return { success: false, message: 'No active goal found to re-plan.' };
+        }
+        const days = params.days || 7;
+        aetherGoals.replanGoal(topGoal.id, {
+          extendDays: days,
+          reason: 'Schedule adjusted per developer conversational instruction',
+          rebalanceMilestones: true,
+        });
+        return {
+          success: true,
+          message: `Moved goal **"${topGoal.title}"** back by ${days} days. New target date: **${topGoal.targetDate}**. Milestones have been smoothly rebalanced.`,
+          data: topGoal,
+        };
+      },
+    });
+
+    // 11e. Break into smaller steps
+    this.register({
+      id: 'break_goal_steps',
+      intent: 'Break goal into smaller steps',
+      description: 'Decomposes the active milestone into granular actionable sub-tasks.',
+      parametersSchema: { goalId: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const topGoal = params.goalId ? aetherGoals.getGoalById(params.goalId) : aetherGoals.getTopPriorityGoal();
+        if (!topGoal) {
+          return { success: false, message: 'No active goal found to decompose.' };
+        }
+        const success = aetherGoals.breakGoalIntoSmallerSteps(topGoal.id);
+        const updated = aetherGoals.getGoalById(topGoal.id);
+        const currentMs = updated?.milestones.find((m) => !m.completed) || updated?.milestones[0];
+        return {
+          success,
+          message: `Decomposed active milestone **"${currentMs?.title}"** in goal **"${topGoal.title}"** into ${currentMs?.tasks.length || 3} actionable tasks. You can track them in the Goals page or Daily Hub.`,
+          data: updated,
+        };
+      },
+    });
+
+    // 11f. What is blocking this goal?
+    this.register({
+      id: 'get_goal_blockers',
+      intent: 'Check goal blockers',
+      description: 'Diagnoses blockers, velocity lag, and provides actionable remediation steps.',
+      parametersSchema: { goalId: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        aetherGoals.detectBlockersAndScheduleAdherence();
+        const topGoal = params.goalId ? aetherGoals.getGoalById(params.goalId) : aetherGoals.getTopPriorityGoal();
+        if (!topGoal) {
+          return { success: false, message: 'No active goal found.' };
+        }
+        if (topGoal.blockers.length === 0 && !topGoal.isFallingBehind) {
+          return {
+            success: true,
+            message: `Goal **"${topGoal.title}"** is in healthy condition (${topGoal.progress}% done) with 0 detected blockers. Next action: *${topGoal.nextAction?.title || 'Continue active milestone'}*.`,
+          };
+        }
+        const blockerList = topGoal.blockers.map((b) => `• **${b.title}** (${b.severity.toUpperCase()}): ${b.resolutionSuggestion}`).join('\n');
+        return {
+          success: true,
+          message: `🔍 **Blocker Diagnosis for "${topGoal.title}"**:\n${blockerList || `• Pace lag: ${topGoal.behindReason}`}\n\n💡 **Recommended Fix**: Would you like me to move the deadline back a week or break the milestone into smaller tasks?`,
+          data: topGoal.blockers,
+        };
+      },
+    });
+
+    // 11g. Make this my top priority
+    this.register({
+      id: 'set_goal_top_priority',
+      intent: 'Make goal top priority',
+      description: 'Elevates a goal to P0 Urgent priority.',
+      parametersSchema: { goalId: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: true,
+      execute: async (params) => {
+        const topGoal = params.goalId ? aetherGoals.getGoalById(params.goalId) : aetherGoals.getActiveGoals()[0];
+        if (!topGoal) {
+          return { success: false, message: 'No active goal found.' };
+        }
+        aetherGoals.makeTopPriority(topGoal.id);
+        return {
+          success: true,
+          message: `Set **"${topGoal.title}"** as your **P0 Top Priority** goal. Dynamic Island and Daily Hub will highlight its milestones first.`,
+          data: topGoal,
+        };
+      },
+    });
+
+    // 11h. Who am I meeting with tomorrow?
+    this.register({
+      id: 'get_tomorrow_meetings',
+      intent: 'Show scheduled meetings and attendees',
+      description: 'Retrieves calendar meetings and attendee profiles for tomorrow or specified date.',
+      parametersSchema: { date: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const res = aetherPeople.getMeetingsWithPeople(params.date);
+        if (res.meetings.length === 0) {
+          return {
+            success: true,
+            message: `📅 You have **0 scheduled meetings** on **${res.date}**. Your calendar is completely open.`,
+            data: res,
+          };
+        }
+
+        const lines = res.meetings.map((m) => {
+          const atts = m.attendees.map((a) => a.name + (a.role ? ` (${a.role})` : '')).join(', ');
+          return `• **${m.timeFormatted}**: "${m.meetingTitle}" with ${atts || 'No attendees listed'}${m.location ? ` [${m.location}]` : ''}`;
+        }).join('\n');
+
+        return {
+          success: true,
+          message: `📅 **Meetings on ${res.date} (${res.meetings.length})**:\n\n${lines}\n\n*Tip: Say "Prepare for meeting with [Name]" for key talking points & promise briefings.*`,
+          data: res,
+        };
+      },
+    });
+
+    // 11i. What did I last talk about with Alex?
+    this.register({
+      id: 'get_person_last_conversation',
+      intent: 'Get last conversation with person',
+      description: 'Retrieves conversation history, decisions, and meeting summaries for a collaborator.',
+      parametersSchema: { name: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const res = aetherPeople.getLastConversationWithPerson(params.name || '');
+        return {
+          success: Boolean(res.person),
+          message: res.summary,
+          data: res,
+        };
+      },
+    });
+
+    // 11j. Which project is Jordan involved in?
+    this.register({
+      id: 'get_person_projects',
+      intent: 'Get projects for person',
+      description: 'Returns all workspace projects and repos associated with a person.',
+      parametersSchema: { name: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const res = aetherPeople.getProjectsForPerson(params.name || '');
+        return {
+          success: Boolean(res.person),
+          message: res.summary,
+          data: res,
+        };
+      },
+    });
+
+    // 11k. What did I promise Sam?
+    this.register({
+      id: 'get_person_promises',
+      intent: 'Get promises and commitments',
+      description: 'Lists all open promises made to or received from a person.',
+      parametersSchema: { name: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const res = aetherPeople.getPromisesAndCommitments(params.name);
+        return {
+          success: true,
+          message: res.summary,
+          data: res,
+        };
+      },
+    });
+
+    // 11l. Who do I need to follow up with?
+    this.register({
+      id: 'get_open_follow_ups',
+      intent: 'Get open follow-ups',
+      description: 'Lists all pending follow-up items across contacts and collaborators.',
+      parametersSchema: {},
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async () => {
+        const res = aetherPeople.getOpenFollowUps();
+        return {
+          success: true,
+          message: res.summary,
+          data: res,
+        };
+      },
+    });
+
+    // 11m. What should I know before this meeting? / Meeting Prep
+    this.register({
+      id: 'get_meeting_prep',
+      intent: 'Generate meeting preparation brief',
+      description: 'Generates comprehensive pre-meeting briefing: attendees, roles, related projects, conversations, open promises, unresolved issues, talking points, and forgotten items.',
+      parametersSchema: { query: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const brief = aetherMeetingIntelligence.getPreMeetingBrief(params.query || '');
+        if (!brief) {
+          return { success: false, message: `Could not find meeting context for "${params.query}".` };
+        }
+
+        const attendeesFormatted = brief.attendees
+          .map((a) => `• **${a.name}** (${a.relationshipType}${a.role ? ` • ${a.role}` : ''}${a.organization ? ` @ ${a.organization}` : ''})`)
+          .join('\n');
+
+        const projectsFormatted = brief.relatedProjects.length > 0
+          ? brief.relatedProjects.map((p) => `• **${p.projectName}** (${p.status || 'Active'}) — *${p.unresolvedIssuesCount} open issues*`).join('\n')
+          : '• None directly linked';
+
+        const conversationsFormatted = brief.recentConversationsAndMeetings.length > 0
+          ? brief.recentConversationsAndMeetings.slice(0, 3).map((c) => `• **${c.attendeeName}** (${c.date}): "${c.titleOrTopic}" — *${c.summary}*`).join('\n')
+          : '• No prior conversation logs found';
+
+        const promisesFormatted = brief.openPromisesAndFollowUps.length > 0
+          ? brief.openPromisesAndFollowUps.map((p) => {
+              const prefix = p.type === 'my_commitment' ? '🤝 [I Promised]' : p.type === 'their_commitment' ? '⏳ [Waiting On Them]' : '📌 [Follow-Up]';
+              return `• ${prefix} **${p.personName}**: "${p.text}"${p.deadline ? ` (Due: ${p.deadline})` : ''}`;
+            }).join('\n')
+          : '• No active open promises or follow-ups';
+
+        const issuesFormatted = brief.unresolvedIssues.length > 0
+          ? brief.unresolvedIssues.slice(0, 3).map((i) => `• **[${i.priority}]** ${i.title} (${i.projectName})`).join('\n')
+          : '• No blocking issues flagged';
+
+        const talkingPointsFormatted = brief.suggestedTalkingPoints.map((t) => `• ${t}`).join('\n');
+
+        const forgottenFormatted = brief.importantThingsYouMayHaveForgotten.length > 0
+          ? brief.importantThingsYouMayHaveForgotten.map((f) => `• ⚠️ ${f}`).join('\n')
+          : '• All items up to date';
+
+        const msg = `
+📋 **Aether Pre-Meeting Brief: ${brief.meetingTitle}**
+*Time:* ${brief.meetingTime}${brief.location ? ` • *Location:* ${brief.location}` : ''}
+
+**👥 Attendees & Roles:**
+${attendeesFormatted}
+
+**📁 Related Projects:**
+${projectsFormatted}
+
+**💬 Recent Conversations & Context:**
+${conversationsFormatted}
+
+**🤝 Open Promises & Follow-Ups:**
+${promisesFormatted}
+
+**🚨 Unresolved Issues & Blockers:**
+${issuesFormatted}
+
+**🗣️ Suggested Talking Points:**
+${talkingPointsFormatted}
+
+**💡 Things You May Have Forgotten:**
+${forgottenFormatted}
+        `.trim();
+
+        return {
+          success: true,
+          message: msg,
+          data: brief,
+        };
+      },
+    });
+
+    // 11n. Meeting Quick Intake
+    this.register({
+      id: 'meeting_quick_intake',
+      intent: 'Record quick intake or outcome from meeting',
+      description: 'Quickly captures commitments, issues, notes, and decisions spoken or typed during/after meetings.',
+      parametersSchema: { text: 'string', meetingTitle: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const text = params.text || '';
+        const res = aetherMeetingIntelligence.quickIntake(text, { meetingTitle: params.meetingTitle });
+        return {
+          success: res.success,
+          message: res.message,
+          data: res,
+        };
+      },
+    });
+
+    // 11o. Process Post-Meeting Review
+    this.register({
+      id: 'process_post_meeting_review',
+      intent: 'Generate post-meeting review and grounded sync',
+      description: 'Processes meeting notes into structured outcomes, decisions, commitments, DevSpace issues, and People profile updates.',
+      parametersSchema: { meetingTitle: 'string', rawNotes: 'string', attendees: 'array' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const review = aetherMeetingIntelligence.processMeetingNotes({
+          meetingTitle: params.meetingTitle || 'Meeting Review',
+          rawNotes: params.rawNotes || '',
+          attendees: Array.isArray(params.attendees) ? params.attendees : (params.attendees ? String(params.attendees).split(',') : ['Alex', 'Jordan']),
+        });
+
+        let msg = `### 📋 Post-Meeting Review: ${review.meetingTitle}\n\n`;
+        msg += `**Summary:** ${review.summary}\n\n`;
+        msg += `**Decisions (${review.decisions.length}):**\n` + review.decisions.map((d) => `• ${d}`).join('\n') + '\n\n';
+        msg += `**My Commitments (${review.myCommitments.length}):**\n` + (review.myCommitments.length > 0 ? review.myCommitments.map((c) => `• To ${c.toPerson}: ${c.commitment}`).join('\n') : '• None') + '\n\n';
+        msg += `**Their Commitments (${review.theirCommitments.length}):**\n` + (review.theirCommitments.length > 0 ? review.theirCommitments.map((c) => `• From ${c.fromPerson}: ${c.commitment}`).join('\n') : '• None') + '\n\n';
+        msg += `**Issues Created (${review.issuesCreated.length}):**\n` + (review.issuesCreated.length > 0 ? review.issuesCreated.map((i) => `• ${i.title} [${i.priority}]`).join('\n') : '• None') + '\n\n';
+        msg += `*People profiles, DevSpace issues, Notes, and Long-Term Memory updated.*`;
+
+        return {
+          success: true,
+          message: msg,
+          data: review,
+        };
+      },
+    });
+
+    // 11p. Meeting Recording & Audio Transcription Safety Controls
+    this.register({
+      id: 'meeting_recording_control',
+      intent: 'Explicit meeting recording control with visual safety indicators',
+      description: 'Explicit user activation and termination for meeting transcription. Never records secretly.',
+      parametersSchema: { action: 'string', meetingTitle: 'string' },
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      supportsUndo: false,
+      execute: async (params) => {
+        const act = (params.action || 'toggle').toLowerCase();
+        if (act === 'start') {
+          const res = aetherMeetingIntelligence.startRecording(params.meetingTitle || 'Active Meeting');
+          return { success: res.success, message: res.message, data: aetherMeetingIntelligence.getRecordingState() };
+        } else {
+          const res = aetherMeetingIntelligence.stopRecording();
+          return { success: res.success, message: res.message, data: aetherMeetingIntelligence.getRecordingState() };
+        }
       },
     });
 
@@ -1095,8 +1518,176 @@ class UniversalActionEngine {
       return { command: this.commands.get('create_reminder')!, params: { text: prompt } };
     }
 
-    if (lower.includes('create goal') || lower.includes('add goal')) {
-      return { command: this.commands.get('create_goal')!, params: { title: prompt } };
+    // Conversational Goals & Personal Planning
+    if (lower.includes('how am i doing on my goals') || lower.includes('goal status') || lower.includes('show my goals') || lower.includes('goals progress')) {
+      return { command: this.commands.get('get_goals_status')!, params: {} };
+    }
+
+    if (lower.includes('what should i work on next') || lower.includes('what to work on next') || lower.includes('what next') || lower.includes('suggest next action')) {
+      return { command: this.commands.get('get_next_goal_action')!, params: {} };
+    }
+
+    if (lower.includes('move this goal back') || lower.includes('move goal back') || lower.includes('extend goal') || lower.includes('postpone goal') || lower.includes('back a week')) {
+      const days = lower.includes('two week') ? 14 : 7;
+      return { command: this.commands.get('replan_goal_extend')!, params: { days } };
+    }
+
+    if (lower.includes('break this into smaller steps') || lower.includes('break into smaller steps') || lower.includes('break into smaller tasks') || lower.includes('decompose goal') || lower.includes('smaller steps')) {
+      return { command: this.commands.get('break_goal_steps')!, params: {} };
+    }
+
+    if (lower.includes('what is blocking this goal') || lower.includes('what is blocking my goal') || lower.includes('goal blockers') || lower.includes('why is this goal falling behind')) {
+      return { command: this.commands.get('get_goal_blockers')!, params: {} };
+    }
+
+    if (lower.includes('make this my top priority') || lower.includes('set top priority') || lower.includes('make top priority') || lower.includes('set as top priority')) {
+      return { command: this.commands.get('set_goal_top_priority')!, params: {} };
+    }
+
+    if (
+      lower.includes('create goal') ||
+      lower.includes('add goal') ||
+      lower.startsWith('i want to launch') ||
+      lower.startsWith('i want to work out') ||
+      lower.startsWith('i want to improve my sleep') ||
+      lower.startsWith('i want to finish') ||
+      lower.startsWith('i want to learn') ||
+      lower.startsWith('i want to save') ||
+      lower.startsWith('i want to travel')
+    ) {
+      return { command: this.commands.get('create_goal')!, params: { text: prompt } };
+    }
+
+    // People & Relationship Context Queries
+    if (
+      lower.includes('who am i meeting with tomorrow') ||
+      lower.includes('who am i meeting tomorrow') ||
+      lower.includes('meetings tomorrow') ||
+      lower.includes('who am i meeting with today') ||
+      lower.includes('who am i meeting today') ||
+      lower.includes('what meetings do i have') ||
+      lower.includes('my meetings tomorrow')
+    ) {
+      const isToday = lower.includes('today');
+      const targetDate = isToday
+        ? new Date().toISOString().split('T')[0]
+        : new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      return { command: this.commands.get('get_tomorrow_meetings')!, params: { date: targetDate } };
+    }
+
+    if (
+      lower.includes('what did i last talk about with') ||
+      lower.includes('what did i talk about with') ||
+      lower.includes('last talk with') ||
+      lower.includes('last conversation with') ||
+      lower.includes('what was my last discussion with') ||
+      lower.includes('what did we discuss last time') ||
+      lower.includes('what did we last discuss') ||
+      lower.includes('what was discussed last time')
+    ) {
+      const match = prompt.match(/(?:with|about|to)\s+([A-Za-z0-9\s._-]+?)(?:\?|$|\.|\n)/i);
+      const name = match ? match[1].trim() : '';
+      return { command: this.commands.get('get_person_last_conversation')!, params: { name } };
+    }
+
+    if (
+      lower.includes('which project is') ||
+      lower.includes('what project is') ||
+      lower.includes('projects for') ||
+      lower.includes('is involved in') ||
+      lower.includes('which projects is')
+    ) {
+      const match = prompt.match(/(?:is|for)\s+([A-Za-z0-9\s._-]+?)\s+(?:involved in|working on|on|assigned to)/i) ||
+                    prompt.match(/(?:projects for|projects of)\s+([A-Za-z0-9\s._-]+)/i) ||
+                    prompt.match(/which project is\s+([A-Za-z0-9\s._-]+)/i);
+      const name = match ? match[1].trim() : '';
+      return { command: this.commands.get('get_person_projects')!, params: { name } };
+    }
+
+    if (
+      lower.includes('what did i promise') ||
+      lower.includes('what have i promised') ||
+      lower.includes('what did i commit to') ||
+      lower.includes('what did they promise') ||
+      lower.includes('my promises to')
+    ) {
+      const match = prompt.match(/(?:promise|commit to|promised)\s+([A-Za-z0-9\s._-]+?)(?:\?|$|\.|\n)/i);
+      const name = match ? match[1].trim() : undefined;
+      return { command: this.commands.get('get_person_promises')!, params: { name } };
+    }
+
+    if (
+      lower.includes('who do i need to follow up with') ||
+      lower.includes('who should i follow up with') ||
+      lower.includes('who do i have to follow up with') ||
+      lower.includes('show follow ups') ||
+      lower.includes('open follow ups') ||
+      lower.includes('pending follow ups')
+    ) {
+      return { command: this.commands.get('get_open_follow_ups')!, params: {} };
+    }
+
+    // Meeting Pre-Briefing & Prep
+    if (
+      lower.includes('what should i know before') ||
+      lower.includes('prep me for my meeting') ||
+      lower.includes('prep me for meeting') ||
+      lower.includes('prepare me for my meeting') ||
+      lower.includes('meeting prep') ||
+      lower.includes('prep for meeting') ||
+      lower.includes('brief me on my meeting') ||
+      lower.includes('briefing before meeting') ||
+      lower.includes('pre-meeting brief') ||
+      lower.includes('pre meeting brief')
+    ) {
+      const match = prompt.match(/(?:with|for|before my meeting with|before meeting with|before my|before)\s+([A-Za-z0-9\s._:-]+?)(?:\?|$|\.|\n)/i);
+      const query = match ? match[1].trim() : 'upcoming meeting';
+      return { command: this.commands.get('get_meeting_prep')!, params: { query } };
+    }
+
+    // Meeting Recording & Safety Controls
+    if (
+      lower.includes('start recording meeting') ||
+      lower.includes('start meeting recording') ||
+      lower.includes('record this meeting') ||
+      lower.includes('start transcription')
+    ) {
+      return { command: this.commands.get('meeting_recording_control')!, params: { action: 'start', meetingTitle: 'Current Meeting' } };
+    }
+
+    if (
+      lower.includes('stop recording meeting') ||
+      lower.includes('stop meeting recording') ||
+      lower.includes('stop recording') ||
+      lower.includes('stop transcription')
+    ) {
+      return { command: this.commands.get('meeting_recording_control')!, params: { action: 'stop' } };
+    }
+
+    // Post-Meeting Review & Outcome Capture
+    if (
+      lower.includes('post-meeting review') ||
+      lower.includes('post meeting review') ||
+      lower.includes('capture outcomes from that meeting') ||
+      lower.includes('capture meeting outcomes') ||
+      lower.includes('process meeting notes') ||
+      lower.includes('review meeting outcomes')
+    ) {
+      return { command: this.commands.get('process_post_meeting_review')!, params: { meetingTitle: 'Recent Meeting', rawNotes: prompt } };
+    }
+
+    // Meeting Quick Intake: Commitments, Issues, Notes
+    if (
+      lower.startsWith('create an issue for') ||
+      lower.startsWith('create issue for') ||
+      lower.startsWith('i told ') ||
+      lower.startsWith('i promised ') ||
+      lower.startsWith('i agreed to ') ||
+      lower.startsWith('save these meeting notes') ||
+      lower.startsWith('save meeting notes') ||
+      lower.match(/^[a-zA-Z0-9._-]+\s+(agreed to|promised to|said they would|will send|will deliver)/i)
+    ) {
+      return { command: this.commands.get('meeting_quick_intake')!, params: { text: prompt } };
     }
 
     if (lower.includes('research') || lower.includes('search online') || lower.includes('find best practices')) {

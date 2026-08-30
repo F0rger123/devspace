@@ -336,6 +336,10 @@ class AetherVoiceRegistry {
     return true;
   }
 
+  public speakText(text: string): boolean {
+    return this.testVoice('', text);
+  }
+
   public stopSpeaking(): void {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();

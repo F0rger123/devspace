@@ -6,17 +6,24 @@ import { DataProvider } from './context/DataProvider.tsx';
 import { DevSpaceInstanceProvider } from './context/DevSpaceInstanceContext.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 
-// Suppress benign ResizeObserver loop limit exceeded errors
+// Suppress benign ResizeObserver and transient background network/fetch rejections
 if (typeof window !== 'undefined') {
-  const isResizeObserverError = (msg: string | undefined | null) => {
-    return msg && (
+  const isBenignError = (msg: string | undefined | null) => {
+    if (!msg) return false;
+    return (
       msg.includes('ResizeObserver loop completed with undelivered notifications') ||
-      msg.includes('ResizeObserver loop limit exceeded')
+      msg.includes('ResizeObserver loop limit exceeded') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('NetworkError') ||
+      msg.includes('Load failed') ||
+      msg.includes('The user aborted a request') ||
+      msg.includes('AbortError') ||
+      msg.includes('Network request failed')
     );
   };
 
   window.addEventListener('error', (e) => {
-    if (isResizeObserverError(e.message)) {
+    if (isBenignError(e.message)) {
       e.stopImmediatePropagation();
       e.preventDefault();
     }
@@ -24,8 +31,8 @@ if (typeof window !== 'undefined') {
 
   window.addEventListener('unhandledrejection', (e) => {
     const reason = e.reason;
-    const msg = typeof reason === 'string' ? reason : reason?.message;
-    if (isResizeObserverError(msg)) {
+    const msg = typeof reason === 'string' ? reason : reason?.message || String(reason || '');
+    if (isBenignError(msg)) {
       e.stopImmediatePropagation();
       e.preventDefault();
     }

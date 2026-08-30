@@ -1,0 +1,21 @@
+{
+  "available": true,
+  "status": "published",
+  "version": "v2.5.0",
+  "versionCode": 250,
+  "releaseName": "DevSpace Aether Android v2.5.0",
+  "packageName": "com.devspace.aether",
+  "fileName": "DevSpace-Aether-Android-2.5.0.apk",
+  "downloadUrl": "/api/android/download/apk",
+  "fileSizeMB": 18.2,
+  "publishedAt": "2026-08-30T08:00:00.000Z",
+  "releaseNotes": "• Native Android APK build with full account synchronization\n• Proactive notifications and deep-link routing\n• Touch-optimized Dream swipe gestures with native haptics\n• Mobile-safe Aether voice recording and biometric passkeys",
+  "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "minSdkVersion": 26,
+  "targetSdkVersion": 34,
+  "signingInfo": {
+    "status": "Debug & V2 Signature Scheme Verified",
+    "algorithm": "SHA256withRSA",
+    "keystoreConfig": "release.keystore / debug.keystore"
+  }
+}

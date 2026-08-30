@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -22,7 +23,8 @@ import {
   Copy,
   ChevronUp,
   X,
-  Code
+  Code,
+  Workflow
 } from 'lucide-react';
 
 import { N8nWorkflow, AutomationNode, AutomationEdge, NodeTypeDefinition } from '../components/automations/types';
@@ -33,6 +35,7 @@ import { NodeInspectorDrawer } from '../components/automations/NodeInspectorDraw
 import { WorkflowTemplatesModal } from '../components/automations/WorkflowTemplatesModal';
 
 export function Automations() {
+  const navigate = useNavigate();
   const { projects, issues, addIssue } = useData();
 
   // Load saved workflows or load preset templates
@@ -509,6 +512,14 @@ export function Automations() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 transition-all cursor-pointer"
           >
             <Download size={14} /> Export
+          </button>
+
+          <button
+            onClick={() => navigate('/workflows')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs font-semibold text-amber-300 hover:bg-amber-500/25 transition-all cursor-pointer"
+            title="Open Teachable Workflows"
+          >
+            <Workflow size={14} /> Teachable Workflows
           </button>
 
           <div className="w-[1px] h-5 bg-zinc-800 mx-1" />

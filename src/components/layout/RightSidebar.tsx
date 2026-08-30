@@ -45,7 +45,8 @@ import {
   Compass,
   Menu,
   Target,
-  Copy
+  Copy,
+  BrainCircuit
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { haptic } from '../../utils/haptics';
@@ -55,6 +56,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { TypewriterText } from '../ui/TypewriterText';
+import { AetherMultiActionProgress } from '../ui/TheBar/AetherMultiActionProgress';
 import { useData, setDocWithSanitize, deleteDocWithSanitize } from '../../context/DataProvider';
 import { getAllAvailableModels } from '../../lib/localModelEngine';
 import { useStore } from '../../store';
@@ -68,9 +70,14 @@ import { evaluateRoutingFirewall } from '../../lib/aetherRoutingGuard';
 import { resolveCanonicalAetherIntent } from '../../lib/aetherCanonicalIntentResolver';
 import { getResolvedAetherPersonality } from '../../lib/aetherPersonalityResolver';
 import { aetherTeachEngine } from '../../lib/aetherTeachEngine';
+import { aetherWorkflowEngine } from '../../lib/aetherWorkflowEngine';
 import { universalActionEngine } from '../../lib/aetherActionEngine';
 import { aetherThreadStorage } from '../../lib/aetherThreadStorage';
+import { aetherContextActions, ContextCaptureData } from '../../lib/aetherContextModeActions';
+import { AetherContextActionMenu } from '../ui/AetherContextActionMenu';
 import { AetherErrorBoundary } from '../ui/AetherErrorBoundary';
+import { aetherProactiveIntelligence, ProactiveAlertItem } from '../../lib/aetherProactiveIntelligenceService';
+import { AetherProactiveAlertCard } from '../ui/AetherProactiveAlertCard';
 
 type Message = {
   id: string;
@@ -138,7 +145,8 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
     activationShortcutKey,
     stopShortcutKey,
     googleUser,
-    vocalDictionary
+    vocalDictionary,
+    showToast
   } = useData();
 
   const { 
@@ -285,6 +293,50 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       whatsappBridge: true
     };
   });
+
+  // Active Context Mode selection attachment and action menu state
+  const [activeContextAttachment, setActiveContextAttachment] = useState<ContextCaptureData | null>(() =>
+    aetherContextActions.getActiveAttachment()
+  );
+  const [showContextActionModal, setShowContextActionModal] = useState(false);
+
+  useEffect(() => {
+    const handleAttachmentUpdate = (e: Event) => {
+      const custom = e as CustomEvent;
+      setActiveContextAttachment(custom.detail || aetherContextActions.getActiveAttachment());
+    };
+
+    const handleInjectContext = (e: Event) => {
+      const custom = e as CustomEvent;
+      const { prompt, captureData } = custom.detail || {};
+      if (captureData) {
+        setActiveContextAttachment(captureData);
+      }
+      if (prompt) {
+        setInputValue(prompt);
+      }
+    };
+
+    window.addEventListener('aether-context-attachment-updated', handleAttachmentUpdate);
+    window.addEventListener('aether-inject-chat-context', handleInjectContext);
+    return () => {
+      window.removeEventListener('aether-context-attachment-updated', handleAttachmentUpdate);
+      window.removeEventListener('aether-inject-chat-context', handleInjectContext);
+    };
+  }, []);
+
+  // Proactive Desktop Intelligence live alerts
+  const [proactiveAlerts, setProactiveAlerts] = useState<ProactiveAlertItem[]>(() =>
+    aetherProactiveIntelligence.getAlerts()
+  );
+  const [showAllProactiveChatAlerts, setShowAllProactiveChatAlerts] = useState(false);
+
+  useEffect(() => {
+    const unsub = aetherProactiveIntelligence.subscribe((alerts) => {
+      setProactiveAlerts(alerts);
+    });
+    return () => unsub();
+  }, []);
 
   // Customize Assistant Model Settings
   const [aiSettings, setAiSettings] = useState(() => {
@@ -1087,6 +1139,104 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       workingMemory: aetherConversationalEngine.getState().workingMemory
     });
 
+    // -------------------------------------------------------------
+    // TEACHABLE WORKFLOWS: CONVERSATIONAL TEACHING & EXECUTION
+    // -------------------------------------------------------------
+    const teachParsed = aetherWorkflowEngine.parseWorkflowFromConversation(textToSend);
+    if (teachParsed.isTeachRequest && teachParsed.steps && teachParsed.steps.length > 0) {
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      setMessages(prev => [...prev, userMsg]);
+      setIsProcessing(true);
+
+      const newWf = {
+        id: `wf-${Date.now()}`,
+        name: teachParsed.name || 'Custom Teachable Workflow',
+        triggerPhrase: teachParsed.triggerPhrase || 'custom flow',
+        aliases: teachParsed.aliases || [],
+        description: `Created conversationally via Aether Chat: "${textToSend}"`,
+        enabled: true,
+        isAccountSafe: true,
+        hasMachineSpecificSteps: teachParsed.steps.some(s => s.isMachineSpecific),
+        steps: teachParsed.steps,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        executionCount: 0
+      };
+
+      aetherWorkflowEngine.saveWorkflow(newWf);
+      setIsProcessing(false);
+
+      const responseMd = `### ✨ Learned Teachable Workflow: "${newWf.name}"\n\n` +
+        `I have registered this reusable workflow. You can trigger it anytime via chat, command bar, or Dynamic Island.\n\n` +
+        `**Primary Trigger:** \`"${newWf.triggerPhrase}"\`\n` +
+        (newWf.aliases.length > 0 ? `**Aliases:** ${newWf.aliases.map(a => `\`"${a}"\``).join(', ')}\n` : '') +
+        `\n**Pipeline Steps (${newWf.steps.length}):**\n` +
+        newWf.steps.map((s, idx) => `${idx + 1}. **${s.title}** (\`${s.actionType}\`) — ${s.target || 'Auto'}`).join('\n') +
+        `\n\n*Manage, edit, or reorder steps anytime in the [Workflows](/workflows) page.*`;
+
+      const speechTxt = `I've learned the "${newWf.name}" workflow. You can run it anytime by saying "${newWf.triggerPhrase}".`;
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: responseMd };
+      setMessages(prev => [...prev, modelMsg]);
+      speakVoiceReply(speechTxt);
+      return;
+    }
+
+    // Check for Workflow Execution by Trigger or Alias
+    const matchedWorkflow = aetherWorkflowEngine.matchWorkflow(textToSend);
+    if (matchedWorkflow) {
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      setMessages(prev => [...prev, userMsg]);
+      setIsProcessing(true);
+
+      const execRes = await aetherWorkflowEngine.executeWorkflow(matchedWorkflow, {
+        navigate,
+        showToast,
+        projects: projects || [],
+        activeProjectId,
+        setActiveProjectId,
+        issues: issues || [],
+        notes: notes || [],
+        addIssue,
+        addNote
+      }, {
+        triggerSource: 'chat'
+      });
+
+      setIsProcessing(false);
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: execRes.summaryMarkdown };
+      setMessages(prev => [...prev, modelMsg]);
+      speakVoiceReply(execRes.speechText);
+      return;
+    }
+
+    // Check for "list workflows" / "show my workflows"
+    if (clean === 'list workflows' || clean === 'show workflows' || clean === 'show my workflows' || clean === 'my workflows') {
+      setInputValue('');
+      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: textToSend };
+      setMessages(prev => [...prev, userMsg]);
+
+      const allWfs = aetherWorkflowEngine.getWorkflows();
+      let wfListMd = `### ⚡ Aether Teachable Workflows (${allWfs.length})\n\n`;
+      if (allWfs.length === 0) {
+        wfListMd += `No workflows configured yet. Teach me one by saying: *"When I say start coding, open VS Code, open Terminal, and show GitHub activity."*`;
+      } else {
+        wfListMd += allWfs.map((w, idx) => {
+          return `**${idx + 1}. ${w.name}** [${w.enabled ? 'ACTIVE' : 'PAUSED'}]\n` +
+            `- **Trigger:** \`"${w.triggerPhrase}"\`\n` +
+            `- **Steps (${w.steps.length}):** ${w.steps.map(s => s.title).join(' → ')}\n` +
+            (w.aliases && w.aliases.length > 0 ? `- **Aliases:** ${w.aliases.map(a => `\`"${a}"\``).join(', ')}\n` : '');
+        }).join('\n\n');
+        wfListMd += `\n\n*View full details, history, and edit steps in [Workflows](/workflows).*`;
+      }
+
+      const modelMsg: Message = { id: (Date.now() + 1).toString(), role: 'agent', content: wfListMd };
+      setMessages(prev => [...prev, modelMsg]);
+      speakVoiceReply(`You have ${allWfs.length} teachable workflows registered.`);
+      return;
+    }
+
     const isDirectEngineIntent =
       canonical.intent === 'search_youtube' ||
       canonical.intent === 'search_web' ||
@@ -1596,6 +1746,18 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
         body: JSON.stringify({
           messages: [...messages, newMsg],
           files: filesToSend,
+          contextAttachment: activeContextAttachment ? {
+            id: activeContextAttachment.id,
+            label: activeContextAttachment.label,
+            contentType: activeContextAttachment.contentType,
+            ocrText: activeContextAttachment.ocrText,
+            extractedDom: activeContextAttachment.extractedDom,
+            codeSnippet: activeContextAttachment.codeSnippet,
+            detectedLanguage: activeContextAttachment.detectedLanguage,
+            errorSignature: activeContextAttachment.errorSignature,
+            uiHierarchy: activeContextAttachment.uiHierarchy,
+            projectName: activeContextAttachment.projectName
+          } : null,
           projects: projects.map(p => ({
             id: p.id,
             name: p.name,
@@ -2030,6 +2192,16 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
               <button
                 type="button"
+                onClick={() => navigate('/memory')}
+                className="p-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Open Long-Term Memory Hub"
+              >
+                <BrainCircuit size={14} className="text-amber-400" />
+                <span className="text-[10px] uppercase font-semibold hidden md:inline-block">Memory</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   const allText = messages
                     .map((m) => `${m.role === 'user' ? 'User' : 'Aether'}:\n${m.content}`)
@@ -2074,6 +2246,42 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
             className={`flex-1 overflow-y-auto p-6 space-y-6 bg-[#08080a] select-text ${isSpeechPlaying ? 'cursor-pointer' : ''}`}
           >
             <div className="max-w-3xl mx-auto space-y-6">
+              {/* Proactive Desktop Intelligence Banner / Cards */}
+              {proactiveAlerts.length > 0 && (
+                <div className="p-4 bg-zinc-950/90 border border-amber-500/25 rounded-2xl space-y-3 shadow-2xl backdrop-blur-xl">
+                  <div className="flex items-center justify-between font-mono text-xs">
+                    <span className="flex items-center gap-1.5 font-extrabold text-amber-400">
+                      <Sparkles size={14} className="animate-pulse" />
+                      <span>Proactive Intelligence ({proactiveAlerts.length})</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-zinc-500">
+                        {proactiveAlerts.filter(a => a.classification === 'verified_fact').length} Facts · {proactiveAlerts.filter(a => a.classification === 'aether_recommendation').length} Recommendations
+                      </span>
+                      {proactiveAlerts.length > 2 && (
+                        <button
+                          onClick={() => setShowAllProactiveChatAlerts(!showAllProactiveChatAlerts)}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                        >
+                          {showAllProactiveChatAlerts ? 'Show Less' : `View All (${proactiveAlerts.length})`}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(showAllProactiveChatAlerts ? proactiveAlerts : proactiveAlerts.slice(0, 2)).map((alert) => (
+                      <AetherProactiveAlertCard
+                        key={alert.id}
+                        alert={alert}
+                        compact
+                        onActionComplete={() => setProactiveAlerts(aetherProactiveIntelligence.getAlerts())}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {messages.map((msg, idx) => (
                 <motion.div
                    key={msg.id}
@@ -2255,6 +2463,47 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
               {/* Input Core */}
               <div className="relative flex flex-col gap-3 bg-[#121214] border border-[#27272a] rounded-2xl p-3 focus-within:border-yellow-500/60 shadow-xl">
+                {/* Active Screen Context Attachment Badge */}
+                {activeContextAttachment && (
+                  <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-center justify-between gap-2 text-xs select-none">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-1 bg-yellow-500/20 text-yellow-400 rounded-md shrink-0">
+                        {activeContextAttachment.contentType === 'code_error' && <Code2 size={12} />}
+                        {activeContextAttachment.contentType === 'ui_selection' && <Layers size={12} />}
+                        {activeContextAttachment.contentType === 'text_content' && <FileText size={12} />}
+                        {activeContextAttachment.contentType === 'empty_or_failed' && <AlertCircle size={12} />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-bold text-yellow-300 truncate">
+                          {activeContextAttachment.label}
+                        </div>
+                        <div className="text-[9px] text-zinc-400 font-mono truncate">
+                          {activeContextAttachment.ocrText?.slice(0, 60) || activeContextAttachment.contentType.replace('_', ' ')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowContextActionModal(true)}
+                        className="px-2 py-0.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[9.5px] font-mono font-bold rounded transition-colors cursor-pointer"
+                        title="Open Smart Context Actions Menu"
+                      >
+                        Actions
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => aetherContextActions.clearActiveAttachment()}
+                        className="p-1 text-zinc-500 hover:text-zinc-300 rounded"
+                        title="Detach Context"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   <Terminal size={14} className="text-zinc-650 shrink-0 ml-1" />
                   <input
@@ -2265,7 +2514,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                       if (isSpeechPlaying) stopVoiceReply();
                     }}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder="Ask Aether to coordinate tasks, audit security, or review integrations..."
+                    placeholder={activeContextAttachment ? `Ask Aether about "${activeContextAttachment.label}"...` : "Ask Aether to coordinate tasks, audit security, or review integrations..."}
                     className="w-full bg-transparent border-none py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-0 select-text"
                   />
                 </div>
@@ -3046,6 +3295,16 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
 
           <button
             onClick={() => {
+              navigate('/memory');
+            }}
+            className="p-1.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-amber-300 transition-colors"
+            title="Aether Long-Term Memory Hub"
+          >
+            <BrainCircuit size={13} />
+          </button>
+
+          <button
+            onClick={() => {
               navigate('/assistant');
             }}
             className="p-1.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-200 transition-colors"
@@ -3161,6 +3420,9 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
           </motion.div>
         ))}
 
+        {/* Multi-Action Sequential Progress Card */}
+        <AetherMultiActionProgress />
+
         {isProcessing && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -3249,6 +3511,40 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
       <div className="p-3 bg-[#0c0c0e] border-t border-zinc-800 shrink-0 select-none">
         <div className="relative flex flex-col gap-2 bg-[#121214] border border-zinc-800 focus-within:border-indigo-500/50 rounded-xl p-2.5 transition-all">
            
+           {/* Active Screen Context Attachment Badge (Compact Mode) */}
+           {activeContextAttachment && (
+             <div className="p-1.5 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center justify-between gap-1.5 text-xs select-none">
+               <div className="flex items-center gap-1.5 min-w-0">
+                 <div className="p-0.5 bg-yellow-500/20 text-yellow-400 rounded shrink-0">
+                   {activeContextAttachment.contentType === 'code_error' && <Code2 size={10} />}
+                   {activeContextAttachment.contentType === 'ui_selection' && <Layers size={10} />}
+                   {activeContextAttachment.contentType === 'text_content' && <FileText size={10} />}
+                   {activeContextAttachment.contentType === 'empty_or_failed' && <AlertCircle size={10} />}
+                 </div>
+                 <span className="text-[10px] font-bold text-yellow-300 truncate">
+                   {activeContextAttachment.label}
+                 </span>
+               </div>
+
+               <div className="flex items-center gap-1 shrink-0">
+                 <button
+                   type="button"
+                   onClick={() => setShowContextActionModal(true)}
+                   className="px-1.5 py-0.5 bg-yellow-500 hover:bg-yellow-400 text-black text-[8.5px] font-mono font-bold rounded cursor-pointer"
+                 >
+                   Actions
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => aetherContextActions.clearActiveAttachment()}
+                   className="p-0.5 text-zinc-500 hover:text-zinc-300 rounded text-[10px]"
+                 >
+                   ✕
+                 </button>
+               </div>
+             </div>
+           )}
+
            <div className="flex items-center">
               <Terminal size={12} className="text-zinc-500 ml-1 shrink-0" />
               <input 
@@ -3259,7 +3555,7 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
                   if (isSpeechPlaying) stopVoiceReply();
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleSend()}
-                placeholder="Talk to Aether..."
+                placeholder={activeContextAttachment ? `Ask about "${activeContextAttachment.label}"...` : "Talk to Aether..."}
                 className="w-full bg-transparent border-none py-1 pl-2.5 pr-2 text-xs text-zinc-150 placeholder:text-zinc-650 focus:outline-none focus:ring-0 select-text"
               />
            </div>
@@ -3511,6 +3807,26 @@ export function RightSidebar({ isFullPage = false }: { isFullPage?: boolean }) {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Smart Context Actions Modal Popup */}
+      <AnimatePresence>
+        {showContextActionModal && activeContextAttachment && (
+          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <AetherContextActionMenu
+                captureData={activeContextAttachment}
+                onClose={() => setShowContextActionModal(false)}
+              />
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

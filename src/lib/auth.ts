@@ -77,6 +77,8 @@ try {
 export const db = firestoreInstance;
 
 const provider = new GoogleAuthProvider();
+provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+provider.addScope('https://www.googleapis.com/auth/calendar.events');
 
 const githubProvider = new GithubAuthProvider();
 githubProvider.addScope('repo'); // for checking repositories

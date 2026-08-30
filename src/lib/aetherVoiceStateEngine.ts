@@ -35,10 +35,10 @@ const CHANNEL_NAME = 'devspace_aether_voice_broadcast';
 export const AETHER_MODES_CYCLE: AetherVoiceMode[] = ['off', 'wake_word', 'listening', 'context'];
 
 export const AETHER_MODE_LABELS: Record<AetherVoiceMode, string> = {
-  off: 'AETHER AI OFF',
-  wake_word: 'WAITING FOR KEYWORD',
-  listening: 'AETHER AI ON',
-  context: 'CONTEXT MODE',
+  off: 'Off',
+  wake_word: 'Waiting for Keyword',
+  listening: 'Listening / Aether On',
+  context: 'Context Mode',
 };
 
 class AetherVoiceStateEngine {
@@ -158,16 +158,21 @@ class AetherVoiceStateEngine {
     }
     if (
       clean === 'listening' ||
+      clean === 'intent_only' ||
       clean === 'always_on' ||
       upper.includes('LISTEN') ||
+      upper.includes('INTENT') ||
+      upper.includes('AETHER ON') ||
       upper.includes('ALWAYS ON')
     ) {
       return 'listening';
     }
     if (
       clean === 'context' ||
+      clean === 'continuous' ||
       clean === 'focus' ||
       upper.includes('CONTEXT') ||
+      upper.includes('CONTINUOUS') ||
       upper.includes('FOCUS')
     ) {
       return 'context';

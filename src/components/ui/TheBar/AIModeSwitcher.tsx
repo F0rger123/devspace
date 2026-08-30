@@ -29,7 +29,7 @@ interface ModeConfig {
 const MODE_CONFIGS: Record<AetherVoiceMode, ModeConfig> = {
   off: {
     mode: 'off',
-    label: 'AETHER AI OFF',
+    label: 'Off',
     shortLabel: 'OFF',
     icon: <Power size={12} />,
     activeColor: 'bg-zinc-800/80 hover:bg-zinc-800',
@@ -40,7 +40,7 @@ const MODE_CONFIGS: Record<AetherVoiceMode, ModeConfig> = {
   },
   wake_word: {
     mode: 'wake_word',
-    label: 'WAITING FOR KEYWORD',
+    label: 'Waiting for Keyword',
     shortLabel: 'WAKE-WORD',
     icon: <Radio size={12} />,
     activeColor: 'bg-amber-500/15 hover:bg-amber-500/25',
@@ -51,8 +51,8 @@ const MODE_CONFIGS: Record<AetherVoiceMode, ModeConfig> = {
   },
   listening: {
     mode: 'listening',
-    label: 'AETHER AI ON',
-    shortLabel: 'ON / OPEN',
+    label: 'Listening / Aether On',
+    shortLabel: 'LISTENING',
     icon: <Mic size={12} />,
     activeColor: 'bg-emerald-500/20 hover:bg-emerald-500/30',
     borderColor: 'border-emerald-500/45 hover:border-emerald-500/70',
@@ -62,7 +62,7 @@ const MODE_CONFIGS: Record<AetherVoiceMode, ModeConfig> = {
   },
   context: {
     mode: 'context',
-    label: 'CONTEXT MODE',
+    label: 'Context Mode',
     shortLabel: 'CONTEXT',
     icon: <Target size={12} />,
     activeColor: 'bg-cyan-500/15 hover:bg-cyan-500/25',

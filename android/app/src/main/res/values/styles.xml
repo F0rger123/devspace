@@ -1,0 +1,18 @@
+<resources>
+    <!-- Base application theme. -->
+    <style name="Theme.DevSpace" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">#EAB308</item>
+        <item name="colorPrimaryVariant">#CA8A04</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="android:statusBarColor">#030305</item>
+        <item name="android:navigationBarColor">#030305</item>
+    </style>
+
+    <style name="Theme.DevSpace.NoActionBar" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#EAB308</item>
+        <item name="colorPrimaryVariant">#CA8A04</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="android:statusBarColor">#030305</item>
+        <item name="android:navigationBarColor">#030305</item>
+    </style>
+</resources>

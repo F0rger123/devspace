@@ -29,4 +29,13 @@ test_*.cjs
 compile-incremental.ts
 full-nested-checker.ts
 
-
+# Android & Keystores (Security Critical: Never Commit Keystores)
+*.keystore
+*.jks
+release.keystore
+debug.keystore
+*.apk
+*.aab
+.gradle/
+android/app/build/
+android/build/

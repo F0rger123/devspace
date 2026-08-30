@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bell,
   CheckCircle2,
@@ -12,6 +12,7 @@ import {
   Calendar as CalendarIcon,
   Zap,
   TrendingUp,
+  ArrowRight,
 } from 'lucide-react';
 import { aetherReminders, AetherReminder } from '../lib/aetherRemindersService';
 import { aetherGoals, AetherGoal, GoalCategory } from '../lib/aetherGoalsService';
@@ -19,6 +20,12 @@ import { aetherGoals, AetherGoal, GoalCategory } from '../lib/aetherGoalsService
 export function AetherRemindersGoalsTab() {
   const [reminders, setReminders] = useState<AetherReminder[]>(() => aetherReminders.getReminders());
   const [goals, setGoals] = useState<AetherGoal[]>(() => aetherGoals.getGoals());
+
+  useEffect(() => {
+    return aetherGoals.subscribe((updated) => {
+      setGoals(updated);
+    });
+  }, []);
 
   // NL Reminder Input State
   const [nlInput, setNlInput] = useState('');

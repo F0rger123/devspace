@@ -1,5 +1,6 @@
 import { activityCenter, ActivityItem } from './activityCenterService';
 import { safeGetDesktopAwareness, safeExecuteDesktopAction, safeRecognizeOCR } from './electronBridge';
+import { aetherMultiActionEngine } from './aetherMultiActionEngine';
 
 export type DreamState =
   | 'created'
@@ -493,6 +494,20 @@ export class AetherIntelligenceService {
 
   public async parseNaturalLanguageAction(prompt: string, currentProject: string = 'DevSpace Desktop'): Promise<{ success: boolean; result: string; payload?: any; intent?: string }> {
     const text = prompt.trim().toLowerCase();
+
+    // Check for Multi-Action Requests
+    if (aetherMultiActionEngine.isMultiActionRequest(prompt)) {
+      const plan = aetherMultiActionEngine.planWorkflow(prompt, {
+        activeProjectName: currentProject
+      });
+      const executed = await aetherMultiActionEngine.executePlan(plan);
+      return {
+        success: executed.status === 'completed',
+        intent: 'MULTI_ACTION_WORKFLOW',
+        result: executed.summaryMessage || `Executed ${executed.steps.length}-step workflow: ${executed.title}`,
+        payload: executed
+      };
+    }
 
     if (text.includes('review what i') || text.includes('inspect current screen') || text.includes('review screen')) {
       const desktop = await this.analyzeDesktop();

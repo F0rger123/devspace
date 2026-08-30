@@ -22,6 +22,7 @@ import { DailyAetherBriefModal } from '../DailyAetherBriefModal';
 import { CursorInspectionModal } from '../CursorInspectionModal';
 import { SpotifyMiniPlayer } from '../ui/SpotifyMiniPlayer';
 import { DesktopUpdateModal } from '../ui/DesktopUpdateModal';
+import { MobileAetherControls } from '../mobile/MobileAetherControls';
 import { Users } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/auth';
@@ -722,6 +723,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       />
       <SpotifyMiniPlayer />
       <DesktopUpdateModal />
+      <MobileAetherControls />
     </div>
   );
 }

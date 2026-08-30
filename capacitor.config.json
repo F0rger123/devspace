@@ -1,0 +1,36 @@
+{
+  "appId": "com.devspace.aether",
+  "appName": "DevSpace",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#030305",
+      "showSpinner": true,
+      "spinnerColor": "#EAB308"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#030305"
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "Haptics": {
+      "enabled": true
+    },
+    "App": {
+      "deepLinkSchemes": ["devspace"]
+    }
+  }
+}
