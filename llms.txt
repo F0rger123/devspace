@@ -1,0 +1,11 @@
+# devspace
+
+> A workspace for developers with an AI assistant called Aether that helps track projects and ideas and can write code. Runs in the browser, on Windows and on Android.
+
+If a person shared this repository with you, read the AI guide first.
+
+## Start here
+- [AI guide](https://raw.githubusercontent.com/F0rger123/devspace/main/AGENTS.md): what it is, what to ask, setup steps, how to use it
+- [README](https://raw.githubusercontent.com/F0rger123/devspace/main/README.md)
+- [Desktop architecture](https://raw.githubusercontent.com/F0rger123/devspace/main/DEVSPACE_DESKTOP_ARCHITECTURE.md)
+- [Desktop release guide](https://raw.githubusercontent.com/F0rger123/devspace/main/DEVSPACE_DESKTOP_RELEASE_GUIDE.md)

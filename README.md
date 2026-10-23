@@ -24,13 +24,18 @@
 
 <p align="center">
   <a href="#-what-it-does">What it does</a> ·
-  <a href="#-meet-aether">Aether</a> ·
-  <a href="#-one-codebase-three-platforms">Platforms</a> ·
-  <a href="#-run-it">Run it</a> ·
+  <a href="#-meet-aether">Meet Aether</a> ·
+  <a href="#️-one-app-three-places">One app, three places</a> ·
+  <a href="#️-run-it">Run it</a> ·
+  <a href="#-what-its-written-in">What it's written in</a> ·
   <a href="#-license">License</a>
 </p>
 
 <p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
+
+
+> [!TIP]
+> **🤖 Pasted this link into Claude or ChatGPT?** AI assistants: read [`AGENTS.md`](https://raw.githubusercontent.com/F0rger123/devspace/main/AGENTS.md) first. It explains what this is in plain words, which questions to ask, and how to set it up step by step. Plain-text index: [`llms.txt`](https://raw.githubusercontent.com/F0rger123/devspace/main/llms.txt).
 
 ## ⚡ What it does
 
@@ -49,24 +54,21 @@
 
 ```mermaid
 flowchart LR
-    You(["🧑‍💻 You"]) -->|"dream up 500 ideas"| Aether["✨ Aether"]
-    Aether --> Ideas["💭 Dream deck"] -->|swipe right| Project["🗂️ Project"]
-    Project --> Plan["Steps + issues"] --> Code["🧩 Generated code"]
-    Code --> Push["⬆️ Push to repo"]
-    Aether --> Mem[("🧠 Memory cortex")]
-    Aether --> Daily["📆 Daily brief"]
+    You(["You"]) -->|dream up ideas| Aether["Aether, the assistant"]
+    Aether --> Ideas["Idea deck"]
+    Ideas -->|swipe right| Project["New project"]
+    Project --> Steps["Plan and tasks"]
+    Steps --> Code["Code written for you"]
+    Aether --> Mem[("Remembers you")]
 ```
 
-## 🖥️ One codebase, three platforms
+## 🖥️ One app, three places
 
 ```mermaid
 flowchart TB
-    Src["src/ · shared React app"] --> Web["🌐 Web<br/>Vite + server.ts"]
-    Src --> Desk["🖥️ Windows desktop<br/>Electron + NSIS installer"]
-    Src --> Droid["🤖 Android<br/>Capacitor"]
-    Desk --> Caps["Native capabilities<br/>files · terminal · git · screen capture · local models"]
-    Desk --> Perm["Permission engine"]
-    Web & Desk & Droid --> Back["Gemini · Supabase · Firebase"]
+    Core["DevSpace"] --> Web["In the browser"]
+    Core --> Win["Windows app<br/>can use files and terminal"]
+    Core --> Android["Android app"]
 ```
 
 Desktop design and release notes: [`DEVSPACE_DESKTOP_ARCHITECTURE.md`](DEVSPACE_DESKTOP_ARCHITECTURE.md) and [`DEVSPACE_DESKTOP_RELEASE_GUIDE.md`](DEVSPACE_DESKTOP_RELEASE_GUIDE.md).
@@ -81,11 +83,11 @@ npm run electron:dev     # desktop app
 npm run dist:win         # Windows NSIS installer
 ```
 
-## 📊 Code composition
+## 📊 What it's written in
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'pie1':'#6366f1','pie2':'#ec4899','pie3':'#64748b','pie4':'#94a3b8','pie5':'#475569','pie6':'#cbd5e1','pie7':'#334155','pieStrokeColor':'#0d1117','pieOuterStrokeColor':'#0d1117','pieTitleTextColor':'#8b949e','pieLegendTextColor':'#8b949e','pieSectionTextColor':'#0d1117'}}}%%
-pie title Code composition (% of bytes, via GitHub linguist)
+pie title Share of the code, by language
     "TypeScript" : 99.7
     "Other" : 0.3
 ```
