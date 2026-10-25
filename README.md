@@ -31,11 +31,11 @@
   <a href="#-license">License</a>
 </p>
 
-<p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
-
-
 > [!TIP]
 > **🤖 Pasted this link into Claude or ChatGPT?** AI assistants: read [`AGENTS.md`](https://raw.githubusercontent.com/F0rger123/devspace/main/AGENTS.md) first. It explains what this is in plain words, which questions to ask, and how to set it up step by step. Plain-text index: [`llms.txt`](https://raw.githubusercontent.com/F0rger123/devspace/main/llms.txt).
+
+
+<p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
 
 ## ⚡ What it does
 
@@ -53,6 +53,7 @@
 ## ✨ Meet Aether
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#0d1117','primaryTextColor':'#e6edf3','primaryBorderColor':'#6366f1','lineColor':'#ec4899','secondaryColor':'#161b22','tertiaryColor':'#0d1117','clusterBkg':'transparent','clusterBorder':'#6366f1','noteBkgColor':'#161b22','noteTextColor':'#e6edf3','actorBkg':'#0d1117','actorTextColor':'#e6edf3','actorBorder':'#6366f1','signalColor':'#ec4899','signalTextColor':'#ec4899','labelBoxBkgColor':'#0d1117','fontFamily':'inherit'}}}%%
 flowchart LR
     You(["You"]) -->|dream up ideas| Aether["Aether, the assistant"]
     Aether --> Ideas["Idea deck"]
@@ -65,6 +66,7 @@ flowchart LR
 ## 🖥️ One app, three places
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#0d1117','primaryTextColor':'#e6edf3','primaryBorderColor':'#6366f1','lineColor':'#ec4899','secondaryColor':'#161b22','tertiaryColor':'#0d1117','clusterBkg':'transparent','clusterBorder':'#6366f1','noteBkgColor':'#161b22','noteTextColor':'#e6edf3','actorBkg':'#0d1117','actorTextColor':'#e6edf3','actorBorder':'#6366f1','signalColor':'#ec4899','signalTextColor':'#ec4899','labelBoxBkgColor':'#0d1117','fontFamily':'inherit'}}}%%
 flowchart TB
     Core["DevSpace"] --> Web["In the browser"]
     Core --> Win["Windows app<br/>can use files and terminal"]
