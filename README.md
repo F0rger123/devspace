@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-public-6366f1?style=for-the-badge" alt="Public">
-  <img src="https://img.shields.io/badge/license-MIT-6366f1?style=for-the-badge" alt="License">
-  <img src="https://img.shields.io/github/last-commit/F0rger123/devspace?style=for-the-badge&color=6366f1" alt="Last commit">
-  <img src="https://img.shields.io/github/repo-size/F0rger123/devspace?style=for-the-badge&color=6366f1" alt="Repo size">
+  <img src="https://img.shields.io/badge/status-public-eab308?style=for-the-badge" alt="Public">
+  <img src="https://img.shields.io/badge/license-MIT-eab308?style=for-the-badge" alt="License">
+  <img src="https://img.shields.io/github/last-commit/F0rger123/devspace?style=for-the-badge&color=eab308" alt="Last commit">
+  <img src="https://img.shields.io/github/repo-size/F0rger123/devspace?style=for-the-badge&color=eab308" alt="Repo size">
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/React-0d1117?style=flat-square&logo=react&logoColor=white" alt="React">
@@ -23,12 +23,11 @@
 <h3 align="center">The space for developers, literally. Track projects, issues and ideas, or tell Aether to dream up 500 ideas and build them for you.</h3>
 
 <p align="center">
-  <a href="#-what-it-does">What it does</a> ·
-  <a href="#-meet-aether">Meet Aether</a> ·
-  <a href="#️-one-app-three-places">One app, three places</a> ·
-  <a href="#️-run-it">Run it</a> ·
-  <a href="#-what-its-written-in">What it's written in</a> ·
-  <a href="#-license">License</a>
+  <a href="#-run-it">run it</a> ·
+  <a href="#-whats-inside">what's inside</a> ·
+  <a href="#-meet-aether">meet aether</a> ·
+  <a href="#-one-app-three-places">one app, three places</a> ·
+  <a href="#-written-in">written in</a>
 </p>
 
 > [!TIP]
@@ -37,23 +36,41 @@
 
 <p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
 
-## ⚡ What it does
+## `$` run it
 
-| | Module | Highlights |
-|---|---|---|
-| 🗂️ | **Projects** | Projects, issues, ideas and a guided project stepper |
-| 💭 | **Dream studio** | Dream log, swipe deck and review studio for generated ideas |
-| 🧠 | **Memory cortex** | Long-term memory and life-context settings for the assistant |
-| 📆 | **Daily hub** | Daily brief, routines, reminders, goals and a focus coach |
-| 🤝 | **Relationships & meetings** | Relationship hub and meeting intelligence |
-| 🔌 | **Integrations** | Integration center and wizard, backend integration tab |
-| 🔒 | **Security** | Biometric session security, privacy dashboard, recovery center, sandbox inspector |
-| 🖐️ | **Hands-free** | MediaPipe hand tracking |
+```bash
+npm ci
+cp .env.example .env     # add your own keys here, never commit this file
+npm run dev              # web app + API server on http://localhost:3000
+npm run electron:dev     # desktop app
+npm run dist:win         # Windows installer
+```
 
-## ✨ Meet Aether
+## `~/` what's inside
+
+<table>
+  <tr>
+    <td width="50%"><b>🗂️ Projects</b><br><sub>Projects, issues, ideas and a guided project stepper.</sub></td>
+    <td width="50%"><b>💭 Dream studio</b><br><sub>A dream log, a swipe deck and a review studio for generated ideas.</sub></td>
+  </tr>
+  <tr>
+    <td><b>🧠 Memory cortex</b><br><sub>Long-term memory and life context, so Aether remembers how you work.</sub></td>
+    <td><b>📆 Daily hub</b><br><sub>Daily brief, routines, reminders, goals and a focus coach.</sub></td>
+  </tr>
+  <tr>
+    <td><b>🤝 People & meetings</b><br><sub>A relationship hub and meeting notes that turn into tasks.</sub></td>
+    <td><b>🔌 Integrations</b><br><sub>An integration center and wizard for the tools you already use.</sub></td>
+  </tr>
+  <tr>
+    <td><b>🔒 Security</b><br><sub>Biometric sessions, a privacy dashboard, recovery and a sandbox inspector.</sub></td>
+    <td><b>🖐️ Hands-free</b><br><sub>Control the workspace with hand gestures from your camera.</sub></td>
+  </tr>
+</table>
+
+## `>` meet aether
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#0d1117','primaryTextColor':'#e6edf3','primaryBorderColor':'#6366f1','lineColor':'#ec4899','secondaryColor':'#161b22','tertiaryColor':'#0d1117','clusterBkg':'transparent','clusterBorder':'#6366f1','noteBkgColor':'#161b22','noteTextColor':'#e6edf3','actorBkg':'#0d1117','actorTextColor':'#e6edf3','actorBorder':'#6366f1','signalColor':'#ec4899','signalTextColor':'#ec4899','labelBoxBkgColor':'#0d1117','fontFamily':'inherit'}}}%%
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#121214','primaryTextColor':'#fafafa','primaryBorderColor':'#eab308','lineColor':'#a1a1aa','secondaryColor':'#0b0c10','tertiaryColor':'#1c1c1f','clusterBkg':'transparent','clusterBorder':'#eab308','noteBkgColor':'#0b0c10','noteTextColor':'#fafafa','actorBkg':'#121214','actorTextColor':'#fafafa','actorBorder':'#eab308','signalColor':'#a1a1aa','signalTextColor':'#a1a1aa','labelBoxBkgColor':'#121214','fontFamily':'inherit'}}}%%
 flowchart LR
     You(["You"]) -->|dream up ideas| Aether["Aether, the assistant"]
     Aether --> Ideas["Idea deck"]
@@ -63,38 +80,26 @@ flowchart LR
     Aether --> Mem[("Remembers you")]
 ```
 
-## 🖥️ One app, three places
+## `::` one app, three places
 
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'primaryColor':'#0d1117','primaryTextColor':'#e6edf3','primaryBorderColor':'#6366f1','lineColor':'#ec4899','secondaryColor':'#161b22','tertiaryColor':'#0d1117','clusterBkg':'transparent','clusterBorder':'#6366f1','noteBkgColor':'#161b22','noteTextColor':'#e6edf3','actorBkg':'#0d1117','actorTextColor':'#e6edf3','actorBorder':'#6366f1','signalColor':'#ec4899','signalTextColor':'#ec4899','labelBoxBkgColor':'#0d1117','fontFamily':'inherit'}}}%%
-flowchart TB
-    Core["DevSpace"] --> Web["In the browser"]
-    Core --> Win["Windows app<br/>can use files and terminal"]
-    Core --> Android["Android app"]
-```
+| | 🌐 Browser | 🪟 Windows | 🤖 Android |
+|---|---|---|---|
+| **Start it** | `npm run dev` | `npm run electron:dev` | Capacitor build in `android/` |
+| **Extra powers** | Works anywhere | Can use your files and terminal | Takes the workspace with you |
+| **Ship it** | Any Node host | `npm run dist:win` installer | Android Studio |
 
 Desktop design and release notes: [`DEVSPACE_DESKTOP_ARCHITECTURE.md`](DEVSPACE_DESKTOP_ARCHITECTURE.md) and [`DEVSPACE_DESKTOP_RELEASE_GUIDE.md`](DEVSPACE_DESKTOP_RELEASE_GUIDE.md).
 
-## 🛠️ Run it
-
-```bash
-npm ci
-cp .env.example .env
-npm run dev              # web app + API server
-npm run electron:dev     # desktop app
-npm run dist:win         # Windows NSIS installer
-```
-
-## 📊 What it's written in
+## `#` written in
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'pie1':'#6366f1','pie2':'#ec4899','pie3':'#64748b','pie4':'#94a3b8','pie5':'#475569','pie6':'#cbd5e1','pie7':'#334155','pieStrokeColor':'#0d1117','pieOuterStrokeColor':'#0d1117','pieTitleTextColor':'#8b949e','pieLegendTextColor':'#8b949e','pieSectionTextColor':'#0d1117'}}}%%
+%%{init: {'theme':'base','themeVariables':{'pie1':'#eab308','pie2':'#fde68a','pie3':'#64748b','pie4':'#94a3b8','pie5':'#475569','pie6':'#cbd5e1','pie7':'#334155','pieStrokeColor':'#0d1117','pieOuterStrokeColor':'#0d1117','pieTitleTextColor':'#8b949e','pieLegendTextColor':'#8b949e','pieSectionTextColor':'#0d1117'}}}%%
 pie title Share of the code, by language
     "TypeScript" : 99.7
     "Other" : 0.3
 ```
 
-## 📜 License
+## `©` license
 
 Released under the [MIT License](LICENSE). Use it, fork it, ship it.
 
