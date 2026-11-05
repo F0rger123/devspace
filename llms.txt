@@ -1,11 +1,6 @@
-# devspace
+# DevSpace v2
 
-> A workspace for developers with an AI assistant called Aether that helps track projects and ideas and can write code. Runs in the browser, on Windows and on Android.
+> Mobile-first projects, tasks and ideas app (React, Tailwind, Vite). Links to the Aether PC agent so the Aether voice assistant knows your projects and its blueprints show here.
 
-If a person shared this repository with you, read the AI guide first.
-
-## Start here
-- [AI guide](https://raw.githubusercontent.com/F0rger123/devspace/main/AGENTS.md): what it is, what to ask, setup steps, how to use it
-- [README](https://raw.githubusercontent.com/F0rger123/devspace/main/README.md)
-- [Desktop architecture](https://raw.githubusercontent.com/F0rger123/devspace/main/DEVSPACE_DESKTOP_ARCHITECTURE.md)
-- [Desktop release guide](https://raw.githubusercontent.com/F0rger123/devspace/main/DEVSPACE_DESKTOP_RELEASE_GUIDE.md)
+- [AGENTS.md](https://raw.githubusercontent.com/F0rger123/devspace/v2/AGENTS.md): setup, checks, rules
+- [README.md](https://raw.githubusercontent.com/F0rger123/devspace/v2/README.md): overview, screenshots, diagram

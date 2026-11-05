@@ -1,138 +1,68 @@
-import { useEffect } from 'react';
-import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
-import { isElectron } from './lib/electronBridge';
-import { AppLayout } from './components/layout/AppLayout';
-import { BarShell } from './components/ui/TheBar/BarShell';
-import { Dashboard } from './pages/Dashboard';
-import { AssistantChat } from './pages/AssistantChat';
-import { Projects } from './pages/Projects';
-import { Brain } from './pages/Brain';
-import { Issues } from './pages/Issues';
-import { Roadmap } from './pages/Roadmap';
-import { GitHubIntelligence } from './pages/GitHubIntelligence';
-import { WorkspaceDocs } from './pages/WorkspaceDocs';
-import { Settings } from './pages/Settings';
-import { Notes } from './pages/Notes';
-import { Assets } from './pages/Assets';
-import { IdeaExpansion } from './pages/IdeaExpansion';
-import { AgenticOS } from './pages/AgenticOS';
-import { WhatsAppCompanion } from './pages/WhatsAppCompanion';
-import { Automations } from './pages/Automations';
-import { Workflows } from './pages/Workflows';
-import { AetherIntelligenceReport } from './pages/AetherIntelligenceReport';
-import { AetherHub } from './pages/AetherHub';
-import { Community } from './pages/Community';
-import { SandboxLoop } from './pages/SandboxLoop';
-import { Create } from './pages/Create';
-import { Design } from './pages/Design';
-import { EditableDevSpace } from './pages/EditableDevSpace';
-import { MemoryPage } from './pages/Memory';
-import { Goals } from './pages/Goals';
-import { People } from './pages/People';
-import { AndroidDiagnosticsScreen } from './components/AndroidDiagnosticsScreen';
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { CalendarCheck, FolderKanban, Lightbulb, Map, Settings as Gear } from "lucide-react";
+import { useAgentSync } from "./agent";
+import Today from "./pages/Today";
+import Projects, { ProjectDetail } from "./pages/Projects";
+import Ideas from "./pages/Ideas";
+import Blueprints from "./pages/Blueprints";
+import Settings from "./pages/Settings";
+
+const TABS = [
+  { to: "/today", label: "Today", icon: CalendarCheck },
+  { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/ideas", label: "Ideas", icon: Lightbulb },
+  { to: "/blueprints", label: "Blueprints", icon: Map },
+  { to: "/settings", label: "Settings", icon: Gear },
+];
 
 export default function App() {
-  const isDesktop = typeof window !== 'undefined' && (isElectron() || window.location.protocol === 'file:');
-  const RouterComponent = isDesktop ? HashRouter : BrowserRouter;
-
-  const isOverlayWindow = typeof window !== 'undefined' && isDesktop && (
-    window.location.hash.includes('overlay') || 
-    window.location.pathname.includes('/overlay') ||
-    window.location.search.includes('overlay')
-  );
-
-  useEffect(() => {
-    if (isOverlayWindow) {
-      document.documentElement.classList.add('overlay-mode');
-      document.body.classList.add('overlay-mode');
-      document.documentElement.style.backgroundColor = 'transparent';
-      document.body.style.backgroundColor = 'transparent';
-      document.body.style.overflow = 'hidden';
-    }
-  }, [isOverlayWindow]);
-
-  if (isOverlayWindow) {
-    return (
-      <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
-        <BarShell standalone />
-      </div>
-    );
-  }
-
+  const sync = useAgentSync();
   return (
-    <RouterComponent>
-      <Routes>
-        {isDesktop && (
-          <>
-            <Route
-              path="/overlay"
-              element={
-                <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
-                  <BarShell standalone />
-                </div>
-              }
-            />
-            <Route
-              path="overlay"
-              element={
-                <div className="w-screen h-screen bg-transparent overflow-hidden flex items-start justify-center pt-2 select-none">
-                  <BarShell standalone />
-                </div>
-              }
-            />
-          </>
-        )}
-        <Route
-          path="*"
-          element={
-            <AppLayout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/create" element={<Create />} />
-                <Route path="/design" element={<Design />} />
-                <Route path="/assistant" element={<AssistantChat />} />
-                <Route path="/projects" element={<Projects />} />
-                <Route path="/sandbox-loop" element={<SandboxLoop />} />
-                <Route path="/notes" element={<Notes />} />
-                <Route path="/assets" element={<Assets />} />
-                <Route path="/ideas" element={<IdeaExpansion />} />
-                <Route path="/brain" element={<Brain />} />
-                <Route path="/memory" element={<MemoryPage />} />
-                <Route path="/aether-memory" element={<MemoryPage />} />
-                <Route path="/agents" element={<AgenticOS />} />
-                <Route path="/issues" element={<Issues />} />
-                <Route path="/roadmap" element={<Roadmap />} />
-                <Route path="/github" element={<GitHubIntelligence />} />
-                <Route path="/docs" element={<WorkspaceDocs />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/community" element={<Community />} />
-                <Route path="/whatsapp-companion" element={<WhatsAppCompanion />} />
-                <Route path="/automations" element={<Automations />} />
-                <Route path="/workflows" element={<Workflows />} />
-                <Route path="/aether-report" element={<AetherIntelligenceReport />} />
-                <Route path="/aether-hub" element={<AetherIntelligenceReport />} />
-                <Route path="/editable-devspace" element={<EditableDevSpace />} />
-                <Route path="/goals" element={<Goals />} />
-                <Route path="/planning" element={<Goals />} />
-                <Route path="/people" element={<People />} />
-                <Route path="/relationships" element={<People />} />
-                <Route path="/android-diagnostics" element={<div className="p-6 max-w-5xl mx-auto"><AndroidDiagnosticsScreen /></div>} />
-                <Route path="/diagnostics" element={<div className="p-6 max-w-5xl mx-auto"><AndroidDiagnosticsScreen /></div>} />
-                {/* Fallback for undefined routes */}
-                <Route
-                  path="*"
-                  element={
-                    <div className="h-full flex items-center justify-center text-zinc-500 flex-col gap-4">
-                      <h2 className="text-xl">Component under construction</h2>
-                      <p className="text-sm">Use the navigation or Cmd+K to return</p>
-                    </div>
-                  }
-                />
-              </Routes>
-            </AppLayout>
-          }
-        />
-      </Routes>
-    </RouterComponent>
+    <div className="flex min-h-full">
+      {/* Desktop: a quiet sidebar. Phone: tabs along the bottom, within thumb reach. */}
+      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-line px-3 py-6 md:flex">
+        <div className="mb-8 px-2">
+          <div className="font-display text-2xl font-bold">DevSpace</div>
+          <div className="mt-1 font-mono text-[11px] text-dim">with Aether</div>
+        </div>
+        <nav className="flex flex-col gap-1">
+          {TABS.map(t => (
+            <NavLink key={t.to} to={t.to} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-3 py-2 ${isActive ? "bg-raise text-accent" : "text-sub hover:text-text"}`}>
+              <t.icon size={18} /> {t.label}
+            </NavLink>
+          ))}
+        </nav>
+        <SyncDot state={sync.state} error={sync.error} className="mt-auto px-3" />
+      </aside>
+      <main className="min-w-0 flex-1">
+        <Routes>
+          <Route path="/" element={<Navigate to="/today" replace />} />
+          <Route path="/today" element={<Today />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetail />} />
+          <Route path="/ideas" element={<Ideas />} />
+          <Route path="/blueprints" element={<Blueprints />} />
+          <Route path="/settings" element={<Settings sync={sync} />} />
+          <Route path="*" element={<Navigate to="/today" replace />} />
+        </Routes>
+      </main>
+      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-line bg-ink/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        {TABS.map(t => (
+          <NavLink key={t.to} to={t.to} className={({ isActive }) => `flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] ${isActive ? "text-accent" : "text-dim"}`}>
+            <t.icon size={20} /> {t.label}
+          </NavLink>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function SyncDot({ state, error, className = "" }: { state: string; error: string; className?: string }) {
+  const words = { off: "Not linked to Aether", syncing: "Saving to Aether…", synced: "Synced with Aether", error: "Aether: " + error }[state];
+  const dot = { off: "bg-dim", syncing: "bg-accent animate-pulse", synced: "bg-done", error: "bg-alert" }[state];
+  return (
+    <div className={`flex items-center gap-2 text-xs text-sub ${className}`}>
+      <span className={`h-2 w-2 rounded-full ${dot}`} /> {words}
+    </div>
   );
 }
