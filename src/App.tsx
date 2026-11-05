@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { CalendarCheck, FolderKanban, Lightbulb, Map, Settings as Gear } from "lucide-react";
 import { useAgentSync } from "./agent";
+import { useCloudSync } from "./cloud";
 import Today from "./pages/Today";
 import Projects, { ProjectDetail } from "./pages/Projects";
 import Ideas from "./pages/Ideas";
@@ -17,6 +18,7 @@ const TABS = [
 
 export default function App() {
   const sync = useAgentSync();
+  const cloudSync = useCloudSync();
   return (
     <div className="flex min-h-full">
       {/* Desktop: a quiet sidebar. Phone: tabs along the bottom, within thumb reach. */}
@@ -32,7 +34,15 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <SyncDot state={sync.state} error={sync.error} className="mt-auto px-3" />
+        <div className="mt-auto space-y-2 px-3">
+          <SyncDot state={sync.state} error={sync.error} />
+          {cloudSync.state !== "not set up" && (
+            <div className="flex items-center gap-2 text-xs text-sub">
+              <span className={`h-2 w-2 rounded-full ${{ "signed out": "bg-dim", syncing: "bg-accent animate-pulse", synced: "bg-done", error: "bg-alert" }[cloudSync.state]}`} />
+              {{ "signed out": "Cloud: signed out", syncing: "Cloud: saving…", synced: "Cloud: synced", error: "Cloud: " + cloudSync.error }[cloudSync.state]}
+            </div>
+          )}
+        </div>
       </aside>
       <main className="min-w-0 flex-1">
         <Routes>
@@ -42,7 +52,7 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/ideas" element={<Ideas />} />
           <Route path="/blueprints" element={<Blueprints />} />
-          <Route path="/settings" element={<Settings sync={sync} />} />
+          <Route path="/settings" element={<Settings sync={sync} cloud={cloudSync} />} />
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>
