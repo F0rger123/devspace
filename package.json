@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "app": "vite build && electron .",
+    "dist": "vite build && electron-builder --win nsis"
   },
   "dependencies": {
     "lucide-react": "0.468.0",
@@ -22,6 +24,34 @@
     "@vitejs/plugin-react": "4.3.4",
     "tailwindcss": "4.1.11",
     "typescript": "5.7.2",
-    "vite": "6.0.3"
+    "vite": "6.0.3",
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "main": "electron/main.cjs",
+  "productName": "DevSpace",
+  "description": "DevSpace: projects, tasks and ideas, synced with Aether",
+  "author": "F0rger",
+  "build": {
+    "appId": "dev.forger.devspace",
+    "productName": "DevSpace",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "DevSpace"
+    }
   }
 }

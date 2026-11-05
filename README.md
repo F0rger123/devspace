@@ -46,12 +46,19 @@ flowchart LR
     PC -->|"one step at a time"| Claude["Claude Code builds it"]
 ```
 
+## `↓` download it
+
+**DevSpace for Windows:** grab **DevSpace Setup** from [Releases](https://github.com/F0rger123/devspace/releases).
+With [Aether for Windows](https://github.com/F0rger123/aether-agent) installed it links to Aether by itself.
+
 ## `$` run it
 
 ```bash
 npm install
 npm run dev      # http://localhost:5180, also reachable from your phone on the same Wi-Fi
 npm run build    # production build in dist/
+npm run app      # the Windows app
+npm run dist     # the Windows installer, in release/
 ```
 
 Your data is kept in the browser. Link the [Aether PC agent](https://github.com/F0rger123/aether-agent)
