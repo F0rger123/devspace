@@ -22,7 +22,7 @@ export default function Today() {
       <div className="grid grid-cols-3 gap-3">
         <Tile n={active.length} label="Active projects" to="/projects" />
         <Tile n={active.reduce((s, p) => s + openTasks(p), 0)} label="Open tasks" to="/projects" />
-        <Tile n={fresh} label="Ideas to judge" to="/ideas" />
+        <Tile n={fresh} label="Ideas to judge" to="/ideas" glow={fresh > 0} />
       </div>
 
       <Card className="mt-4">
@@ -73,9 +73,9 @@ export default function Today() {
   );
 }
 
-function Tile({ n, label, to }: { n: number; label: string; to: string }) {
+function Tile({ n, label, to, glow }: { n: number; label: string; to: string; glow?: boolean }) {
   return (
-    <Link to={to} className="rounded-2xl border border-line bg-panel p-3 hover:border-accent/50">
+    <Link to={to} className={`tile-in ${glow ? "glow" : ""} rounded-2xl border border-line bg-panel p-3 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-lg hover:shadow-accent/10`}>
       <div className="tnum text-2xl font-bold">{n}</div>
       <div className="mt-1 text-xs leading-tight text-sub">{label}</div>
     </Link>

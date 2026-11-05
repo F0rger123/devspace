@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { CalendarCheck, FolderKanban, Lightbulb, Map, Settings as Gear } from "lucide-react";
 import { useAgentSync } from "./agent";
 import { useCloudSync } from "./cloud";
@@ -19,6 +19,8 @@ const TABS = [
 export default function App() {
   const sync = useAgentSync();
   const cloudSync = useCloudSync();
+  // Each page change replays the page's entrance.
+  const where = useLocation().pathname;
   return (
     <div className="flex min-h-full">
       {/* Desktop: a quiet sidebar. Phone: tabs along the bottom, within thumb reach. */}
@@ -45,6 +47,7 @@ export default function App() {
         </div>
       </aside>
       <main className="min-w-0 flex-1">
+        <div key={where} className="page">
         <Routes>
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today" element={<Today />} />
@@ -55,6 +58,7 @@ export default function App() {
           <Route path="/settings" element={<Settings sync={sync} cloud={cloudSync} />} />
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
+        </div>
       </main>
       <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-line bg-ink/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         {TABS.map(t => (
